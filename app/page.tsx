@@ -20,12 +20,14 @@ import {
   MapPin,
   Menu,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
   Users,
   WandSparkles,
+  Wifi,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -38,6 +40,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useAppAuth } from "@/components/AppAuthProvider";
 
 type Location = "KRUCZA" | "PAWILONY";
 type ShiftKey = "RANO" | "ŚRODEK" | "WIECZÓR";
@@ -352,6 +355,7 @@ function AttendancePanel({ notify }: { notify: (message: string) => void }) {
 }
 
 export default function GrafikPro() {
+  const { connected, configured, summary, user, access, signOut, refresh } = useAppAuth();
   const [activeNav, setActiveNav] = useState<NavKey>("centrum");
   const [locations, setLocations] = useState<Location[]>(["KRUCZA", "PAWILONY"]);
   const [calendarMode, setCalendarMode] = useState<"Tydzień" | "2 tygodnie" | "Miesiąc">("Tydzień");
@@ -409,9 +413,13 @@ export default function GrafikPro() {
         <div className="sidebar-footer">
           <button className="profile">
             <span className="avatar avatar-photo">KN</span>
-            <span><strong>Katarzyna Nowak</strong><small>Dyrektor operacyjny</small></span>
+            <span>
+              <strong>{access?.employee ? `${access.employee.first_name} ${access.employee.last_name}` : user?.email?.split("@")[0] || "Katarzyna Nowak"}</strong>
+              <small>{access?.roles?.[0]?.app_role === "OWNER" ? "Właściciel demo" : access?.employee?.primary_role || "Dyrektor operacyjny"}</small>
+            </span>
             <ChevronRight size={17} />
           </button>
+          {user && <button className="sidebar-signout" onClick={() => void signOut()}><LogOut size={15} /> Wyloguj się</button>}
           <button className="company">
             <span className="company-icon">GP</span>
             <span><strong>GRAFIK PRO DEMO</strong><small>KRUCZA • PAWILONY</small></span>
@@ -432,6 +440,10 @@ export default function GrafikPro() {
             <h1>{activeNav === "centrum" ? "Centrum dowodzenia" : navItems.find((item) => item.key === activeNav)?.label}</h1>
           </div>
           <div className="topbar-actions">
+            <button className={`live-status ${connected ? "online" : ""}`} onClick={() => void refresh()} title="Odśwież połączenie">
+              {configured ? <Wifi size={15} /> : <RefreshCw size={15} />}
+              <span>{connected ? `Supabase • ${summary?.employees || 0} osób` : configured ? "Łączenie z bazą" : "Dane demo"}</span>
+            </button>
             <button className="date-selector"><CalendarDays size={17} /> lipiec 2026 <ChevronDown size={15} /></button>
             <div className="location-selector">
               {(["KRUCZA", "PAWILONY"] as Location[]).map((location) => (
@@ -474,7 +486,7 @@ export default function GrafikPro() {
           <section className="kpi-grid">
             <button className="kpi-card" onClick={() => notify("Filtr: wszystkie zmiany z obsadą poniżej 100%")}>
               <span className="kpi-icon violet"><Users size={25} /></span>
-              <span><small>Obsada</small><strong>94%</strong><em className="up">↗ +4 p.p.</em></span>
+              <span><small>Obsada • {summary?.employees || 76} pracowników</small><strong>94%</strong><em className="up">↗ +4 p.p.</em></span>
               <span className="sparkline violet-line"><i /><i /><i /><i /><i /><i /></span>
             </button>
             <button className="kpi-card" onClick={() => setDrawer({ kind: "shortage", title: "3 otwarte braki", subtitle: "2 na Kruczej • 1 na Pawilonach" })}>
