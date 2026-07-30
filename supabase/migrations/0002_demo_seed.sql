@@ -1,197 +1,253 @@
--- GRAFIK PRO 3.0 — kompletna, sztuczna baza demonstracyjna.
--- Każdy pracownik ma unikatowy numer oraz unikatowe imię i nazwisko.
+"use client";
 
-insert into public.locations (code, name) values
-  ('KRUCZA', 'Krucza'),
-  ('PAWILONY', 'Pawilony');
+import type { User } from "@supabase/supabase-js";
+import { Check, Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/client";
 
-insert into public.roles (code, name) values
-  ('KELNER', 'Kelner'),
-  ('BARMAN', 'Barman'),
-  ('PIZZABAR', 'Pizzabar'),
-  ('PREP', 'Prep'),
-  ('POMOC', 'Pomoc');
+type LiveSummary = {
+  employees: number;
+  locations: number;
+  shifts: number;
+  events: number;
+};
 
-with source as (
-  select
-    n,
-    (array['Alicja','Marek','Karolina','Zofia','Michał','Łukasz','Aleksandra','Tomasz',
-      'Kinga','Antoni','Patrycja','Jakub','Natalia','Mateusz','Julia','Filip','Oliwia',
-      'Kamil','Wiktoria','Piotr'])[1 + ((n - 1) % 20)] as first_name,
-    (array['Nowak','Kozłowski','Pawlak','Sikora','Wrona','Król','Piotrowska','Nowicki',
-      'Kaczmarek','Borkowski','Sobczak','Maj','Lis','Czarnecki','Sokołowska','Witkowski',
-      'Dąbrowska','Zalewski','Michalska','Ostrowski','Górska','Jankowski','Mazur','Wójcik',
-      'Kubiak','Grabowski','Rutkowski','Krawczyk','Zając','Chmielewski','Sawicka','Baran',
-      'Tomaszewski','Pietrzak','Marciniak','Jaworski','Kołodziej','Adamczyk','Dudek',
-      'Walczak','Błaszczyk','Głowacki','Kurek','Szczepański','Kaźmierczak','Mazurek',
-      'Bednarek','Cieślak','Urban','Mikołajczyk','Olejniczak','Rogowski','Stefański',
-      'Musiał','Polak','Wasilewski','Kania','Tomczak','Kowalik','Włodarczyk','Sadowski',
-      'Mucha','Przybylski','Kowal','Kruk','Nawrocki','Wilk','Kopeć','Bielecki','Rybak',
-      'Stępień','Bąk','Makowski','Andrzejewski','Kędzierski','Leśniak'])[n] as last_name,
-    case
-      when n <= 30 then 'KELNER'::public.employee_role
-      when n <= 54 then 'BARMAN'::public.employee_role
-      when n <= 64 then 'PIZZABAR'::public.employee_role
-      when n <= 70 then 'PREP'::public.employee_role
-      else 'POMOC'::public.employee_role
-    end as role
-  from generate_series(1, 76) n
-)
-insert into public.employees (
-  employee_no, first_name, last_name, email, primary_role,
-  monthly_nominal_minutes, max_weekly_minutes, employment_start
-)
-select
-  'GP-' || lpad(n::text, 3, '0'),
-  first_name,
-  last_name,
-  'demo.' || lpad(n::text, 3, '0') || '@grafikpro.test',
-  role,
-  case when n % 5 = 0 then 5040 else 10080 end,
-  case when n % 5 = 0 then 1440 else 2400 end,
-  date '2025-01-01'
-from source;
+type AppAccess = {
+  roles?: { app_role: string; scope_role?: string | null; scope_location?: string | null }[];
+  employee?: {
+    employee_no: string;
+    first_name: string;
+    last_name: string;
+    primary_role: string;
+  } | null;
+};
 
--- Lokalizacje: kelnerzy i prep wyłącznie Krucza; pozostali zgodnie z pulą stałą/rotacyjną.
-insert into public.employee_locations (employee_id, location_id, standard_allowed, overtime_allowed, home_location)
-select e.id, l.id,
-  case
-    when e.primary_role in ('KELNER','PREP') then l.code = 'KRUCZA'
-    when right(e.employee_no, 1)::int % 3 = 0 then true
-    when right(e.employee_no, 1)::int % 2 = 0 then l.code = 'KRUCZA'
-    else l.code = 'PAWILONY'
-  end,
-  case
-    when e.primary_role in ('KELNER','PREP') then l.code = 'KRUCZA'
-    else true
-  end,
-  case
-    when e.primary_role in ('KELNER','PREP') then l.code = 'KRUCZA'
-    when right(e.employee_no, 1)::int % 2 = 0 then l.code = 'KRUCZA'
-    else l.code = 'PAWILONY'
-  end
-from public.employees e cross join public.locations l
-where e.primary_role not in ('KELNER','PREP') or l.code = 'KRUCZA';
+type AuthContextValue = {
+  configured: boolean;
+  connected: boolean;
+  loading: boolean;
+  user: User | null;
+  access: AppAccess | null;
+  summary: LiveSummary | null;
+  error: string;
+  refresh: () => Promise<void>;
+  signOut: () => Promise<void>;
+};
 
--- HOST jest funkcją dodatkową kelnera, a nie osobną rolą podstawową.
-insert into public.employee_capabilities (employee_id, capability, scope_role, scope_location)
-select id, 'HOST', 'KELNER', 'KRUCZA'
-from public.employees where primary_role = 'KELNER' order by employee_no limit 9;
+const AuthContext = createContext<AuthContextValue>({
+  configured: false,
+  connected: false,
+  loading: false,
+  user: null,
+  access: null,
+  summary: null,
+  error: "",
+  refresh: async () => undefined,
+  signOut: async () => undefined,
+});
 
--- Zamykanie zmiany dotyczy wyłącznie kelnerów i barmanów.
-insert into public.employee_capabilities (employee_id, capability, scope_role, scope_location)
-select id, 'CLOSE_SHIFT', primary_role,
-  case when primary_role = 'BARMAN' and employee_no in ('GP-031','GP-032') then
-    case when employee_no = 'GP-031' then 'KRUCZA'::public.location_code else 'PAWILONY'::public.location_code end
-  else null end
-from public.employees
-where employee_no in ('GP-001','GP-002','GP-003','GP-031','GP-032','GP-033','GP-034','GP-035','GP-036');
+export function useAppAuth() {
+  return useContext(AuthContext);
+}
 
--- Jeden menadżer na rolę; barmani mają dwóch menadżerów, po jednym prowadzącym lokal.
-insert into public.employee_capabilities (employee_id, capability, scope_role, scope_location)
-select id, 'ROLE_MANAGER', primary_role,
-  case
-    when employee_no = 'GP-031' then 'KRUCZA'::public.location_code
-    when employee_no = 'GP-032' then 'PAWILONY'::public.location_code
-    else null
-  end
-from public.employees
-where employee_no in ('GP-001','GP-031','GP-032','GP-055','GP-065','GP-071');
+export function AppAuthProvider({ children }: { children: React.ReactNode }) {
+  const configured = hasSupabaseConfig();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [loading, setLoading] = useState(configured);
+  const [user, setUser] = useState<User | null>(null);
+  const [access, setAccess] = useState<AppAccess | null>(null);
+  const [summary, setSummary] = useState<LiveSummary | null>(null);
+  const [error, setError] = useState("");
 
-insert into public.employee_capabilities (employee_id, capability, scope_role, scope_location)
-select id, 'ROTATIONAL', 'BARMAN', null
-from public.employees where primary_role = 'BARMAN' and employee_no between 'GP-040' and 'GP-047';
+  async function loadLiveData(activeUser?: User | null) {
+    if (!supabase || !activeUser) return;
+    setError("");
+    try {
+      await supabase.rpc("claim_demo_owner");
+      const [
+        accessResult,
+        employeesResult,
+        locationsResult,
+        shiftsResult,
+        eventsResult,
+      ] = await Promise.all([
+        supabase.rpc("current_user_access"),
+        supabase.from("employees").select("*", { count: "exact", head: true }),
+        supabase.from("locations").select("*", { count: "exact", head: true }),
+        supabase.from("shift_definitions").select("*", { count: "exact", head: true }),
+        supabase.from("operational_events").select("*", { count: "exact", head: true }),
+      ]);
 
--- Definicje zmian z realnymi godzinami. DOW: 0=niedziela, 6=sobota.
-insert into public.shift_definitions (location_id, code, name, day_of_week, start_time, end_time, ends_next_day)
-select l.id, v.code, v.name, v.dow, v.starts, v.ends, v.next_day
-from public.locations l
-join (values
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 0, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 1, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 2, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 3, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 4, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 5, time '10:00', time '17:00', false),
-  ('KRUCZA', 'RANO', 'Zmiana poranna', 6, time '10:00', time '17:00', false),
-  ('KRUCZA', 'SRODEK', 'Zmiana środkowa', 0, time '15:00', time '23:00', false),
-  ('KRUCZA', 'SRODEK', 'Zmiana środkowa', 5, time '15:00', time '23:00', false),
-  ('KRUCZA', 'SRODEK', 'Zmiana środkowa', 6, time '15:00', time '23:00', false),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 0, time '17:00', time '03:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 1, time '17:00', time '01:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 2, time '17:00', time '01:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 3, time '17:00', time '01:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 4, time '17:00', time '01:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 5, time '17:00', time '03:00', true),
-  ('KRUCZA', 'WIECZOR', 'Zmiana wieczorna', 6, time '17:00', time '03:00', true),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 0, time '10:00', time '17:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 1, time '10:00', time '17:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 2, time '10:00', time '17:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 3, time '10:00', time '17:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 4, time '10:00', time '17:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 5, time '12:00', time '19:00', false),
-  ('PAWILONY', 'RANO', 'Zmiana poranna', 6, time '12:00', time '19:00', false),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 0, time '17:00', time '01:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 1, time '17:00', time '01:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 2, time '17:00', time '01:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 3, time '17:00', time '01:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 4, time '17:00', time '01:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 5, time '19:00', time '05:00', true),
-  ('PAWILONY', 'WIECZOR', 'Zmiana wieczorna', 6, time '19:00', time '05:00', true)
-) as v(location_code, code, name, dow, starts, ends, next_day)
-  on l.code::text = v.location_code;
+      const firstError = [
+        accessResult.error,
+        employeesResult.error,
+        locationsResult.error,
+        shiftsResult.error,
+        eventsResult.error,
+      ].find(Boolean);
+      if (firstError) throw firstError;
 
--- Bazowa macierz obsady wynikająca z uzgodnionych realnych warunków.
-insert into public.demand_rules (location_id, shift_definition_id, role, required_count, required_capability)
-select sd.location_id, sd.id, d.role::public.employee_role, d.required_count, d.capability
-from public.shift_definitions sd
-join public.locations l on l.id = sd.location_id
-join lateral (
-  select *
-  from (values
-    ('KELNER', case when sd.code='RANO' then case when sd.day_of_week in (0,5,6) then 6 else 4 end when sd.code='SRODEK' then 2 else 8 end, null::text),
-    ('BARMAN', case when sd.code='RANO' then case when sd.day_of_week in (0,5,6) then 3 else 2 end when sd.code='SRODEK' then 1 else case when sd.day_of_week in (0,5,6) then 5 else 3 end end, null::text),
-    ('PIZZABAR', case when sd.code='RANO' then case when sd.day_of_week in (0,5,6) then 3 else 2 end when sd.code='SRODEK' then 0 else case when sd.day_of_week in (0,5,6) then 5 else 4 end end, null::text),
-    ('PREP', case when sd.code='RANO' then 5 else 0 end, null::text),
-    ('POMOC', case when sd.code='RANO' then 1 when sd.code='SRODEK' then 0 else case when sd.day_of_week in (0,5,6) then 2 else 1 end end, null::text)
-  ) x(role, required_count, capability)
-) d on true
-where l.code = 'KRUCZA' and d.required_count > 0;
+      setAccess((accessResult.data || null) as AppAccess | null);
+      setSummary({
+        employees: employeesResult.count || 0,
+        locations: locationsResult.count || 0,
+        shifts: shiftsResult.count || 0,
+        events: eventsResult.count || 0,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Nie udało się pobrać danych Supabase.");
+    }
+  }
 
-insert into public.demand_rules (location_id, shift_definition_id, role, required_count)
-select sd.location_id, sd.id, d.role::public.employee_role, d.required_count
-from public.shift_definitions sd
-join public.locations l on l.id = sd.location_id
-cross join lateral (values ('BARMAN', case when sd.code='RANO' then 1 else 2 end), ('PIZZABAR', case when sd.code='RANO' then 1 else 2 end)) d(role, required_count)
-where l.code = 'PAWILONY';
+  async function refresh() {
+    if (!supabase) return;
+    setLoading(true);
+    const { data } = await supabase.auth.getUser();
+    setUser(data.user);
+    await loadLiveData(data.user);
+    setLoading(false);
+  }
 
--- Twarde wymagania funkcjonalne: HOST oraz osoba zamykająca zmianę.
-insert into public.demand_rules (location_id, shift_definition_id, role, required_count, required_capability)
-select sd.location_id, sd.id, 'KELNER', 1, 'HOST'
-from public.shift_definitions sd join public.locations l on l.id=sd.location_id
-where l.code='KRUCZA' and sd.code in ('RANO','WIECZOR');
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(async ({ data }) => {
+      setUser(data.session?.user || null);
+      await loadLiveData(data.session?.user || null);
+      setLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+      if (session?.user) void loadLiveData(session.user);
+      else {
+        setAccess(null);
+        setSummary(null);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [supabase]);
 
-insert into public.demand_rules (location_id, shift_definition_id, role, required_count, required_capability)
-select sd.location_id, sd.id, r.role, 1, 'CLOSE_SHIFT'
-from public.shift_definitions sd
-join public.locations l on l.id=sd.location_id
-cross join lateral (
-  select unnest(case when l.code='KRUCZA' then array['KELNER','BARMAN']::public.employee_role[] else array['BARMAN']::public.employee_role[] ) role
-) r
-where sd.code='WIECZOR';
+  async function signOut() {
+    await supabase?.auth.signOut();
+  }
 
-insert into public.operational_events (
-  location_id, event_type, title, description, starts_at, ends_at,
-  expected_guests, status, verification_due_at
-)
-select id, 'EVENT', 'Wesele — Sala Kryształowa',
-  'Event demonstracyjny wymagający potwierdzenia i zwiększenia obsady.',
-  timestamptz '2026-07-11 18:00:00+02', timestamptz '2026-07-12 02:00:00+02',
-  120, 'NEEDS_VERIFICATION', timestamptz '2026-07-05 12:00:00+02'
-from public.locations where code='KRUCZA';
+  const value = {
+    configured,
+    connected: Boolean(user && summary && !error),
+    loading,
+    user,
+    access,
+    summary,
+    error,
+    refresh,
+    signOut,
+  };
 
-insert into public.event_demand_changes (event_id, role, shift_code, additional_count)
-select e.id, x.role::public.employee_role, 'WIECZOR', x.additional_count
-from public.operational_events e
-cross join (values ('KELNER',2),('BARMAN',1),('POMOC',1)) x(role, additional_count)
-where e.title='Wesele — Sala Kryształowa';
+  if (!configured) {
+    return (
+      <AuthContext.Provider value={value}>
+        <div className="demo-mode-banner"><Database size={14} /> Tryb demonstracyjny — dodaj zmienne Supabase w Vercel, aby włączyć dane online.</div>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+
+  if (loading) {
+    return <div className="auth-loading"><Loader2 className="spin" size={28} /><strong>Łączenie z GRAFIK PRO…</strong><span>Sprawdzamy sesję i uprawnienia.</span></div>;
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  if (!error && access && (!access.roles || access.roles.length === 0)) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><ShieldCheck size={24} /></span>
+          <p className="eyebrow">KONTO AKTYWNE</p>
+          <h1>Oczekuje na nadanie dostępu</h1>
+          <p>Konto <strong>{user.email}</strong> zostało rozpoznane, ale nie ma jeszcze przypisanej roli ani zespołu. Właściciel może nadać dostęp w Administracji.</p>
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+          <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <AuthContext.Provider value={value}>
+      {error && <div className="connection-error"><strong>Połączenie wymaga uwagi</strong><span>{error}</span><button onClick={() => void refresh()}>Spróbuj ponownie</button></div>}
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function LoginScreen() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isError, setIsError] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    setBusy(true);
+    setMessage("");
+    setIsError(false);
+    const result = mode === "login"
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        });
+    setBusy(false);
+    if (result.error) {
+      setIsError(true);
+      setMessage(result.error.message);
+      return;
+    }
+    if (mode === "signup" && !result.data.session) {
+      setMessage("Konto utworzone. Sprawdź e-mail i potwierdź rejestrację.");
+    } else {
+      setMessage("Logowanie zakończone.");
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-brand">
+        <span className="brand-mark">G</span>
+        <p className="eyebrow">GRAFIK PRO 3.0</p>
+        <h1>Planowanie, które zna realia Twojego zespołu.</h1>
+        <p>Grafiki ról, dwa lokale, eventy, budżet, zastępstwa i rejestr czasu w jednym bezpiecznym miejscu.</p>
+        <div className="login-points">
+          <span><Check size={16} /> 76 pracowników demonstracyjnych</span>
+          <span><Check size={16} /> KRUCZA i PAWILONY</span>
+          <span><Check size={16} /> Dostęp według roli użytkownika</span>
+        </div>
+      </section>
+      <section className="login-panel">
+        <div className="login-card">
+          <span className="login-lock"><LockKeyhole size={24} /></span>
+          <p className="eyebrow">BEZPIECZNY DOSTĘP</p>
+          <h2>{mode === "login" ? "Zaloguj się" : "Utwórz pierwsze konto demo"}</h2>
+          <p>{mode === "login" ? "Otwórz swój zakres aplikacji." : "Pierwsze konto otrzyma rolę właściciela demo."}</p>
+          <form onSubmit={submit}>
+            <label>E-mail<div className="input-with-icon"><Mail size={16} /><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anna@firma.pl" /></div></label>
+            <label>Hasło<div className="input-with-icon"><ShieldCheck size={16} /><input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 6 znaków" /></div></label>
+            {message && <div className={`auth-message ${isError ? "error" : ""}`}>{message}</div>}
+            <button className="primary-button full" disabled={busy}>{busy ? <><Loader2 className="spin" size={17} /> Przetwarzanie…</> : mode === "login" ? "Zaloguj się" : "Utwórz konto demo"}</button>
+          </form>
+          <button className="login-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(""); }}>
+            {mode === "login" ? "Pierwsze uruchomienie? Utwórz konto demo" : "Masz już konto? Zaloguj się"}
+          </button>
+          <small>Hasła i sesje obsługuje Supabase Auth. Aplikacja nie przechowuje haseł.</small>
+        </div>
+      </section>
+    </main>
+  );
+}
