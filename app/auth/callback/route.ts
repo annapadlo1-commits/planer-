@@ -1,6 +1,18 @@
-/// <reference types="next" />
-/// <reference types="next/image-types/global" />
-import "./.next/types/routes.d.ts";
+import { NextResponse, type NextRequest } from "next/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-// NOTE: This file should not be edited
-// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+export async function GET(request: NextRequest) {
+  const code = request.nextUrl.searchParams.get("code");
+  const destination = request.nextUrl.clone();
+  destination.pathname = "/";
+  destination.search = "";
+
+  if (code) {
+    const supabase = await createSupabaseServerClient();
+    const result = await supabase?.auth.exchangeCodeForSession(code);
+    if (!result?.error) return NextResponse.redirect(destination);
+  }
+
+  destination.searchParams.set("auth_error", "Nie udało się potwierdzić konta.");
+  return NextResponse.redirect(destination);
+}
