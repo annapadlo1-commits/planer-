@@ -1,102 +1,56 @@
-# GRAFIK PRO 3.0 — Alpha 6 Team Matrix
+# GRAFIK PRO 3.0 — Alpha 8 Complete Matrix
 
-Alpha 6 zachowuje Live Engine z Alpha 5 i dodaje wersjonowany, dynamiczny Matrix
-organizacji oraz zespołowe układanie grafiku per rola.
+Kompletna, interaktywna wersja demonstracyjna modułów Matrixa, pracowników oraz
+grafików generowanych według roli. Cały interfejs jest po polsku i wraca do
+zaakceptowanego kierunku wizualnego: śliwkowa nawigacja, jasna przestrzeń robocza
+i kalendarz jako główny widok planowania.
 
-## Co dodaje Alpha 6
+## Najważniejsze działające elementy
 
-- role, funkcje dodatkowe, obowiązki, lokale i zmiany bez stałego limitu w kodzie,
-- do 7 zmian dziennie jako ustawienie Matrixa (wartość można zmienić),
-- niezmienną rolę podstawową pracownika i wiele funkcji dodatkowych,
-- wersje Matrixa z datami obowiązywania bez niszczenia starych grafików,
-- oddzielny wariant grafiku dla każdego zespołu/roli,
-- workflow: szkic → gotowy → przekazany → do poprawy → zatwierdzony → zablokowany,
-- składanie zatwierdzonych „puzzli” w pełny grafik właściciela,
-- model konfliktów między zespołami, lokalami, dostępnością i odpoczynkiem,
-- preferencje i nieobecności ze źródłem GRAFIK PRO/Kadromierz/manager,
-- rejestr importów i eksportów oraz niezależność od przyszłego używania Kadromierza,
-- fundament ewidencji czasu pracy i zatwierdzania czasu rzeczywistego,
-- nowe moduły „Grafiki zespołów” oraz „Matrix organizacji”.
+- Matrix organizacji: role, funkcje, wzorce zmian i zapotrzebowanie,
+- tworzenie kolejnych wersji Matrixa i widoczna historia,
+- edycja, archiwizacja i przywracanie ról,
+- lista dokładnie 76 unikalnych pracowników demonstracyjnych z rolą, lokalem, umową, limitem godzin
+  i uprawnieniami kierownika zmiany,
+- dodawanie, edycja i archiwizacja pracowników,
+- oddzielne grafiki dla ról: Kelner, Barman, Pizzabar, Prep i Pomoc,
+- generowanie rzeczywistych przydziałów na cały miesiąc,
+- widok kalendarza grafiku roli oraz edycja pracownika, lokalu, godzin, zmiany
+  i funkcji na zmianie,
+- polski obieg: wersja robocza → przekazany do zatwierdzenia → zatwierdzony,
+- wspólny grafik operacyjny, analizy oraz eksport CSV,
+- dwa lokale: Krucza i Pawilony,
+- zapis zmian demonstracyjnych w pamięci przeglądarki (`localStorage`).
 
-Pełny demonstracyjny przepływ planowania dla KRUCZEJ i PAWILONÓW:
-Next.js/Vercel jako frontend oraz Supabase jako bezpieczna baza i silnik.
+Istniejące migracje `0001`–`0005` oraz silnik Supabase z Alpha 6 pozostają w
+pakiecie. Interaktywny moduł Alpha 8 jest bezpieczną warstwą demonstracyjną:
+można go przeglądać i modyfikować bez naruszania danych wdrożonej bazy.
 
-## Co działa w Alpha 5
+## Uruchomienie
 
-- generowanie pełnego miesiąca bez limitu czasu przeglądarki (RPC PostgreSQL),
-- trwały zapis wariantu, zmian, przydziałów, kosztów i alertów,
-- pięć niezależnych pul ról oraz wspólny grafik,
-- ograniczenie pracownika do jednej roli podstawowej,
-- lokalizacje stałe, rotacyjne i nadgodziny w drugim lokalu,
-- HOST jako dodatkowa funkcja kelnera,
-- CLOSE_SHIFT dla kelnera/barmana i wymagane zamknięcia wieczorne,
-- menadżerowie roli i lokalizacji,
-- dostępność, brak kolizji, 11 godzin odpoczynku, limity tygodniowe i miesięczne,
-- poziomy obsady 85%, 100% i 110%,
-- tryb zrównoważony, minimalny koszt i preferencje,
-- scenariusze bazowy, eventowy i oszczędny dające różne wyniki,
-- potwierdzone eventy zwiększające obsadę i unieważniające wcześniejszy plan,
-- zamknięcie lokalu wyłączające zmianę,
-- zapis i publikowanie wariantów,
-- grafik operacyjny z filtrami lokal/rola/data,
-- miesięczny kalendarz z eventami i miniaturami zespołu,
-- widok obciążenia per pracownik,
-- lista realnych braków i naruszeń kompetencji,
-- awaryjne dopisanie pracownika z kontrolą roli, lokalu i kolizji,
-- opcjonalne powiadomienie dopisanego pracownika posiadającego konto,
-- koszt planu i podział kosztów według roli,
-- eksport CSV grafiku i widoku pracowników,
-- Supabase Auth, właściciel demo i ograniczanie danych według zakresu dostępu.
-
-## Instalacja / aktualizacja istniejącego demo
-
-W Supabase SQL Editor dla aktualizacji Alpha 5 uruchom kolejno:
-
-```text
-supabase/migrations/0005_dynamic_matrix_and_role_planning.sql
+```bash
+npm ci
+npm run dev
 ```
 
-Oczekiwany wynik: `Success. No rows returned`.
+Kontrola produkcyjna:
 
-Następnie wypchnij kod do GitHub. Vercel automatycznie uruchomi build.
-Po otwarciu aplikacji wybierz `Nowy wariant`, ustaw parametry i kliknij
-`Generuj i zapisz wariant`. Wynik pojawi się w Grafiku operacyjnym.
-
-Przy nowej, pustej bazie uruchom kolejno:
-
-1. `0001_core_schema.sql`
-2. `0002_demo_seed.sql`
-3. `0003_auth_and_access.sql`
-4. `0004_planning_engine.sql`
-
-## Zmienne Vercel
-
-```text
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```bash
+npm run lint
+npm run build
 ```
 
-Obsługiwany jest również starszy alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-Nigdy nie dodawaj `SUPABASE_SERVICE_ROLE_KEY` do frontendu.
+## Wdrożenie przez Codespaces
 
-W Supabase → Authentication → URL Configuration:
+Po rozpakowaniu zawartości do katalogu repozytorium:
 
-```text
-Site URL: https://planer-lemon.vercel.app
-Redirect URL: https://planer-lemon.vercel.app/auth/callback
+```bash
+npm ci
+npm run lint
+npm run build
+git add .
+git commit -m "GRAFIK PRO 3.0 Alpha 8 Complete Matrix"
+git push origin main
 ```
 
-## Ważne
-
-Generator jest transakcyjny: nie zapisze „częściowo gotowego” planu jako READY.
-Jeżeli brakuje odpowiednich osób, wariant nadal zostaje zapisany, ale tworzy
-precyzyjne alerty `SHORTAGE` lub `CAPABILITY_MISSING`. Dzięki temu menadżer widzi
-konkretną datę, zmianę, rolę oraz liczbę brakujących osób.
-
-## Zakres silnika
-
-Alpha 5 zawiera funkcjonalny rdzeń planowania i zapisuje rzeczywiste dane w
-Supabase. Nie jest jeszcze finalnym systemem produkcyjnym: przed wykorzystaniem
-do ewidencji czasu pracy lub naliczania wynagrodzeń potrzebne będą testy
-obciążeniowe, testy reguł prawa pracy, konfiguracja wiadomości e-mail/SMS oraz
-końcowy audyt uprawnień dla konkretnej organizacji.
+Nie kopiuj katalogów `.next` ani `node_modules`. Vercel zbuduje je ponownie.

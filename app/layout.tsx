@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",
-  description: "Planowanie zespołu, budżetu i operacji",
+  description: "Kompletny Matrix, pracownicy i grafiki generowane według roli",
 };
 
 export default function RootLayout({
