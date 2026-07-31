@@ -190,8 +190,8 @@ export default function GrafikPro() {
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>ALPHA 5 • LIVE ENGINE</small></div></div>
-      <nav>{nav.map(([key,label,Icon])=><button key={key} className={active===key?"active":""} onClick={()=>setActive(key)}><Icon size={18}/>{label}</button>)}</nav>
+      <div className="brand"><span className="brand-mark">GP</span><div className="brand-name"><strong>GRAFIK PRO</strong><small>ALPHA 5 • LIVE ENGINE</small></div></div>
+      <nav>{nav.map(([key,label,Icon])=><button key={key} className={`nav-item ${active===key?"active":""}`} onClick={()=>setActive(key)}><Icon size={18}/>{label}</button>)}</nav>
       <div className="sidebar-footer">
         <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{access?.roles?.[0]?.app_role||"Użytkownik"}</small></div></div>
         <button className="sidebar-signout" onClick={()=>void signOut()}><LogOut size={15}/> Wyloguj się</button>
