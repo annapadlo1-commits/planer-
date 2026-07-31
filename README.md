@@ -1,56 +1,59 @@
-# GRAFIK PRO 3.0 — Alpha 8 Complete Matrix
+# GRAFIK PRO 3.0 — Alpha 10 Correct Base
 
-Kompletna, interaktywna wersja demonstracyjna modułów Matrixa, pracowników oraz
-grafików generowanych według roli. Cały interfejs jest po polsku i wraca do
-zaakceptowanego kierunku wizualnego: śliwkowa nawigacja, jasna przestrzeń robocza
-i kalendarz jako główny widok planowania.
+Ta paczka rozwija właściwy silnik Alpha 5/6 i Supabase. Nie zawiera atrap opartych na
+`localStorage` ani losowych pracowników, godzin lub wyników.
 
-## Najważniejsze działające elementy
+## Nienaruszona baza ustaleń
 
-- Matrix organizacji: role, funkcje, wzorce zmian i zapotrzebowanie,
-- tworzenie kolejnych wersji Matrixa i widoczna historia,
-- edycja, archiwizacja i przywracanie ról,
-- lista dokładnie 76 unikalnych pracowników demonstracyjnych z rolą, lokalem, umową, limitem godzin
-  i uprawnieniami kierownika zmiany,
-- dodawanie, edycja i archiwizacja pracowników,
-- oddzielne grafiki dla ról: Kelner, Barman, Pizzabar, Prep i Pomoc,
-- generowanie rzeczywistych przydziałów na cały miesiąc,
-- widok kalendarza grafiku roli oraz edycja pracownika, lokalu, godzin, zmiany
-  i funkcji na zmianie,
-- polski obieg: wersja robocza → przekazany do zatwierdzenia → zatwierdzony,
-- wspólny grafik operacyjny, analizy oraz eksport CSV,
-- dwa lokale: Krucza i Pawilony,
-- zapis zmian demonstracyjnych w pamięci przeglądarki (`localStorage`).
+- dokładnie 76 pracowników demonstracyjnych `GP-001`–`GP-076`,
+- 30 kelnerów, 24 barmanów, 10 osób Pizzabar, 6 Prep i 6 Pomoc,
+- lokale Krucza i Pawilony,
+- godziny, obsada, HOST, zamknięcia, menadżerowie i rotacje z `0002_demo_seed.sql`,
+- działający generator PostgreSQL z Alpha 5.
 
-Istniejące migracje `0001`–`0005` oraz silnik Supabase z Alpha 6 pozostają w
-pakiecie. Interaktywny moduł Alpha 8 jest bezpieczną warstwą demonstracyjną:
-można go przeglądać i modyfikować bez naruszania danych wdrożonej bazy.
+## Moduły tej paczki
 
-## Uruchomienie
+- polski interfejs i responsywny układ,
+- lista aktywnych pracowników oraz widoczne archiwum z przywracaniem,
+- edycja danych pracownika, HR i chronionych stawek,
+- wersjonowany Matrix: role, funkcje, lokale, zachowanie historii i publikacja wersji,
+- definicje zmian i zapotrzebowanie przeniesione z realnej bazy Alpha 5,
+- grafiki generowane oddzielnie dla ról wyłącznie po kliknięciu `Generuj`,
+- niezależny status, wersja, liczba rzeczywistych przydziałów i konflikty grafiku roli,
+- zgłoszenia dostępności, preferencji, urlopów i nieobecności,
+- chroniony budżet, ewidencja czasu oraz import/eksport CSV Kadromierza.
+
+## Aktualizacja istniejącej instalacji
+
+1. W Supabase SQL Editor uruchom tylko nową migrację:
+   `supabase/migrations/0006_complete_product_modules.sql`.
+2. Oczekiwany komunikat: `Success. No rows returned`.
+3. Dopiero potem wgraj zawartość paczki do repozytorium i wykonaj push.
+4. Vercel zbuduje aplikację automatycznie.
+
+Migracja `0006` nie usuwa ani nie ponownie seeduje pracowników. Rozszerza istniejącą
+bazę, dlatego liczba aktywnych osób pozostaje zgodna z jej faktycznym stanem.
+
+## Nowa, pusta baza
+
+Uruchom kolejno migracje `0001`–`0006`. Nie pomijaj żadnego numeru.
+
+## Zmienne Vercel
+
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
+
+Obsługiwany jest również starszy alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+Klucza `SUPABASE_SERVICE_ROLE_KEY` nigdy nie wolno dodawać do frontendu.
+
+## Kontrola techniczna
 
 ```bash
 npm ci
-npm run dev
-```
-
-Kontrola produkcyjna:
-
-```bash
 npm run lint
 npm run build
 ```
 
-## Wdrożenie przez Codespaces
-
-Po rozpakowaniu zawartości do katalogu repozytorium:
-
-```bash
-npm ci
-npm run lint
-npm run build
-git add .
-git commit -m "GRAFIK PRO 3.0 Alpha 8 Complete Matrix"
-git push origin main
-```
-
-Nie kopiuj katalogów `.next` ani `node_modules`. Vercel zbuduje je ponownie.
+Obie kontrole przechodzą dla tej paczki.

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { AppAuthProvider } from "@/components/AppAuthProvider";
 import "./globals.css";
+import "./complete.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",
-  description: "Kompletny Matrix, pracownicy i grafiki generowane według roli",
+  description: "Planowanie zespołu, budżetu i operacji",
 };
 
 export default function RootLayout({
