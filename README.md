@@ -1,182 +1,102 @@
--- GRAFIK PRO 3.0 Alpha 4
--- Logowanie, bezpieczne uprawnienia oraz polityki odczytu dla aplikacji.
+# GRAFIK PRO 3.0 — Alpha 6 Team Matrix
 
--- W pierwszej migracji zakresy uprawnienia były częścią PK, co wymuszało NOT NULL.
--- Zastępujemy je technicznym ID i unikatowością uwzględniającą wartości NULL.
-alter table public.user_permissions
-  drop constraint if exists user_permissions_pkey;
+Alpha 6 zachowuje Live Engine z Alpha 5 i dodaje wersjonowany, dynamiczny Matrix
+organizacji oraz zespołowe układanie grafiku per rola.
 
-alter table public.user_permissions
-  add column if not exists id uuid default gen_random_uuid();
+## Co dodaje Alpha 6
 
-update public.user_permissions set id = gen_random_uuid() where id is null;
+- role, funkcje dodatkowe, obowiązki, lokale i zmiany bez stałego limitu w kodzie,
+- do 7 zmian dziennie jako ustawienie Matrixa (wartość można zmienić),
+- niezmienną rolę podstawową pracownika i wiele funkcji dodatkowych,
+- wersje Matrixa z datami obowiązywania bez niszczenia starych grafików,
+- oddzielny wariant grafiku dla każdego zespołu/roli,
+- workflow: szkic → gotowy → przekazany → do poprawy → zatwierdzony → zablokowany,
+- składanie zatwierdzonych „puzzli” w pełny grafik właściciela,
+- model konfliktów między zespołami, lokalami, dostępnością i odpoczynkiem,
+- preferencje i nieobecności ze źródłem GRAFIK PRO/Kadromierz/manager,
+- rejestr importów i eksportów oraz niezależność od przyszłego używania Kadromierza,
+- fundament ewidencji czasu pracy i zatwierdzania czasu rzeczywistego,
+- nowe moduły „Grafiki zespołów” oraz „Matrix organizacji”.
 
-alter table public.user_permissions
-  alter column id set not null,
-  alter column scope_role drop not null,
-  alter column scope_location drop not null;
+Pełny demonstracyjny przepływ planowania dla KRUCZEJ i PAWILONÓW:
+Next.js/Vercel jako frontend oraz Supabase jako bezpieczna baza i silnik.
 
-alter table public.user_permissions
-  add constraint user_permissions_pkey primary key (id);
+## Co działa w Alpha 5
 
-create unique index if not exists user_permissions_scope_unique
-  on public.user_permissions (
-    auth_user_id,
-    app_role,
-    coalesce(scope_role::text, '*'),
-    coalesce(scope_location::text, '*')
-  );
+- generowanie pełnego miesiąca bez limitu czasu przeglądarki (RPC PostgreSQL),
+- trwały zapis wariantu, zmian, przydziałów, kosztów i alertów,
+- pięć niezależnych pul ról oraz wspólny grafik,
+- ograniczenie pracownika do jednej roli podstawowej,
+- lokalizacje stałe, rotacyjne i nadgodziny w drugim lokalu,
+- HOST jako dodatkowa funkcja kelnera,
+- CLOSE_SHIFT dla kelnera/barmana i wymagane zamknięcia wieczorne,
+- menadżerowie roli i lokalizacji,
+- dostępność, brak kolizji, 11 godzin odpoczynku, limity tygodniowe i miesięczne,
+- poziomy obsady 85%, 100% i 110%,
+- tryb zrównoważony, minimalny koszt i preferencje,
+- scenariusze bazowy, eventowy i oszczędny dające różne wyniki,
+- potwierdzone eventy zwiększające obsadę i unieważniające wcześniejszy plan,
+- zamknięcie lokalu wyłączające zmianę,
+- zapis i publikowanie wariantów,
+- grafik operacyjny z filtrami lokal/rola/data,
+- miesięczny kalendarz z eventami i miniaturami zespołu,
+- widok obciążenia per pracownik,
+- lista realnych braków i naruszeń kompetencji,
+- awaryjne dopisanie pracownika z kontrolą roli, lokalu i kolizji,
+- opcjonalne powiadomienie dopisanego pracownika posiadającego konto,
+- koszt planu i podział kosztów według roli,
+- eksport CSV grafiku i widoku pracowników,
+- Supabase Auth, właściciel demo i ograniczanie danych według zakresu dostępu.
 
-alter table public.locations enable row level security;
-alter table public.roles enable row level security;
-alter table public.employee_locations enable row level security;
-alter table public.employee_capabilities enable row level security;
-alter table public.user_permissions enable row level security;
-alter table public.shift_definitions enable row level security;
-alter table public.demand_rules enable row level security;
-alter table public.event_demand_changes enable row level security;
+## Instalacja / aktualizacja istniejącego demo
 
-create policy authenticated_reads_locations on public.locations
-for select to authenticated using (true);
+W Supabase SQL Editor dla aktualizacji Alpha 5 uruchom kolejno:
 
-create policy authenticated_reads_roles on public.roles
-for select to authenticated using (true);
+```text
+supabase/migrations/0005_dynamic_matrix_and_role_planning.sql
+```
 
-create policy authenticated_reads_shift_definitions on public.shift_definitions
-for select to authenticated using (true);
+Oczekiwany wynik: `Success. No rows returned`.
 
-create policy authenticated_reads_demand_rules on public.demand_rules
-for select to authenticated using (true);
+Następnie wypchnij kod do GitHub. Vercel automatycznie uruchomi build.
+Po otwarciu aplikacji wybierz `Nowy wariant`, ustaw parametry i kliknij
+`Generuj i zapisz wariant`. Wynik pojawi się w Grafiku operacyjnym.
 
-create policy authenticated_reads_employee_locations on public.employee_locations
-for select to authenticated using (
-  public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.has_app_role('ROLE_MANAGER') or public.has_app_role('LOCATION_MANAGER')
-  or exists (
-    select 1 from public.employees e
-    where e.id = employee_locations.employee_id and e.auth_user_id = auth.uid()
-  )
-);
+Przy nowej, pustej bazie uruchom kolejno:
 
-create policy authenticated_reads_employee_capabilities on public.employee_capabilities
-for select to authenticated using (
-  public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.has_app_role('ROLE_MANAGER') or public.has_app_role('LOCATION_MANAGER')
-  or exists (
-    select 1 from public.employees e
-    where e.id = employee_capabilities.employee_id and e.auth_user_id = auth.uid()
-  )
-);
+1. `0001_core_schema.sql`
+2. `0002_demo_seed.sql`
+3. `0003_auth_and_access.sql`
+4. `0004_planning_engine.sql`
 
-create policy users_read_own_permissions on public.user_permissions
-for select to authenticated using (
-  auth_user_id = auth.uid()
-  or public.has_app_role('OWNER')
-  or public.has_app_role('ADMIN')
-);
+## Zmienne Vercel
 
-create policy authenticated_reads_events on public.operational_events
-for select to authenticated using (true);
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
 
-create policy managers_manage_events on public.operational_events
-for all to authenticated using (
-  public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.has_app_role('LOCATION_MANAGER')
-) with check (
-  public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.has_app_role('LOCATION_MANAGER')
-);
+Obsługiwany jest również starszy alias `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+Nigdy nie dodawaj `SUPABASE_SERVICE_ROLE_KEY` do frontendu.
 
-create policy authenticated_reads_event_demand on public.event_demand_changes
-for select to authenticated using (true);
+W Supabase → Authentication → URL Configuration:
 
-create policy authenticated_reads_plans on public.plans
-for select to authenticated using (
-  status = 'PUBLISHED'
-  or public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.has_app_role('ROLE_MANAGER') or public.has_app_role('LOCATION_MANAGER')
-);
+```text
+Site URL: https://planer-lemon.vercel.app
+Redirect URL: https://planer-lemon.vercel.app/auth/callback
+```
 
--- Funkcja przeznaczona wyłącznie dla środowiska demonstracyjnego:
--- pierwszy zarejestrowany użytkownik staje się właścicielem demo.
-create or replace function public.claim_demo_owner()
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  current_user_id uuid := auth.uid();
-  employee_id uuid;
-begin
-  if current_user_id is null then
-    raise exception 'AUTH_REQUIRED';
-  end if;
+## Ważne
 
-  if exists (
-    select 1 from public.user_permissions
-    where auth_user_id = current_user_id
-  ) then
-    return jsonb_build_object('claimed', false, 'reason', 'ALREADY_ASSIGNED');
-  end if;
+Generator jest transakcyjny: nie zapisze „częściowo gotowego” planu jako READY.
+Jeżeli brakuje odpowiednich osób, wariant nadal zostaje zapisany, ale tworzy
+precyzyjne alerty `SHORTAGE` lub `CAPABILITY_MISSING`. Dzięki temu menadżer widzi
+konkretną datę, zmianę, rolę oraz liczbę brakujących osób.
 
-  if exists (
-    select 1 from public.user_permissions where app_role = 'OWNER'
-  ) then
-    return jsonb_build_object('claimed', false, 'reason', 'OWNER_EXISTS');
-  end if;
+## Zakres silnika
 
-  insert into public.user_permissions (auth_user_id, app_role)
-  values (current_user_id, 'OWNER');
-
-  select id into employee_id
-  from public.employees
-  where employee_no = 'GP-001' and auth_user_id is null;
-
-  if employee_id is not null then
-    update public.employees
-    set auth_user_id = current_user_id, updated_at = now()
-    where id = employee_id;
-  end if;
-
-  return jsonb_build_object('claimed', true, 'role', 'OWNER', 'employee_no', 'GP-001');
-end;
-$$;
-
-revoke all on function public.claim_demo_owner() from public;
-grant execute on function public.claim_demo_owner() to authenticated;
-
-create or replace function public.current_user_access()
-returns jsonb
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select jsonb_build_object(
-    'auth_user_id', auth.uid(),
-    'roles', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'app_role', up.app_role,
-        'scope_role', up.scope_role,
-        'scope_location', up.scope_location
-      ))
-      from public.user_permissions up
-      where up.auth_user_id = auth.uid()
-    ), '[]'::jsonb),
-    'employee', (
-      select jsonb_build_object(
-        'id', e.id,
-        'employee_no', e.employee_no,
-        'first_name', e.first_name,
-        'last_name', e.last_name,
-        'primary_role', e.primary_role
-      )
-      from public.employees e
-      where e.auth_user_id = auth.uid()
-      limit 1
-    )
-  );
-$$;
-
-grant execute on function public.current_user_access() to authenticated;
+Alpha 5 zawiera funkcjonalny rdzeń planowania i zapisuje rzeczywiste dane w
+Supabase. Nie jest jeszcze finalnym systemem produkcyjnym: przed wykorzystaniem
+do ewidencji czasu pracy lub naliczania wynagrodzeń potrzebne będą testy
+obciążeniowe, testy reguł prawa pracy, konfiguracja wiadomości e-mail/SMS oraz
+końcowy audyt uprawnień dla konkretnej organizacji.

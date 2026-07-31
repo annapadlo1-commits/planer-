@@ -20,13 +20,12 @@ alter table public.user_permissions
   add constraint user_permissions_pkey primary key (id);
 
 create unique index if not exists user_permissions_scope_unique
-on public.user_permissions (
-auth_user_id,
-app_role,
-scope_role,
-scope_location
-) nulls not distinct;
-
+  on public.user_permissions (
+    auth_user_id,
+    app_role,
+    scope_role,
+    scope_location
+  ) nulls not distinct;
 
 alter table public.locations enable row level security;
 alter table public.roles enable row level security;
