@@ -211,7 +211,7 @@ export default function GrafikPro() {
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>3.0 • ALPHA 11</small></div></div>
+      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>3.0 • ALPHA 12</small></div></div>
       <nav>{nav.map(([key,label,Icon])=><button key={key} className={active===key?"active":""} onClick={()=>setActive(key)}><Icon size={18}/>{label}</button>)}</nav>
       <div className="sidebar-footer">
         <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{({OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Kadry i finanse",ROLE_MANAGER:"Menadżer roli",LOCATION_MANAGER:"Menadżer lokalu",VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik"} as Record<string,string>)[access?.roles?.[0]?.app_role||""]||"Użytkownik"}</small></div></div>

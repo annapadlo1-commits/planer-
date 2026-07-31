@@ -3,6 +3,7 @@ import { AppAuthProvider } from "@/components/AppAuthProvider";
 import "./globals.css";
 import "./complete.css";
 import "./alpha11.css";
+import "./alpha12.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",
