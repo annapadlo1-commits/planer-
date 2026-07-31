@@ -95,7 +95,13 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
         events: eventsResult.count || 0,
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Nie udało się pobrać danych Supabase.");
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : cause && typeof cause === "object" && "message" in cause
+            ? String((cause as { message: unknown }).message)
+            : "Nie udało się pobrać danych Supabase.";
+      setError(message);
     }
   }
 
