@@ -54,6 +54,11 @@ const roles = ["KELNER","BARMAN","PIZZABAR","PREP","POMOC"];
 const roleLabels: Record<string,string> = {
   KELNER:"Kelner",BARMAN:"Barman",PIZZABAR:"Pizzabar",PREP:"Prep",POMOC:"Pomoc"
 };
+const planStatusLabels:Record<string,string>={DRAFT:"Wersja robocza",GENERATING:"Generowanie",READY:"Gotowy do weryfikacji",PUBLISHED:"Opublikowany",STALE:"Nieaktualny",ARCHIVED:"Archiwalny",FAILED:"Błąd"};
+const scenarioLabels:Record<string,string>={BASE:"Bazowy",EVENT:"Eventowy",SAVINGS:"Oszczędny",MERGED:"Scalony z grafików ról"};
+const modeLabels:Record<string,string>={BALANCED:"Zrównoważony",MIN_COST:"Minimalny koszt",PREFERENCES:"Preferencje",ROLE_PLANS:"Grafiki ról"};
+const issueLabels:Record<string,string>={SHORTAGE:"Brak obsady",CAPABILITY_MISSING:"Brak wymaganej funkcji",REST_VIOLATION:"Naruszenie odpoczynku",OVERLAP:"Nakładające się zmiany",MONTHLY_LIMIT:"Przekroczony limit miesięczny",WEEKLY_LIMIT:"Przekroczony limit tygodniowy"};
+function issueMessage(i:Issue){if(i.issue_type==="SHORTAGE")return `Brakuje ${Math.max((i.required_count||0)-(i.assigned_count||0),0)} os. dla roli ${roleLabels[i.role||""]||i.role||""}.`;if(i.issue_type==="CAPABILITY_MISSING")return `Brakuje wymaganej funkcji: ${i.capability||"nieokreślona"}.`;return i.message.replaceAll("PIZZABAR","Pizzabar").replaceAll("KELNER","Kelner").replaceAll("BARMAN","Barman").replaceAll("POMOC","Pomoc");}
 const nav = [
   ["centrum","Centrum dowodzenia",Gauge],["generator","Generator grafiku",WandSparkles],
   ["zespoly","Grafiki zespołów",Puzzle],["matrix","Matrix organizacji",Boxes],
@@ -206,10 +211,10 @@ export default function GrafikPro() {
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>3.0 • PEŁNY SILNIK</small></div></div>
+      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>3.0 • ALPHA 11</small></div></div>
       <nav>{nav.map(([key,label,Icon])=><button key={key} className={active===key?"active":""} onClick={()=>setActive(key)}><Icon size={18}/>{label}</button>)}</nav>
       <div className="sidebar-footer">
-        <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{access?.roles?.[0]?.app_role||"Użytkownik"}</small></div></div>
+        <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{({OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Kadry i finanse",ROLE_MANAGER:"Menadżer roli",LOCATION_MANAGER:"Menadżer lokalu",VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik"} as Record<string,string>)[access?.roles?.[0]?.app_role||""]||"Użytkownik"}</small></div></div>
         <button className="sidebar-signout" onClick={()=>void signOut()}><LogOut size={15}/> Wyloguj się</button>
       </div>
     </aside>
@@ -236,8 +241,8 @@ export default function GrafikPro() {
           </section>
           {!data.plan?<section className="empty-engine"><WandSparkles size={36}/><h2>Baza jest gotowa do pierwszego rzeczywistego planu</h2><p>Generator utworzy zmiany i przydziały w Supabase, sprawdzi role, lokalizacje, kompetencje, limity i eventy.</p><button className="primary-button" onClick={()=>setModal("plan")}>Generuj plan</button></section>:
           <section className="live-overview">
-            <div className="section-head"><div><p className="eyebrow">AKTYWNY WARIANT</p><h2>{data.plan.name} • v{data.plan.version}</h2></div><span className={`status-pill ${data.plan.status.toLowerCase()}`}>{data.plan.status}</span></div>
-            <div className="overview-grid"><div><small>Scenariusz</small><strong>{data.plan.scenario_code}</strong></div><div><small>Optymalizacja</small><strong>{data.plan.optimization_mode}</strong></div><div><small>Zmiany</small><strong>{data.shifts.length}</strong></div><div><small>Roboczogodziny</small><strong>{Math.round(totalMinutes/60)}</strong></div></div>
+            <div className="section-head"><div><p className="eyebrow">AKTYWNY WARIANT</p><h2>{data.plan.name} • v{data.plan.version}</h2></div><span className={`status-pill ${data.plan.status.toLowerCase()}`}>{planStatusLabels[data.plan.status]||data.plan.status}</span></div>
+            <div className="overview-grid"><div><small>Scenariusz</small><strong>{scenarioLabels[data.plan.scenario_code]||data.plan.scenario_code}</strong></div><div><small>Optymalizacja</small><strong>{modeLabels[data.plan.optimization_mode]||data.plan.optimization_mode}</strong></div><div><small>Zmiany</small><strong>{data.shifts.length}</strong></div><div><small>Roboczogodziny</small><strong>{Math.round(totalMinutes/60)}</strong></div></div>
             <div className="quick-actions"><button onClick={()=>setActive("grafik")}>Otwórz grafik <ChevronRight/></button><button onClick={()=>setActive("kadra")}>Pracownicy i archiwum <ChevronRight/></button><button onClick={()=>setActive("alerty")}>Rozwiąż alerty <ChevronRight/></button>{data.plan.status!=="PUBLISHED"&&<button className="publish" onClick={()=>void publish()}>Opublikuj wariant <Check/></button>}</div>
           </section>}
         </>}
@@ -278,7 +283,7 @@ export default function GrafikPro() {
         <div className="detail-status"><MapPin/><span><strong>{selectedShift.location_code} • {selectedShift.shift_code}</strong><small>{fmtDate(selectedShift.shift_date)} • {fmtTime(selectedShift.starts_at)}–{fmtTime(selectedShift.ends_at)}</small></span></div>
         <h3>Przydzieleni pracownicy ({shiftAssignments.length})</h3>
         {shiftAssignments.map(a=><div className="person-row" key={a.id}><span className="avatar violet">{a.name.split(" ").map(x=>x[0]).join("")}</span><span><strong>{a.name}</strong><small>{roleLabels[a.role]}{a.capability?` • ${a.capability}`:""}</small></span><em>{Number(a.cost).toFixed(0)} zł</em></div>)}
-        {data.issues.filter(i=>i.shift_id===selectedShift.id).map(i=><div className={`issue-box ${i.severity.toLowerCase()}`} key={i.id}><AlertTriangle/><span><strong>{i.severity}</strong>{i.message}</span></div>)}
+        {data.issues.filter(i=>i.shift_id===selectedShift.id).map(i=><div className={`issue-box ${i.severity.toLowerCase()}`} key={i.id}><AlertTriangle/><span><strong>{i.severity==="CRITICAL"?"Krytyczny":i.severity==="WARNING"?"Ostrzeżenie":"Informacja"}</strong>{issueMessage(i)}</span></div>)}
         <div className="emergency-panel">
           <h3>Awaryjnie dopisz pracownika</h3>
           <div className="form-row"><label>Rola<select value={candidateRole} onChange={e=>{setCandidateRole(e.target.value);setCandidates([]);setCandidateId("");}}>{roles.map(r=><option key={r}>{r}</option>)}</select></label><button disabled={busy} className="secondary-button candidate-search" onClick={()=>void findCandidates()}>{busy?"Szukam…":"Znajdź kandydatów"}</button></div>
@@ -331,7 +336,7 @@ function EmployeeView({employees,onSelect}:{employees:{id:string;no:string;name:
   return <section className="live-module"><div className="section-head"><div><p className="eyebrow">OBCIĄŻENIE I SPRAWIEDLIWOŚĆ</p><h2>Widok per pracownik</h2></div><button className="secondary-button" onClick={()=>downloadCsv("pracownicy.csv",[["ID","Pracownik","Rola","Godziny","Nominał","Wykorzystanie","Zmiany","Koszt"],...employees.map(e=>[e.no,e.name,e.role,Math.round(e.minutes/60),Math.round(e.nominal/60),Math.round(e.minutes/e.nominal*100)+"%",e.shifts,Math.round(e.cost)])])}><Download/> CSV</button></div><div className="employee-table"><div className="table-head"><span>Pracownik</span><span>Rola</span><span>Godziny</span><span>Nominał</span><span>Wykorzystanie</span></div>{employees.map(e=>{const pct=Math.round(e.minutes/Math.max(e.nominal,1)*100);return <button key={e.id} onClick={()=>onSelect(e.id)}><span><strong>{e.name}</strong><small>{e.no} • {e.shifts} zmian</small></span><span>{roleLabels[e.role]}</span><strong>{Math.round(e.minutes/60)} h</strong><span>{Math.round(e.nominal/60)} h</span><span className={`load ${pct>110?"over":pct<70?"under":""}`}><i style={{width:`${Math.min(pct,130)}%`}}/>{pct}%</span></button>;})}</div></section>;
 }
 function IssuesView({issues,shifts,onOpen}:{issues:Issue[];shifts:Shift[];onOpen:(s:Shift)=>void}) {
-  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">WYNIK WALIDACJI</p><h2>{issues.length} aktywnych alertów</h2></div></div><div className="issues-list">{issues.length===0?<div className="success-box"><Check/><span><strong>Brak naruszeń</strong>Plan spełnia wszystkie obecne reguły.</span></div>:issues.map(i=><button key={i.id} className={`issue-row ${i.severity.toLowerCase()}`} onClick={()=>{const s=shifts.find(x=>x.id===i.shift_id);if(s)onOpen(s);}}><AlertTriangle/><span><strong>{i.issue_type} • {i.role||"PLAN"}</strong><small>{i.message}</small></span><em>{i.assigned_count??"—"} / {i.required_count??"—"}</em><ChevronRight/></button>)}</div></section>;
+  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">WYNIK WALIDACJI</p><h2>{issues.length} aktywnych alertów</h2></div></div><div className="issues-list">{issues.length===0?<div className="success-box"><Check/><span><strong>Brak naruszeń</strong>Plan spełnia wszystkie obecne reguły.</span></div>:issues.map(i=><button key={i.id} className={`issue-row ${i.severity.toLowerCase()}`} onClick={()=>{const s=shifts.find(x=>x.id===i.shift_id);if(s)onOpen(s);}}><AlertTriangle/><span><strong>{issueLabels[i.issue_type]||i.issue_type} • {roleLabels[i.role||""]||"Cały plan"}</strong><small>{issueMessage(i)}</small></span><em>{i.assigned_count??"—"} / {i.required_count??"—"}</em><ChevronRight/></button>)}</div></section>;
 }
 function BudgetView({cost,budget,assignments}:{cost:number;budget:number;assignments:Assignment[]}) {
   const byRole=roles.map(r=>({role:r,cost:assignments.filter(a=>a.role===r).reduce((n,a)=>n+Number(a.cost),0)}));
