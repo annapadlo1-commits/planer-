@@ -180,10 +180,9 @@ export default function GrafikPro() {
 
   async function generate() {
     if(!supabase)return;setBusy(true);setError("");
-    const result=await supabase.rpc("generate_plan",{
-      p_month:selectedMonthDate,p_name:planForm.name,p_scenario_code:planForm.scenario,
-      p_optimization_mode:planForm.mode,p_staffing_level:planForm.staffing
-    });
+    const result=await supabase.functions.invoke("schedule-optimizer",{body:{
+      month:selectedMonthDate,name:planForm.name,scenario:"BASE",profile:planForm.mode
+    }});
     setBusy(false);
     if(result.error){setError(result.error.message);return;}
     setModal(null);notify(`Plan zapisany: ${result.data.assignments} przydziałów, ${result.data.issues} alertów`);
@@ -296,11 +295,9 @@ export default function GrafikPro() {
       <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":modal==="event"?"Event / wyjątek":modal==="shift"?"Szczegóły zmiany":"Pracownik"}</h2></div><button className="icon-button" onClick={()=>setModal(null)}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">
         <label>Nazwa<input value={planForm.name} onChange={e=>setPlanForm({...planForm,name:e.target.value})}/></label>
-        <label>Scenariusz<select value={planForm.scenario} onChange={e=>setPlanForm({...planForm,scenario:e.target.value})}><option value="BASE">Bazowy</option><option value="EVENT">Eventowy</option><option value="SAVINGS">Oszczędny</option></select></label>
         <label>Tryb optymalizacji<select value={planForm.mode} onChange={e=>setPlanForm({...planForm,mode:e.target.value})}><option value="BALANCED">Zrównoważony</option><option value="MIN_COST">Minimalny koszt</option><option value="PREFERENCES">Preferencje</option></select></label>
-        <label>Poziom obsady<select value={planForm.staffing} onChange={e=>setPlanForm({...planForm,staffing:e.target.value})}><option value="MINIMAL">Minimalny (85%)</option><option value="OPTIMAL">Optymalny (100%)</option><option value="FULL">Pełny (110%)</option></select></label>
-        <div className="impact-box"><Settings/><span><strong>Silnik transakcyjny</strong><small>Role • lokalizacje • limity • kompetencje • eventy • koszty</small></span></div>
-        <button disabled={busy} className="primary-button full" onClick={()=>void generate()}>{busy?"Generuję w Supabase…":"Generuj i zapisz wariant"}</button>
+        <div className="impact-box"><Settings/><span><strong>Silnik optymalizacyjny</strong><small>Populacja • hard constraints • krzyżowanie • mutacje • wybór najlepszego</small></span></div>
+        <button disabled={busy} className="primary-button full" onClick={()=>void generate()}>{busy?"Optymalizuję pełny miesiąc…":"Znajdź najlepszy grafik"}</button>
       </div>}
       {modal==="event"&&<div className="drawer-content">
         <div className="form-row"><label>Lokal<select value={eventForm.location} onChange={e=>setEventForm({...eventForm,location:e.target.value})}><option>KRUCZA</option><option>PAWILONY</option></select></label><label>Typ<select value={eventForm.type} onChange={e=>setEventForm({...eventForm,type:e.target.value})}><option>EVENT</option><option>CLEANING</option><option>INVENTORY</option><option>TRAINING</option><option>ADDITIONAL_SHIFT</option><option>CLOSURE</option></select></label></div>
