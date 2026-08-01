@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  AlertTriangle, BarChart3, Bell, CalendarDays, Check, ChevronRight,
+  AlertTriangle, BarChart3, Bell, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleDollarSign, Clock3, Download, Filter, Gauge, LogOut, MapPin,
   Menu, Plus, RefreshCw, Settings, Users, WandSparkles, Wifi, X, Boxes, Puzzle,
 } from "lucide-react";
@@ -59,6 +59,16 @@ function daysInMonth(month:string){
   const [year,number]=month.split("-").map(Number);
   return new Date(year,number,0).getDate();
 }
+function adjacentMonth(month:string,offset:number){
+  const [year,number]=month.split("-").map(Number);
+  const date=new Date(year,number-1+offset,1,12);
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+}
+const MONTH_OPTIONS=Array.from({length:48},(_,index)=>{
+  const date=new Date(2025,index,1,12);
+  const value=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+  return {value,label:monthLabel(value)};
+});
 const roles = ["KELNER","BARMAN","PIZZABAR","PREP","POMOC"];
 const roleLabels: Record<string,string> = {
   KELNER:"Kelner",BARMAN:"Barman",PIZZABAR:"Pizzabar",PREP:"Prep",POMOC:"Pomoc"
@@ -242,7 +252,11 @@ export default function GrafikPro() {
         <div><p className="eyebrow">OPERACJE / {selectedMonthLabel.toLocaleUpperCase("pl-PL")}</p><h1>{nav.find(x=>x[0]===active)?.[1]}</h1></div>
         <div className="topbar-actions">
           <button className={`live-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}}><Wifi size={15}/><span>Supabase • {summary?.employees||0} osób</span></button>
-          <label className="date-selector" title="Zmień miesiąc"><CalendarDays size={16}/><span>{selectedMonthLabel}</span><input aria-label="Wybierz miesiąc" type="month" value={selectedMonth} onChange={e=>e.target.value&&setSelectedMonth(e.target.value)}/></label>
+          <div className="month-selector" aria-label="Wybór miesiąca">
+            <button type="button" aria-label="Poprzedni miesiąc" title="Poprzedni miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,-1))}><ChevronLeft size={17}/></button>
+            <label className="date-selector" title="Wybierz miesiąc"><CalendarDays size={16}/><select aria-label="Wybierz miesiąc z listy" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{MONTH_OPTIONS.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <button type="button" aria-label="Następny miesiąc" title="Następny miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,1))}><ChevronRight size={17}/></button>
+          </div>
           <button className="secondary-button" onClick={()=>setModal("event")}><Plus size={16}/> Event</button>
           <button className="primary-button" onClick={()=>setModal("plan")}><WandSparkles size={17}/> Nowy wariant</button>
         </div>

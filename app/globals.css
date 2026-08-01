@@ -97,6 +97,7 @@ button { color: inherit; }
   cursor: pointer; transition: 150ms ease-out;
 }
 .date-selector:hover, .location-selector button:hover, .secondary-button:hover { border-color: #bcaeea; box-shadow: 0 3px 12px rgba(60,38,74,.06); }
+.month-selector{display:flex;align-items:center;gap:4px}.month-selector>button{width:34px;height:40px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);display:grid;place-items:center;cursor:pointer}.month-selector>button:hover{border-color:#bcaeea;background:var(--violet-soft)}
 .location-selector { display: flex; padding: 3px; gap: 3px; background: #ebe6df; border-radius: 11px; }
 .location-selector button { height: 34px; border: 0; background: transparent; color: #7b7580; }
 .location-selector button.selected { background: #fff; color: var(--text); box-shadow: 0 2px 7px rgba(42,27,49,.08); }
@@ -259,7 +260,7 @@ button { color: inherit; }
 }
 @media (max-width: 680px) {
   .topbar{height:auto;padding:13px 14px;align-items:center}.topbar h1{font-size:20px}.topbar .eyebrow{display:none}
-  .topbar-actions .date-selector,.notification-button{display:none}.primary-button{padding:0 12px;font-size:11px}
+  .notification-button{display:none}.month-selector{order:-1}.month-selector .date-selector{display:flex;min-width:118px;padding:0 8px}.month-selector>button{display:grid;flex:0 0 34px}.primary-button{padding:0 12px;font-size:11px}
   .content{padding:10px 12px 26px}.kpi-grid{gap:8px}.kpi-card{min-height:96px;grid-template-columns:40px 1fr;padding:11px;gap:9px}.kpi-icon{width:39px;height:39px}.kpi-card>span:last-child{display:none}.kpi-card strong{font-size:23px}
   .card-header{align-items:flex-start;flex-direction:column}.calendar-actions{width:100%;overflow-x:auto}.calendar-actions>.icon-button{display:none}
   .analytics-strip{grid-template-columns:1fr}.analytics-copy{padding-bottom:0}
@@ -298,4 +299,4 @@ button { color: inherit; }
 .drawer,.complete-drawer,.role-drawer{z-index:1001!important;filter:none!important;opacity:1!important;backdrop-filter:none!important;background:#fbfaf8!important}
 body:has(.drawer){overflow:hidden}
 @media(max-width:980px){.workspace{margin-left:0;width:100%}.sidebar{width:250px}}
-.date-selector{position:relative;cursor:pointer}.date-selector input[type="month"]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.date-selector{position:relative;cursor:pointer}.date-selector select{border:0;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer;outline:none;min-width:112px;text-transform:capitalize}.date-selector select:focus-visible{outline:2px solid #8267ec;outline-offset:3px;border-radius:4px}
