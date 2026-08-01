@@ -201,14 +201,24 @@ export default function GrafikPro() {
     let result:{data:any;error:null}|{data:null;error:Error};
     try{
       const start=await invoke({action:"START",month:selectedMonthDate,scenario:"BASE",profile:planForm.mode});
-      let generation=Number(start.generation||1),target=Number(start.targetGenerations||40);
-      setOptimizerProgress(Math.round(100*generation/Math.max(1,target)));
+      let initializing=Boolean(start.initializing),initCursor=Number(start.initCursor||0),initTarget=Number(start.initTarget||8);
+      while(initializing){
+        const init=await invoke({action:"INIT",runId:start.runId});
+        initializing=Boolean(init.initializing);initCursor=Number(init.initCursor||initCursor);initTarget=Number(init.initTarget||initTarget);
+        setOptimizerProgress(Math.min(10,Math.round(10*initCursor/Math.max(1,initTarget))));
+      }
+      let generation=Number(start.generation||0),target=Number(start.targetGenerations||40);
       while(generation<target){
         const step=await invoke({action:"STEP",runId:start.runId});
         generation=Number(step.generation);target=Number(step.targetGenerations||target);
-        setOptimizerProgress(Math.min(99,Math.round(100*generation/Math.max(1,target))));
+        setOptimizerProgress(Math.min(99,10+Math.round(89*generation/Math.max(1,target))));
       }
-      const done=await invoke({action:"FINALIZE",runId:start.runId,name:planForm.name});
+      let done=await invoke({action:"FINALIZE",runId:start.runId,name:planForm.name}),finalizeCalls=0;
+      while(done.finalizing){
+        if(finalizeCalls++>=5)throw new Error("FINALIZATION_DID_NOT_COMPLETE");
+        setOptimizerProgress(Math.min(99,90+Math.round(9*Number(done.finalizeCursor||0)/Math.max(1,Number(done.finalizeTarget||3)))));
+        done=await invoke({action:"FINALIZE",runId:start.runId,name:planForm.name});
+      }
       result={data:done,error:null};setOptimizerProgress(100);
     }catch(e){result={data:null,error:e instanceof Error?e:new Error(String(e))};}
     setBusy(false);
