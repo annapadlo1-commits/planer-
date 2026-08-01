@@ -180,9 +180,20 @@ export default function GrafikPro() {
 
   async function generate() {
     if(!supabase)return;setBusy(true);setError("");
+    let {data:{session},error:sessionError}=await supabase.auth.getSession();
+    if(sessionError||!session){
+      const refreshed=await supabase.auth.refreshSession();
+      session=refreshed.data.session;
+      sessionError=refreshed.error;
+    }
+    if(sessionError||!session?.access_token){
+      setBusy(false);
+      setError("Sesja wygasła. Wyloguj się i zaloguj ponownie, a następnie uruchom generator.");
+      return;
+    }
     const result=await supabase.functions.invoke("schedule-optimizer",{body:{
       month:selectedMonthDate,name:planForm.name,scenario:"BASE",profile:planForm.mode
-    }});
+    },headers:{Authorization:`Bearer ${session.access_token}`}});
     setBusy(false);
     if(result.error){setError(result.error.message);return;}
     setModal(null);notify(`Plan zapisany: ${result.data.assignments} przydziałów, ${result.data.issues} alertów`);
