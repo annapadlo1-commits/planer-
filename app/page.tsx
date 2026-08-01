@@ -49,7 +49,16 @@ type MatrixWorkspace = { version:{id:string;version:number;name:string;status:st
 type NavKey = "centrum"|"generator"|"zespoly"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"budzet";
 type Modal = "plan"|"event"|"shift"|"employee"|null;
 
-const MONTH = "2026-07-01";
+const DEFAULT_MONTH = "2026-07";
+function monthDate(month:string){return `${month}-01`;}
+function monthLabel(month:string){
+  return new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric",timeZone:"Europe/Warsaw"})
+    .format(new Date(`${month}-01T12:00:00`));
+}
+function daysInMonth(month:string){
+  const [year,number]=month.split("-").map(Number);
+  return new Date(year,number,0).getDate();
+}
 const roles = ["KELNER","BARMAN","PIZZABAR","PREP","POMOC"];
 const roleLabels: Record<string,string> = {
   KELNER:"Kelner",BARMAN:"Barman",PIZZABAR:"Pizzabar",PREP:"Prep",POMOC:"Pomoc"
@@ -105,9 +114,12 @@ export default function GrafikPro() {
   const [location,setLocation]=useState("ALL");
   const [role,setRole]=useState("ALL");
   const [day,setDay]=useState("ALL");
-  const [planForm,setPlanForm]=useState({name:"Plan operacyjny 2026-07",scenario:"BASE",mode:"BALANCED",staffing:"OPTIMAL"});
+  const [selectedMonth,setSelectedMonth]=useState(DEFAULT_MONTH);
+  const selectedMonthDate=monthDate(selectedMonth);
+  const selectedMonthLabel=monthLabel(selectedMonth);
+  const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:"BASE",mode:"BALANCED",staffing:"OPTIMAL"});
   const [eventForm,setEventForm]=useState({
-    location:"KRUCZA",type:"EVENT",title:"",description:"",date:"2026-07-15",
+    location:"KRUCZA",type:"EVENT",title:"",description:"",date:`${DEFAULT_MONTH}-15`,
     start:"18:00",end:"02:00",guests:"",status:"CONFIRMED",kelner:"0",barman:"0",pizzabar:"0",prep:"0",pomoc:"0"
   });
 
@@ -116,9 +128,9 @@ export default function GrafikPro() {
     if(!supabase||!user)return;
     setLoading(true);setError("");
     const [result,matrixResult,completeResult]=await Promise.all([
-      supabase.rpc("plan_workspace",{p_month:MONTH,p_plan_id:null}),
-      supabase.rpc("matrix_workspace",{p_month:MONTH}),
-      supabase.rpc("complete_workspace",{p_month:MONTH})
+      supabase.rpc("plan_workspace",{p_month:selectedMonthDate,p_plan_id:null}),
+      supabase.rpc("matrix_workspace",{p_month:selectedMonthDate}),
+      supabase.rpc("complete_workspace",{p_month:selectedMonthDate})
     ]);
     if(result.error)setError(result.error.message);
     else setData((result.data||{
@@ -129,8 +141,14 @@ export default function GrafikPro() {
     if(!completeResult.error&&completeResult.data)setComplete(completeResult.data as CompleteWorkspace);
     if(completeResult.error&&completeResult.error.message!=="Could not find the function public.complete_workspace")setError(completeResult.error.message);
     setLoading(false);
-  },[supabase,user]);
+  },[supabase,user,selectedMonthDate]);
   useEffect(()=>{void load();},[load]);
+  useEffect(()=>{
+    setDay("ALL");
+    setSelectedShift(null);
+    setPlanForm(current=>({...current,name:`Plan operacyjny ${selectedMonth}`}));
+    setEventForm(current=>({...current,date:`${selectedMonth}-15`}));
+  },[selectedMonth]);
 
   const assignments=useMemo(()=>data.assignments.filter(a=>
     (location==="ALL"||a.location===location)&&(role==="ALL"||a.role===role)&&
@@ -153,7 +171,7 @@ export default function GrafikPro() {
   async function generate() {
     if(!supabase)return;setBusy(true);setError("");
     const result=await supabase.rpc("generate_plan",{
-      p_month:MONTH,p_name:planForm.name,p_scenario_code:planForm.scenario,
+      p_month:selectedMonthDate,p_name:planForm.name,p_scenario_code:planForm.scenario,
       p_optimization_mode:planForm.mode,p_staffing_level:planForm.staffing
     });
     setBusy(false);
@@ -221,10 +239,10 @@ export default function GrafikPro() {
     <section className="workspace">
       <header className="topbar">
         <button className="icon-button menu-button"><Menu size={20}/></button>
-        <div><p className="eyebrow">OPERACJE / LIPIEC 2026</p><h1>{nav.find(x=>x[0]===active)?.[1]}</h1></div>
+        <div><p className="eyebrow">OPERACJE / {selectedMonthLabel.toLocaleUpperCase("pl-PL")}</p><h1>{nav.find(x=>x[0]===active)?.[1]}</h1></div>
         <div className="topbar-actions">
           <button className={`live-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}}><Wifi size={15}/><span>Supabase • {summary?.employees||0} osób</span></button>
-          <button className="date-selector"><CalendarDays size={16}/> lipiec 2026</button>
+          <label className="date-selector" title="Zmień miesiąc"><CalendarDays size={16}/><span>{selectedMonthLabel}</span><input aria-label="Wybierz miesiąc" type="month" value={selectedMonth} onChange={e=>e.target.value&&setSelectedMonth(e.target.value)}/></label>
           <button className="secondary-button" onClick={()=>setModal("event")}><Plus size={16}/> Event</button>
           <button className="primary-button" onClick={()=>setModal("plan")}><WandSparkles size={17}/> Nowy wariant</button>
         </div>
@@ -247,15 +265,15 @@ export default function GrafikPro() {
           </section>}
         </>}
         {(active==="grafik"||active==="generator")&&<ScheduleView data={data} assignments={assignments} location={location} role={role} day={day} setLocation={setLocation} setRole={setRole} setDay={setDay} onShift={(s)=>{setSelectedShift(s);setModal("shift");}} onGenerate={()=>setModal("plan")}/>} 
-        {active==="zespoly"&&complete&&<CompleteModules view="rolePlans" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="matrix"&&complete&&<CompleteModules view="matrixAdmin" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="kalendarz"&&<MonthView data={data} onDay={(d)=>{setDay(d);setActive("grafik");}} onEvent={()=>setModal("event")}/>}
-        {active==="kadra"&&complete&&<CompleteModules view="kadra" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="hr"&&complete&&<CompleteModules view="hr" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="finanse"&&complete&&<CompleteModules view="finanse" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="portal"&&complete&&<CompleteModules view="portal" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="czas"&&complete&&<CompleteModules view="czas" data={complete} reload={load} notify={notify} fail={setError}/>} 
-        {active==="integracje"&&complete&&<CompleteModules view="integracje" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="zespoly"&&complete&&<CompleteModules month={selectedMonth} view="rolePlans" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="matrix"&&complete&&<CompleteModules month={selectedMonth} view="matrixAdmin" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} onDay={(d)=>{setDay(d);setActive("grafik");}} onEvent={()=>setModal("event")}/>} 
+        {active==="kadra"&&complete&&<CompleteModules month={selectedMonth} view="kadra" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="hr"&&complete&&<CompleteModules month={selectedMonth} view="hr" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="finanse"&&complete&&<CompleteModules month={selectedMonth} view="finanse" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="portal"&&complete&&<CompleteModules month={selectedMonth} view="portal" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="czas"&&complete&&<CompleteModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError}/>} 
+        {active==="integracje"&&complete&&<CompleteModules month={selectedMonth} view="integracje" data={complete} reload={load} notify={notify} fail={setError}/>} 
         {active==="alerty"&&<IssuesView issues={data.issues} shifts={data.shifts} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
         {active==="budzet"&&<BudgetView cost={cost} budget={budget} assignments={data.assignments}/>}
       </div>}
@@ -328,9 +346,9 @@ function MatrixView({matrix}:{matrix:MatrixWorkspace}) {
   </section>;
 }
 
-function MonthView({data,onDay,onEvent}:{data:Workspace;onDay:(d:string)=>void;onEvent:()=>void}) {
-  const first=new Date("2026-07-01T12:00:00");const offset=(first.getDay()+6)%7;const cells=Array.from({length:offset+31},(_,i)=>i<offset?0:i-offset+1);
-  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>Lipiec 2026</h2></div><button className="primary-button" onClick={onEvent}><Plus/> Event / wyjątek</button></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`2026-07-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);const ev=data.events.filter(e=>e.starts_at.slice(0,10)===date);return <button key={date} className="month-day" onClick={()=>onDay(date)}><span className="day-number">{n}</span><div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div>{ev.map(e=><span className="calendar-event orange" key={e.id}>{e.title}</span>)}<small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
+function MonthView({month,data,onDay,onEvent}:{month:string;data:Workspace;onDay:(d:string)=>void;onEvent:()=>void}) {
+  const first=new Date(`${month}-01T12:00:00`);const offset=(first.getDay()+6)%7;const count=daysInMonth(month);const cells=Array.from({length:offset+count},(_,i)=>i<offset?0:i-offset+1);
+  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>{monthLabel(month)}</h2></div><button className="primary-button" onClick={onEvent}><Plus/> Event / wyjątek</button></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`${month}-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);const ev=data.events.filter(e=>e.starts_at.slice(0,10)===date);return <button key={date} className="month-day" onClick={()=>onDay(date)}><span className="day-number">{n}</span><div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div>{ev.map(e=><span className="calendar-event orange" key={e.id}>{e.title}</span>)}<small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
 }
 function EmployeeView({employees,onSelect}:{employees:{id:string;no:string;name:string;role:string;minutes:number;nominal:number;cost:number;shifts:number}[];selected:string;onSelect:(x:string)=>void}) {
   return <section className="live-module"><div className="section-head"><div><p className="eyebrow">OBCIĄŻENIE I SPRAWIEDLIWOŚĆ</p><h2>Widok per pracownik</h2></div><button className="secondary-button" onClick={()=>downloadCsv("pracownicy.csv",[["ID","Pracownik","Rola","Godziny","Nominał","Wykorzystanie","Zmiany","Koszt"],...employees.map(e=>[e.no,e.name,e.role,Math.round(e.minutes/60),Math.round(e.nominal/60),Math.round(e.minutes/e.nominal*100)+"%",e.shifts,Math.round(e.cost)])])}><Download/> CSV</button></div><div className="employee-table"><div className="table-head"><span>Pracownik</span><span>Rola</span><span>Godziny</span><span>Nominał</span><span>Wykorzystanie</span></div>{employees.map(e=>{const pct=Math.round(e.minutes/Math.max(e.nominal,1)*100);return <button key={e.id} onClick={()=>onSelect(e.id)}><span><strong>{e.name}</strong><small>{e.no} • {e.shifts} zmian</small></span><span>{roleLabels[e.role]}</span><strong>{Math.round(e.minutes/60)} h</strong><span>{Math.round(e.nominal/60)} h</span><span className={`load ${pct>110?"over":pct<70?"under":""}`}><i style={{width:`${Math.min(pct,130)}%`}}/>{pct}%</span></button>;})}</div></section>;
