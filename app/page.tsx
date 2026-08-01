@@ -111,6 +111,7 @@ export default function GrafikPro() {
   const [complete,setComplete]=useState<CompleteWorkspace|null>(null);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
+  const [optimizerProgress,setOptimizerProgress]=useState(0);
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
   const [active,setActive]=useState<NavKey>("centrum");
@@ -179,7 +180,7 @@ export default function GrafikPro() {
   const coverage=data.shifts.length?Math.round(100*(1-Math.min(data.issues.filter(i=>i.issue_type==="SHORTAGE"||i.issue_type==="CAPABILITY_MISSING").length/data.shifts.length,1))):0;
 
   async function generate() {
-    if(!supabase)return;setBusy(true);setError("");
+    if(!supabase)return;setBusy(true);setError("");setOptimizerProgress(0);
     let {data:{session},error:sessionError}=await supabase.auth.getSession();
     if(sessionError||!session){
       const refreshed=await supabase.auth.refreshSession();
@@ -191,9 +192,25 @@ export default function GrafikPro() {
       setError("Sesja wygasła. Wyloguj się i zaloguj ponownie, a następnie uruchom generator.");
       return;
     }
-    const result=await supabase.functions.invoke("schedule-optimizer",{body:{
-      month:selectedMonthDate,name:planForm.name,scenario:"BASE",profile:planForm.mode
-    },headers:{Authorization:`Bearer ${session.access_token}`}});
+    const invoke=async(body:Record<string,unknown>)=>{
+      const response=await supabase.functions.invoke("schedule-optimizer",{body,headers:{Authorization:`Bearer ${session!.access_token}`}});
+      if(response.error)throw response.error;
+      if(response.data?.error)throw new Error(response.data.error);
+      return response.data;
+    };
+    let result:{data:any;error:null}|{data:null;error:Error};
+    try{
+      const start=await invoke({action:"START",month:selectedMonthDate,scenario:"BASE",profile:planForm.mode});
+      let generation=Number(start.generation||1),target=Number(start.targetGenerations||40);
+      setOptimizerProgress(Math.round(100*generation/Math.max(1,target)));
+      while(generation<target){
+        const step=await invoke({action:"STEP",runId:start.runId});
+        generation=Number(step.generation);target=Number(step.targetGenerations||target);
+        setOptimizerProgress(Math.min(99,Math.round(100*generation/Math.max(1,target))));
+      }
+      const done=await invoke({action:"FINALIZE",runId:start.runId,name:planForm.name});
+      result={data:done,error:null};setOptimizerProgress(100);
+    }catch(e){result={data:null,error:e instanceof Error?e:new Error(String(e))};}
     setBusy(false);
     if(result.error){setError(result.error.message);return;}
     setModal(null);notify(`Plan zapisany: ${result.data.assignments} przydziałów, ${result.data.issues} alertów`);
@@ -308,7 +325,7 @@ export default function GrafikPro() {
         <label>Nazwa<input value={planForm.name} onChange={e=>setPlanForm({...planForm,name:e.target.value})}/></label>
         <label>Tryb optymalizacji<select value={planForm.mode} onChange={e=>setPlanForm({...planForm,mode:e.target.value})}><option value="BALANCED">Zrównoważony</option><option value="MIN_COST">Minimalny koszt</option><option value="PREFERENCES">Preferencje</option></select></label>
         <div className="impact-box"><Settings/><span><strong>Silnik optymalizacyjny</strong><small>Populacja • hard constraints • krzyżowanie • mutacje • wybór najlepszego</small></span></div>
-        <button disabled={busy} className="primary-button full" onClick={()=>void generate()}>{busy?"Optymalizuję pełny miesiąc…":"Znajdź najlepszy grafik"}</button>
+        <button disabled={busy} className="primary-button full" onClick={()=>void generate()}>{busy?`Optymalizuję pełny miesiąc… ${optimizerProgress}%`:"Znajdź najlepszy grafik"}</button>
       </div>}
       {modal==="event"&&<div className="drawer-content">
         <div className="form-row"><label>Lokal<select value={eventForm.location} onChange={e=>setEventForm({...eventForm,location:e.target.value})}><option>KRUCZA</option><option>PAWILONY</option></select></label><label>Typ<select value={eventForm.type} onChange={e=>setEventForm({...eventForm,type:e.target.value})}><option>EVENT</option><option>CLEANING</option><option>INVENTORY</option><option>TRAINING</option><option>ADDITIONAL_SHIFT</option><option>CLOSURE</option></select></label></div>
