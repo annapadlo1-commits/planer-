@@ -37,12 +37,33 @@ declare
   v_strategy uuid;
   v_currency text;
   v_timezone text;
-  v_month date:=date_trunc('month',current_date)::date;
+  v_publish_from date;
+  v_request_month date;
   v_result jsonb;
   v_run jsonb;
   v_rejected boolean:=false;
 begin
   if auth.uid() is null then raise exception 'OWNER_TEST_IDENTITY_MISSING'; end if;
+
+  -- A production Matrix can start in the middle of the current month. Publish
+  -- the disposable draft no earlier than that active version and request the
+  -- first complete month whose first day is covered by the published Matrix.
+  select greatest(
+    active_matrix.effective_from,
+    date_trunc('month',current_date)::date
+  ) into v_publish_from
+  from public.matrix_versions active_matrix
+  where active_matrix.status='ACTIVE' and active_matrix.schema_version>=2
+  order by active_matrix.version desc limit 1;
+  v_publish_from:=coalesce(
+    v_publish_from,date_trunc('month',current_date)::date
+  );
+  v_request_month:=case
+    when v_publish_from=date_trunc('month',v_publish_from)::date
+      then v_publish_from
+    else (date_trunc('month',v_publish_from)+interval '1 month')::date
+  end;
+
   v_draft:=public.matrix_v2_create_draft('Dynamic Matrix v2 UAT');
   select upper(mv.settings->>'currency'),mv.settings->>'timezone'
     into v_currency,v_timezone
@@ -146,7 +167,7 @@ begin
     )
   );
   begin
-    perform public.matrix_v2_publish_draft(v_month);
+    perform public.matrix_v2_publish_draft(v_publish_from);
   exception when others then
     if position('INVALID_RESOLVED_SCENARIO_OBJECTIVE' in sqlerrm)=0 then
       raise;
@@ -184,14 +205,14 @@ begin
     'shiftIds',jsonb_build_array(v_shift),'active',true
   ));
   perform public.matrix_v2_admin_save('SCENARIO_BUDGET',null,jsonb_build_object(
-    'scenarioId',v_scenario,'budgetMonth',v_month,
+    'scenarioId',v_scenario,'budgetMonth',v_request_month,
     'locationId',v_location,'roleId',v_role,'dutyId',v_duty,
     'operation','SET','amountMinor',500000000,'currency',v_currency,
     'hardLimit',true,'warningPercent',90,
     'sourceMetadata',jsonb_build_object('test','dynamic-matrix-v2')
   ));
 
-  perform public.matrix_v2_publish_draft(v_month);
+  perform public.matrix_v2_publish_draft(v_publish_from);
   -- The disposable transaction explicitly enables SHADOW. In production the
   -- same RPC remains blocked while DEFAULT_ENGINE is ALPHA15.
   perform public.solver_feature_flag_set(
@@ -200,7 +221,7 @@ begin
     )
   );
   v_run:=public.optimizer_request_v2(
-    v_month,v_scenario,'COMPANY',null,
+    v_request_month,v_scenario,'COMPANY',null,
     'Dynamic Matrix v2 UAT','dynamic-matrix-v2-uat-20260801'
   );
   if coalesce(v_run->'run'->>'status','')<>'QUEUED' then
