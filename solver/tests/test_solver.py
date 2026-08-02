@@ -771,7 +771,7 @@ class SolverTests(unittest.TestCase):
                 FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "UNFILLED"
             )
 
-    def test_coverage_model_breaks_interchangeable_seat_symmetry(self) -> None:
+    def test_coverage_model_aggregates_interchangeable_seats(self) -> None:
         raw = load_raw()
         raw.pop("slots")
         raw["periodEnd"] = "2026-08-01"
@@ -793,29 +793,46 @@ class SolverTests(unittest.TestCase):
             coverage_only=True,
         )
 
-        self.assertEqual(artifacts.coverage_symmetry_constraints, 1)
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 1)
+        self.assertEqual(len(artifacts.unfilled), 1)
         artifacts.model.minimize(artifacts.metrics["UNFILLED"])
         solver = cp_model.CpSolver()
         solver.parameters.num_search_workers = 1
         status = solver.solve(artifacts.model)
         self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
 
-        employee_ranks = {
-            employee.id: rank
-            for rank, employee in enumerate(
-                sorted(snapshot.employees, key=lambda item: item.id), start=1
-            )
+    def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        first = {
+            **raw["demand"][0],
+            "dates": ["2026-08-01"],
+            "requiredCount": 1,
         }
-        selected_ranks = []
-        for slot in sorted(slots, key=lambda item: item.seat_index):
-            selected_ranks.append(
-                next(
-                    employee_ranks[employee.id]
-                    for employee in snapshot.employees
-                    if solver.value(artifacts.x[(employee.id, slot.id)])
-                )
-            )
-        self.assertEqual(selected_ranks, sorted(selected_ranks))
+        raw["demand"] = [first, {**first, "id": "demand-second"}]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(len({slot.occurrence_id for slot in slots}), 1)
+        self.assertEqual(len(artifacts.unfilled), 2)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 0)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
 
     def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
         raw = load_raw()
