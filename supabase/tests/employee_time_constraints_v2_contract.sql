@@ -61,7 +61,8 @@ set local role authenticated;
 
 do $$
 declare
-  v_month date:=date_trunc('month',current_date)::date;
+  v_publish_from date;
+  v_month date;
   v_employee_id uuid;
   v_timezone text;
   v_payload jsonb;
@@ -74,10 +75,29 @@ declare
 begin
   if auth.uid() is null then raise exception 'EMPLOYEE_TEST_IDENTITY_MISSING'; end if;
 
+  -- A production Matrix can start in the middle of the current month. Publish
+  -- the disposable draft no earlier than that active version and read the
+  -- first complete month whose first day is covered by the published Matrix.
+  select greatest(
+    active_matrix.effective_from,
+    date_trunc('month',current_date)::date
+  ) into v_publish_from
+  from public.matrix_versions active_matrix
+  where active_matrix.status='ACTIVE' and active_matrix.schema_version>=2
+  order by active_matrix.version desc limit 1;
+  v_publish_from:=coalesce(
+    v_publish_from,date_trunc('month',current_date)::date
+  );
+  v_month:=case
+    when v_publish_from=date_trunc('month',v_publish_from)::date
+      then v_publish_from
+    else (date_trunc('month',v_publish_from)+interval '1 month')::date
+  end;
+
   -- Materialize the initial branch seed as a formally published Matrix v2;
   -- production organizations already have these hashes after publication.
   perform public.matrix_v2_create_draft('Employee availability contract');
-  perform public.matrix_v2_publish_draft(v_month);
+  perform public.matrix_v2_publish_draft(v_publish_from);
 
   v_payload:=public.employee_time_constraints_self_v2(v_month);
   v_employee_id:=(v_payload->>'employeeId')::uuid;
