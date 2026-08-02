@@ -4,6 +4,18 @@
 
 begin;
 
+insert into auth.users(
+  instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
+  raw_app_meta_data,raw_user_meta_data,is_super_admin,created_at,updated_at
+) values(
+  '00000000-0000-0000-0000-000000000000',
+  'a7a00000-0000-4000-8000-000000000001',
+  'authenticated','authenticated','availability-owner@example.invalid','',now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,false,now(),now()
+);
+insert into public.user_permissions(auth_user_id,app_role)
+values('a7a00000-0000-4000-8000-000000000001','OWNER');
+
 do $$
 declare
   v_auth_user uuid;
@@ -16,12 +28,7 @@ begin
     'authenticated','public.employee_time_constraints_self_v2(date)','EXECUTE'
   ) then raise exception 'AUTHENTICATED_TIME_CONSTRAINT_READ_MISSING'; end if;
 
-  -- Reuse the owner's employee identity when production already links it.
-  -- Disposable branches can link that identity to one demo employee only
-  -- inside this transaction, then exercise the same self-service boundary.
-  select up.auth_user_id into v_auth_user
-  from public.user_permissions up
-  where up.app_role='OWNER' order by up.id limit 1;
+  v_auth_user:='a7a00000-0000-4000-8000-000000000001';
   select employee_row.id into v_employee
   from public.employees employee_row
   where employee_row.auth_user_id=v_auth_user
@@ -46,13 +53,7 @@ $$;
 
 select set_config(
   'request.jwt.claim.sub',
-  (
-    select permission_row.auth_user_id::text
-    from public.user_permissions permission_row
-    where permission_row.app_role='OWNER'
-    order by permission_row.id
-    limit 1
-  ),
+  'a7a00000-0000-4000-8000-000000000001',
   true
 );
 select set_config('request.jwt.claim.role','authenticated',true);

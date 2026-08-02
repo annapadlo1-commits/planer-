@@ -86,10 +86,14 @@ begin
     'anon','public.optimizer_select_variant_v2(uuid,uuid)','execute'
   ) or not has_function_privilege(
     'authenticated',
-    'public.optimizer_publish_company_variant_v2(uuid,uuid,text,text)',
+    'public.optimizer_publish_company_variant_alpha16(uuid,uuid,text,text,text)',
     'execute'
   ) or has_function_privilege(
     'anon',
+    'public.optimizer_publish_company_variant_alpha16(uuid,uuid,text,text,text)',
+    'execute'
+  ) or has_function_privilege(
+    'authenticated',
     'public.optimizer_publish_company_variant_v2(uuid,uuid,text,text)',
     'execute'
   ) or not has_function_privilege(

@@ -44,7 +44,7 @@ begin
     'public.optimizer_select_variant_v2(uuid,uuid)',
     'public.optimizer_published_schedule_v2(uuid)',
     'public.optimizer_role_composite_candidates_v2(date,uuid)',
-    'public.optimizer_publish_company_variant_v2(uuid,uuid,text,text)',
+    'public.optimizer_publish_company_variant_alpha16(uuid,uuid,text,text,text)',
     'public.optimizer_publish_role_composite_v2(date,uuid,uuid[],text,text)'
   ] loop
     if not has_function_privilege('authenticated',v_public_rpc,'execute')

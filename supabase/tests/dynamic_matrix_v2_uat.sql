@@ -5,15 +5,21 @@
 
 begin;
 
+insert into auth.users(
+  instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
+  raw_app_meta_data,raw_user_meta_data,is_super_admin,created_at,updated_at
+) values(
+  '00000000-0000-0000-0000-000000000000',
+  'd1a00000-0000-4000-8000-000000000001',
+  'authenticated','authenticated','dynamic-matrix-owner@example.invalid','',now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,false,now(),now()
+);
+insert into public.user_permissions(auth_user_id,app_role)
+values('d1a00000-0000-4000-8000-000000000001','OWNER');
+
 select set_config(
   'request.jwt.claim.sub',
-  (
-    select up.auth_user_id::text
-    from public.user_permissions up
-    where up.app_role='OWNER'
-    order by up.id
-    limit 1
-  ),
+  'd1a00000-0000-4000-8000-000000000001',
   true
 );
 select set_config('request.jwt.claim.role','authenticated',true);
