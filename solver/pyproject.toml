@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools==80.10.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafik-solver"
+version = "0.1.0"
+description = "Dynamic Matrix v2 scheduling worker"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "ortools==9.15.6755",
+  "absl-py==2.5.0",
+  "immutabledict==4.3.1",
+  "numpy==2.3.5",
+  "pandas==2.2.3",
+  "protobuf==6.33.6",
+  "python-dateutil==2.9.0.post0",
+  "pytz==2026.2",
+  "six==1.17.0",
+  "typing-extensions==4.15.0",
+  "tzdata==2026.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+grafik_solver = ["py.typed"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/*.py" = ["E402"]
+"tests/*.py" = ["E402"]

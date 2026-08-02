@@ -1,0 +1,6 @@
+-- Migration ledger reconciliation.
+--
+-- This version was applied to the disposable development branch while an
+-- earlier Codex task was finishing. Its temporary claim implementation is
+-- superseded by 20260802000532_solver_pull_claim_convergence_v2.sql, which is
+-- the canonical, replayable definition kept in this repository.
