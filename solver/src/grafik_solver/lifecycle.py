@@ -22,6 +22,19 @@ from .validator import VariantValidationError, validate_variant
 
 LOGGER = logging.getLogger(__name__)
 
+_HEARTBEAT_PROGRESS_KEYS = frozenset(
+    {
+        "phase",
+        "progress",
+        "strategyId",
+        "strategyProgress",
+        "strategyCount",
+        "completedStrategies",
+        "assignmentCount",
+        "unfilledCount",
+    }
+)
+
 
 class RpcProtocol(Protocol):
     def claim(self, **kwargs: Any) -> Claim | None: ...
@@ -88,7 +101,16 @@ class WorkerRuntime:
             set_progress_callback(self._solver_progress)
 
     def _solver_progress(self, values: Mapping[str, Any]) -> None:
-        self._set_progress(**values)
+        # The gateway intentionally validates an exact, small heartbeat schema.
+        # Engine-only diagnostics belong in logs and result artifacts; forwarding
+        # them would make an otherwise healthy lease fail with HTTP 400.
+        heartbeat_values = {
+            key: value
+            for key, value in values.items()
+            if key in _HEARTBEAT_PROGRESS_KEYS and value is not None
+        }
+        if heartbeat_values:
+            self._set_progress(**heartbeat_values)
 
     def request_stop(self, reason: str) -> None:
         self._stop.request(reason)
