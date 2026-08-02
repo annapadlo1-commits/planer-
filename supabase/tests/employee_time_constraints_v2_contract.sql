@@ -16,33 +16,41 @@ begin
     'authenticated','public.employee_time_constraints_self_v2(date)','EXECUTE'
   ) then raise exception 'AUTHENTICATED_TIME_CONSTRAINT_READ_MISSING'; end if;
 
-  -- The disposable branch intentionally contains no real employee logins.
-  -- Link its single owner identity to one demo employee only inside this
-  -- transaction, then exercise the exact same self-service RPC boundary.
+  -- Reuse the owner's employee identity when production already links it.
+  -- Disposable branches can link that identity to one demo employee only
+  -- inside this transaction, then exercise the same self-service boundary.
   select up.auth_user_id into v_auth_user
   from public.user_permissions up
   where up.app_role='OWNER' order by up.id limit 1;
   select employee_row.id into v_employee
   from public.employees employee_row
-  where employee_row.active and employee_row.archived_at is null
-    and employee_row.auth_user_id is null
+  where employee_row.auth_user_id=v_auth_user
+    and employee_row.active and employee_row.archived_at is null
   order by employee_row.id limit 1;
-  if v_auth_user is null or v_employee is null then
+  if v_auth_user is null then
     raise exception 'TIME_CONSTRAINT_TEST_IDENTITY_CONTEXT_MISSING';
   end if;
-  update public.employees set auth_user_id=v_auth_user where id=v_employee;
+  if v_employee is null then
+    select employee_row.id into v_employee
+    from public.employees employee_row
+    where employee_row.active and employee_row.archived_at is null
+      and employee_row.auth_user_id is null
+    order by employee_row.id limit 1;
+    if v_employee is null then
+      raise exception 'TIME_CONSTRAINT_TEST_EMPLOYEE_CONTEXT_MISSING';
+    end if;
+    update public.employees set auth_user_id=v_auth_user where id=v_employee;
+  end if;
 end;
 $$;
 
 select set_config(
   'request.jwt.claim.sub',
   (
-    select employee_row.auth_user_id::text
-    from public.employees employee_row
-    where employee_row.auth_user_id is not null
-      and employee_row.active
-      and employee_row.archived_at is null
-    order by employee_row.id
+    select permission_row.auth_user_id::text
+    from public.user_permissions permission_row
+    where permission_row.app_role='OWNER'
+    order by permission_row.id
     limit 1
   ),
   true
