@@ -105,6 +105,7 @@ class _Artifacts:
     static_quotes: dict[tuple[str, str], Any]
     complete_coverage_hint: bool = False
     coverage_symmetry_constraints: int = 0
+    coverage_aggregated_seats: int = 0
 
 
 class CpSatScheduleEngine:
@@ -227,15 +228,18 @@ class CpSatScheduleEngine:
 
         common = self._build_model(snapshot, slots, eligibility, coverage_only=True)
         LOGGER.info(
-            "Coverage model slots=%s eligiblePairs=%s symmetryConstraints=%s",
+            "Coverage model slots=%s eligiblePairs=%s symmetryConstraints=%s "
+            "aggregatedSeats=%s",
             len(slots),
             len(common.x),
             common.coverage_symmetry_constraints,
+            common.coverage_aggregated_seats,
         )
         self._emit_progress(
             slotCount=len(slots),
             eligibleDecisionPairs=len(common.x),
             coverageSymmetryConstraints=common.coverage_symmetry_constraints,
+            coverageAggregatedSeats=common.coverage_aggregated_seats,
         )
         common.model.clear_objective()
         common.model.minimize(common.metrics["UNFILLED"])
@@ -951,6 +955,7 @@ class CpSatScheduleEngine:
         slots_by_id = {slot.id: slot for slot in slots}
         occurrences: dict[str, Slot] = {}
         slots_by_occurrence: dict[str, list[Slot]] = defaultdict(list)
+        coverage_groups: dict[tuple[str, str], list[Slot]] = defaultdict(list)
         for slot in slots:
             representative = occurrences.setdefault(slot.occurrence_id, slot)
             if representative.start != slot.start or representative.end != slot.end:
@@ -958,33 +963,74 @@ class CpSatScheduleEngine:
                     f"Occurrence {slot.occurrence_id} has inconsistent times"
                 )
             slots_by_occurrence[slot.occurrence_id].append(slot)
+            coverage_groups[(slot.demand_id, slot.occurrence_id)].append(slot)
+
+        aggregate_coverage = coverage_only and not any(
+            budget.hard for budget in snapshot.budgets
+        )
+        representative_by_group = {
+            group_key: min(group, key=lambda item: (item.seat_index, item.id))
+            for group_key, group in coverage_groups.items()
+        }
 
         x: dict[tuple[str, str], Any] = {}
         static_quotes: dict[tuple[str, str], Any] = {}
         for employee in snapshot.employees:
-            for slot in slots:
+            decision_slots = (
+                representative_by_group.values()
+                if aggregate_coverage
+                else slots
+            )
+            for slot in decision_slots:
                 if eligibility.evaluate(employee, slot).allowed:
                     key = (employee.id, slot.id)
                     x[key] = model.new_bool_var(f"x|{employee.id}|{slot.id}")
                     static_quotes[key] = quote_assignment(snapshot, employee, slot)
 
-        unfilled = {slot.id: model.new_bool_var(f"u|{slot.id}") for slot in slots}
-        for slot in slots:
-            candidates = [
-                x[(employee.id, slot.id)]
-                for employee in snapshot.employees
-                if (employee.id, slot.id) in x
-            ]
-            model.add(_sum(candidates) + unfilled[slot.id] == 1)
+        unfilled: dict[str, Any] = {}
+        if aggregate_coverage:
+            for group_key, group_slots in coverage_groups.items():
+                representative = representative_by_group[group_key]
+                candidates = [
+                    x[(employee.id, representative.id)]
+                    for employee in snapshot.employees
+                    if (employee.id, representative.id) in x
+                ]
+                missing = model.new_int_var(
+                    0,
+                    len(group_slots),
+                    f"u|{representative.id}",
+                )
+                unfilled[representative.id] = missing
+                model.add(_sum(candidates) + missing == len(group_slots))
+        else:
+            unfilled = {
+                slot.id: model.new_bool_var(f"u|{slot.id}") for slot in slots
+            }
+            for slot in slots:
+                candidates = [
+                    x[(employee.id, slot.id)]
+                    for employee in snapshot.employees
+                    if (employee.id, slot.id) in x
+                ]
+                model.add(_sum(candidates) + unfilled[slot.id] == 1)
 
         work: dict[tuple[str, str], Any] = {}
         for employee in snapshot.employees:
             for occurrence_id, occurrence_slots in slots_by_occurrence.items():
-                assignment_vars = [
-                    x[(employee.id, slot.id)]
-                    for slot in occurrence_slots
-                    if (employee.id, slot.id) in x
-                ]
+                if aggregate_coverage:
+                    assignment_vars = [
+                        x[(employee.id, representative.id)]
+                        for group_key, representative in representative_by_group.items()
+                        if group_key[1] == occurrence_id
+                        and (employee.id, representative.id) in x
+                    ]
+                else:
+                    assignment_vars = [
+                        x[(employee.id, slot.id)]
+                        for slot in occurrence_slots
+                        if (employee.id, slot.id) in x
+                    ]
                 if not assignment_vars:
                     continue
                 variable = model.new_bool_var(f"work|{employee.id}|{occurrence_id}")
@@ -994,7 +1040,13 @@ class CpSatScheduleEngine:
         for lock in snapshot.locked_assignments:
             if lock.slot_id not in slots_by_id:
                 raise SnapshotError(f"Lock references missing slot {lock.slot_id}")
-            variable = x.get((lock.employee_id, lock.slot_id))
+            decision_slot_id = lock.slot_id
+            if aggregate_coverage:
+                locked_slot = slots_by_id[lock.slot_id]
+                decision_slot_id = representative_by_group[
+                    (locked_slot.demand_id, locked_slot.occurrence_id)
+                ].id
+            variable = x.get((lock.employee_id, decision_slot_id))
             if variable is None:
                 raise SnapshotError(
                     f"Locked assignment {lock.employee_id}/{lock.slot_id} "
@@ -1003,7 +1055,7 @@ class CpSatScheduleEngine:
             model.add(variable == 1)
 
         coverage_symmetry_constraints = 0
-        if coverage_only:
+        if coverage_only and not aggregate_coverage:
             coverage_symmetry_constraints = self._add_coverage_symmetry_breaking(
                 model, snapshot, slots, x, unfilled
             )
@@ -1137,6 +1189,25 @@ class CpSatScheduleEngine:
                     model.add(
                         assigned_week + external_week <= employee.maximum_weekly_minutes
                     )
+
+        if aggregate_coverage:
+            return _Artifacts(
+                model=model,
+                x=x,
+                unfilled=unfilled,
+                work=work,
+                day_work=day_work,
+                total_minutes=total_minutes,
+                metrics={"UNFILLED": _sum(unfilled.values())},
+                metric_bounds={"UNFILLED": len(slots)},
+                hint_variables=tuple(
+                    list(x.values())
+                    + list(unfilled.values())
+                    + list(day_work.values())
+                ),
+                static_quotes=static_quotes,
+                coverage_aggregated_seats=len(slots) - len(coverage_groups),
+            )
 
         monthly_rules_by_key = {
             (employee.id, slot.id): matching_monthly_rules(snapshot, employee, slot)
