@@ -288,7 +288,10 @@ class WorkerRuntime:
         if isinstance(exc, RpcError):
             return exc.retryable, "RPC_ERROR"
         if isinstance(exc, OptimizationIncomplete):
-            return True, "OPTIMIZATION_INCOMPLETE"
+            # The same immutable snapshot, solver image and time budget produce
+            # the same proof failure. Retrying only burns the budget again;
+            # infrastructure/RPC failures remain independently retryable.
+            return False, "OPTIMIZATION_INCOMPLETE"
         if isinstance(exc, OptimizationError):
             return False, "OPTIMIZATION_ERROR"
         if isinstance(exc, VariantValidationError):
