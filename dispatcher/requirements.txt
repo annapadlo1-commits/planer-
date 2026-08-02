@@ -1,0 +1,2 @@
+google-cloud-run==0.16.1
+gunicorn==23.0.0

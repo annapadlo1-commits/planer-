@@ -4,6 +4,9 @@ import "./globals.css";
 import "./complete.css";
 import "./alpha11.css";
 import "./alpha12.css";
+import "./solver-v2.css";
+import "./role-composite.css";
+import "./matrix-v2.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",

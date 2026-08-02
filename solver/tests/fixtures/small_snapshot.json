@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 2,
+  "runId": "run-fixture-001",
+  "matrixVersionId": "matrix-fixture-001",
+  "scenarioId": "scenario-weekend",
+  "periodStart": "2026-08-01",
+  "periodEnd": "2026-08-02",
+  "currency": "PLN",
+  "settings": {
+    "timezone": "Europe/Warsaw",
+    "missingAvailabilityMeansAvailable": false,
+    "defaultMinimumRestMinutes": 660,
+    "requireOptimal": true,
+    "randomSeed": 7
+  },
+  "strategies": [
+    {
+      "id": "strategy-cost",
+      "code": "COST",
+      "label": "Minimalny koszt",
+      "sortOrder": 0,
+      "timeLimitSeconds": 30,
+      "objectiveTerms": [
+        {"tier": 1, "metric": "TOTAL_COST", "weight": 1, "direction": "MIN"}
+      ]
+    },
+    {
+      "id": "strategy-preference",
+      "code": "PREFERENCE",
+      "label": "Preferencje",
+      "sortOrder": 1,
+      "timeLimitSeconds": 30,
+      "objectiveTerms": [
+        {"tier": 1, "metric": "PREFERENCE_VIOLATIONS", "weight": 1, "direction": "MIN"},
+        {"tier": 2, "metric": "TOTAL_COST", "weight": 1, "direction": "MIN"}
+      ]
+    }
+  ],
+  "roles": [{"id": "role-sommelier", "code": "SOMMELIER"}],
+  "duties": [
+    {"id": "duty-service", "code": "SERVICE"},
+    {"id": "duty-close", "code": "CLOSE"}
+  ],
+  "locations": [{"id": "location-rooftop", "code": "ROOFTOP"}],
+  "shiftTemplates": [
+    {
+      "id": "shift-morning",
+      "locationId": "location-rooftop",
+      "startTime": "08:00",
+      "endTime": "12:00",
+      "weekdays": [6, 7]
+    },
+    {
+      "id": "shift-evening",
+      "locationId": "location-rooftop",
+      "startTime": "16:00",
+      "endTime": "20:00",
+      "weekdays": [6, 7]
+    }
+  ],
+  "demand": [
+    {
+      "id": "demand-morning",
+      "shiftTemplateId": "shift-morning",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-service"],
+      "requiredCount": 1
+    },
+    {
+      "id": "demand-evening",
+      "shiftTemplateId": "shift-evening",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-service", "duty-close"],
+      "requiredCount": 1
+    }
+  ],
+  "slots": [
+    {
+      "slotId": "2026-08-01|shift-morning|role-sommelier|duty-service|demand-morning|1",
+      "demandId": "demand-morning",
+      "occurrenceId": "2026-08-01|shift-morning",
+      "seatIndex": 1,
+      "date": "2026-08-01",
+      "shiftTemplateId": "shift-morning",
+      "locationId": "location-rooftop",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-service"],
+      "start": "2026-08-01T08:00:00+02:00",
+      "end": "2026-08-01T12:00:00+02:00",
+      "durationMinutes": 240
+    },
+    {
+      "slotId": "2026-08-01|shift-evening|role-sommelier|duty-close,duty-service|demand-evening|1",
+      "demandId": "demand-evening",
+      "occurrenceId": "2026-08-01|shift-evening",
+      "seatIndex": 1,
+      "date": "2026-08-01",
+      "shiftTemplateId": "shift-evening",
+      "locationId": "location-rooftop",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-close", "duty-service"],
+      "start": "2026-08-01T16:00:00+02:00",
+      "end": "2026-08-01T20:00:00+02:00",
+      "durationMinutes": 240
+    },
+    {
+      "slotId": "2026-08-02|shift-morning|role-sommelier|duty-service|demand-morning|1",
+      "demandId": "demand-morning",
+      "occurrenceId": "2026-08-02|shift-morning",
+      "seatIndex": 1,
+      "date": "2026-08-02",
+      "shiftTemplateId": "shift-morning",
+      "locationId": "location-rooftop",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-service"],
+      "start": "2026-08-02T08:00:00+02:00",
+      "end": "2026-08-02T12:00:00+02:00",
+      "durationMinutes": 240
+    },
+    {
+      "slotId": "2026-08-02|shift-evening|role-sommelier|duty-close,duty-service|demand-evening|1",
+      "demandId": "demand-evening",
+      "occurrenceId": "2026-08-02|shift-evening",
+      "seatIndex": 1,
+      "date": "2026-08-02",
+      "shiftTemplateId": "shift-evening",
+      "locationId": "location-rooftop",
+      "roleId": "role-sommelier",
+      "dutyIds": ["duty-close", "duty-service"],
+      "start": "2026-08-02T16:00:00+02:00",
+      "end": "2026-08-02T20:00:00+02:00",
+      "durationMinutes": 240
+    }
+  ],
+  "employees": [
+    {
+      "id": "employee-alice",
+      "roleIds": ["role-sommelier"],
+      "dutyIds": ["duty-service"],
+      "locationIds": ["location-rooftop"],
+      "homeLocationIds": ["location-rooftop"],
+      "baseHourlyRateMinor": 2000,
+      "contractCode": "UOP",
+      "nominalMonthlyMinutes": 480,
+      "maximumMonthlyMinutes": 1200,
+      "maximumWeeklyMinutes": 1200,
+      "maximumShiftsPerDay": 1,
+      "maximumConsecutiveDays": 6,
+      "minimumRestMinutes": 660
+    },
+    {
+      "id": "employee-bob",
+      "roleIds": ["role-sommelier"],
+      "dutyIds": ["duty-service", "duty-close"],
+      "locationIds": ["location-rooftop"],
+      "homeLocationIds": ["location-rooftop"],
+      "baseHourlyRateMinor": 2500,
+      "contractCode": "B2B",
+      "nominalMonthlyMinutes": 480,
+      "maximumMonthlyMinutes": 1200,
+      "maximumWeeklyMinutes": 1200,
+      "maximumShiftsPerDay": 1,
+      "maximumConsecutiveDays": 6,
+      "minimumRestMinutes": 660,
+      "softDayOffDates": ["2026-08-01", "2026-08-02"]
+    },
+    {
+      "id": "employee-charlie",
+      "roleIds": ["role-sommelier"],
+      "dutyIds": ["duty-service", "duty-close"],
+      "locationIds": ["location-rooftop"],
+      "homeLocationIds": ["location-rooftop"],
+      "baseHourlyRateMinor": 3000,
+      "contractCode": "UZ",
+      "nominalMonthlyMinutes": 480,
+      "maximumMonthlyMinutes": 1200,
+      "maximumWeeklyMinutes": 1200,
+      "maximumShiftsPerDay": 1,
+      "maximumConsecutiveDays": 6,
+      "minimumRestMinutes": 660
+    }
+  ],
+  "availabilityWindows": [
+    {"employeeId": "employee-alice", "start": "2026-08-01T07:30:00+02:00", "end": "2026-08-01T12:30:00+02:00"},
+    {"employeeId": "employee-alice", "start": "2026-08-01T15:30:00+02:00", "end": "2026-08-01T20:30:00+02:00"},
+    {"employeeId": "employee-alice", "start": "2026-08-02T07:30:00+02:00", "end": "2026-08-02T12:30:00+02:00"},
+    {"employeeId": "employee-alice", "start": "2026-08-02T15:30:00+02:00", "end": "2026-08-02T20:30:00+02:00"},
+    {"employeeId": "employee-bob", "start": "2026-08-01T07:30:00+02:00", "end": "2026-08-01T12:30:00+02:00"},
+    {"employeeId": "employee-bob", "start": "2026-08-01T15:30:00+02:00", "end": "2026-08-01T20:30:00+02:00"},
+    {"employeeId": "employee-bob", "start": "2026-08-02T07:30:00+02:00", "end": "2026-08-02T12:30:00+02:00"},
+    {"employeeId": "employee-bob", "start": "2026-08-02T15:30:00+02:00", "end": "2026-08-02T20:30:00+02:00"},
+    {"employeeId": "employee-charlie", "start": "2026-08-01T07:30:00+02:00", "end": "2026-08-01T12:30:00+02:00"},
+    {"employeeId": "employee-charlie", "start": "2026-08-01T15:30:00+02:00", "end": "2026-08-01T20:30:00+02:00"},
+    {"employeeId": "employee-charlie", "start": "2026-08-02T07:30:00+02:00", "end": "2026-08-02T12:30:00+02:00"},
+    {"employeeId": "employee-charlie", "start": "2026-08-02T15:30:00+02:00", "end": "2026-08-02T20:30:00+02:00"}
+  ],
+  "hardBlocks": [],
+  "externalAssignments": [],
+  "lockedAssignments": [],
+  "baselineAssignments": [],
+  "payRules": [
+    {
+      "id": "pay-close-duty",
+      "calculationType": "FIXED_PER_SHIFT",
+      "values": {"amountMinor": 1000},
+      "conditions": [{"field": "duty_ids", "operator": "CONTAINS", "value": "duty-close"}],
+      "stackingGroup": "close-duty",
+      "stackingMode": "STACK",
+      "priority": 0,
+      "active": true
+    },
+    {
+      "id": "pay-weekend",
+      "calculationType": "PERCENT_BASE",
+      "values": {"percentBasisPoints": 2000},
+      "conditions": [{"field": "weekday", "operator": "IN", "value": [6, 7]}],
+      "stackingGroup": "weekend",
+      "stackingMode": "STACK",
+      "priority": 0,
+      "active": true
+    },
+    {
+      "id": "pay-close-threshold",
+      "calculationType": "MONTHLY_THRESHOLD_PER_HOUR",
+      "values": {"thresholdMinutes": 200, "rateMinorPerHour": 2000},
+      "conditions": [{"field": "duty_ids", "operator": "CONTAINS", "value": "duty-close"}],
+      "stackingGroup": "close-threshold",
+      "stackingMode": "STACK",
+      "priority": 0,
+      "active": true
+    }
+  ],
+  "budget": {"amountMinor": 100000, "hard": true}
+}
