@@ -562,6 +562,23 @@ class CpSatScheduleEngine:
                         f"Employee {employee.id} location grants reference missing "
                         "locations"
                     )
+            period_template_ids = (
+                set(employee.preferred_shift_template_ids)
+                | set(employee.avoided_shift_template_ids)
+                | set(employee.blocked_shift_template_ids)
+            )
+            if period_template_ids - template_ids:
+                raise SnapshotError(
+                    f"Employee {employee.id} shift-period preferences reference "
+                    "missing templates"
+                )
+            if (
+                set(employee.preferred_shift_template_ids)
+                & set(employee.blocked_shift_template_ids)
+            ):
+                raise SnapshotError(
+                    f"Employee {employee.id} cannot prefer and block the same template"
+                )
             if employee.duty_capabilities is not None:
                 for capability in employee.duty_capabilities:
                     if capability.duty_id not in duty_ids:
@@ -1174,6 +1191,7 @@ class CpSatScheduleEngine:
                     and slot.shift_template_id
                     not in employee.preferred_shift_template_ids
                 )
+                + int(slot.shift_template_id in employee.avoided_shift_template_ids)
                 + int(
                     bool(employee.preferred_location_ids)
                     and slot.location_id not in employee.preferred_location_ids
@@ -1184,14 +1202,9 @@ class CpSatScheduleEngine:
             for slot in slots
             if (variable := x.get((employee.id, slot.id))) is not None
         )
-        home_expression = _sum(
-            variable
-            for employee in snapshot.employees
-            for slot in slots
-            if employee.home_location_ids
-            and slot.location_id not in employee.home_location_ids
-            and (variable := x.get((employee.id, slot.id))) is not None
-        )
+        # All standard-allowed locations consume the same ordinary contract
+        # limit. The former "home location" marker is no longer an objective.
+        home_expression = 0
 
         deviation_vars: list[Any] = []
         overtime_vars: list[Any] = []
@@ -1297,8 +1310,8 @@ class CpSatScheduleEngine:
         metric_bounds = {
             "UNFILLED": len(slots),
             "TOTAL_COST": total_cost_upper,
-            "PREFERENCE_VIOLATIONS": 3 * len(slots),
-            "HOME_LOCATION_VIOLATIONS": len(slots),
+            "PREFERENCE_VIOLATIONS": 4 * len(slots),
+            "HOME_LOCATION_VIOLATIONS": 0,
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,
             "OVERTIME_MINUTES": overtime_bound_total,
             "LOAD_SPREAD_MINUTES": max_total_bound,

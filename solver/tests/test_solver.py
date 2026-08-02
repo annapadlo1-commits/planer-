@@ -420,6 +420,47 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("AVAILABILITY_WINDOW", result.reasons)
 
+    def test_shift_period_and_employee_period_rules_are_parsed(self) -> None:
+        raw = load_raw()
+        raw["shiftTemplates"][0]["shiftPeriod"] = "MORNING"
+        raw["shiftTemplates"][1]["shiftPeriod"] = "EVENING"
+        raw["employees"][0]["preferredShiftTemplateIds"] = ["shift-morning"]
+        raw["employees"][0]["avoidedShiftTemplateIds"] = ["shift-evening"]
+        raw["employees"][0]["blockedShiftTemplateIds"] = []
+        snapshot = Snapshot.from_dict(raw)
+        self.assertEqual(snapshot.shift_templates[0].shift_period, "MORNING")
+        self.assertEqual(snapshot.shift_templates[1].shift_period, "EVENING")
+        self.assertEqual(
+            snapshot.employees[0].preferred_shift_template_ids,
+            ("shift-morning",),
+        )
+        self.assertEqual(
+            snapshot.employees[0].avoided_shift_template_ids,
+            ("shift-evening",),
+        )
+
+    def test_invalid_shift_period_is_rejected(self) -> None:
+        raw = load_raw()
+        raw["shiftTemplates"][0]["shiftPeriod"] = "LUNCH"
+        with self.assertRaisesRegex(SnapshotError, "shiftPeriod"):
+            Snapshot.from_dict(raw)
+
+    def test_manager_blocked_period_is_a_hard_eligibility_rule(self) -> None:
+        raw = load_raw()
+        raw["employees"][0]["blockedShiftTemplateIds"] = ["shift-morning"]
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(
+            item for item in snapshot.employees if item.id == "employee-alice"
+        )
+        slot = next(
+            item
+            for item in generate_slots(snapshot)
+            if item.shift_template_id == "shift-morning"
+        )
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+        self.assertFalse(eligibility.allowed)
+        self.assertIn("SHIFT_PERIOD_BLOCKED", eligibility.reasons)
+
     def test_pay_quote_is_data_driven(self) -> None:
         snapshot = Snapshot.from_dict(load_raw())
         evening = generate_slots(snapshot)[1]
@@ -757,6 +798,41 @@ class SolverTests(unittest.TestCase):
             by_strategy["strategy-preference"].metrics["PREFERENCE_VIOLATIONS"],
             by_strategy["strategy-cost"].metrics["PREFERENCE_VIOLATIONS"],
         )
+
+    def test_avoided_shift_period_is_counted_as_a_soft_preference(self) -> None:
+        raw = load_raw()
+        for employee in raw["employees"]:
+            employee["avoidedShiftTemplateIds"] = ["shift-morning"]
+        variants = self.engine.solve(Snapshot.from_dict(raw))
+        baseline = {
+            variant.strategy_id: variant.metrics["PREFERENCE_VIOLATIONS"]
+            for variant in self.variants
+        }
+        for variant in variants:
+            self.assertEqual(
+                variant.metrics["PREFERENCE_VIOLATIONS"],
+                baseline[variant.strategy_id] + 2,
+            )
+
+    def test_home_location_marker_is_not_an_objective_anymore(self) -> None:
+        for variant in self.variants:
+            self.assertEqual(variant.metrics["HOME_LOCATION_VIOLATIONS"], 0)
+
+    def test_unknown_or_conflicting_period_template_ids_are_rejected(self) -> None:
+        unknown = load_raw()
+        unknown["employees"][0]["blockedShiftTemplateIds"] = ["missing-shift"]
+        with self.assertRaisesRegex(SnapshotError, "missing templates"):
+            self.engine.solve(Snapshot.from_dict(unknown))
+
+        conflicting = load_raw()
+        conflicting["employees"][0]["preferredShiftTemplateIds"] = [
+            "shift-morning"
+        ]
+        conflicting["employees"][0]["blockedShiftTemplateIds"] = [
+            "shift-morning"
+        ]
+        with self.assertRaisesRegex(SnapshotError, "prefer and block"):
+            self.engine.solve(Snapshot.from_dict(conflicting))
 
     def test_independent_validator_rejects_rest_violation(self) -> None:
         variant = self.variants[0]

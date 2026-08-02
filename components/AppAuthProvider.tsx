@@ -63,36 +63,27 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     if (!supabase || !activeUser) return;
     setError("");
     try {
-      await supabase.rpc("claim_demo_owner");
       const [
         accessResult,
-        employeesResult,
-        locationsResult,
-        shiftsResult,
-        eventsResult,
+        matrixResult,
       ] = await Promise.all([
         supabase.rpc("current_user_access"),
-        supabase.from("employees").select("*", { count: "exact", head: true }),
-        supabase.from("locations").select("*", { count: "exact", head: true }),
-        supabase.from("shift_definitions").select("*", { count: "exact", head: true }),
-        supabase.from("operational_events").select("*", { count: "exact", head: true }),
+        supabase.rpc("matrix_v2_workspace",{p_month:`${new Date().toISOString().slice(0,7)}-01`}),
       ]);
 
       const firstError = [
         accessResult.error,
-        employeesResult.error,
-        locationsResult.error,
-        shiftsResult.error,
-        eventsResult.error,
+        matrixResult.error,
       ].find(Boolean);
       if (firstError) throw firstError;
 
       setAccess((accessResult.data || null) as AppAccess | null);
+      const matrix=(matrixResult.data??{}) as {employees?:unknown[];locations?:unknown[];shiftTemplates?:unknown[]};
       setSummary({
-        employees: employeesResult.count || 0,
-        locations: locationsResult.count || 0,
-        shifts: shiftsResult.count || 0,
-        events: eventsResult.count || 0,
+        employees: matrix.employees?.length || 0,
+        locations: matrix.locations?.length || 0,
+        shifts: matrix.shiftTemplates?.length || 0,
+        events: 0,
       });
     } catch (cause) {
       const message =

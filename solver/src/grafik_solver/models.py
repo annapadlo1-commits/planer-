@@ -240,6 +240,7 @@ class ShiftTemplate:
     end_time: time
     weekdays: tuple[int, ...]
     ends_next_day: bool = False
+    shift_period: str = "MIDDLE"
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> ShiftTemplate:
@@ -249,6 +250,11 @@ class ShiftTemplate:
         )
         if any(value > 7 for value in weekdays):
             raise SnapshotError("weekdays must use ISO values 1 through 7")
+        shift_period = str(
+            _pick(raw, "shiftPeriod", "shift_period", default="MIDDLE")
+        ).upper()
+        if shift_period not in {"MORNING", "MIDDLE", "EVENING"}:
+            raise SnapshotError("shiftPeriod must be MORNING, MIDDLE or EVENING")
         return cls(
             id=str(_pick(raw, "id")),
             location_id=str(_pick(raw, "locationId", "location_id")),
@@ -258,6 +264,7 @@ class ShiftTemplate:
             ends_next_day=bool(
                 _pick(raw, "endsNextDay", "ends_next_day", default=False)
             ),
+            shift_period=shift_period,
         )
 
 
@@ -453,6 +460,8 @@ class Employee:
     only_morning_before_minute: int | None = None
     only_evening_after_minute: int | None = None
     preferred_shift_template_ids: tuple[str, ...] = ()
+    avoided_shift_template_ids: tuple[str, ...] = ()
+    blocked_shift_template_ids: tuple[str, ...] = ()
     preferred_location_ids: tuple[str, ...] = ()
     soft_day_off_dates: tuple[date, ...] = ()
 
@@ -575,6 +584,22 @@ class Employee:
                     raw,
                     "preferredShiftTemplateIds",
                     "preferred_shift_template_ids",
+                    default=[],
+                )
+            ),
+            avoided_shift_template_ids=_strings(
+                _pick(
+                    raw,
+                    "avoidedShiftTemplateIds",
+                    "avoided_shift_template_ids",
+                    default=[],
+                )
+            ),
+            blocked_shift_template_ids=_strings(
+                _pick(
+                    raw,
+                    "blockedShiftTemplateIds",
+                    "blocked_shift_template_ids",
                     default=[],
                 )
             ),

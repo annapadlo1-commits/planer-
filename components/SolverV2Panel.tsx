@@ -9,6 +9,7 @@ import {
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
+  getPublicationReadiness,
   getSelectedVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
@@ -31,6 +32,7 @@ import {
   type RunStorageContext,
   type SolverEngine,
   type SolverRun,
+  type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
   type SolverStrategyProgress,
@@ -55,6 +57,7 @@ type Props = {
   onScenarioChange: (value: string) => void;
   onVariantSelected?: (variant: SolverVariant) => void | Promise<void>;
   onPublished?: (scheduleId: string) => void | Promise<void>;
+  initialRunId?: string | null;
 };
 
 function money(value: number | null | undefined, currency: string) {
@@ -74,6 +77,13 @@ function variantCountLabel(value: number) {
   if (value === 1) return "1 wariant";
   if (value >= 2 && value <= 4) return `${value} warianty`;
   return `${value} wariantów`;
+}
+
+function publicationIssueTime(value:string|undefined,timezone:string){
+  if(!value)return "—";
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))return value;
+  return new Intl.DateTimeFormat("pl-PL",{hour:"2-digit",minute:"2-digit",timeZone:timezone}).format(date);
 }
 
 type StatusRefreshOutcome = "ACTIVE" | "TERMINAL" | "RETRY" | "STALE";
@@ -113,6 +123,7 @@ export function SolverV2Panel({
   onScenarioChange,
   onVariantSelected,
   onPublished,
+  initialRunId,
 }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const selectedScenario = scenarios.find(item => item.code === scenarioCode);
@@ -136,6 +147,7 @@ export function SolverV2Panel({
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
+  const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
@@ -227,7 +239,8 @@ export function SolverV2Panel({
     setPublishedWorkspace(null);
     setMessage("");
     setPollWarning("");
-    const recovered = recoverSolverRun(context);
+    setPublicationReadiness(null);
+    const recovered = initialRunId ?? recoverSolverRun(context);
     if (recovered) setPollingRunId(recovered);
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
     if (publishedScheduleId && supabase) {
@@ -249,7 +262,7 @@ export function SolverV2Panel({
         });
     }
     return () => { disposed = true; };
-  }, [context, engine, month, supabase]);
+  }, [context, engine, month, supabase, initialRunId]);
 
   useEffect(() => {
     if (!pollingRunId) return;
@@ -363,15 +376,43 @@ export function SolverV2Panel({
       setMessage("Nie udało się opublikować grafiku. Podaj jego nazwę.");
       return;
     }
+    setBusy(true);
+    setMessage("");
+    let readiness:SolverPublicationReadiness;
+    try{
+      readiness=await getPublicationReadiness(supabase,run.id,selectedVariant.id,trimmedName);
+      setPublicationReadiness(readiness);
+    }catch(error){
+      setBusy(false);
+      setMessage(solverErrorMessage(errorText(error)));
+      return;
+    }
+    if(!readiness.ready){
+      setBusy(false);
+      setMessage("Nie można opublikować grafiku. Szczegółowe blokady są widoczne poniżej.");
+      return;
+    }
+    let warningReason:string|null=null;
+    if(readiness.warnings.unfilledCount>0){
+      warningReason=window.prompt(
+        `Wariant zawiera ${readiness.warnings.unfilledCount} braków obsady.\n\nPodaj powód publikacji mimo ostrzeżeń (zostanie zapisany w historii):`,
+      )?.trim()??null;
+      if(!warningReason||warningReason.length<3){
+        setBusy(false);
+        setMessage("Publikacja z brakami obsady została anulowana: wymagany jest powód decyzji.");
+        return;
+      }
+    }
     const costSummary = selectedVariant.totalCostMinor === undefined || selectedVariant.totalCostMinor === null
       ? ""
       : ` • koszt ${money(selectedVariant.totalCostMinor, selectedVariant.currency)}`;
     const confirmation = window.confirm(
       `Opublikować „${trimmedName}” jako obowiązujący grafik dla wybranego miesiąca?\n\n`
       + `Wybrano strategię „${selectedVariant.strategy.name}”: ${selectedVariant.assignmentCount} przydziałów • ${selectedVariant.unfilledCount} braków${costSummary}.\n\n`
+      + `${readiness.warnings.unfilledCount>0?`UWAGA: wariant zawiera ${readiness.warnings.unfilledCount} braków obsady.\n\n`:""}`
       + "Obecnie opublikowany grafik dla tego miesiąca zostanie zarchiwizowany. Przed publikacją system ponownie sprawdzi aktualne dane i wszystkie twarde reguły.",
     );
-    if (!confirmation) return;
+    if (!confirmation){setBusy(false);return;}
 
     const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
     let idempotencyKey = window.localStorage.getItem(attemptKey);
@@ -385,14 +426,13 @@ export function SolverV2Panel({
       window.localStorage.setItem(attemptKey, idempotencyKey);
     }
 
-    setBusy(true);
-    setMessage("");
     try {
       const publication = await publishCompanyVariant(supabase, {
         runId: run.id,
         variantId: selectedVariant.id,
         name: trimmedName,
         idempotencyKey,
+        warningReason,
       });
       rememberPublishedSchedule(context, publication.scheduleId);
       window.localStorage.removeItem(attemptKey);
@@ -427,6 +467,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setPublicationReadiness(null);
     setMessage("");
   }
 
@@ -503,6 +544,10 @@ export function SolverV2Panel({
             {variant.totalCostMinor !== undefined && variant.totalCostMinor !== null
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
+          <dl className="solver-v2-analysis">
+            {Object.entries(variant.metrics).filter(([metric])=>metric!=="UNFILLED"&&metric!=="TOTAL_COST").map(([metric,value])=><div key={metric}><dt>{({PREFERENCE_VIOLATIONS:"Niespełnione preferencje",NOMINAL_DEVIATION_MINUTES:"Odchylenie od nominału (min)",OVERTIME_MINUTES:"Nadgodziny (min)",LOAD_SPREAD_MINUTES:"Rozpiętość obciążenia (min)",WEEKEND_SPREAD:"Różnica weekendów",BASELINE_CHANGES:"Zmiany wobec bazowego"} as Record<string,string>)[metric]??metric}</dt><dd>{String(value??"—")}</dd></div>)}
+            {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
+          </dl>
           <div className="solver-v2-validation">
             <Check/><span><strong>{variant.hardViolations === 0 ? "Wszystkie twarde reguły spełnione" : "Wariant wymaga poprawy"}</strong><small>{solutionLabel(variant.solverStatus)}</small></span>
           </div>
@@ -541,6 +586,16 @@ export function SolverV2Panel({
           {busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj wybrany wariant</>}
         </button>
       </div>}
+
+    {publicationReadiness&&<div className={`solver-v2-readiness ${publicationReadiness.ready?"ready":"blocked"}`}>
+      <h4>{publicationReadiness.ready?"Grafik przeszedł kontrolę publikacji":"Publikacja jest zablokowana"}</h4>
+      {Object.values(publicationReadiness.blockers).map(blocker=><div className="solver-v2-notice warning" key={blocker.code}><AlertTriangle/><span><strong>{blocker.message}</strong>{blocker.count!==undefined&&<small>Liczba problemów: {blocker.count}</small>}{blocker.status&&<small>Status: {solverStatusLabel(blocker.status)} • etap {solverPhaseLabel(blocker.phase??"")}</small>}</span></div>)}
+      {publicationReadiness.warnings.unfilledCount>0&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{publicationReadiness.warnings.message??"Grafik zawiera braki obsady."}</strong><small>{publicationReadiness.warnings.unfilledCount} nieobsadzonych miejsc. To ostrzeżenie miękkie; publikacja wymaga świadomego potwierdzenia.</small></span></div>}
+      {publicationReadiness.issues.length>0&&<details><summary>Szczegóły alertów ({publicationReadiness.issues.length})</summary><div className="publication-readiness-issues">{publicationReadiness.issues.map(issue=>{
+        const required=issue.requiredCount??null,assigned=issue.assignedCount??0;
+        return <article key={issue.id}><header><b>{issue.date??"Termin"} • {publicationIssueTime(issue.startsAt,timezone)}–{publicationIssueTime(issue.endsAt,timezone)}</b><em>{issue.severity}</em></header><strong>{[issue.locationName,issue.shiftTemplateName,issue.roleName,issue.dutyName].filter(Boolean).join(" • ")||issue.code}</strong><p>{issue.message}</p>{required!==null&&<small>Wymagane: {required} • przypisane: {assigned} • brakuje: {Math.max(0,required-assigned)}</small>}<button className="secondary-button" onClick={()=>document.getElementById(`solver-issue-${issue.id}`)?.scrollIntoView({behavior:"smooth",block:"center"})}>Pokaż w podglądzie wariantu</button></article>;
+      })}</div></details>}
+    </div>}
 
     {engine === "ORTOOLS_V2" && selectedIsPublished
       && <div className="solver-v2-selection-note">

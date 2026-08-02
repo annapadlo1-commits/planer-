@@ -93,6 +93,8 @@ class EligibilityIndex:
             reasons.append("DUTIES")
         if not employee.location_allowed_on(slot.location_id, slot.date):
             reasons.append("LOCATION")
+        if slot.shift_template_id in employee.blocked_shift_template_ids:
+            reasons.append("SHIFT_PERIOD_BLOCKED")
 
         slot_timezone = slot.start.tzinfo or self.timezone
         local_start = slot.start.astimezone(slot_timezone)
