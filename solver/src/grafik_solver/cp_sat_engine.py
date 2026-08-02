@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import defaultdict
@@ -48,6 +49,9 @@ class OptimizationCancelled(OptimizationError):
 
 class OptimizationIncomplete(OptimizationError):
     pass
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 METRIC_ALIASES = {
@@ -100,6 +104,7 @@ class _Artifacts:
     hint_variables: tuple[Any, ...]
     static_quotes: dict[tuple[str, str], Any]
     complete_coverage_hint: bool = False
+    coverage_symmetry_constraints: int = 0
 
 
 class CpSatScheduleEngine:
@@ -140,6 +145,70 @@ class CpSatScheduleEngine:
         if self._progress_callback is not None:
             self._progress_callback(values)
 
+    @staticmethod
+    def _solver_measure(solver: Any, name: str) -> Any | None:
+        value = getattr(solver, name, None)
+        if value is None:
+            return None
+        try:
+            return value() if callable(value) else value
+        except RuntimeError:
+            return None
+
+    @classmethod
+    def _solver_diagnostics(
+        cls, solver: Any, status: Any, stage_name: str
+    ) -> dict[str, Any]:
+        status_name = solver.status_name(status)
+        diagnostics: dict[str, Any] = {
+            "stage": stage_name,
+            "status": status_name,
+        }
+        measurements = {
+            "wallTimeSeconds": "wall_time",
+            "branches": "num_branches",
+            "conflicts": "num_conflicts",
+        }
+        for output_name, solver_name in measurements.items():
+            value = cls._solver_measure(solver, solver_name)
+            if value is not None:
+                diagnostics[output_name] = value
+        if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+            objective = cls._solver_measure(solver, "objective_value")
+            best_bound = cls._solver_measure(solver, "best_objective_bound")
+            if objective is not None:
+                diagnostics["objectiveValue"] = objective
+            if best_bound is not None:
+                diagnostics["bestBound"] = best_bound
+            if objective is not None and best_bound is not None:
+                diagnostics["absoluteGap"] = max(
+                    0.0, float(objective) - float(best_bound)
+                )
+        return diagnostics
+
+    @staticmethod
+    def _format_solver_diagnostics(diagnostics: Mapping[str, Any]) -> str:
+        ordered_names = (
+            "status",
+            "objectiveValue",
+            "bestBound",
+            "absoluteGap",
+            "wallTimeSeconds",
+            "branches",
+            "conflicts",
+        )
+        values: list[str] = []
+        for name in ordered_names:
+            value = diagnostics.get(name)
+            if value is None:
+                continue
+            if isinstance(value, float):
+                rendered = f"{value:.6g}"
+            else:
+                rendered = str(value)
+            values.append(f"{name}={rendered}")
+        return "; ".join(values)
+
     def stop(self) -> None:
         self._cancel_event.set()
         with self._solver_lock:
@@ -157,6 +226,17 @@ class CpSatScheduleEngine:
         eligibility = EligibilityIndex(snapshot)
 
         common = self._build_model(snapshot, slots, eligibility, coverage_only=True)
+        LOGGER.info(
+            "Coverage model slots=%s eligiblePairs=%s symmetryConstraints=%s",
+            len(slots),
+            len(common.x),
+            common.coverage_symmetry_constraints,
+        )
+        self._emit_progress(
+            slotCount=len(slots),
+            eligibleDecisionPairs=len(common.x),
+            coverageSymmetryConstraints=common.coverage_symmetry_constraints,
+        )
         common.model.clear_objective()
         common.model.minimize(common.metrics["UNFILLED"])
         common_solver, common_status = self._solve_model(
@@ -179,11 +259,11 @@ class CpSatScheduleEngine:
                     global_deadline, "GLOBAL:UNFILLED_FALLBACK"
                 ),
             )
-        self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
         all_common_stages_optimal = self._require_optimal(
             common_solver, common_status, snapshot, "UNFILLED"
         )
         minimum_unfilled = int(common_solver.value(common.metrics["UNFILLED"]))
+        self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
         self._emit_progress(
             phase="SOLVING",
             progress=10,
@@ -301,13 +381,13 @@ class CpSatScheduleEngine:
                         strategy_deadline, strategy.code
                     ),
                 )
-                self._ensure_deadline(strategy_deadline, strategy.code)
                 all_stages_optimal &= self._require_optimal(
                     final_solver,
                     final_status,
                     snapshot,
                     f"{strategy.code}:FEASIBILITY",
                 )
+                self._ensure_deadline(strategy_deadline, strategy.code)
             else:
                 ordered_tiers = sorted(tiers)
                 for tier_index, tier in enumerate(ordered_tiers, start=1):
@@ -330,14 +410,14 @@ class CpSatScheduleEngine:
                             strategy_deadline, strategy.code
                         ),
                     )
-                    self._ensure_deadline(
-                        strategy_deadline, f"{strategy.code}:TIER_{tier}"
-                    )
                     all_stages_optimal &= self._require_optimal(
                         final_solver,
                         final_status,
                         snapshot,
                         f"{strategy.code}:TIER_{tier}",
+                    )
+                    self._ensure_deadline(
+                        strategy_deadline, f"{strategy.code}:TIER_{tier}"
                     )
                     exact_value = int(final_solver.value(expression))
                     allowed_degradation = tier_tolerances[tier]
@@ -464,6 +544,22 @@ class CpSatScheduleEngine:
                 self._current_solver = None
         if self._cancel_event.is_set():
             raise OptimizationCancelled("Optimization was cancelled")
+        diagnostics = self._solver_diagnostics(solver, status, stage_name)
+        LOGGER.info(
+            "CP-SAT stage %s finished: %s",
+            stage_name,
+            self._format_solver_diagnostics(diagnostics),
+        )
+        self._emit_progress(
+            solverStage=stage_name,
+            solverStatus=diagnostics["status"],
+            solverObjectiveValue=diagnostics.get("objectiveValue"),
+            solverBestBound=diagnostics.get("bestBound"),
+            solverAbsoluteGap=diagnostics.get("absoluteGap"),
+            solverWallTimeSeconds=diagnostics.get("wallTimeSeconds"),
+            solverBranches=diagnostics.get("branches"),
+            solverConflicts=diagnostics.get("conflicts"),
+        )
         return solver, status
 
     @staticmethod
@@ -481,7 +577,11 @@ class CpSatScheduleEngine:
             raise OptimizationError(
                 f"{stage_name} model is invalid: {solver.solution_info()}"
             )
-        raise OptimizationIncomplete(f"{stage_name} ended with status {name}")
+        diagnostics = CpSatScheduleEngine._solver_diagnostics(
+            solver, status, stage_name
+        )
+        rendered = CpSatScheduleEngine._format_solver_diagnostics(diagnostics)
+        raise OptimizationIncomplete(f"{stage_name} ended incomplete; {rendered}")
 
     @staticmethod
     def _validate_capacity(snapshot: Snapshot, slots: list[Slot]) -> None:
@@ -756,8 +856,8 @@ class CpSatScheduleEngine:
         ordered_slots = sorted(
             slots,
             key=lambda slot: (
-                slot.start,
                 len(candidate_ids[slot.id]),
+                slot.start,
                 slot.location_id,
                 slot.id,
             ),
@@ -788,6 +888,56 @@ class CpSatScheduleEngine:
         for slot_id, variable in unfilled.items():
             model.add_hint(variable, int(slot_id not in selected_by_slot))
         return len(selected_by_slot)
+
+    @staticmethod
+    def _add_coverage_symmetry_breaking(
+        model: Any,
+        snapshot: Snapshot,
+        slots: tuple[Slot, ...],
+        x: Mapping[tuple[str, str], Any],
+        unfilled: Mapping[str, Any],
+    ) -> int:
+        """Canonicalize interchangeable seats in the coverage-only proof.
+
+        Seat identifiers are materialization keys, but seats generated from the
+        same demand occurrence have identical business constraints.  Ordering
+        their selected employee ranks removes factorially many equivalent
+        coverage solutions.  A group containing a locked seat is deliberately
+        left untouched because the lock makes that seat identity meaningful.
+        """
+        locked_slot_ids = {item.slot_id for item in snapshot.locked_assignments}
+        employee_ranks = {
+            employee.id: rank
+            for rank, employee in enumerate(
+                sorted(snapshot.employees, key=lambda item: item.id), start=1
+            )
+        }
+        unfilled_rank = len(employee_ranks) + 1
+        grouped: dict[tuple[str, str], list[Slot]] = defaultdict(list)
+        for slot in slots:
+            grouped[(slot.demand_id, slot.occurrence_id)].append(slot)
+
+        added = 0
+        for group_slots in grouped.values():
+            ordered = sorted(group_slots, key=lambda item: (item.seat_index, item.id))
+            if len(ordered) < 2 or any(
+                slot.id in locked_slot_ids for slot in ordered
+            ):
+                continue
+            for left, right in zip(ordered, ordered[1:]):
+                left_rank = _sum(
+                    rank * variable
+                    for employee_id, rank in employee_ranks.items()
+                    if (variable := x.get((employee_id, left.id))) is not None
+                ) + unfilled_rank * unfilled[left.id]
+                right_rank = _sum(
+                    rank * variable
+                    for employee_id, rank in employee_ranks.items()
+                    if (variable := x.get((employee_id, right.id))) is not None
+                ) + unfilled_rank * unfilled[right.id]
+                model.add(left_rank <= right_rank)
+                added += 1
+        return added
 
     def _build_model(
         self,
@@ -851,6 +1001,12 @@ class CpSatScheduleEngine:
                     "is not eligible"
                 )
             model.add(variable == 1)
+
+        coverage_symmetry_constraints = 0
+        if coverage_only:
+            coverage_symmetry_constraints = self._add_coverage_symmetry_breaking(
+                model, snapshot, slots, x, unfilled
+            )
 
         timezone = ZoneInfo(snapshot.settings.timezone)
         external_by_employee: dict[str, list[Any]] = defaultdict(list)
@@ -1061,6 +1217,7 @@ class CpSatScheduleEngine:
                 ),
                 static_quotes=static_quotes,
                 complete_coverage_hint=hinted_assignments == len(slots),
+                coverage_symmetry_constraints=coverage_symmetry_constraints,
             )
 
         static_cost_expression = _sum(
@@ -1181,6 +1338,7 @@ class CpSatScheduleEngine:
                     + list(day_work.values())
                 ),
                 static_quotes=static_quotes,
+                coverage_symmetry_constraints=coverage_symmetry_constraints,
             )
 
         preference_expression = _sum(
