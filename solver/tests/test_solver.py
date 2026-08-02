@@ -1017,6 +1017,49 @@ class SolverTests(unittest.TestCase):
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
 
+    def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        runtime._solver_progress(
+            {
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+                "slotCount": 1362,
+                "eligibleDecisionPairs": 21048,
+                "coverageSymmetryConstraints": 798,
+                "solverStatus": "OPTIMAL",
+                "solverBestBound": None,
+            }
+        )
+
+        self.assertEqual(
+            runtime._progress_snapshot(),
+            {
+                "schemaVersion": 2,
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+            },
+        )
+
     def test_pull_worker_claims_the_next_queued_run(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
