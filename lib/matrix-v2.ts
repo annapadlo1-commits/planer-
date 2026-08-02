@@ -37,6 +37,7 @@ export type MatrixV2Shift = MatrixV2NamedItem & {
   ends_at: string;
   ends_next_day: boolean;
   day_mask: number[];
+  shift_period: "MORNING" | "MIDDLE" | "EVENING";
 };
 export type MatrixV2RoleDuty = {
   id: string;
@@ -44,6 +45,8 @@ export type MatrixV2RoleDuty = {
   duty_id: string;
   assignment_mode: "REQUIRED" | "OPTIONAL" | "EXTRA";
   minimum_count: number;
+  shift_obligation: boolean;
+  shift_period?: "MORNING" | "MIDDLE" | "EVENING" | null;
   active: boolean;
 };
 export type MatrixV2ScenarioSettingsOverrides = Partial<Pick<MatrixV2Settings,
@@ -166,7 +169,23 @@ export type MatrixV2Employee = {
   archivedAt?: string | null;
   archiveReason?: string | null;
   primaryRoleId?: string | null;
-  homeLocationId?: string | null;
+  locationIds?: string[];
+  shiftPeriodPreferences?: Partial<Record<"MORNING" | "MIDDLE" | "EVENING", "INHERIT" | "PREFERRED" | "NEUTRAL" | "AVOIDED" | "BLOCKED">>;
+};
+
+export type MatrixV2PublicationBlocker = {
+  code: "MISSING_PAY_RATE" | "MISSING_ROLE" | "MISSING_STANDARD_LOCATION" | string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  message: string;
+};
+
+export type MatrixV2PublicationReadiness = {
+  ready: boolean;
+  blockers: MatrixV2PublicationBlocker[];
+  effectiveFrom: string;
+  matrixVersionId: string;
 };
 export type MatrixV2EmployeeRole = {
   id: string;
@@ -280,7 +299,7 @@ export const OBJECTIVE_METRICS = [
   { value: "UNFILLED", label: "Liczba nieobsadzonych miejsc" },
   { value: "TOTAL_COST", label: "Całkowity koszt" },
   { value: "PREFERENCE_VIOLATIONS", label: "Niespełnione preferencje" },
-  { value: "HOME_LOCATION_VIOLATIONS", label: "Praca poza lokalem macierzystym" },
+  { value: "HOME_LOCATION_VIOLATIONS", label: "Wycofane kryterium lokalu macierzystego (zawsze 0)" },
   { value: "NOMINAL_DEVIATION_MINUTES", label: "Odchylenie od nominału" },
   { value: "OVERTIME_MINUTES", label: "Nadgodziny" },
   { value: "LOAD_SPREAD_MINUTES", label: "Nierówny podział obciążenia" },
@@ -327,11 +346,16 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID_MATRIX_SETTINGS")) return "Aktywny Matrix nie ma kompletnych ustawień.";
   if (value.includes("INVALID_MATRIX_TIMEZONE")) return "Matrix musi mieć prawidłową, jawnie wybraną strefę czasową.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_ROLE_AND_LOCATION")) return "Każdy aktywny pracownik musi mieć co najmniej jedną aktywną rolę i dostęp do co najmniej jednego lokalu.";
+  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_PAY_RATE")) return "Co najmniej jeden aktywny pracownik nie ma stawki obowiązującej w dniu publikacji. Otwórz listę blokad, aby zobaczyć konkretną osobę.";
+  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_STANDARD_LOCATION")) return "Wybierz co najmniej jeden lokal, w którym pracownik może pracować w zwykłym limicie.";
   if (value.includes("MATRIX_WORKFORCE_VERSION_IMMUTABLE")) return "Opublikowane dane pracownika są historyczne i nie mogą być zmieniane. Utwórz nową wersję roboczą Matrixa.";
   if (value.includes("MATRIX_EMPLOYEE_NOT_FOUND")) return "Nie znaleziono pracownika w bieżącej wersji roboczej Matrixa.";
   if (value.includes("EMPLOYEE_NUMBER_ALREADY_EXISTS")) return "Ten numer pracownika jest już używany.";
   if (value.includes("EMPLOYEE_EMAIL_ALREADY_EXISTS")) return "Ten adres e-mail jest już przypisany do innego pracownika.";
   if (value.includes("EMPLOYEE_IDENTITY_REQUIRED")) return "Podaj numer pracownika, imię i nazwisko.";
+  if (value.includes("INVALID_SHIFT_PERIOD") || value.includes("SHIFT_PERIOD_REQUIRED")) return "Wybierz okres zmiany: poranna, środek albo wieczorna.";
+  if (value.includes("INVALID_SHIFT_PERIOD_PREFERENCES") || value.includes("INVALID_SHIFT_PREFERENCE_LEVEL")) return "Preferencje okresów zmian zawierają nieprawidłową wartość.";
+  if (value.includes("MATRIX_IMPORT_HAS_ERRORS")) return "Import zawiera błędy. Wróć do podglądu i popraw wskazane wiersze.";
   if (value.includes("INVALID_EMPLOYMENT_DATES")) return "Data zakończenia zatrudnienia nie może być wcześniejsza od daty rozpoczęcia.";
   if (value.includes("INVALID_EMPLOYEE_LIMITS")) return "Sprawdź nominał, limity czasu pracy i ograniczenia pracownika.";
   if (value.includes("MIXED_CURRENCIES_UNSUPPORTED")) return "Matrix może używać tylko jednej waluty rozliczeniowej. Ujednolić stawki, dodatki i budżety przed publikacją.";

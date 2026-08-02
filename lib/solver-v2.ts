@@ -145,8 +145,18 @@ export type SolverWorkspaceIssue = {
   code: string;
   severity: string;
   message: string;
+  requiredCount: number | null;
+  assignedCount: number | null;
   role: { id: string; name: string } | null;
   duty: { id: string; name: string } | null;
+  shift: {
+    id: string;
+    date: string;
+    startsAt: string;
+    endsAt: string;
+    location: { id: string; name: string; timezone: string | null };
+    shiftTemplate: { id: string; name: string; shiftPeriod?: string };
+  } | null;
 };
 
 export type SolverWorkspace = {
@@ -155,6 +165,69 @@ export type SolverWorkspace = {
   shifts: SolverWorkspaceShift[];
   issues: SolverWorkspaceIssue[];
   finance: SolverWorkspaceFinance | null;
+};
+
+export type SolverCandidateDiagnostic = {
+  employeeId: string;
+  employeeNo: string;
+  name: string;
+  classification: "ELIGIBLE" | "WARNING" | "BLOCKED";
+  hardReasons: string[];
+  softReasons: string[];
+  preferenceLevel: string;
+  monthlyShifts: number;
+  monthlyMinutes: number;
+  nominalMonthlyMinutes: number;
+  maximumMonthlyMinutes: number;
+  weeklyMinutes: number;
+  maximumWeeklyMinutes: number;
+  consecutiveDaysBefore: number;
+  consecutiveDaysAfter: number;
+  projectedConsecutiveDays: number;
+  maximumConsecutiveDays: number;
+  declaredUnavailable: boolean;
+  outsideAvailableWindow: boolean;
+  worksPreviousDay: boolean;
+  worksNextDay: boolean;
+  previousShift: { date: string; startsAt: string; endsAt: string } | null;
+  nextShift: { date: string; startsAt: string; endsAt: string } | null;
+};
+
+export type SolverCandidateDiagnostics = {
+  scheduleId: string;
+  issue: { id: string; code: string; message: string; slotKey: string; roleId: string; dutyId: string | null };
+  shift: {
+    id: string; slotGroupKey: string; date: string; startsAt: string; endsAt: string;
+    locationId: string; shiftTemplateId: string; shiftPeriod: "MORNING" | "MIDDLE" | "EVENING";
+  };
+  candidates: SolverCandidateDiagnostic[];
+  summary: { considered: number; eligible: number; warning: number; blocked: number };
+};
+
+export type SolverPublicationReadiness = {
+  ready: boolean;
+  blockers: Record<string, { code: string; message: string; count?: number; status?: string; phase?: string }>;
+  warnings: { unfilledCount: number; message?: string | null };
+  issues: Array<{
+    id: string; code: string; severity: string; message: string; date?: string;
+    startsAt?: string; endsAt?: string; locationId?: string; locationName?: string;
+    shiftTemplateId?: string; shiftTemplateName?: string; roleId?: string;
+    roleName?: string; dutyId?: string | null; dutyName?: string | null;
+    requiredCount?: number | null; assignedCount?: number | null; slotKey?: string;
+  }>;
+};
+
+export type SolverCatalogRun = {
+  id: string;
+  name: string;
+  status: string;
+  phase: string;
+  progress: number;
+  createdAt: string;
+  finishedAt?: string | null;
+  scenario: { id: string; code: string; name: string };
+  scope: { type: SolverScope; roleId?: string | null; roleName?: string | null };
+  variants: SolverVariant[];
 };
 
 export type OperationalPlan = {
@@ -428,6 +501,9 @@ function normalizeWorkspaceShift(value: unknown): SolverWorkspaceShift {
 
 function normalizeWorkspaceIssue(value: unknown): SolverWorkspaceIssue {
   const source = record(value);
+  const shift = record(source.shift);
+  const shiftLocation = record(shift.location);
+  const shiftTemplate = record(shift.shiftTemplate);
   return {
     id: String(valueOf(source, "id", "id", "")),
     variantId: String(valueOf(source, "variantId", "variant_id", "")),
@@ -435,8 +511,24 @@ function normalizeWorkspaceIssue(value: unknown): SolverWorkspaceIssue {
     code: String(valueOf(source, "code", "issue_code", "UNFILLED")),
     severity: String(valueOf(source, "severity", "severity", "WARNING")),
     message: String(valueOf(source, "message", "message", "Nieobsadzone miejsce")),
+    requiredCount: nullableNumberOf(source, "requiredCount", "required_count"),
+    assignedCount: nullableNumberOf(source, "assignedCount", "assigned_count"),
     role: source.role ? normalizeNamedEntity(source.role) : null,
     duty: source.duty ? normalizeNamedEntity(source.duty) : null,
+    shift: source.shift ? {
+      id: String(valueOf(shift,"id","id","")),
+      date: String(valueOf(shift,"date","shift_date","")),
+      startsAt: String(valueOf(shift,"startsAt","starts_at","")),
+      endsAt: String(valueOf(shift,"endsAt","ends_at","")),
+      location: {
+        ...normalizeNamedEntity(shift.location,"Lokal"),
+        timezone:String(valueOf(shiftLocation,"timezone","timezone","")).trim()||null,
+      },
+      shiftTemplate: {
+        ...normalizeNamedEntity(shift.shiftTemplate,"Zmiana"),
+        shiftPeriod:String(valueOf(shiftTemplate,"shiftPeriod","shift_period","")).trim()||undefined,
+      },
+    }:null,
   };
 }
 
@@ -825,7 +917,7 @@ export async function getSelectedVariantWorkspace(
   client: SupabaseClient,
   runId: string,
 ): Promise<SolverWorkspace> {
-  return normalizeWorkspace(await rpc(client, "optimizer_selected_variant_workspace_v2", {
+  return normalizeWorkspace(await rpc(client, "optimizer_selected_variant_workspace_alpha16", {
     p_run_id: runId,
   }));
 }
@@ -837,14 +929,19 @@ export async function publishCompanyVariant(
     variantId: string;
     name: string;
     idempotencyKey: string;
+    warningReason?: string | null;
   },
 ): Promise<SolverPublication> {
-  const payload = record(await rpc(client, "optimizer_publish_company_variant_v2", {
+  const payload = record(await rpc(client, "optimizer_publish_company_variant_alpha16", {
     p_run_id: input.runId,
     p_variant_id: input.variantId,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
+    p_warning_reason: input.warningReason?.trim()||null,
   }));
+  if(payload.published===false){
+    throw new Error(`${String(payload.code??"PUBLICATION_FAILED")}: ${String(payload.message??"Publikacja nie powiodła się.")}`);
+  }
   const scheduleId = String(valueOf(payload, "scheduleId", "schedule_id", ""));
   if (!scheduleId) throw new Error("SCHEDULE_ID_MISSING");
   return {
@@ -859,7 +956,7 @@ export async function getPublishedSchedule(
   client: SupabaseClient,
   scheduleId: string,
 ): Promise<SolverWorkspace> {
-  return normalizeWorkspace(await rpc(client, "optimizer_published_schedule_v2", {
+  return normalizeWorkspace(await rpc(client, "optimizer_published_schedule_alpha16", {
     p_schedule_id: scheduleId,
   }));
 }
@@ -874,6 +971,184 @@ export async function getActiveSolverWorkspace(
   if (!Object.keys(payload).length) return null;
   if (payload.engine !== "ORTOOLS_V2") throw new Error("ACTIVE_WORKSPACE_ENGINE_INVALID");
   return normalizeWorkspace(value);
+}
+
+function normalizeCandidate(value: unknown): SolverCandidateDiagnostic {
+  const source = record(value);
+  const previous = source.previousShift ? record(source.previousShift) : null;
+  const next = source.nextShift ? record(source.nextShift) : null;
+  const classification = String(source.classification);
+  if (!["ELIGIBLE", "WARNING", "BLOCKED"].includes(classification)) {
+    throw new Error("CANDIDATE_CLASSIFICATION_INVALID");
+  }
+  return {
+    employeeId: String(source.employeeId ?? ""),
+    employeeNo: String(source.employeeNo ?? ""),
+    name: String(source.name ?? "Pracownik"),
+    classification: classification as SolverCandidateDiagnostic["classification"],
+    hardReasons: Array.isArray(source.hardReasons) ? source.hardReasons.map(String) : [],
+    softReasons: Array.isArray(source.softReasons) ? source.softReasons.map(String) : [],
+    preferenceLevel: String(source.preferenceLevel ?? "NEUTRAL"),
+    monthlyShifts: numberOf(source, "monthlyShifts", "monthly_shifts"),
+    monthlyMinutes: numberOf(source, "monthlyMinutes", "monthly_minutes"),
+    nominalMonthlyMinutes: numberOf(source, "nominalMonthlyMinutes", "nominal_monthly_minutes"),
+    maximumMonthlyMinutes: numberOf(source, "maximumMonthlyMinutes", "maximum_monthly_minutes"),
+    weeklyMinutes: numberOf(source, "weeklyMinutes", "weekly_minutes"),
+    maximumWeeklyMinutes: numberOf(source, "maximumWeeklyMinutes", "maximum_weekly_minutes"),
+    consecutiveDaysBefore: numberOf(source, "consecutiveDaysBefore", "consecutive_days_before"),
+    consecutiveDaysAfter: numberOf(source, "consecutiveDaysAfter", "consecutive_days_after"),
+    projectedConsecutiveDays: numberOf(source, "projectedConsecutiveDays", "projected_consecutive_days"),
+    maximumConsecutiveDays: numberOf(source, "maximumConsecutiveDays", "maximum_consecutive_days"),
+    declaredUnavailable: Boolean(source.declaredUnavailable),
+    outsideAvailableWindow: Boolean(source.outsideAvailableWindow),
+    worksPreviousDay: Boolean(source.worksPreviousDay),
+    worksNextDay: Boolean(source.worksNextDay),
+    previousShift: previous ? {
+      date: String(previous.date ?? ""), startsAt: String(previous.startsAt ?? ""), endsAt: String(previous.endsAt ?? ""),
+    } : null,
+    nextShift: next ? {
+      date: String(next.date ?? ""), startsAt: String(next.startsAt ?? ""), endsAt: String(next.endsAt ?? ""),
+    } : null,
+  };
+}
+
+export async function getCandidateDiagnostics(
+  client: SupabaseClient,
+  scheduleId: string,
+  issueId: string,
+): Promise<SolverCandidateDiagnostics> {
+  const payload = record(await rpc(client, "optimizer_candidate_diagnostics_alpha16", {
+    p_schedule_id: scheduleId,
+    p_issue_id: Number(issueId),
+  }));
+  const issue = record(payload.issue), shift = record(payload.shift), summary = record(payload.summary);
+  return {
+    scheduleId: String(payload.scheduleId ?? scheduleId),
+    issue: {
+      id: String(issue.id ?? issueId), code: String(issue.code ?? "UNFILLED_SLOT"),
+      message: String(issue.message ?? "Nieobsadzone miejsce"),
+      slotKey: String(issue.slotKey ?? ""), roleId: String(issue.roleId ?? ""),
+      dutyId: issue.dutyId ? String(issue.dutyId) : null,
+    },
+    shift: {
+      id: String(shift.id ?? ""), slotGroupKey: String(shift.slotGroupKey ?? ""),
+      date: String(shift.date ?? ""), startsAt: String(shift.startsAt ?? ""),
+      endsAt: String(shift.endsAt ?? ""), locationId: String(shift.locationId ?? ""),
+      shiftTemplateId: String(shift.shiftTemplateId ?? ""),
+      shiftPeriod: String(shift.shiftPeriod ?? "MIDDLE") as SolverCandidateDiagnostics["shift"]["shiftPeriod"],
+    },
+    candidates: Array.isArray(payload.candidates) ? payload.candidates.map(normalizeCandidate) : [],
+    summary: {
+      considered: numberOf(summary, "considered", "considered"),
+      eligible: numberOf(summary, "eligible", "eligible"),
+      warning: numberOf(summary, "warning", "warning"),
+      blocked: numberOf(summary, "blocked", "blocked"),
+    },
+  };
+}
+
+export async function emergencyAssignV2(
+  client: SupabaseClient,
+  input: {
+    scheduleId: string; issueId: string; employeeId: string;
+    allowSoft: boolean; reason?: string; notify: boolean;
+  },
+) {
+  return record(await rpc(client, "optimizer_emergency_assign_alpha16", {
+    p_schedule_id: input.scheduleId,
+    p_issue_id: Number(input.issueId),
+    p_employee_id: input.employeeId,
+    p_allow_soft: input.allowSoft,
+    p_reason: input.reason?.trim() || null,
+    p_notify: input.notify,
+  }));
+}
+
+export async function getOperationalSolverWorkspace(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverWorkspace | null> {
+  const payload = record(await rpc(client, "optimizer_operational_workspace_alpha16", { p_month: month }));
+  if (!payload.workspace) return null;
+  const workspace = normalizeWorkspace(payload.workspace);
+  const overrides = Array.isArray(payload.overrides) ? payload.overrides.map(record) : [];
+  if (!overrides.length) return workspace;
+  const resolvedIssues = new Set(overrides.map(item => String(item.issueId ?? "")));
+  const overridesByVariant = new Map<string, number>();
+  const byShift = new Map<string, SolverWorkspaceAssignment[]>();
+  for (const override of overrides) {
+    const variantId = String(override.variantId ?? "");
+    if (variantId) overridesByVariant.set(variantId, (overridesByVariant.get(variantId) ?? 0) + 1);
+    const key = String(override.slotGroupKey ?? "");
+    if (!key) continue;
+    const assignment = normalizeWorkspaceAssignment({
+      id: override.id,
+      slotKey: override.slotKey,
+      employee: override.employee,
+      role: override.role,
+      duties: override.duties,
+      locked: true,
+      costMinor: null,
+    });
+    byShift.set(key, [...(byShift.get(key) ?? []), assignment]);
+  }
+  return {
+    ...workspace,
+    variants: workspace.variants.map(variant => ({
+      ...variant,
+      assignmentCount: variant.assignmentCount + (overridesByVariant.get(variant.id) ?? 0),
+      unfilledCount: Math.max(0, variant.unfilledCount - (overridesByVariant.get(variant.id) ?? 0)),
+    })),
+    shifts: workspace.shifts.map(shift => ({
+      ...shift,
+      assignments: [...shift.assignments, ...(byShift.get(shift.slotGroupKey) ?? [])],
+    })),
+    issues: workspace.issues.filter(issue => !resolvedIssues.has(issue.id)),
+  };
+}
+
+export async function getPublicationReadiness(
+  client: SupabaseClient,
+  runId: string,
+  variantId: string,
+  name: string,
+): Promise<SolverPublicationReadiness> {
+  const payload = record(await rpc(client, "optimizer_publication_attempt_alpha16", {
+    p_run_id: runId,
+    p_variant_id: variantId,
+    p_name:name,
+  }));
+  return {
+    ready: Boolean(payload.ready),
+    blockers: record(payload.blockers) as SolverPublicationReadiness["blockers"],
+    warnings: record(payload.warnings) as SolverPublicationReadiness["warnings"],
+    issues: Array.isArray(payload.issues) ? payload.issues.map(item => record(item) as SolverPublicationReadiness["issues"][number]) : [],
+  };
+}
+
+export async function getSolverRunsCatalog(
+  client: SupabaseClient,
+  month: string,
+  scopeType: SolverScope,
+  scopeRoleId?: string | null,
+): Promise<SolverCatalogRun[]> {
+  const payload = record(await rpc(client, "optimizer_runs_catalog_alpha16", {
+    p_month: month,
+    p_scope_type: scopeType,
+    p_scope_role_id: scopeRoleId ?? null,
+  }));
+  return Array.isArray(payload.runs) ? payload.runs.map(value => {
+    const source = record(value), scenario = record(source.scenario), scope = record(source.scope);
+    return {
+      id: String(source.id ?? ""), name: String(source.name ?? "Grafik"),
+      status: String(source.status ?? "QUEUED"), phase: String(source.phase ?? "QUEUED"),
+      progress: Number(source.progress ?? 0), createdAt: String(source.createdAt ?? ""),
+      finishedAt: source.finishedAt ? String(source.finishedAt) : null,
+      scenario: { id: String(scenario.id ?? ""), code: String(scenario.code ?? ""), name: String(scenario.name ?? "Scenariusz") },
+      scope: { type: String(scope.type ?? scopeType) as SolverScope, roleId: scope.roleId ? String(scope.roleId) : null, roleName: scope.roleName ? String(scope.roleName) : null },
+      variants: Array.isArray(source.variants) ? source.variants.map(normalizeVariant) : [],
+    };
+  }) : [];
 }
 
 export function isActiveOrtoolsWorkspace(workspace: SolverWorkspace | null): workspace is SolverWorkspace {
@@ -1349,10 +1624,17 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("SOLVER_LOCATIONS_MISSING")) return "Aktywny Matrix nie zawiera lokali.";
   if (normalized.includes("VARIANT_STRATEGY_MISSING") || normalized.includes("VARIANT_STRATEGY_INVALID") || normalized.includes("ROLE_COMPOSITE_STRATEGY")) return "Odpowiedź generatora nie zawiera prawidłowej strategii wariantu. Odśwież dane przed kontynuacją.";
   if (normalized.includes("COMPANY_PUBLICATION_FORBIDDEN")) return "Tylko właściciel lub administrator może opublikować grafik całej firmy.";
+  if (normalized.includes("WARNING_REASON_REQUIRED")) return "Publikacja z brakami obsady wymaga podania powodu decyzji.";
+  if (normalized.includes("PLAN_NOT_READY")) return "Grafik nie jest gotowy do publikacji. Rozwiń listę blokad i przejdź do wskazanych alertów.";
   if (normalized.includes("PUBLICATION_INPUT_CHANGED")) return "Dane firmy zmieniły się od czasu generowania. Uruchom nowy grafik przed publikacją.";
   if (normalized.includes("SELECTED_COMPANY_VARIANT_REQUIRED")) return "Przed publikacją wybierz poprawny wariant grafiku całej firmy.";
   if (normalized.includes("COMPANY_RUN_NOT_READY")) return "Ten grafik nie jest jeszcze gotowy do publikacji.";
+  if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
+  if (normalized.includes("SOFT_OVERRIDE_REASON_REQUIRED")) return "Awaryjne naruszenie miękkiej reguły wymaga potwierdzenia i podania powodu.";
+  if (normalized.includes("SLOT_ALREADY_FILLED")) return "To brakujące miejsce zostało już obsadzone. Odśwież grafik operacyjny.";
+  if (normalized.includes("CANDIDATE_NOT_FOUND")) return "Wybrany pracownik nie jest już kandydatem do tej zmiany. Odśwież listę.";
   if (normalized.includes("INVALID_PLAN_NAME")) return "Podaj nazwę publikowanego grafiku.";
+  if (normalized.includes("PUBLICATION_FAILED")) return "Publikacja nie została zapisana. Odśwież diagnostykę gotowości i spróbuj ponownie.";
   if (normalized.includes("SCHEDULE_ID_MISSING")) return "Publikacja nie zwróciła identyfikatora grafiku. Odśwież widok przed ponowną próbą.";
   if (normalized.includes("SCHEDULE_ID_INVALID")) return "Publikacja zwróciła nieprawidłowy identyfikator grafiku. Odśwież widok przed ponowną próbą.";
   if (normalized.includes("SELECTED_VARIANT_NOT_FOUND")) return "Nie znaleziono wybranego wariantu. Wybierz wariant ponownie.";

@@ -7,6 +7,7 @@ import "./alpha12.css";
 import "./solver-v2.css";
 import "./role-composite.css";
 import "./matrix-v2.css";
+import "./alpha16.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",
