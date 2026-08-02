@@ -1,0 +1,2 @@
+-- Migration-history marker: this change was applied to production before the
+-- repository was connected to Supabase Branching.
