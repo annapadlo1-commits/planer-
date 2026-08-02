@@ -750,6 +750,106 @@ class SolverTests(unittest.TestCase):
                 FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "TEST"
             )
 
+    def test_incomplete_status_reports_solver_proof_diagnostics(self) -> None:
+        class FeasibleSolver:
+            objective_value = 7.0
+            best_objective_bound = 5.0
+            wall_time = 12.5
+            num_branches = 321
+            num_conflicts = 45
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+        with self.assertRaisesRegex(
+            OptimizationIncomplete,
+            r"status=FEASIBLE; objectiveValue=7; bestBound=5; "
+            r"absoluteGap=2; wallTimeSeconds=12.5; branches=321; conflicts=45",
+        ):
+            self.engine._require_optimal(
+                FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "UNFILLED"
+            )
+
+    def test_coverage_model_breaks_interchangeable_seat_symmetry(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 1)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+
+        employee_ranks = {
+            employee.id: rank
+            for rank, employee in enumerate(
+                sorted(snapshot.employees, key=lambda item: item.id), start=1
+            )
+        }
+        selected_ranks = []
+        for slot in sorted(slots, key=lambda item: item.seat_index):
+            selected_ranks.append(
+                next(
+                    employee_ranks[employee.id]
+                    for employee in snapshot.employees
+                    if solver.value(artifacts.x[(employee.id, slot.id)])
+                )
+            )
+        self.assertEqual(selected_ranks, sorted(selected_ranks))
+
+    def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["lockedAssignments"] = [
+            {
+                "slotId": (
+                    "2026-08-01|shift-morning|role-sommelier|"
+                    "duty-service|demand-morning|2"
+                ),
+                "employeeId": "employee-alice",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
+
     def test_objective_target_and_tolerance_are_applied_and_reported(self) -> None:
         raw = load_raw()
         raw["strategies"] = [
@@ -1121,6 +1221,48 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(len(observed_limits), 3)
         self.assertEqual(observed_limits, [8.0, 5.0, 2.0])
         self.assertTrue(snapshot.settings.require_optimal)
+
+    def test_solver_status_is_reported_before_wall_clock_overrun(self) -> None:
+        class FeasibleSolver:
+            objective_value = 1.0
+            best_objective_bound = 0.0
+            wall_time = 8.1
+            num_branches = 10
+            num_conflicts = 2
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+            @staticmethod
+            def value(_expression):
+                return 1
+
+        fake_clock = _FakeClock()
+        engine = CpSatScheduleEngine(
+            max_total_seconds=10,
+            finalization_reserve_seconds=2,
+            clock=fake_clock,
+        )
+
+        def overrun(*_args, **_kwargs):
+            fake_clock.advance(9)
+            return FeasibleSolver(), cp_model.FEASIBLE
+
+        with (
+            patch.object(engine, "_solve_model", side_effect=overrun),
+            self.assertRaisesRegex(
+                OptimizationIncomplete,
+                r"UNFILLED ended incomplete; status=FEASIBLE",
+            ),
+        ):
+            engine.solve(self.snapshot)
+
+    def test_proof_budget_exhaustion_is_not_retried_unchanged(self) -> None:
+        self.assertEqual(
+            WorkerRuntime._classify_failure(OptimizationIncomplete("budget")),
+            (False, "OPTIMIZATION_INCOMPLETE"),
+        )
 
     def test_scoped_budgets_allocate_monthly_threshold_to_exact_assignment(
         self,
