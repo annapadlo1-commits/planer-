@@ -140,7 +140,7 @@ begin
     )
   );
   begin
-    perform public.matrix_v2_publish_draft(current_date);
+    perform public.matrix_v2_publish_draft(v_month);
   exception when others then
     if position('INVALID_RESOLVED_SCENARIO_OBJECTIVE' in sqlerrm)=0 then
       raise;
@@ -185,7 +185,7 @@ begin
     'sourceMetadata',jsonb_build_object('test','dynamic-matrix-v2')
   ));
 
-  perform public.matrix_v2_publish_draft(current_date);
+  perform public.matrix_v2_publish_draft(v_month);
   -- The disposable transaction explicitly enables SHADOW. In production the
   -- same RPC remains blocked while DEFAULT_ENGINE is ALPHA15.
   perform public.solver_feature_flag_set(

@@ -16,15 +16,8 @@ function requireEnvironment(name: string): string {
 const supabaseUrl = requireEnvironment("SUPABASE_URL").replace(/\/+$/u, "");
 const serviceRoleKey = requireEnvironment("SUPABASE_SERVICE_ROLE_KEY");
 const solverGatewayToken = requireEnvironment("SOLVER_GATEWAY_TOKEN");
-const dispatcherGatewayToken = requireEnvironment("DISPATCHER_GATEWAY_TOKEN");
-if (
-  solverGatewayToken === serviceRoleKey ||
-  dispatcherGatewayToken === serviceRoleKey ||
-  solverGatewayToken === dispatcherGatewayToken
-) {
-  throw new Error(
-    "Worker, dispatcher and service-role credentials must be independent",
-  );
+if (solverGatewayToken === serviceRoleKey) {
+  throw new Error("Gateway token must be independent from the service role key");
 }
 
 const parsedSupabaseUrl = new URL(supabaseUrl);
@@ -65,7 +58,6 @@ const invokeRpc = async (
 Deno.serve(
   createGatewayHandler({
     solverGatewayToken,
-    dispatcherGatewayToken,
     invokeRpc,
   }),
 );

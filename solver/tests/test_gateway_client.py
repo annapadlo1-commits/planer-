@@ -20,8 +20,6 @@ from grafik_solver.rpc import (
 GATEWAY_URL = "https://example.supabase.co/functions/v1/solver-gateway"
 GATEWAY_TOKEN = "gateway-test-token".ljust(64, "x")
 SOLVER_VERSION = "ORTOOLS_V2_2026_08_02"
-RUN_ID = "11111111-1111-4111-8111-111111111111"
-DISPATCH_TOKEN = "22222222-2222-4222-8222-222222222222"
 
 
 class _Response:
@@ -74,7 +72,7 @@ class GatewayClientTests(unittest.TestCase):
         self.assertFalse(raised.exception.retryable)
         open_call.assert_not_called()
 
-    def test_cloud_claim_is_bound_to_dispatch_and_worker_version(self) -> None:
+    def test_pull_claim_is_bound_to_worker_version(self) -> None:
         client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=1)
         response = {
             "runId": "run-1",
@@ -83,8 +81,6 @@ class GatewayClientTests(unittest.TestCase):
         }
         with patch.object(client, "call", return_value=response) as call:
             claim = client.claim(
-                run_id=RUN_ID,
-                dispatch_token=DISPATCH_TOKEN,
                 worker_id="worker-eu-1:42",
                 worker_version=SOLVER_VERSION,
                 task_attempt=1,
@@ -92,10 +88,8 @@ class GatewayClientTests(unittest.TestCase):
             )
         self.assertEqual(claim.run_id, "run-1")
         call.assert_called_once_with(
-            "solver_claim_v2",
+            "solver_claim_next_v2",
             {
-                "p_run_id": RUN_ID,
-                "p_dispatch_token": DISPATCH_TOKEN,
                 "p_worker_id": "worker-eu-1:42",
                 "p_worker_version": SOLVER_VERSION,
                 "p_task_attempt": 1,
@@ -138,17 +132,13 @@ class GatewayClientTests(unittest.TestCase):
             "SOLVER_GATEWAY_URL": GATEWAY_URL,
             "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
             "SOLVER_VERSION": SOLVER_VERSION,
-            "RUN_ID": RUN_ID,
-            "DISPATCH_TOKEN": DISPATCH_TOKEN,
-            "DISPATCH_ATTEMPT": "1",
+            "WORKER_TASK_ATTEMPT": "1",
         }
         with patch.dict("os.environ", valid_environment, clear=True):
             config = WorkerConfig.from_env()
         self.assertEqual(config.solver_gateway_url, GATEWAY_URL)
         self.assertEqual(config.solver_gateway_token, GATEWAY_TOKEN)
         self.assertEqual(config.solver_version, SOLVER_VERSION)
-        self.assertEqual(config.run_id, RUN_ID)
-        self.assertEqual(config.dispatch_token, DISPATCH_TOKEN)
         self.assertEqual(config.task_attempt, 1)
 
         legacy_only = {
@@ -166,9 +156,7 @@ class GatewayClientTests(unittest.TestCase):
             "SOLVER_GATEWAY_URL": GATEWAY_URL,
             "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
             "SOLVER_VERSION": SOLVER_VERSION,
-            "RUN_ID": RUN_ID,
-            "DISPATCH_TOKEN": DISPATCH_TOKEN,
-            "DISPATCH_ATTEMPT": "1",
+            "WORKER_TASK_ATTEMPT": "1",
         }
         for name, value, message in (
             ("SOLVER_GATEWAY_TOKEN", "short", "SOLVER_GATEWAY_TOKEN"),

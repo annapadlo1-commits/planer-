@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -143,8 +144,6 @@ class WorkerRuntime:
 
     def _claim_run(self) -> Claim | None:
         return self.rpc.claim(
-            run_id=self.config.run_id,
-            dispatch_token=self.config.dispatch_token,
             worker_id=self.config.worker_id,
             worker_version=self.config.solver_version,
             task_attempt=self.config.task_attempt,
@@ -228,7 +227,42 @@ class WorkerRuntime:
         return self._execute_claim(claim)
 
     def run(self) -> int:
-        return self.run_once()
+        processed_runs = 0
+        last_result = 0
+        idle_since = time.monotonic()
+
+        while not self._stop.event.is_set():
+            try:
+                claim = self._claim_run()
+            except RpcError as exc:
+                LOGGER.error("Could not claim optimizer work: %s", exc)
+                if not exc.retryable:
+                    return 1
+                last_result = 1
+                if self._stop.event.wait(self.config.poll_interval_seconds):
+                    break
+                continue
+
+            if claim is None:
+                if (
+                    self.config.idle_exit_seconds > 0
+                    and time.monotonic() - idle_since
+                    >= self.config.idle_exit_seconds
+                ):
+                    LOGGER.info("Idle exit threshold reached")
+                    return last_result
+                if self._stop.event.wait(self.config.poll_interval_seconds):
+                    break
+                continue
+
+            idle_since = time.monotonic()
+            last_result = max(last_result, self._execute_claim(claim))
+            processed_runs += 1
+            self._stop.clear_transient()
+            if self.config.max_runs and processed_runs >= self.config.max_runs:
+                return last_result
+
+        return last_result
 
     def _best_effort_interrupt(self, claim: Claim, reason: str) -> None:
         try:

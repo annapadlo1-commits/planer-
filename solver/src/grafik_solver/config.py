@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 import socket
-import uuid
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -36,23 +35,16 @@ def _nonnegative_int(name: str, default: int) -> int:
     return parsed
 
 
-def _required_uuid(name: str) -> str:
-    raw = os.getenv(name, "").strip()
-    try:
-        return str(uuid.UUID(raw))
-    except (ValueError, AttributeError) as exc:
-        raise ConfigurationError(f"{name} must be a UUID") from exc
-
-
 @dataclass(frozen=True)
 class WorkerConfig:
     solver_gateway_url: str
     solver_gateway_token: str
-    run_id: str
-    dispatch_token: str
     solver_version: str
     worker_id: str
     task_attempt: int
+    poll_interval_seconds: int
+    max_runs: int
+    idle_exit_seconds: int
     rpc_timeout_seconds: int
     heartbeat_seconds: int
     lease_seconds: int
@@ -91,11 +83,9 @@ class WorkerConfig:
             raise ConfigurationError(
                 "SOLVER_GATEWAY_TOKEN must be a dedicated 32-512 character token"
             )
-        run_id = _required_uuid("RUN_ID")
-        dispatch_token = _required_uuid("DISPATCH_TOKEN")
-        task_attempt = _positive_int("DISPATCH_ATTEMPT", 1)
+        task_attempt = _positive_int("WORKER_TASK_ATTEMPT", 1)
         if task_attempt > 20:
-            raise ConfigurationError("DISPATCH_ATTEMPT cannot exceed 20")
+            raise ConfigurationError("WORKER_TASK_ATTEMPT cannot exceed 20")
         explicit_worker_id = os.getenv("WORKER_ID", "").strip()
         worker_source = explicit_worker_id or socket.gethostname() or "solver-worker"
         worker_source = re.sub(r"[^A-Za-z0-9._:@/-]", "-", worker_source)
@@ -131,11 +121,12 @@ class WorkerConfig:
         return cls(
             solver_gateway_url=gateway_url,
             solver_gateway_token=gateway_token,
-            run_id=run_id,
-            dispatch_token=dispatch_token,
             solver_version=solver_version,
             worker_id=worker_id,
             task_attempt=task_attempt,
+            poll_interval_seconds=_positive_int("POLL_INTERVAL_SECONDS", 10),
+            max_runs=_nonnegative_int("MAX_RUNS", 0),
+            idle_exit_seconds=_nonnegative_int("IDLE_EXIT_SECONDS", 0),
             rpc_timeout_seconds=_positive_int("RPC_TIMEOUT_SECONDS", 20),
             heartbeat_seconds=heartbeat_seconds,
             lease_seconds=lease_seconds,

@@ -1,7 +1,7 @@
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export const WORKER_ACTIONS = [
-  "solver_claim_v2",
+  "solver_claim_next_v2",
   "solver_load_snapshot_v2",
   "solver_heartbeat_v2",
   "solver_save_variant_v2",
@@ -10,18 +10,10 @@ export const WORKER_ACTIONS = [
   "solver_fail_attempt_v2",
 ] as const;
 
-export const DISPATCHER_ACTIONS = [
-  "solver_dispatch_next_v2",
-  "solver_mark_dispatched_v2",
-  "solver_release_dispatch_v2",
-  "solver_reconcile_stale_v2",
-] as const;
-
-export const ALLOWED_ACTIONS = [...WORKER_ACTIONS, ...DISPATCHER_ACTIONS] as const;
+export const ALLOWED_ACTIONS = WORKER_ACTIONS;
 
 export type WorkerAction = (typeof WORKER_ACTIONS)[number];
-export type DispatcherAction = (typeof DISPATCHER_ACTIONS)[number];
-export type AllowedAction = WorkerAction | DispatcherAction;
+export type AllowedAction = WorkerAction;
 export type JsonObject = Record<string, unknown>;
 
 export type RpcResult = {
@@ -37,7 +29,6 @@ export type RpcInvoker = (
 
 type GatewayOptions = {
   solverGatewayToken: string;
-  dispatcherGatewayToken: string;
   invokeRpc: RpcInvoker;
 };
 
@@ -65,21 +56,6 @@ const CODE_PATTERN = /^[A-Z][A-Z0-9_:-]{0,99}$/;
 const METRIC_PATTERN = /^[A-Z][A-Z0-9_]{0,79}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9._:@/-]{3,200}$/;
 const WORKER_VERSION_PATTERN = /^[A-Za-z0-9._:+/-]{1,200}$/;
-const EXECUTION_NAME_PATTERN =
-  /^projects\/[^/]+\/locations\/[^/]+\/jobs\/[^/]+\/executions\/[^/]+$/;
-const RECOVERY_KINDS = [
-  "RESERVATION_EXPIRED",
-  "CLAIMED_UNACKNOWLEDGED",
-  "LAUNCH_EXPIRED",
-  "LEASE_EXPIRED",
-] as const;
-const CONCLUSIVE_EXECUTION_STATES = [
-  "SUCCEEDED",
-  "FAILED",
-  "CANCELLED",
-  "TERMINAL_UNKNOWN",
-  "NOT_FOUND",
-] as const;
 const JSON_HEADERS = {
   "Cache-Control": "no-store",
   "Content-Type": "application/json; charset=utf-8",
@@ -223,15 +199,11 @@ function assertLeaseArgs(args: JsonObject): void {
 
 function validateClaim(args: JsonObject): void {
   assertExactKeys(args, [
-    "p_run_id",
-    "p_dispatch_token",
     "p_worker_id",
     "p_worker_version",
     "p_task_attempt",
     "p_lease_seconds",
   ]);
-  assertUuid(args.p_run_id, "RUN_ID");
-  assertUuid(args.p_dispatch_token, "DISPATCH_TOKEN");
   if (
     typeof args.p_worker_id !== "string" ||
     !WORKER_ID_PATTERN.test(args.p_worker_id)
@@ -498,144 +470,8 @@ function validateFailure(args: JsonObject): void {
   assertBoolean(args.p_retryable, "RETRYABLE");
 }
 
-function assertDispatcherId(value: unknown): asserts value is string {
-  if (typeof value !== "string" || !WORKER_ID_PATTERN.test(value)) {
-    fail(400, "INVALID_DISPATCHER_ID");
-  }
-}
-
-function assertExecutionName(
-  value: unknown,
-  nullable = false,
-): asserts value is string | null {
-  if (nullable && value === null) return;
-  if (
-    typeof value !== "string" ||
-    value.length > 500 ||
-    !EXECUTION_NAME_PATTERN.test(value)
-  ) {
-    fail(400, "INVALID_EXECUTION_NAME");
-  }
-}
-
-function validateDispatchNext(args: JsonObject): void {
-  assertExactKeys(args, ["p_dispatcher_id", "p_lease_seconds"]);
-  assertDispatcherId(args.p_dispatcher_id);
-  assertInteger(args.p_lease_seconds, "LEASE_SECONDS", 15, 300);
-}
-
-function validateMarkDispatched(args: JsonObject): void {
-  assertExactKeys(args, [
-    "p_run_id",
-    "p_dispatch_token",
-    "p_execution_name",
-  ]);
-  assertUuid(args.p_run_id, "RUN_ID");
-  assertUuid(args.p_dispatch_token, "DISPATCH_TOKEN");
-  assertExecutionName(args.p_execution_name);
-}
-
-function validateReleaseDispatch(args: JsonObject): void {
-  assertExactKeys(args, [
-    "p_run_id",
-    "p_dispatch_token",
-    "p_reason",
-  ]);
-  assertUuid(args.p_run_id, "RUN_ID");
-  assertUuid(args.p_dispatch_token, "DISPATCH_TOKEN");
-  if (args.p_reason !== null) assertString(args.p_reason, "REASON", 1, 300);
-}
-
-function validateReconcile(args: JsonObject): void {
-  assertExactKeys(args, [
-    "p_dispatcher_id",
-    "p_mode",
-    "p_limit",
-    "p_launch_grace_seconds",
-    "p_run_id",
-    "p_kind",
-    "p_dispatch_token",
-    "p_dispatch_attempt",
-    "p_attempt_number",
-    "p_execution_name",
-    "p_observed_state",
-  ]);
-  assertDispatcherId(args.p_dispatcher_id);
-  assertInteger(
-    args.p_launch_grace_seconds,
-    "LAUNCH_GRACE_SECONDS",
-    30,
-    3_600,
-  );
-
-  if (args.p_mode === "SCAN") {
-    assertInteger(args.p_limit, "LIMIT", 1, 100);
-    for (const field of [
-      "p_run_id",
-      "p_kind",
-      "p_dispatch_token",
-      "p_dispatch_attempt",
-      "p_attempt_number",
-      "p_execution_name",
-      "p_observed_state",
-    ] as const) {
-      if (args[field] !== null) fail(400, "INVALID_RECOVERY_SCAN");
-    }
-    return;
-  }
-
-  if (args.p_mode !== "APPLY") fail(400, "INVALID_RECOVERY_MODE");
-  if (args.p_limit !== null) fail(400, "INVALID_RECOVERY_APPLY");
-  assertUuid(args.p_run_id, "RUN_ID");
-  if (
-    typeof args.p_kind !== "string" ||
-    !(RECOVERY_KINDS as readonly string[]).includes(args.p_kind)
-  ) fail(400, "INVALID_RECOVERY_KIND");
-  assertInteger(args.p_dispatch_attempt, "DISPATCH_ATTEMPT", 1, 20);
-  if (
-    typeof args.p_observed_state !== "string" ||
-    !(CONCLUSIVE_EXECUTION_STATES as readonly string[]).includes(
-      args.p_observed_state,
-    )
-  ) fail(400, "INVALID_OBSERVED_STATE");
-
-  const requiresDispatchToken =
-    args.p_kind === "RESERVATION_EXPIRED" ||
-    args.p_kind === "CLAIMED_UNACKNOWLEDGED";
-  if (requiresDispatchToken) {
-    assertUuid(args.p_dispatch_token, "DISPATCH_TOKEN");
-  } else if (args.p_dispatch_token !== null) {
-    fail(400, "INVALID_DISPATCH_TOKEN");
-  }
-
-  const requiresAttempt =
-    args.p_kind === "CLAIMED_UNACKNOWLEDGED" ||
-    args.p_kind === "LEASE_EXPIRED";
-  if (requiresAttempt) {
-    assertInteger(args.p_attempt_number, "ATTEMPT_NUMBER", 1, 10_000);
-  } else if (args.p_attempt_number !== null) {
-    fail(400, "INVALID_ATTEMPT_NUMBER");
-  }
-
-  if (args.p_kind === "CLAIMED_UNACKNOWLEDGED") {
-    if (args.p_observed_state !== "NOT_FOUND" || args.p_execution_name !== null) {
-      fail(400, "CLAIMED_RECOVERY_REQUIRES_NOT_FOUND");
-    }
-    return;
-  }
-  if (args.p_kind === "RESERVATION_EXPIRED") {
-    if (args.p_observed_state === "NOT_FOUND") {
-      if (args.p_execution_name !== null) fail(400, "INVALID_EXECUTION_NAME");
-    } else {
-      assertExecutionName(args.p_execution_name);
-    }
-    return;
-  }
-  assertExecutionName(args.p_execution_name);
-}
-
 const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
-  solver_claim_v2: { maxBodyBytes: 16 * 1024, validate: validateClaim },
+  solver_claim_next_v2: { maxBodyBytes: 16 * 1024, validate: validateClaim },
   solver_load_snapshot_v2: {
     maxBodyBytes: 4 * 1024,
     validate: validateLoadSnapshot,
@@ -653,22 +489,6 @@ const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
   solver_fail_attempt_v2: {
     maxBodyBytes: 16 * 1024,
     validate: validateFailure,
-  },
-  solver_dispatch_next_v2: {
-    maxBodyBytes: 16 * 1024,
-    validate: validateDispatchNext,
-  },
-  solver_mark_dispatched_v2: {
-    maxBodyBytes: 16 * 1024,
-    validate: validateMarkDispatched,
-  },
-  solver_release_dispatch_v2: {
-    maxBodyBytes: 16 * 1024,
-    validate: validateReleaseDispatch,
-  },
-  solver_reconcile_stale_v2: {
-    maxBodyBytes: 32 * 1024,
-    validate: validateReconcile,
   },
 };
 
@@ -768,10 +588,6 @@ function parseEnvelope(body: Uint8Array): JsonObject {
 
 export function createGatewayHandler(options: GatewayOptions) {
   validateConfiguredToken(options.solverGatewayToken);
-  validateConfiguredToken(options.dispatcherGatewayToken);
-  if (options.solverGatewayToken === options.dispatcherGatewayToken) {
-    throw new Error("Worker and dispatcher gateway tokens must be independent");
-  }
 
   return async (request: Request): Promise<Response> => {
     try {
@@ -782,23 +598,9 @@ export function createGatewayHandler(options: GatewayOptions) {
         });
       }
 
-      const hasWorkerToken = request.headers.has("x-solver-gateway-token");
-      const hasDispatcherToken = request.headers.has(
-        "x-dispatcher-gateway-token",
-      );
-      if (hasWorkerToken === hasDispatcherToken) {
-        return jsonResponse(401, "UNAUTHORIZED");
-      }
-      const channel = hasWorkerToken ? "WORKER" : "DISPATCHER";
-      const presentedToken = request.headers.get(
-        hasWorkerToken
-          ? "x-solver-gateway-token"
-          : "x-dispatcher-gateway-token",
-      ) ?? "";
-      const expectedToken = hasWorkerToken
-        ? options.solverGatewayToken
-        : options.dispatcherGatewayToken;
-      if (!(await tokensEqual(presentedToken, expectedToken))) {
+      const presentedToken =
+        request.headers.get("x-solver-gateway-token") ?? "";
+      if (!(await tokensEqual(presentedToken, options.solverGatewayToken))) {
         return jsonResponse(401, "UNAUTHORIZED");
       }
 
@@ -815,12 +617,6 @@ export function createGatewayHandler(options: GatewayOptions) {
       const envelope = parseEnvelope(body);
       if (!isAllowedAction(envelope.action)) {
         return jsonResponse(400, "ACTION_NOT_ALLOWED");
-      }
-      const channelActions = channel === "WORKER"
-        ? WORKER_ACTIONS
-        : DISPATCHER_ACTIONS;
-      if (!(channelActions as readonly string[]).includes(envelope.action)) {
-        return jsonResponse(403, "CHANNEL_ACTION_NOT_ALLOWED");
       }
       assertObject(envelope.args, "ARGS");
       const spec = RPC_SPECS[envelope.action];

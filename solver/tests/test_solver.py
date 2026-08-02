@@ -32,7 +32,6 @@ from grafik_solver.validator import validate_variant
 
 FIXTURE_PATH = ROOT / "tests" / "fixtures" / "small_snapshot.json"
 RUN_ID = "11111111-1111-4111-8111-111111111111"
-DISPATCH_TOKEN = "22222222-2222-4222-8222-222222222222"
 
 
 def load_raw() -> dict:
@@ -617,7 +616,7 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(SnapshotError, "Unsupported objective"):
             Snapshot.from_dict(unsupported)
 
-    def test_cloud_run_job_configuration_is_dispatch_bound(self) -> None:
+    def test_pull_worker_configuration_is_provider_neutral(self) -> None:
         with patch.dict(
             "os.environ",
             {
@@ -627,17 +626,19 @@ class SnapshotTests(unittest.TestCase):
                 "SOLVER_GATEWAY_TOKEN": "g" * 64,
                 "WORKER_ID": "free-host-worker-test",
                 "SOLVER_VERSION": "ORTOOLS_V2_2026_08_02",
-                "RUN_ID": RUN_ID,
-                "DISPATCH_TOKEN": DISPATCH_TOKEN,
-                "DISPATCH_ATTEMPT": "2",
+                "WORKER_TASK_ATTEMPT": "2",
+                "POLL_INTERVAL_SECONDS": "7",
+                "MAX_RUNS": "3",
+                "IDLE_EXIT_SECONDS": "60",
             },
             clear=True,
         ):
             config = WorkerConfig.from_env()
         self.assertEqual(config.worker_id.split(":", 1)[0], "free-host-worker-test")
-        self.assertEqual(config.run_id, RUN_ID)
-        self.assertEqual(config.dispatch_token, DISPATCH_TOKEN)
         self.assertEqual(config.task_attempt, 2)
+        self.assertEqual(config.poll_interval_seconds, 7)
+        self.assertEqual(config.max_runs, 3)
+        self.assertEqual(config.idle_exit_seconds, 60)
 
 
 class SolverTests(unittest.TestCase):
@@ -793,11 +794,12 @@ class SolverTests(unittest.TestCase):
                 "https://example.supabase.co/functions/v1/solver-gateway"
             ),
             solver_gateway_token="g" * 64,
-            run_id=RUN_ID,
-            dispatch_token=DISPATCH_TOKEN,
             solver_version="ORTOOLS_V2_2026_08_02",
             worker_id="test-worker",
             task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
             rpc_timeout_seconds=1,
             heartbeat_seconds=60,
             lease_seconds=90,
@@ -813,24 +815,23 @@ class SolverTests(unittest.TestCase):
         self.assertTrue(rpc.finalized)
         self.assertFalse(rpc.failed)
         self.assertEqual(rpc.claim_requests[0]["worker_id"], "test-worker")
-        self.assertEqual(rpc.claim_requests[0]["run_id"], RUN_ID)
-        self.assertEqual(rpc.claim_requests[0]["dispatch_token"], DISPATCH_TOKEN)
         self.assertEqual(
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
 
-    def test_cloud_worker_claims_exact_dispatched_run(self) -> None:
+    def test_pull_worker_claims_the_next_queued_run(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
             solver_gateway_url=(
                 "https://example.supabase.co/functions/v1/solver-gateway"
             ),
             solver_gateway_token="g" * 64,
-            run_id=RUN_ID,
-            dispatch_token=DISPATCH_TOKEN,
             solver_version="ORTOOLS_V2_2026_08_02",
-            worker_id="cloud-run-worker-test",
+            worker_id="free-host-worker-test",
             task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
             rpc_timeout_seconds=1,
             heartbeat_seconds=60,
             lease_seconds=90,
@@ -843,10 +844,38 @@ class SolverTests(unittest.TestCase):
         )
         self.assertEqual(runtime.run_once(), 0)
         self.assertEqual(len(rpc.claim_requests), 1)
-        self.assertEqual(rpc.claim_requests[0]["worker_id"], "cloud-run-worker-test")
-        self.assertEqual(rpc.claim_requests[0]["run_id"], RUN_ID)
-        self.assertEqual(rpc.claim_requests[0]["dispatch_token"], DISPATCH_TOKEN)
+        self.assertEqual(rpc.claim_requests[0]["worker_id"], "free-host-worker-test")
+        self.assertNotIn("run_id", rpc.claim_requests[0])
+        self.assertNotIn("dispatch_token", rpc.claim_requests[0])
         self.assertTrue(rpc.finalized)
+
+    def test_pull_worker_processes_multiple_runs_without_dispatcher(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.claim_values = [rpc.claim_value, rpc.claim_value]
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="long-lived-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=2,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=_FakeEngine(self.variants),
+        )
+        self.assertEqual(runtime.run(), 0)
+        self.assertEqual(len(rpc.claim_requests), 2)
+        self.assertEqual(len(rpc.saved), 4)
 
     def test_external_boundary_counts_weekly_but_not_monthly_or_outside_daily(
         self,
@@ -1205,6 +1234,7 @@ class _FakeRpc:
     def __init__(self, raw):
         self.raw = copy.deepcopy(raw)
         self.claim_value = Claim("run-fixture-001", "attempt-1", "lease-1")
+        self.claim_values = [self.claim_value]
         self.saved = []
         self.finalized = False
         self.failed = False
@@ -1212,7 +1242,7 @@ class _FakeRpc:
 
     def claim(self, **kwargs):
         self.claim_requests.append(kwargs)
-        return self.claim_value
+        return self.claim_values.pop(0) if self.claim_values else None
 
     def load_snapshot(self, _claim):
         return SnapshotEnvelope(

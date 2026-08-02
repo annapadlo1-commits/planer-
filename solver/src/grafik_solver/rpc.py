@@ -11,7 +11,7 @@ from typing import Any
 
 ALLOWED_GATEWAY_ACTIONS = frozenset(
     {
-        "solver_claim_v2",
+        "solver_claim_next_v2",
         "solver_load_snapshot_v2",
         "solver_heartbeat_v2",
         "solver_save_variant_v2",
@@ -165,8 +165,6 @@ class SolverGatewayClient:
     def claim(
         self,
         *,
-        run_id: str,
-        dispatch_token: str,
         worker_id: str,
         worker_version: str,
         task_attempt: int,
@@ -174,10 +172,8 @@ class SolverGatewayClient:
     ) -> Claim | None:
         raw = _row(
             self.call(
-                "solver_claim_v2",
+                "solver_claim_next_v2",
                 {
-                    "p_run_id": run_id,
-                    "p_dispatch_token": dispatch_token,
                     "p_worker_id": worker_id,
                     "p_worker_version": worker_version,
                     "p_task_attempt": task_attempt,
@@ -185,7 +181,7 @@ class SolverGatewayClient:
                 },
             )
         )
-        return self._claim_from(raw, "solver_claim_v2")
+        return self._claim_from(raw, "solver_claim_next_v2")
 
     @staticmethod
     def _claim_from(raw: Mapping[str, Any] | None, action: str) -> Claim | None:
