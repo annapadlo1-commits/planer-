@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from grafik_solver.config import ConfigurationError, WorkerConfig
 from grafik_solver.rpc import (
+    Claim,
     MAX_GATEWAY_REQUEST_BYTES,
     RpcError,
     SolverGatewayClient,
@@ -23,8 +24,9 @@ SOLVER_VERSION = "ORTOOLS_V2_2026_08_02"
 
 
 class _Response:
-    def __init__(self, body: bytes):
+    def __init__(self, body: bytes, status: int = 200):
         self.body = body
+        self.status = status
 
     def __enter__(self):
         return self
@@ -126,6 +128,46 @@ class GatewayClientTests(unittest.TestCase):
                     client.call("solver_finalize_v2", {})
                 self.assertEqual(raised.exception.status, status)
                 self.assertEqual(raised.exception.retryable, retryable)
+
+    def test_heartbeat_retries_malformed_success_json(self) -> None:
+        client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=2)
+        responses = [
+            _Response(b'{"ok":'),
+            _Response(b'{"cancelRequested":false,"leaseValid":true}'),
+        ]
+        with patch.object(client._opener, "open", side_effect=responses) as open_call:
+            heartbeat = client.heartbeat(
+                Claim("run-1", "attempt-1", "lease-1"),
+                {"schemaVersion": 2, "phase": "SOLVING", "progress": 10},
+            )
+
+        self.assertFalse(heartbeat.cancel_requested)
+        self.assertTrue(heartbeat.lease_valid)
+        self.assertEqual(open_call.call_count, 2)
+
+    def test_non_heartbeat_malformed_json_remains_fail_closed(self) -> None:
+        client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=2)
+        with (
+            patch.object(client._opener, "open", return_value=_Response(b'{"ok":')),
+            self.assertRaisesRegex(RpcError, "returned invalid JSON") as raised,
+        ):
+            client.call("solver_finalize_v2", {"p_run_id": "run-1"})
+
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(raised.exception.status, 200)
+
+    def test_heartbeat_unexpected_success_shape_is_retryable(self) -> None:
+        client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=1)
+        with (
+            patch.object(client, "call", return_value="unexpected"),
+            self.assertRaisesRegex(RpcError, "unexpected response shape") as raised,
+        ):
+            client.heartbeat(
+                Claim("run-1", "attempt-1", "lease-1"),
+                {"schemaVersion": 2, "phase": "SOLVING"},
+            )
+
+        self.assertTrue(raised.exception.retryable)
 
     def test_worker_configuration_has_no_service_role_fallback(self) -> None:
         valid_environment = {

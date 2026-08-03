@@ -160,7 +160,11 @@ class WorkerRuntime:
             except RpcError as exc:
                 self._heartbeat_failures += 1
                 LOGGER.warning(
-                    "Heartbeat RPC failed (attempt %s)", self._heartbeat_failures
+                    "Heartbeat RPC failed (attempt %s; status=%s; retryable=%s): %s",
+                    self._heartbeat_failures,
+                    exc.status,
+                    exc.retryable,
+                    exc,
                 )
                 if not exc.retryable or self._heartbeat_failures >= 3:
                     self.request_stop("HEARTBEAT_FAILED")

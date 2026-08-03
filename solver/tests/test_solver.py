@@ -26,7 +26,7 @@ from grafik_solver.eligibility import EligibilityIndex
 from grafik_solver.lifecycle import WorkerRuntime
 from grafik_solver.models import Assignment, Snapshot, SnapshotError
 from grafik_solver.pay_rules import quote_assignment
-from grafik_solver.rpc import Claim, Heartbeat, SnapshotEnvelope
+from grafik_solver.rpc import Claim, Heartbeat, RpcError, SnapshotEnvelope
 from grafik_solver.slots import generate_slots
 from grafik_solver.validator import validate_variant
 
@@ -1285,6 +1285,40 @@ class SolverTests(unittest.TestCase):
         self.assertFalse(rpc.finalized)
         self.assertEqual(rpc.interrupt_reason, None)
 
+    def test_retryable_heartbeat_response_error_does_not_stop_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_errors = [
+            RpcError(
+                "Gateway action solver_heartbeat_v2 returned invalid JSON",
+                retryable=True,
+            )
+        ]
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        with self.assertLogs("grafik_solver.lifecycle", level="WARNING") as logs:
+            self.assertTrue(runtime._heartbeat_once(rpc.claim_value, force=True))
+
+        self.assertFalse(runtime._stop.event.is_set())
+        self.assertEqual(runtime._heartbeat_failures, 1)
+        self.assertIn("status=None; retryable=True", "\n".join(logs.output))
+        self.assertIn("returned invalid JSON", "\n".join(logs.output))
+
     def test_pull_worker_claims_the_next_queued_run(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
@@ -1768,6 +1802,7 @@ class _FakeRpc:
         self.claim_requests = []
         self.heartbeat_calls = 0
         self.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=True)
+        self.heartbeat_errors = []
         self.interrupt_reason = None
 
     def claim(self, **kwargs):
@@ -1781,6 +1816,8 @@ class _FakeRpc:
 
     def heartbeat(self, _claim, _progress):
         self.heartbeat_calls += 1
+        if self.heartbeat_errors:
+            raise self.heartbeat_errors.pop(0)
         return self.heartbeat_value
 
     def save_variant(self, _claim, variant):

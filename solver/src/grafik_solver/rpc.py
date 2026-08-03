@@ -22,6 +22,7 @@ ALLOWED_GATEWAY_ACTIONS = frozenset(
 )
 MAX_GATEWAY_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_GATEWAY_RESPONSE_BYTES = 64 * 1024 * 1024
+_RESPONSE_RETRY_SAFE_ACTIONS = frozenset({"solver_heartbeat_v2"})
 
 
 class RpcError(RuntimeError):
@@ -38,7 +39,9 @@ def _pick(raw: Mapping[str, Any], *names: str, default: Any = None) -> Any:
     return default
 
 
-def _row(value: Any) -> Mapping[str, Any] | None:
+def _row(
+    value: Any, *, unexpected_shape_retryable: bool = False
+) -> Mapping[str, Any] | None:
     if value is None:
         return None
     if isinstance(value, list):
@@ -47,7 +50,10 @@ def _row(value: Any) -> Mapping[str, Any] | None:
         value = value[0]
     if isinstance(value, Mapping):
         return value
-    raise RpcError("RPC returned an unexpected response shape", retryable=False)
+    raise RpcError(
+        "RPC returned an unexpected response shape",
+        retryable=unexpected_shape_retryable,
+    )
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,7 @@ class SolverGatewayClient:
             )
         last_error: RpcError | None = None
         for attempt in range(self.maximum_attempts):
+            response_status: int | None = None
             request = urllib.request.Request(
                 url=self.gateway_url,
                 data=body,
@@ -130,6 +137,7 @@ class SolverGatewayClient:
                 with self._opener.open(
                     request, timeout=self.timeout_seconds
                 ) as response:
+                    response_status = getattr(response, "status", None)
                     raw = response.read(MAX_GATEWAY_RESPONSE_BYTES + 1)
                     if len(raw) > MAX_GATEWAY_RESPONSE_BYTES:
                         raise RpcError(
@@ -153,9 +161,14 @@ class SolverGatewayClient:
                     retryable=True,
                 )
             except json.JSONDecodeError as exc:
-                raise RpcError(
-                    f"Gateway action {name} returned invalid JSON", retryable=False
-                ) from exc
+                retryable = name in _RESPONSE_RETRY_SAFE_ACTIONS
+                last_error = RpcError(
+                    f"Gateway action {name} returned invalid JSON",
+                    retryable=retryable,
+                    status=response_status,
+                )
+                if not retryable:
+                    raise last_error from exc
             if attempt + 1 < self.maximum_attempts:
                 delay = min(0.25 * (2**attempt), 2.0) + random.uniform(0.0, 0.1)
                 time.sleep(delay)
@@ -229,7 +242,11 @@ class SolverGatewayClient:
                     "p_lease_token": claim.lease_token,
                     "p_progress": dict(progress),
                 },
-            )
+            ),
+            # A heartbeat is idempotent. If the gateway accepted the request but
+            # returned a malformed success body, retrying cannot duplicate work
+            # and is safer than interrupting a run whose lease may be renewed.
+            unexpected_shape_retryable=True,
         )
         return Heartbeat(
             cancel_requested=bool(
