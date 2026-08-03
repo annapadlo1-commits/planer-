@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from collections import defaultdict
@@ -80,12 +81,13 @@ MAX_SOLVER_DECISION_PAIRS = 2_000_000
 SAFE_CP_SAT_INTEGER = 2**60
 
 # Large coverage proofs can spend a bounded part of the shared CP-SAT budget on
-# exact weekly relaxations.  Their summed optima are a valid monthly lower
-# bound: every feasible monthly roster, restricted to one week, is feasible in
-# that week's relaxed model.  Small models stay on the cheaper monolithic path.
+# period relaxations. Their proven bounds remain valid monthly lower bounds:
+# every feasible monthly roster, restricted to a block, is feasible in that
+# block's relaxed model. Small models stay on the cheaper monolithic path.
 MIN_DECOMPOSED_PROOF_SLOTS = 500
-DECOMPOSED_PROOF_BUDGET_FRACTION = 0.25
-MAX_DECOMPOSED_PROOF_SECONDS = 75.0
+DECOMPOSED_PROOF_BUDGET_FRACTION = 0.35
+MAX_DECOMPOSED_PROOF_SECONDS = 300.0
+BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 
 
 def _sum(expressions: Iterable[Any]) -> Any:
@@ -120,6 +122,18 @@ class _Artifacts:
 class _CoverageCertificate:
     lower_bound: int
     blocks: tuple[Mapping[str, Any], ...]
+    boundary_partitions: tuple[Mapping[str, Any], ...]
+    all_weeks_optimal: bool
+    assignment_hints: Mapping[tuple[str, str], int]
+    unfilled_hints: Mapping[str, int]
+
+
+@dataclass(frozen=True)
+class _CoverageSubproblem:
+    lower_bound: int
+    incumbent: int | None
+    status: str
+    optimal: bool
     assignment_hints: Mapping[tuple[str, str], int]
     unfilled_hints: Mapping[str, int]
 
@@ -344,9 +358,14 @@ class CpSatScheduleEngine:
                     **(
                         {
                             "certificate": {
-                                "kind": "EXACT_WEEKLY_RELAXATION",
+                                "kind": "BOUNDARY_AWARE_PERIOD_DECOMPOSITION",
                                 "lowerBound": certificate.lower_bound,
+                                "allWeeksOptimal": certificate.all_weeks_optimal,
                                 "blocks": [dict(item) for item in certificate.blocks],
+                                "boundaryPartitions": [
+                                    dict(item)
+                                    for item in certificate.boundary_partitions
+                                ],
                             }
                         }
                         if certificate is not None
@@ -534,6 +553,108 @@ class CpSatScheduleEngine:
             self._ensure_deadline(global_deadline, "GLOBAL")
         return tuple(results)
 
+    @staticmethod
+    def _two_day_partitions(
+        slots: tuple[Slot, ...],
+    ) -> tuple[tuple[tuple[Slot, ...], ...], ...]:
+        first_day = min(slot.date for slot in slots)
+        last_day = max(slot.date for slot in slots)
+        slots_by_day: dict[date, list[Slot]] = defaultdict(list)
+        for slot in slots:
+            slots_by_day[slot.date].append(slot)
+
+        partitions: list[tuple[tuple[Slot, ...], ...]] = []
+        for offset in (0, 1):
+            blocks: list[tuple[Slot, ...]] = []
+            day = first_day
+            if offset:
+                first_block = tuple(
+                    sorted(slots_by_day.get(day, []), key=lambda item: item.id)
+                )
+                if first_block:
+                    blocks.append(first_block)
+                day += timedelta(days=1)
+            while day <= last_day:
+                next_day = day + timedelta(days=1)
+                block = tuple(
+                    sorted(
+                        slots_by_day.get(day, []) + slots_by_day.get(next_day, []),
+                        key=lambda item: (item.start, item.id),
+                    )
+                )
+                if block:
+                    blocks.append(block)
+                day += timedelta(days=2)
+            partitions.append(tuple(blocks))
+        return tuple(partitions)
+
+    def _solve_coverage_subproblem(
+        self,
+        snapshot: Snapshot,
+        slots: tuple[Slot, ...],
+        eligibility: EligibilityIndex,
+        *,
+        stage_name: str,
+        time_limit_seconds: float,
+    ) -> _CoverageSubproblem:
+        slot_ids = {slot.id for slot in slots}
+        block_snapshot = replace(
+            snapshot,
+            locked_assignments=tuple(
+                lock for lock in snapshot.locked_assignments if lock.slot_id in slot_ids
+            ),
+        )
+        artifacts = self._build_model(
+            block_snapshot,
+            slots,
+            eligibility,
+            coverage_only=True,
+        )
+        artifacts.model.clear_objective()
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver, status = self._solve_model(
+            artifacts.model,
+            block_snapshot,
+            strategy=None,
+            stage_name=stage_name,
+            time_limit_seconds=max(0.001, time_limit_seconds),
+        )
+        status_name = solver.status_name(status)
+        if status in (cp_model.INFEASIBLE, cp_model.MODEL_INVALID):
+            raise OptimizationError(f"{stage_name} is {status_name.lower()}")
+
+        incumbent: int | None = None
+        assignment_hints: dict[tuple[str, str], int] = {}
+        unfilled_hints: dict[str, int] = {}
+        if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+            incumbent = int(solver.value(artifacts.metrics["UNFILLED"]))
+            assignment_hints = {
+                key: int(solver.value(variable))
+                for key, variable in artifacts.x.items()
+            }
+            unfilled_hints = {
+                slot_id: int(solver.value(variable))
+                for slot_id, variable in artifacts.unfilled.items()
+            }
+
+        if status == cp_model.OPTIMAL:
+            lower_bound = incumbent or 0
+        else:
+            raw_bound = self._solver_measure(solver, "best_objective_bound")
+            lower_bound = (
+                max(0, math.ceil(float(raw_bound) - 1e-7))
+                if raw_bound is not None and math.isfinite(float(raw_bound))
+                else 0
+            )
+        return _CoverageSubproblem(
+            lower_bound=lower_bound,
+            incumbent=incumbent,
+            status=status_name,
+            optimal=status == cp_model.OPTIMAL,
+            assignment_hints=assignment_hints,
+            unfilled_hints=unfilled_hints,
+        )
+
     def _coverage_certificate(
         self,
         snapshot: Snapshot,
@@ -552,12 +673,12 @@ class CpSatScheduleEngine:
         for slot in slots:
             iso = slot.date.isocalendar()
             slots_by_week[(iso.year, iso.week)].append(slot)
-        ordered_blocks = [
+        weekly_blocks = [
             tuple(sorted(block, key=lambda item: (item.start, item.id)))
             for _, block in sorted(slots_by_week.items())
             if block
         ]
-        if len(ordered_blocks) < 2:
+        if len(weekly_blocks) < 2:
             return None
 
         started = self._clock()
@@ -566,93 +687,123 @@ class CpSatScheduleEngine:
             self._cp_sat_budget_seconds * DECOMPOSED_PROOF_BUDGET_FRACTION,
         )
         certificate_deadline = min(global_deadline, started + certificate_seconds)
-        lower_bound = 0
-        blocks: list[Mapping[str, Any]] = []
-        assignment_hints: dict[tuple[str, str], int] = {}
-        unfilled_hints: dict[str, int] = {}
+        boundary_deadline = min(
+            certificate_deadline,
+            started + certificate_seconds * BOUNDARY_PROOF_BUDGET_FRACTION,
+        )
 
-        for block_index, block_slots in enumerate(ordered_blocks, start=1):
+        boundary_partitions = self._two_day_partitions(slots)
+        remaining_boundary_blocks = sum(len(items) for items in boundary_partitions)
+        boundary_results: list[Mapping[str, Any]] = []
+        boundary_hints: list[tuple[dict[tuple[str, str], int], dict[str, int]]] = []
+        for partition_index, partition in enumerate(boundary_partitions, start=1):
+            partition_bound = 0
+            partition_optimal = True
+            partition_assignments: dict[tuple[str, str], int] = {}
+            partition_unfilled: dict[str, int] = {}
+            solved_blocks = 0
+            for block_index, block_slots in enumerate(partition, start=1):
+                if self._cancel_event.is_set():
+                    raise OptimizationCancelled("Optimization was cancelled")
+                remaining = boundary_deadline - self._clock()
+                if remaining <= 0.001:
+                    partition_optimal = False
+                    remaining_boundary_blocks -= 1
+                    continue
+                proof = self._solve_coverage_subproblem(
+                    snapshot,
+                    block_slots,
+                    eligibility,
+                    stage_name=(f"UNFILLED_BOUNDARY_{partition_index}_{block_index}"),
+                    time_limit_seconds=(remaining / max(1, remaining_boundary_blocks)),
+                )
+                remaining_boundary_blocks -= 1
+                solved_blocks += 1
+                partition_bound += proof.lower_bound
+                partition_optimal &= proof.optimal
+                partition_assignments.update(proof.assignment_hints)
+                partition_unfilled.update(proof.unfilled_hints)
+            boundary_results.append(
+                {
+                    "partition": partition_index,
+                    "blockCount": len(partition),
+                    "solvedBlocks": solved_blocks,
+                    "lowerBound": partition_bound,
+                    "allBlocksOptimal": partition_optimal,
+                }
+            )
+            boundary_hints.append((partition_assignments, partition_unfilled))
+
+        strongest_boundary_index = max(
+            range(len(boundary_results)),
+            key=lambda index: int(boundary_results[index]["lowerBound"]),
+        )
+        boundary_lower_bound = int(
+            boundary_results[strongest_boundary_index]["lowerBound"]
+        )
+        assignment_hints, unfilled_hints = (
+            dict(boundary_hints[strongest_boundary_index][0]),
+            dict(boundary_hints[strongest_boundary_index][1]),
+        )
+
+        weekly_lower_bound = 0
+        all_weeks_optimal = True
+        blocks: list[Mapping[str, Any]] = []
+        for block_index, block_slots in enumerate(weekly_blocks, start=1):
             if self._cancel_event.is_set():
                 raise OptimizationCancelled("Optimization was cancelled")
-            remaining_blocks = len(ordered_blocks) - block_index + 1
+            remaining_weeks = len(weekly_blocks) - block_index + 1
             remaining = certificate_deadline - self._clock()
             if remaining <= 0.001:
-                LOGGER.info(
-                    "Coverage certificate stopped before block %s/%s: "
-                    "proof budget exhausted",
-                    block_index,
-                    len(ordered_blocks),
+                all_weeks_optimal = False
+                blocks.append(
+                    {
+                        "start": min(slot.date for slot in block_slots).isoformat(),
+                        "end": max(slot.date for slot in block_slots).isoformat(),
+                        "slotCount": len(block_slots),
+                        "status": "UNSOLVED",
+                        "lowerBound": 0,
+                        "incumbentUnfilled": None,
+                    }
                 )
-                return None
-            block_slot_ids = {slot.id for slot in block_slots}
-            block_snapshot = replace(
+                continue
+            proof = self._solve_coverage_subproblem(
                 snapshot,
-                locked_assignments=tuple(
-                    lock
-                    for lock in snapshot.locked_assignments
-                    if lock.slot_id in block_slot_ids
-                ),
-            )
-            artifacts = self._build_model(
-                block_snapshot,
                 block_slots,
                 eligibility,
-                coverage_only=True,
+                stage_name=f"UNFILLED_WEEK_{block_index}",
+                time_limit_seconds=remaining / remaining_weeks,
             )
-            artifacts.model.clear_objective()
-            artifacts.model.minimize(artifacts.metrics["UNFILLED"])
-            solver, status = self._solve_model(
-                artifacts.model,
-                block_snapshot,
-                strategy=None,
-                stage_name=f"UNFILLED_CERTIFICATE_{block_index}",
-                time_limit_seconds=max(0.001, remaining / remaining_blocks),
-            )
-            if status != cp_model.OPTIMAL:
-                diagnostics = self._solver_diagnostics(
-                    solver, status, f"UNFILLED_CERTIFICATE_{block_index}"
-                )
-                LOGGER.info(
-                    "Coverage certificate unavailable: block %s/%s incomplete; %s",
-                    block_index,
-                    len(ordered_blocks),
-                    self._format_solver_diagnostics(diagnostics),
-                )
-                return None
-
-            value = int(solver.value(artifacts.metrics["UNFILLED"]))
-            lower_bound += value
-            assignment_hints.update(
-                {
-                    key: int(solver.value(variable))
-                    for key, variable in artifacts.x.items()
-                }
-            )
-            unfilled_hints.update(
-                {
-                    slot_id: int(solver.value(variable))
-                    for slot_id, variable in artifacts.unfilled.items()
-                }
-            )
+            weekly_lower_bound += proof.lower_bound
+            all_weeks_optimal &= proof.optimal
+            assignment_hints.update(proof.assignment_hints)
+            unfilled_hints.update(proof.unfilled_hints)
             blocks.append(
                 {
                     "start": min(slot.date for slot in block_slots).isoformat(),
                     "end": max(slot.date for slot in block_slots).isoformat(),
                     "slotCount": len(block_slots),
-                    "minimumUnfilled": value,
+                    "status": proof.status,
+                    "lowerBound": proof.lower_bound,
+                    "incumbentUnfilled": proof.incumbent,
                 }
             )
 
+        lower_bound = max(boundary_lower_bound, weekly_lower_bound)
         LOGGER.info(
-            "Exact weekly coverage certificate lowerBound=%s blocks=%s "
-            "wallTimeSeconds=%.3f",
+            "Boundary-aware coverage certificate lowerBound=%s weeklyBound=%s "
+            "boundaryBound=%s allWeeksOptimal=%s wallTimeSeconds=%.3f",
             lower_bound,
-            len(blocks),
+            weekly_lower_bound,
+            boundary_lower_bound,
+            all_weeks_optimal,
             self._clock() - started,
         )
         return _CoverageCertificate(
             lower_bound=lower_bound,
             blocks=tuple(blocks),
+            boundary_partitions=tuple(boundary_results),
+            all_weeks_optimal=all_weeks_optimal,
             assignment_hints=assignment_hints,
             unfilled_hints=unfilled_hints,
         )
