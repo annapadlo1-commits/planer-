@@ -895,12 +895,82 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
         self.assertEqual(artifacts.coverage_aggregated_seats, 1)
         self.assertEqual(len(artifacts.unfilled), 1)
+        self.assertTrue(artifacts.complete_coverage_hint)
+        self.assertGreater(len(artifacts.model.proto.solution_hint.vars), 0)
         artifacts.model.minimize(artifacts.metrics["UNFILLED"])
         solver = cp_model.CpSolver()
         solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
         status = solver.solve(artifacts.model)
         self.assertEqual(status, cp_model.OPTIMAL)
         self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
+
+    def test_aggregate_coverage_hint_accounts_for_unfilled_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 4,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        hint = dict(
+            zip(
+                artifacts.model.proto.solution_hint.vars,
+                artifacts.model.proto.solution_hint.values,
+                strict=True,
+            )
+        )
+        selected = sum(hint[variable.index] for variable in artifacts.x.values())
+        missing = next(iter(artifacts.unfilled.values()))
+        self.assertEqual(hint[missing.index], len(slots) - selected)
+        self.assertFalse(artifacts.complete_coverage_hint)
+
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(
+            solver.value(artifacts.metrics["UNFILLED"]),
+            len(slots) - selected,
+        )
+
+    def test_relaxed_coverage_stage_has_a_bounded_uat_budget(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=900,
+            finalization_reserve_seconds=30,
+        )
+        original_solve_model = engine._solve_model
+        observed_limit: list[float] = []
+
+        def observe_limit(*args, **kwargs):
+            if kwargs["stage_name"] == "UNFILLED":
+                observed_limit.append(kwargs["time_limit_seconds"])
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_limit):
+            engine.solve(snapshot)
+
+        self.assertEqual(observed_limit, [120.0])
 
     def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
         raw = load_raw()

@@ -89,6 +89,11 @@ DECOMPOSED_PROOF_BUDGET_FRACTION = 0.35
 MAX_DECOMPOSED_PROOF_SECONDS = 300.0
 BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 
+# A relaxed UAT run accepts a feasible coverage incumbent, so it must not spend
+# the entire shared worker budget trying to prove the monthly minimum.  The
+# remaining time is more valuable for materializing and validating strategies.
+MAX_RELAXED_COVERAGE_SECONDS = 120.0
+
 
 def _sum(expressions: Iterable[Any]) -> Any:
     return sum(expressions, 0)
@@ -372,14 +377,20 @@ class CpSatScheduleEngine:
         )
         common.model.clear_objective()
         common.model.minimize(common.metrics["UNFILLED"])
+        common_time_limit = self._remaining_seconds(
+            global_deadline, "GLOBAL:UNFILLED"
+        )
+        if not snapshot.settings.require_optimal:
+            common_time_limit = min(
+                common_time_limit,
+                MAX_RELAXED_COVERAGE_SECONDS,
+            )
         common_solver, common_status = self._solve_model(
             common.model,
             snapshot,
             strategy=None,
             stage_name="UNFILLED",
-            time_limit_seconds=self._remaining_seconds(
-                global_deadline, "GLOBAL:UNFILLED"
-            ),
+            time_limit_seconds=common_time_limit,
             fix_hints=common.complete_coverage_hint,
         )
         if common.complete_coverage_hint and common_status == cp_model.INFEASIBLE:
@@ -1209,7 +1220,34 @@ class CpSatScheduleEngine:
         employees = {employee.id: employee for employee in snapshot.employees}
         timezone = ZoneInfo(snapshot.settings.timezone)
         selected_by_employee: dict[str, list[Slot]] = defaultdict(list)
-        selected_by_slot: dict[str, str] = {}
+        aggregate_coverage = set(unfilled) != {slot.id for slot in slots}
+        coverage_groups: dict[tuple[str, str], list[Slot]] = defaultdict(list)
+        for slot in slots:
+            coverage_groups[(slot.demand_id, slot.occurrence_id)].append(slot)
+        if aggregate_coverage:
+            decision_slots = {
+                min(group, key=lambda item: (item.seat_index, item.id)).id: min(
+                    group, key=lambda item: (item.seat_index, item.id)
+                )
+                for group in coverage_groups.values()
+            }
+            capacity_by_slot = {
+                min(group, key=lambda item: (item.seat_index, item.id)).id: len(group)
+                for group in coverage_groups.values()
+            }
+            decision_id_by_slot = {
+                slot.id: min(
+                    coverage_groups[(slot.demand_id, slot.occurrence_id)],
+                    key=lambda item: (item.seat_index, item.id),
+                ).id
+                for slot in slots
+            }
+        else:
+            decision_slots = {slot.id: slot for slot in slots}
+            capacity_by_slot = {slot.id: 1 for slot in slots}
+            decision_id_by_slot = {slot.id: slot.id for slot in slots}
+
+        selected_by_slot: dict[str, set[str]] = defaultdict(set)
         used_occurrences: set[tuple[str, str]] = set()
         daily_count: dict[tuple[str, date], int] = defaultdict(int)
         monthly_minutes: dict[str, int] = defaultdict(int)
@@ -1281,7 +1319,7 @@ class CpSatScheduleEngine:
             return True
 
         def select(employee: Employee, slot: Slot) -> None:
-            selected_by_slot[slot.id] = employee.id
+            selected_by_slot[slot.id].add(employee.id)
             selected_by_employee[employee.id].append(slot)
             used_occurrences.add((employee.id, slot.occurrence_id))
             daily_count[(employee.id, slot.date)] += 1
@@ -1291,18 +1329,22 @@ class CpSatScheduleEngine:
 
         slots_by_id = {slot.id: slot for slot in slots}
         for lock in sorted(snapshot.locked_assignments, key=lambda item: item.slot_id):
-            slot = slots_by_id.get(lock.slot_id)
+            locked_slot = slots_by_id.get(lock.slot_id)
             employee = employees.get(lock.employee_id)
-            if slot is None:
+            if locked_slot is None:
                 raise SnapshotError(f"Lock references missing slot {lock.slot_id}")
             if employee is None:
                 raise SnapshotError(
                     f"Lock references missing employee {lock.employee_id}"
                 )
-            if (employee.id, slot.id) not in x:
+            decision_id = decision_id_by_slot[locked_slot.id]
+            slot = decision_slots[decision_id]
+            if (employee.id, decision_id) not in x:
                 raise SnapshotError(
                     f"Locked assignment {employee.id}/{slot.id} is not eligible"
                 )
+            if employee.id in selected_by_slot[decision_id]:
+                continue
             if not can_add(employee, slot):
                 return 0
             select(employee, slot)
@@ -1313,11 +1355,12 @@ class CpSatScheduleEngine:
                 for employee in snapshot.employees
                 if (employee.id, slot.id) in x
             )
-            for slot in slots
+            for slot in decision_slots.values()
         }
         ordered_slots = sorted(
-            slots,
+            decision_slots.values(),
             key=lambda slot: (
+                len(candidate_ids[slot.id]) - capacity_by_slot[slot.id],
                 len(candidate_ids[slot.id]),
                 slot.start,
                 slot.location_id,
@@ -1325,31 +1368,33 @@ class CpSatScheduleEngine:
             ),
         )
         for slot in ordered_slots:
-            if slot.id in selected_by_slot:
-                continue
-            candidates = [
-                employees[employee_id]
-                for employee_id in candidate_ids[slot.id]
-                if can_add(employees[employee_id], slot)
-            ]
-            if not candidates:
-                continue
-            selected = min(
-                candidates,
-                key=lambda employee: (
-                    longest_run(worked_days[employee.id] | {slot.date}),
-                    monthly_minutes[employee.id],
-                    weekly_minutes[(employee.id, week_key(slot))],
-                    employee.id,
-                ),
-            )
-            select(selected, slot)
+            while len(selected_by_slot[slot.id]) < capacity_by_slot[slot.id]:
+                candidates = [
+                    employees[employee_id]
+                    for employee_id in candidate_ids[slot.id]
+                    if can_add(employees[employee_id], slot)
+                ]
+                if not candidates:
+                    break
+                selected = min(
+                    candidates,
+                    key=lambda employee: (
+                        longest_run(worked_days[employee.id] | {slot.date}),
+                        monthly_minutes[employee.id],
+                        weekly_minutes[(employee.id, week_key(slot))],
+                        employee.id,
+                    ),
+                )
+                select(selected, slot)
 
         for key, variable in x.items():
-            model.add_hint(variable, int(selected_by_slot.get(key[1]) == key[0]))
+            model.add_hint(variable, int(key[0] in selected_by_slot[key[1]]))
         for slot_id, variable in unfilled.items():
-            model.add_hint(variable, int(slot_id not in selected_by_slot))
-        return len(selected_by_slot)
+            model.add_hint(
+                variable,
+                capacity_by_slot[slot_id] - len(selected_by_slot[slot_id]),
+            )
+        return sum(len(selected) for selected in selected_by_slot.values())
 
     @staticmethod
     def _add_coverage_symmetry_breaking(
@@ -1649,6 +1694,9 @@ class CpSatScheduleEngine:
                     )
 
         if aggregate_coverage:
+            hinted_assignments = self._add_greedy_coverage_hint(
+                model, snapshot, slots, eligibility, x, unfilled
+            )
             return _Artifacts(
                 model=model,
                 x=x,
@@ -1659,9 +1707,13 @@ class CpSatScheduleEngine:
                 metrics={"UNFILLED": _sum(unfilled.values())},
                 metric_bounds={"UNFILLED": len(slots)},
                 hint_variables=tuple(
-                    list(x.values()) + list(unfilled.values()) + list(day_work.values())
+                    list(x.values())
+                    + list(unfilled.values())
+                    + list(work.values())
+                    + list(day_work.values())
                 ),
                 static_quotes=static_quotes,
+                complete_coverage_hint=hinted_assignments == len(slots),
                 coverage_aggregated_seats=len(slots) - len(coverage_groups),
             )
 
