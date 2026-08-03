@@ -3,7 +3,7 @@
 import { AlertTriangle, CalendarDays, Check, CircleDollarSign, MapPin, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { emergencyAssignV2, getCandidateDiagnostics, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { emergencyAssignV2, getCandidateDiagnostics, getVariantIssueDiagnostics, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -73,7 +73,7 @@ function publicationStatus(value?: string) {
   return "Gotowy do publikacji";
 }
 
-const hardReasonLabels:Record<string,string>={ROLE_REQUIRED:"Brak wymaganej roli",LOCATION_NOT_ALLOWED:"Lokal nie jest dozwolony w zwykłym limicie",LOCATION_REQUIRED:"Lokal nie jest dozwolony w zwykłym limicie",DUTY_REQUIRED:"Brak wymaganego obowiązku lub kompetencji",SHIFT_OVERLAP:"Nakładająca się zmiana",OVERLAPPING_SHIFT:"Nakładająca się zmiana",DECLARED_UNAVAILABLE:"Pracownik zgłosił niedostępność, urlop albo L4",TIME_CONSTRAINT:"Niedostępność, urlop lub L4",OUTSIDE_AVAILABILITY_WINDOW:"Zmiana poza zadeklarowanym oknem dostępności",REST_AFTER_PREVIOUS_SHIFT:"Za krótki odpoczynek po poprzedniej zmianie",REST_BEFORE_NEXT_SHIFT:"Za krótki odpoczynek przed następną zmianą",MINIMUM_REST:"Za krótki odpoczynek",MONTHLY_LIMIT:"Przekroczony limit miesięczny",WEEKLY_LIMIT:"Przekroczony limit tygodniowy",MAX_CONSECUTIVE_DAYS:"Przekroczona maksymalna liczba kolejnych dni pracy",MANAGER_SHIFT_BLOCK:"Pracodawca zablokował tę porę zmiany w Matrixie"};
+const hardReasonLabels:Record<string,string>={ROLE_REQUIRED:"Brak wymaganej roli",LOCATION_NOT_ALLOWED:"Lokal nie jest dozwolony w zwykłym limicie",LOCATION_REQUIRED:"Lokal nie jest dozwolony w zwykłym limicie",DUTY_REQUIRED:"Brak wymaganego obowiązku lub kompetencji",SHIFT_OVERLAP:"Nakładająca się zmiana",OVERLAPPING_SHIFT:"Nakładająca się zmiana",DECLARED_UNAVAILABLE:"Pracownik zgłosił twardą niedostępność, urlop albo L4",TIME_CONSTRAINT:"Niedostępność, urlop lub L4",OUTSIDE_AVAILABILITY_WINDOW:"Zmiana poza zadeklarowanym oknem dostępności",MISSING_AVAILABILITY:"Brak deklaracji dostępności (wymagana dla zlecenia/B2B)",OUTSIDE_EMPLOYMENT:"Data poza okresem współpracy",WEEKEND_BLOCKED:"Pracownik ma zablokowane weekendy",REST_AFTER_PREVIOUS_SHIFT:"Za krótki odpoczynek po poprzedniej zmianie",REST_BEFORE_NEXT_SHIFT:"Za krótki odpoczynek przed następną zmianą",MINIMUM_REST:"Za krótki odpoczynek",MONTHLY_LIMIT:"Przekroczony indywidualny limit miesięczny",WEEKLY_LIMIT:"Przekroczony indywidualny limit tygodniowy",MAX_CONSECUTIVE_DAYS:"Przekroczona maksymalna liczba kolejnych dni pracy",MANAGER_SHIFT_BLOCK:"Pracodawca zablokował tę porę zmiany w Matrixie"};
 const softReasonLabels:Record<string,string>={SHIFT_PREFERENCE_AVOIDED:"Pracownik prosi, aby unikać tej pory",SHIFT_AVOIDED:"Pracownik prosi, aby unikać tej pory",OVERTIME_AFTER_ASSIGNMENT:"Po dopisaniu przekroczy nominał miesięczny",MONTHLY_OVERTIME:"Po dopisaniu przekroczy nominał miesięczny"};
 function reasonLabel(value:string){return hardReasonLabels[value]??softReasonLabels[value]??value;}
 function preferenceLevelLabel(value:string){
@@ -83,7 +83,7 @@ function shiftPeriodLabel(value:string|undefined){
   return ({MORNING:"poranna",MIDDLE:"środek",EVENING:"wieczorna"} as Record<string,string>)[value??""]??value??"niestandardowa";
 }
 
-function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void}){
+function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean}){
   const shift=issue.shift;
   const shiftTimezone=shift?.location.timezone??timezone;
   const required=issue.requiredCount;
@@ -95,13 +95,16 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect}:
     {(issue.role||issue.duty)&&<small>{[issue.role?.name,issue.duty?.name].filter(Boolean).join(" • ")}</small>}
     {required!==null&&<div className="solver-issue-staffing"><span>Wymagane <b>{required}</b></span><span>Przypisane <b>{assigned??0}</b></span><span>Brakuje <b>{missing}</b></span></div>}
     {operational&&published&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>inspect(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Dlaczego nikt nie został przypisany?</button>}
+    {!operational&&previewAvailable&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>explainPreview(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Co blokowało kandydatów?</button>}
   </article>;
 }
 
 export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
+  const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
   const [diagnosticsLoading,setDiagnosticsLoading]=useState(false);
+  const [variantDiagnosticsLoading,setVariantDiagnosticsLoading]=useState(false);
   const [selectedEmployee,setSelectedEmployee]=useState("");
   const [notifyEmployee,setNotifyEmployee]=useState(true);
   const shiftsByDate = new Map<string, typeof workspace.shifts>();
@@ -111,6 +114,18 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const dates = [...shiftsByDate.entries()].sort(([left], [right]) => left.localeCompare(right));
   const assignmentCount = workspace.variants.reduce((sum, variant) => sum + variant.assignmentCount, 0);
   const unfilledCount = workspace.variants.reduce((sum, variant) => sum + variant.unfilledCount, 0);
+  const unfilledIssues=workspace.issues.filter(issue=>issue.code==="UNFILLED_SLOT");
+  const missingSeats=(issue:SolverWorkspaceIssue)=>issue.requiredCount===null
+    ? 1
+    : Math.max(0,issue.requiredCount-(issue.assignedCount??0));
+  const groupMissing=(label:(issue:SolverWorkspaceIssue)=>string)=>[...unfilledIssues.reduce((groups,issue)=>{
+    const key=label(issue)||"Nieokreślone";
+    groups.set(key,(groups.get(key)??0)+missingSeats(issue));
+    return groups;
+  },new Map<string,number>()).entries()].sort((left,right)=>right[1]-left[1]||left[0].localeCompare(right[0],"pl-PL"));
+  const missingByRole=groupMissing(issue=>issue.role?.name??"Brak wskazanej roli");
+  const missingByLocation=groupMissing(issue=>issue.shift?.location.name??"Brak wskazanego lokalu");
+  const missingByShift=groupMissing(issue=>issue.shift?.shiftTemplate.name??"Brak wskazanej zmiany");
   const publishedAt = timestampLabel(workspace.context.publishedAt, timezone);
   const activeDiagnosticIssue=diagnostics?workspace.issues.find(issue=>issue.id===diagnostics.issue.id)??null:null;
 
@@ -120,6 +135,14 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     try{setDiagnostics(await getCandidateDiagnostics(supabase,workspace.context.scheduleId,issueId));}
     catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setDiagnosticsLoading(false);}
+  }
+  async function inspectVariantIssue(issueId:string){
+    const variantId=workspace.variants[0]?.id;
+    if(!supabase||!variantId)return;
+    setVariantDiagnosticsLoading(true);setVariantDiagnostics(null);
+    try{setVariantDiagnostics(await getVariantIssueDiagnostics(supabase,variantId,issueId));}
+    catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setVariantDiagnosticsLoading(false);}
   }
   async function assign(candidate:SolverCandidateDiagnostic){
     if(!supabase||!diagnostics||candidate.classification==="BLOCKED")return;
@@ -155,6 +178,17 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <span><AlertTriangle/><small>Braki</small><strong>{unfilledCount}</strong></span>
       <span><CalendarDays/><small>Dni ze zmianami</small><strong>{dates.length}</strong></span>
     </div>
+
+    {unfilledIssues.length>0&&<section className="solver-missing-breakdown">
+      <div className="solver-missing-explainer"><AlertTriangle/><span><strong>{unfilledCount} braków to suma nieobsadzonych wymaganych miejsc</strong><small>Każdy brak poniżej wskazuje konkretny dzień, lokal, zmianę i rolę. To nie jest liczba pracowników ani naruszenie twardych reguł.</small></span></div>
+      <div className="solver-missing-groups">
+        {[["Według roli",missingByRole],["Według lokalu",missingByLocation],["Według zmiany",missingByShift]].map(([title,rows])=><article key={title as string}>
+          <h4>{title as string}</h4>
+          {(rows as [string,number][]).slice(0,8).map(([name,count])=><div key={name}><span>{name}</span><strong>{count}</strong></div>)}
+          {(rows as [string,number][]).length>8&&<small>+ {(rows as [string,number][]).length-8} kolejnych pozycji w szczegółach</small>}
+        </article>)}
+      </div>
+    </section>}
 
     {workspace.finance && <div className="solver-workspace-finance">
       <div><CircleDollarSign/><span><small>Koszt podstawowy</small><strong>{money(workspace.finance.baseCostMinor, workspace.finance.currency)}</strong></span></div>
@@ -207,9 +241,18 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {workspace.issues.length === 0
         ? <p>Nie zgłoszono braków ani uwag do tego wariantu.</p>
         : <div>
-          {workspace.issues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading} inspect={id=>void inspectIssue(id)}/>)}
+          {workspace.issues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)}/>)}
         </div>}
     </details>
+    {variantDiagnostics&&<><button className="drawer-scrim top" onClick={()=>setVariantDiagnostics(null)}/><aside className="drawer role-drawer top candidate-diagnostics-drawer">
+      <div className="drawer-head"><div><p className="eyebrow">WARIANT • WYJAŚNIENIE BRAKU</p><h2>{variantDiagnostics.shift.date} • {timeLabel(variantDiagnostics.shift.startsAt,timezone)}–{timeLabel(variantDiagnostics.shift.endsAt,timezone)}</h2><small>Powody są liczone dla pracowników dostępnych w Matrixie i aktualnego składu tego wariantu.</small></div><button className="icon-button" onClick={()=>setVariantDiagnostics(null)}><X/></button></div>
+      <div className="drawer-content">
+        <div className="candidate-diagnostics-summary"><span><b>{variantDiagnostics.summary.considered}</b><small>sprawdzonych osób</small></span><span><b>{variantDiagnostics.summary.eligible}</b><small>bez blokady</small></span><span><b>{variantDiagnostics.summary.blocked}</b><small>z blokadą</small></span></div>
+        {variantDiagnostics.summary.eligible>0&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie miało twardej blokady w kontroli końcowej</strong><small>Jeżeli miejsce nadal pozostało puste, należy sprawdzić kolejność celów strategii albo konflikt powstały podczas jednoczesnego układania całego miesiąca.</small></span></div>}
+        <div className="variant-reason-list">{variantDiagnostics.summary.reasons.map(reason=><article key={reason.code}><span><strong>{reasonLabel(reason.code)}</strong><small>{reason.code}</small></span><b>{reason.count} os.</b></article>)}</div>
+        {!variantDiagnostics.summary.reasons.length&&<p>Nie znaleziono twardych blokad kandydatów. Ten przypadek wymaga kontroli celów strategii i materiału wejściowego solvera.</p>}
+      </div>
+    </aside></>}
     {diagnostics&&<><button className="drawer-scrim top" onClick={()=>setDiagnostics(null)}/><aside className="drawer role-drawer top candidate-diagnostics-drawer">
       <div className="drawer-head"><div><p className="eyebrow">GRAFIK OPERACYJNY • DIAGNOSTYKA BRAKU</p><h2>{diagnostics.shift.date} • {timeLabel(diagnostics.shift.startsAt,activeDiagnosticIssue?.shift?.location.timezone??timezone)}–{timeLabel(diagnostics.shift.endsAt,activeDiagnosticIssue?.shift?.location.timezone??timezone)}</h2><small>{[activeDiagnosticIssue?.shift?.location.name,activeDiagnosticIssue?.role?.name,activeDiagnosticIssue?.duty?.name].filter(Boolean).join(" • ")||diagnostics.issue.message}</small></div><button className="icon-button" onClick={()=>setDiagnostics(null)}><X/></button></div>
       <div className="drawer-content">

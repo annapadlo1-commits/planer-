@@ -1,0 +1,503 @@
+.matrix-v2-advanced-settings {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: #faf9fc;
+}
+
+.matrix-v2-advanced-settings summary {
+  cursor: pointer;
+  font-weight: 900;
+  color: #493a82;
+}
+
+.matrix-v2-advanced-settings[open] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.matrix-v2-advanced-settings[open] summary,
+.matrix-v2-advanced-settings[open] p {
+  grid-column: 1 / -1;
+}
+
+.matrix-contract-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d9cdfd;
+  border-radius: 14px;
+  background: #f8f5ff;
+}
+
+.matrix-contract-card p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #514a5d;
+  line-height: 1.5;
+}
+
+.matrix-contract-card p strong {
+  color: #493a82;
+}
+
+.availability-all-day {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.availability-all-day input {
+  width: auto !important;
+}
+
+.availability-day-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.availability-weekdays,
+.availability-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+
+.availability-weekdays b {
+  text-align: center;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.availability-days button,
+.availability-days i {
+  min-width: 0;
+  aspect-ratio: 1;
+}
+
+.availability-days button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.availability-days button.selected {
+  border-color: var(--violet);
+  background: #7353e8;
+  color: #fff;
+}
+
+.employee-month-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.employee-month-summary span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.employee-month-summary small {
+  color: var(--muted);
+}
+
+.employee-month-summary strong {
+  font-size: 20px;
+}
+
+.solver-v2-coverage-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.solver-v2-coverage-detail span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8f7fa;
+}
+
+.solver-v2-coverage-detail small {
+  color: var(--muted);
+}
+
+.matrix-v2-filterbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid #ddd7e8;
+  border-radius: 14px;
+  background: #faf9fc;
+}
+
+.matrix-v2-filterbar.staffing-filters {
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+}
+
+.matrix-v2-filterbar label {
+  display: grid;
+  gap: 5px;
+  color: #625a6c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.matrix-v2-filterbar select,
+.matrix-v2-filterbar input {
+  min-width: 0;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #d7d0df;
+  border-radius: 10px;
+  background: #fff;
+  color: #201b25;
+}
+
+.matrix-v2-filterbar > strong {
+  padding: 11px 4px;
+  white-space: nowrap;
+  color: #59489c;
+}
+
+.matrix-v2-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid #cfc2fa;
+  border-radius: 14px;
+  background: #f7f3ff;
+}
+
+.matrix-v2-bulkbar > span {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+
+.matrix-v2-bulkbar small {
+  color: #625a6c;
+}
+
+.matrix-v2-business-help {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #cec1fa;
+  border-radius: 14px;
+  background: #f7f3ff;
+}
+
+.matrix-v2-business-help > svg {
+  flex: 0 0 auto;
+  color: #6d4bdc;
+}
+
+.matrix-v2-business-help span {
+  display: grid;
+  gap: 4px;
+}
+
+.matrix-v2-business-help small {
+  color: #625a6c;
+}
+
+.matrix-v2-business-priorities {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.matrix-v2-business-priorities li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.matrix-v2-business-priorities li b {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #ece6ff;
+  color: #6343cf;
+  font-size: 11px;
+}
+
+.matrix-v2-technical-objectives {
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid #e2dde9;
+  border-radius: 10px;
+  background: #faf9fb;
+}
+
+.matrix-v2-technical-objectives summary {
+  cursor: pointer;
+  color: #655d6d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.matrix-v2-technical-objectives[open] > div {
+  margin-top: 9px;
+}
+
+.solver-missing-breakdown {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.solver-missing-explainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #ead39b;
+  border-radius: 14px;
+  background: #fff8e8;
+}
+
+.solver-missing-explainer > svg {
+  flex: 0 0 auto;
+  color: #a86a00;
+}
+
+.solver-missing-explainer span {
+  display: grid;
+  gap: 3px;
+}
+
+.solver-missing-explainer small {
+  color: #675b43;
+}
+
+.solver-missing-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.solver-missing-groups article {
+  padding: 14px;
+  border: 1px solid #ded8e7;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.solver-missing-groups h4 {
+  margin: 0 0 9px;
+}
+
+.solver-missing-groups article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid #f0edf3;
+}
+
+.solver-missing-groups article > div strong {
+  color: #6948d9;
+}
+
+.variant-reason-list {
+  display: grid;
+  gap: 8px;
+}
+
+.variant-reason-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid #e1dce8;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.variant-reason-list article span {
+  display: grid;
+  gap: 3px;
+}
+
+.variant-reason-list article small {
+  color: #777080;
+  font-size: 10px;
+}
+
+.variant-reason-list article > b {
+  white-space: nowrap;
+  color: #6948d9;
+}
+
+.role-publication-overview {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 22px;
+}
+
+.role-publication-totals {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.role-publication-totals > span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #ded8e7;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.role-publication-totals svg {
+  width: 17px;
+  color: #7050dc;
+}
+
+.role-publication-totals small {
+  color: #706979;
+}
+
+.role-publication-analysis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.role-publication-analysis > article {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border: 1px solid #ddd7e5;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.role-publication-analysis > article.flagged {
+  border-color: #e5bd63;
+  background: #fffaf0;
+}
+
+.role-publication-analysis header,
+.role-publication-analysis header > span {
+  display: flex;
+  gap: 6px;
+}
+
+.role-publication-analysis header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.role-publication-analysis header > span {
+  flex-direction: column;
+}
+
+.role-publication-analysis header em,
+.role-publication-analysis > article > small {
+  color: #6b6473;
+  font-style: normal;
+}
+
+.role-publication-analysis header > b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #9c6200;
+  font-size: 11px;
+}
+
+.role-publication-analysis header > b svg {
+  width: 15px;
+}
+
+.role-publication-analysis dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.role-publication-analysis dl > div {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-radius: 9px;
+  background: #f8f7fa;
+}
+
+.role-publication-analysis dt {
+  color: #777080;
+  font-size: 10px;
+}
+
+.role-publication-analysis dd {
+  margin: 0;
+  font-weight: 900;
+}
+
+@media (max-width: 760px) {
+  .matrix-v2-advanced-settings[open],
+  .matrix-contract-card {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-month-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .matrix-v2-filterbar,
+  .matrix-v2-filterbar.staffing-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .matrix-v2-bulkbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .solver-missing-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .role-publication-totals,
+  .role-publication-analysis,
+  .role-publication-analysis dl {
+    grid-template-columns: 1fr;
+  }
+}

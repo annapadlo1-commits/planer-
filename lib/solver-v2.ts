@@ -204,6 +204,18 @@ export type SolverCandidateDiagnostics = {
   summary: { considered: number; eligible: number; warning: number; blocked: number };
 };
 
+export type SolverVariantIssueDiagnostics = {
+  variantId: string;
+  issueId: string;
+  shift: { date: string; startsAt: string; endsAt: string; shiftPeriod: string };
+  summary: {
+    considered: number;
+    eligible: number;
+    blocked: number;
+    reasons: { code: string; count: number }[];
+  };
+};
+
 export type SolverPublicationReadiness = {
   ready: boolean;
   blockers: Record<string, { code: string; message: string; count?: number; status?: string; phase?: string }>;
@@ -363,6 +375,33 @@ export type SolverRoleCompositeCandidates = {
   roles: SolverRoleCompositeRole[];
   missingRoleIds: string[];
   ready: boolean;
+};
+
+export type SolverRolePublicationOverview = {
+  month: string;
+  totals: {
+    publishedRoles: number;
+    assignmentCount: number;
+    unfilledCount: number;
+    overtimeMinutes: number;
+    totalCostMinor: number;
+    scheduledMinutes: number;
+  };
+  roles: Array<{
+    publicationId: string;
+    name: string;
+    publishedAt: string;
+    role: { id: string; name: string };
+    scenario: { id: string; name: string };
+    variantId: string;
+    assignmentCount: number;
+    unfilledCount: number;
+    overtimeMinutes: number;
+    totalCostMinor: number;
+    currency: string;
+    teamSize: number;
+    scheduledMinutes: number;
+  }>;
 };
 
 export type RunStorageContext = {
@@ -1047,6 +1086,38 @@ export async function getCandidateDiagnostics(
   };
 }
 
+export async function getVariantIssueDiagnostics(
+  client: SupabaseClient,
+  variantId: string,
+  issueId: string,
+): Promise<SolverVariantIssueDiagnostics> {
+  const payload = record(await rpc(client, "optimizer_variant_issue_diagnostics_uat_v2", {
+    p_variant_id: variantId,
+    p_issue_id: Number(issueId),
+  }));
+  const shift = record(payload.shift), summary = record(payload.summary);
+  const reasons = Array.isArray(summary.reasons) ? summary.reasons.map(value => {
+    const reason = record(value);
+    return { code: String(reason.code ?? "UNKNOWN"), count: numberOf(reason, "count", "count") };
+  }) : [];
+  return {
+    variantId: String(payload.variantId ?? variantId),
+    issueId: String(payload.issueId ?? issueId),
+    shift: {
+      date: String(shift.date ?? ""),
+      startsAt: String(shift.startsAt ?? ""),
+      endsAt: String(shift.endsAt ?? ""),
+      shiftPeriod: String(shift.shiftPeriod ?? "MIDDLE"),
+    },
+    summary: {
+      considered: numberOf(summary, "considered", "considered"),
+      eligible: numberOf(summary, "eligible", "eligible"),
+      blocked: numberOf(summary, "blocked", "blocked"),
+      reasons,
+    },
+  };
+}
+
 export async function emergencyAssignV2(
   client: SupabaseClient,
   input: {
@@ -1327,7 +1398,7 @@ export async function getEmployeePublishedAssignments(
   client: SupabaseClient,
   month: string,
 ): Promise<SolverEmployeePublishedAssignment[]> {
-  const value = await rpc(client, "optimizer_employee_published_schedule_v2", { p_month: month });
+  const value = await rpc(client, "optimizer_employee_schedule_uat_v2", { p_month: month });
   if (value === null || value === undefined) return [];
   const payload = record(value);
   if (payload.engine !== "ORTOOLS_V2") throw new Error("EMPLOYEE_PUBLISHED_SCHEDULE_ENGINE_INVALID");
@@ -1361,6 +1432,15 @@ export async function getEmployeePublishedAssignments(
   });
 }
 
+export async function getVariantWorkspace(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkspace> {
+  return normalizeWorkspace(await rpc(client, "optimizer_variant_workspace_uat_v2", {
+    p_variant_id: variantId,
+  }));
+}
+
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
   month: string,
@@ -1370,6 +1450,46 @@ export async function getRoleCompositeCandidates(
     p_month: month,
     p_scenario_id: scenarioId,
   }));
+}
+
+export async function getRolePublicationOverview(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverRolePublicationOverview> {
+  const payload = record(await rpc(client, "optimizer_role_publication_overview_uat_v2", {
+    p_month: month,
+  }));
+  const totals = record(payload.totals);
+  const roles = Array.isArray(payload.roles) ? payload.roles.map(value => {
+    const row = record(value), role = record(row.role), scenario = record(row.scenario);
+    return {
+      publicationId: String(row.publicationId ?? ""),
+      name: String(row.name ?? ""),
+      publishedAt: String(row.publishedAt ?? ""),
+      role: { id: String(role.id ?? ""), name: String(role.name ?? "") },
+      scenario: { id: String(scenario.id ?? ""), name: String(scenario.name ?? "") },
+      variantId: String(row.variantId ?? ""),
+      assignmentCount: numberOf(row, "assignmentCount", "assignment_count"),
+      unfilledCount: numberOf(row, "unfilledCount", "unfilled_count"),
+      overtimeMinutes: numberOf(row, "overtimeMinutes", "overtime_minutes"),
+      totalCostMinor: numberOf(row, "totalCostMinor", "total_cost_minor"),
+      currency: String(row.currency ?? "PLN"),
+      teamSize: numberOf(row, "teamSize", "team_size"),
+      scheduledMinutes: numberOf(row, "scheduledMinutes", "scheduled_minutes"),
+    };
+  }) : [];
+  return {
+    month: String(payload.month ?? month),
+    totals: {
+      publishedRoles: numberOf(totals, "publishedRoles", "published_roles"),
+      assignmentCount: numberOf(totals, "assignmentCount", "assignment_count"),
+      unfilledCount: numberOf(totals, "unfilledCount", "unfilled_count"),
+      overtimeMinutes: numberOf(totals, "overtimeMinutes", "overtime_minutes"),
+      totalCostMinor: numberOf(totals, "totalCostMinor", "total_cost_minor"),
+      scheduledMinutes: numberOf(totals, "scheduledMinutes", "scheduled_minutes"),
+    },
+    roles,
+  };
 }
 
 export async function publishRoleComposite(
@@ -1396,6 +1516,31 @@ export async function publishRoleComposite(
     status: String(valueOf(payload, "status", "status", "PUBLISHED")),
     sourceType: String(valueOf(payload, "sourceType", "source_type", "ROLE_COMPOSITE")),
     reused: Boolean(valueOf(payload, "reused", "reused", false)),
+  };
+}
+
+export async function publishRoleVariant(
+  client: SupabaseClient,
+  input: {
+    runId: string;
+    variantId: string;
+    name: string;
+    idempotencyKey: string;
+  },
+): Promise<{ roleScheduleId: string; status: string; reused: boolean; notified: number }> {
+  const payload = record(await rpc(client, "optimizer_publish_role_variant_uat_v2", {
+    p_run_id: input.runId,
+    p_variant_id: input.variantId,
+    p_name: input.name,
+    p_idempotency_key: input.idempotencyKey,
+  }));
+  const roleScheduleId = String(valueOf(payload, "roleScheduleId", "role_schedule_id", ""));
+  if (!roleScheduleId) throw new Error("ROLE_SCHEDULE_ID_MISSING");
+  return {
+    roleScheduleId,
+    status: String(valueOf(payload, "status", "status", "PUBLISHED")),
+    reused: Boolean(valueOf(payload, "reused", "reused", false)),
+    notified: numberOf(payload, "notified", "notified"),
   };
 }
 

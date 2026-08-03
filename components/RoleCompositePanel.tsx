@@ -9,6 +9,7 @@ import {
   forgetPublishedSchedule,
   getPublishedSchedule,
   getRoleCompositeCandidates,
+  getRolePublicationOverview,
   isValidIdempotencyKey,
   publishRoleComposite,
   recoverPublishedSchedule,
@@ -18,6 +19,7 @@ import {
   type RunStorageContext,
   type SolverEngine,
   type SolverRoleCompositeCandidates,
+  type SolverRolePublicationOverview,
   type SolverScenario,
   type SolverWorkspace,
 } from "@/lib/solver-v2";
@@ -58,6 +60,14 @@ function money(value: number, currency: string) {
   }
 }
 
+function dateTime(value: string, timezone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("pl-PL", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: timezone,
+  }).format(date);
+}
+
 function sameVariantSet(left: string[], right: string[]) {
   return [...left].sort().join(":") === [...right].sort().join(":");
 }
@@ -70,6 +80,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const defaultScenarioId = availableScenarios.find(scenario => scenario.isDefault)?.id ?? "";
   const [scenarioId, setScenarioId] = useState(defaultScenarioId);
   const [candidates, setCandidates] = useState<SolverRoleCompositeCandidates | null>(null);
+  const [overview, setOverview] = useState<SolverRolePublicationOverview | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
   const [busy, setBusy] = useState(false);
@@ -118,11 +129,23 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
   }, [supabase, scenarioId, engine, expectedSolverVersion, month]);
 
+  const loadOverview = useCallback(async () => {
+    if (!supabase || !expectedSolverVersion || engine !== "ORTOOLS_V2") return;
+    try {
+      setOverview(await getRolePublicationOverview(supabase, month));
+    } catch (error) {
+      setOverview(null);
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    }
+  }, [supabase, expectedSolverVersion, engine, month]);
+
   useEffect(() => {
     candidateRequestRef.current += 1;
     setCandidates(null);
     if (scenarioId) void loadCandidates();
   }, [scenarioId, refreshKey, loadCandidates]);
+
+  useEffect(() => { void loadOverview(); }, [loadOverview, refreshKey]);
 
   useEffect(() => {
     setPublishedWorkspace(null);
@@ -180,6 +203,9 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     || message.startsWith("Tylko ")
     || message.startsWith("Dane ")
     || message.startsWith("Zestaw ");
+  const averageOvertimePerAssignment = overview?.totals.assignmentCount
+    ? overview.totals.overtimeMinutes / overview.totals.assignmentCount
+    : 0;
 
   async function publish() {
     if (!supabase || engine !== "ORTOOLS_V2" || !candidates || !selectedScenario?.id || !ready) return;
@@ -272,30 +298,55 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     <div className="role-composite-head">
       <span className="role-composite-icon"><Puzzle/></span>
       <span>
-        <small>GLOBALNE SCALENIE RÓL</small>
-        <strong>Publikacja wspólnego grafiku</strong>
-        <em>Każda wymagana rola musi mieć świadomie wybrany wariant.</em>
+        <small>PODSUMOWANIE WŁAŚCICIELA</small>
+        <strong>Opublikowane grafiki zespołów</strong>
+        <em>Każdy zespół publikuje niezależnie. Tutaj kontrolujesz komplet i opcjonalnie tworzysz wspólną wersję.</em>
       </span>
-      <button className="secondary-button" disabled={loading || busy || !scenarioId || !expectedSolverVersion} onClick={() => void loadCandidates()}>
+      <button className="secondary-button" disabled={loading || busy || !scenarioId || !expectedSolverVersion} onClick={() => { void loadCandidates(); void loadOverview(); }}>
         <RefreshCw className={loading ? "spin" : ""}/> Odśwież zestaw
       </button>
     </div>
 
+    {overview&&<section className="role-publication-overview">
+      <div className="role-publication-totals">
+        <span><Users/><small>Opublikowane zespoły</small><strong>{overview.totals.publishedRoles}</strong></span>
+        <span><Check/><small>Przydziały</small><strong>{overview.totals.assignmentCount}</strong></span>
+        <span><AlertTriangle/><small>Braki</small><strong>{overview.totals.unfilledCount}</strong></span>
+        <span><small>Koszt wszystkich zespołów</small><strong>{money(overview.totals.totalCostMinor,overview.roles[0]?.currency??"PLN")}</strong></span>
+        <span><small>Nadgodziny</small><strong>{Math.round(overview.totals.overtimeMinutes/60)} h</strong></span>
+      </div>
+      <div className="role-publication-analysis">
+        {overview.roles.map(role=>{
+          const costShare=overview.totals.totalCostMinor?role.totalCostMinor/overview.totals.totalCostMinor:0;
+          const assignmentShare=overview.totals.assignmentCount?role.assignmentCount/overview.totals.assignmentCount:0;
+          const costPressure=assignmentShare?costShare/assignmentShare:0;
+          const overtimePerAssignment=role.assignmentCount?role.overtimeMinutes/role.assignmentCount:0;
+          const flagged=costPressure>1.15||(averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25);
+          return <article className={flagged?"flagged":""} key={role.publicationId}>
+            <header><span><small>ZESPÓŁ</small><strong>{role.role.name}</strong><em>{role.scenario.name} • {dateTime(role.publishedAt,timezone)}</em></span>{flagged&&<b><AlertTriangle/> Do sprawdzenia</b>}</header>
+            <dl><div><dt>Koszt</dt><dd>{money(role.totalCostMinor,role.currency)}</dd></div><div><dt>Udział kosztu / przydziałów</dt><dd>{Math.round(costShare*100)}% / {Math.round(assignmentShare*100)}%</dd></div><div><dt>Nadgodziny</dt><dd>{Math.round(role.overtimeMinutes/60)} h</dd></div><div><dt>Braki</dt><dd>{role.unfilledCount}</dd></div><div><dt>Osoby w grafiku</dt><dd>{role.teamSize}</dd></div></dl>
+            {flagged&&<small>{costPressure>1.15?"Udział w kosztach jest wyraźnie większy niż udział w liczbie przydziałów. ":""}{averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25?"Nadgodziny na przydział przekraczają średnią zespołów.":""}</small>}
+          </article>;
+        })}
+        {!overview.roles.length&&<p>Żaden zespół nie opublikował jeszcze grafiku na ten miesiąc.</p>}
+      </div>
+    </section>}
+
     {!expectedSolverVersion && <div className="solver-v2-notice warning"><AlertTriangle/>Konfiguracja nie wskazuje aktywnej wersji workera. Scalanie pozostaje zablokowane.</div>}
 
-    <label className="role-composite-scenario">Scenariusz Matrixa
+    <label className="role-composite-scenario">Pokaż publikacje zespołów dla scenariusza
       <select value={scenarioId} disabled={loading || busy || !expectedSolverVersion} onChange={event => setScenarioId(event.target.value)}>
         {availableScenarios.map(scenario => <option key={scenario.id ?? scenario.code} value={scenario.id ?? ""}>{scenario.name}</option>)}
       </select>
     </label>
 
     {!availableScenarios.length && <div className="solver-v2-notice warning"><AlertTriangle/>Aktywny Matrix nie ma scenariusza dostępnego do scalenia.</div>}
-    {loading && <div className="role-composite-loading"><RefreshCw className="spin"/> Sprawdzam wybrane warianty wszystkich ról…</div>}
+    {loading && <div className="role-composite-loading"><RefreshCw className="spin"/> Sprawdzam opublikowane grafiki wszystkich ról…</div>}
 
     {candidates && !loading && <>
       <div className="role-composite-summary">
         <span><Users/><small>Wymagane role</small><strong>{candidates.roles.length}</strong></span>
-        <span><Check/><small>Wybrane warianty</small><strong>{variantIds.length}</strong></span>
+        <span><Check/><small>Opublikowane zespoły</small><strong>{variantIds.length}</strong></span>
         <span><AlertTriangle/><small>Braki obsady</small><strong>{unfilledCount}</strong></span>
       </div>
 
@@ -316,9 +367,9 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
                 <b>{role.variant.assignmentCount}</b><small>przydziałów</small>
                 <b>{role.variant.unfilledCount}</b><small>braków</small>
               </span>
-              <em className="role-composite-state"><Check/> Wybrany</em>
+              <em className="role-composite-state"><Check/> Opublikowany</em>
             </>
-            : <div className="role-composite-missing"><AlertTriangle/><span><strong>Brak wybranego wariantu</strong><small>Otwórz generator tej roli, utwórz wariant i wybierz go do scalenia.</small></span></div>}
+            : <div className="role-composite-missing"><AlertTriangle/><span><strong>Brak opublikowanego grafiku</strong><small>Lider tej roli musi wybrać wariant i opublikować go dla zespołu.</small></span></div>}
         </article>)}
       </div>
 
@@ -336,8 +387,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
       <div className="role-composite-publish">
         <span>
-          <strong>{ready ? "Komplet wariantów jest gotowy" : "Publikacja czeka na komplet ról"}</strong>
-          <small>Publikacja jest osobną decyzją i zawsze uruchamia ponowną globalną walidację.</small>
+          <strong>{ready ? "Wszystkie zespoły w tym scenariuszu są opublikowane" : "Wspólna wersja czeka na brakujące publikacje zespołów"}</strong>
+          <small>Niezależne grafiki są już widoczne dla swoich pracowników. Wspólna publikacja jest opcjonalnym, późniejszym krokiem właściciela.</small>
         </span>
         <label>Nazwa wspólnego grafiku
           <input value={publicationName} maxLength={200} disabled={busy} onChange={event => setPublicationName(event.target.value)}/>

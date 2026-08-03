@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Sparkles, Square, Upload, Users } from "lucide-react";
+import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Square, Upload, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -11,12 +11,14 @@ import {
   getPublishedSchedule,
   getPublicationReadiness,
   getSelectedVariantWorkspace,
+  getVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
   isValidIdempotencyKey,
   isSolverRunTerminal,
   publicationAttemptStorageKey,
   publishCompanyVariant,
+  publishRoleVariant,
   recoverPublishedSchedule,
   recoverSolverRun,
   rememberPublishedSchedule,
@@ -145,6 +147,7 @@ export function SolverV2Panel({
   const [message, setMessage] = useState("");
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
@@ -157,9 +160,10 @@ export function SolverV2Panel({
     && publishedWorkspace?.context.status === "PUBLISHED"
     && publishedWorkspace.variants.some(variant => variant.id === selectedVariant.id),
   );
-  const previewWorkspace = selectedIsPublished
+  const previewWorkspace = inspectedWorkspace ?? (selectedIsPublished
     ? publishedWorkspace
-    : selectedWorkspace ?? (!run ? publishedWorkspace : null);
+    : selectedWorkspace ?? (!run ? publishedWorkspace : null));
+  const allVariantsEquivalent = variants.length > 1 && variants.every((variant, index) => index === 0 || variant.equivalentToVariantId || variants[0].equivalentToVariantId === variant.id);
   const messageIsWarning = [
     "Nie udało",
     "Nie masz",
@@ -219,6 +223,7 @@ export function SolverV2Panel({
         setStrategies([]);
         setVariants([]);
         setSelectedWorkspace(null);
+        setInspectedWorkspace(null);
         setPollWarning("");
         setMessage(solverErrorMessage(detail));
         return "STALE";
@@ -236,6 +241,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setInspectedWorkspace(null);
     setPublishedWorkspace(null);
     setMessage("");
     setPollWarning("");
@@ -359,9 +365,23 @@ export function SolverV2Panel({
       setVariants(current => current.map(item => ({ ...item, selected: item.id === variant.id })));
       await loadSelectedWorkspace(run.id);
       setMessage(scopeType === "ROLE"
-        ? "Wariant roli został zapisany do późniejszego globalnego scalenia. Nie został opublikowany osobno."
+        ? "Wariant roli został wybrany. Możesz go teraz opublikować niezależnie dla swojego zespołu."
         : "Wariant został wybrany. Obowiązujący grafik nie zmieni się, dopóki nie potwierdzisz osobnej publikacji.");
       await onVariantSelected?.({ ...variant, selected: true });
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function inspectVariant(variant: SolverVariant) {
+    if (!supabase) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      setInspectedWorkspace(await getVariantWorkspace(supabase, variant.id));
+      window.setTimeout(() => document.getElementById("solver-variant-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -460,6 +480,56 @@ export function SolverV2Panel({
     }
   }
 
+  async function publishSelectedRole() {
+    if (!supabase || !run || !selectedVariant || engine === "SHADOW" || scopeType !== "ROLE") return;
+    const trimmedName = publicationName.trim();
+    if (!trimmedName) {
+      setMessage("Nie udało się opublikować grafiku zespołu. Podaj jego nazwę.");
+      return;
+    }
+    const confirmation = window.confirm(
+      `Opublikować „${trimmedName}” dla zespołu ${scopeLabel}?\n\n`
+      + `${selectedVariant.assignmentCount} przydziałów • ${selectedVariant.unfilledCount} braków.\n\n`
+      + "Pracownicy tego zespołu od razu otrzymają powiadomienie i zobaczą swoje zmiany. Pozostałe zespoły nie muszą być jeszcze gotowe.",
+    );
+    if (!confirmation) return;
+
+    const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
+    let idempotencyKey = window.localStorage.getItem(attemptKey);
+    if (!isValidIdempotencyKey(idempotencyKey)) {
+      window.localStorage.removeItem(attemptKey);
+      const publicationFingerprint = solverRequestFingerprint(
+        context,
+        `${trimmedName}|publish-role:${run.id}:${selectedVariant.id}`,
+      );
+      idempotencyKey = createIdempotencyKey(context, publicationFingerprint);
+      window.localStorage.setItem(attemptKey, idempotencyKey);
+    }
+
+    setBusy(true);
+    setMessage("");
+    try {
+      const publication = await publishRoleVariant(supabase, {
+        runId: run.id,
+        variantId: selectedVariant.id,
+        name: trimmedName,
+        idempotencyKey,
+      });
+      window.localStorage.removeItem(attemptKey);
+      setVariants(current => current.map(variant => variant.id === selectedVariant.id
+        ? { ...variant, status: "PUBLISHED" }
+        : variant));
+      await onVariantSelected?.({ ...selectedVariant, status: "PUBLISHED" });
+      setMessage(publication.reused
+        ? "Ten grafik zespołu był już opublikowany. Nie wysłano podwójnych powiadomień."
+        : `Grafik zespołu został opublikowany. Powiadomiono ${publication.notified} pracowników.`);
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function startAnother() {
     forgetSolverRun(context);
     setPollingRunId(null);
@@ -467,6 +537,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setInspectedWorkspace(null);
     setPublicationReadiness(null);
     setMessage("");
   }
@@ -530,6 +601,7 @@ export function SolverV2Panel({
       <div className="solver-v2-results-head">
         <span><strong>Porównaj gotowe warianty</strong><small>Każdy został policzony osobno według strategii zapisanej w Matrixie.</small></span>
       </div>
+      {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
         {variants.map(variant => <article className={`${variant.recommended ? "recommended" : ""} ${variant.selected ? "selected" : ""}`} key={variant.id}>
           <div className="solver-v2-card-head">
@@ -544,6 +616,7 @@ export function SolverV2Panel({
             {variant.totalCostMinor !== undefined && variant.totalCostMinor !== null
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
+          <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
           <dl className="solver-v2-analysis">
             {Object.entries(variant.metrics).filter(([metric])=>metric!=="UNFILLED"&&metric!=="TOTAL_COST").map(([metric,value])=><div key={metric}><dt>{({PREFERENCE_VIOLATIONS:"Niespełnione preferencje",NOMINAL_DEVIATION_MINUTES:"Odchylenie od nominału (min)",OVERTIME_MINUTES:"Nadgodziny (min)",LOAD_SPREAD_MINUTES:"Rozpiętość obciążenia (min)",WEEKEND_SPREAD:"Różnica weekendów",BASELINE_CHANGES:"Zmiany wobec bazowego"} as Record<string,string>)[metric]??metric}</dt><dd>{String(value??"—")}</dd></div>)}
             {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
@@ -552,6 +625,7 @@ export function SolverV2Panel({
             <Check/><span><strong>{variant.hardViolations === 0 ? "Wszystkie twarde reguły spełnione" : "Wariant wymaga poprawy"}</strong><small>{solutionLabel(variant.solverStatus)}</small></span>
           </div>
           {variant.equivalentToVariantId && <small className="solver-v2-equivalent">Ten wariant ma taki sam skład jak inny wynik.</small>}
+          <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}><Search/> Pokaż grafik i rozkład braków</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
             : <button className="primary-button full" disabled={busy || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
@@ -561,16 +635,24 @@ export function SolverV2Panel({
       </div>
     </div>}
 
-    {engine !== "SHADOW" && previewWorkspace
-      && <SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/>}
+    {previewWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/></div>}
 
     {engine === "ORTOOLS_V2" && selectedVariant && selectedWorkspace && scopeType === "ROLE"
-      && <div className="solver-v2-selection-note">
-        <Check/>
+      && <div className="solver-v2-publication">
         <span>
-          <strong>Wariant roli wybrany do późniejszego scalenia</strong>
-          <small>Nie został opublikowany osobno. Publikacja będzie możliwa dopiero po połączeniu kompletu ról i ponownej globalnej kontroli wszystkich reguł.</small>
+          <strong>{selectedVariant.status === "PUBLISHED" ? "Grafik tego zespołu jest opublikowany" : "Opublikuj gotowy grafik zespołu"}</strong>
+          <small>{selectedVariant.status === "PUBLISHED"
+            ? "Pracownicy zespołu widzą już swoje zmiany. Właściciel może później połączyć opublikowane grafiki wszystkich ról."
+            : "Nie musisz czekać na pozostałe role. Publikacja powiadomi tylko pracowników tego zespołu, a wynik pozostanie dostępny do późniejszego podsumowania całej firmy."}</small>
         </span>
+        <label>Nazwa grafiku zespołu
+          <input value={publicationName} maxLength={200} onChange={event => setPublicationName(event.target.value)}/>
+        </label>
+        <button className="primary-button" disabled={busy || !publicationName.trim() || selectedVariant.status === "PUBLISHED"} onClick={() => void publishSelectedRole()}>
+          {selectedVariant.status === "PUBLISHED"
+            ? <><Check/> Grafik opublikowany</>
+            : busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj dla zespołu</>}
+        </button>
       </div>}
 
     {engine === "ORTOOLS_V2" && selectedVariant && selectedWorkspace && scopeType === "COMPANY" && !selectedIsPublished

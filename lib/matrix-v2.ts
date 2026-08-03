@@ -154,6 +154,9 @@ export type MatrixV2Employee = {
   firstName: string;
   lastName: string;
   email?: string | null;
+  contractType?: "UMOWA_O_PRACE" | "ZLECENIE" | "CZESC_ETATU" | "B2B" | "INNE";
+  employmentFraction?: number;
+  workTimePolicy?: "CONTRACT_DEFAULT" | "CUSTOM";
   active: boolean;
   employmentStart?: string | null;
   employmentEnd?: string | null;

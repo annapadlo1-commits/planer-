@@ -116,6 +116,7 @@ def decomposed_certificate_snapshot_raw(*, required_count: int = 1) -> dict:
         employee for employee in raw["employees"] if employee["id"] == "employee-bob"
     )
     bob["nominalMonthlyMinutes"] = 660
+    bob["workTimePolicy"] = "CUSTOM"
     bob["maximumMonthlyMinutes"] = 2_000
     bob["maximumWeeklyMinutes"] = 2_000
     bob["minimumRestMinutes"] = 660
@@ -339,6 +340,64 @@ class _FakeClock:
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_zlecenie_uses_declared_availability_without_etat_limits(self) -> None:
+        raw = load_raw()
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "nominalMonthlyMinutes": 9600,
+                "maximumMonthlyMinutes": 9600,
+                "maximumWeeklyMinutes": 2400,
+                "maximumConsecutiveDays": 5,
+                "minimumRestMinutes": 660,
+            }
+        )
+        raw["employees"] = [employee_raw]
+        raw["availabilityWindows"] = []
+
+        snapshot = Snapshot.from_dict(raw)
+        employee = snapshot.employees[0]
+
+        self.assertIsNone(employee.nominal_monthly_minutes)
+        self.assertIsNone(employee.maximum_monthly_minutes)
+        self.assertIsNone(employee.maximum_weekly_minutes)
+        self.assertIsNone(employee.maximum_consecutive_days)
+        self.assertEqual(employee.minimum_rest_minutes, 0)
+        self.assertFalse(employee.missing_availability_means_available)
+
+        slot = next(
+            slot
+            for slot in generate_slots(snapshot)
+            if slot.role_id in employee.role_ids
+            and slot.location_id in employee.location_ids
+        )
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+        self.assertIn("MISSING_AVAILABILITY", eligibility.reasons)
+
+    def test_zlecenie_custom_policy_keeps_agreed_limits(self) -> None:
+        raw = load_raw()
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "workTimePolicy": "CUSTOM",
+                "maximumMonthlyMinutes": 7200,
+                "maximumWeeklyMinutes": 1800,
+                "maximumConsecutiveDays": 4,
+                "minimumRestMinutes": 480,
+            }
+        )
+        raw["employees"] = [employee_raw]
+
+        employee = Snapshot.from_dict(raw).employees[0]
+
+        self.assertEqual(employee.maximum_monthly_minutes, 7200)
+        self.assertEqual(employee.maximum_weekly_minutes, 1800)
+        self.assertEqual(employee.maximum_consecutive_days, 4)
+        self.assertEqual(employee.minimum_rest_minutes, 480)
+
     def test_canonical_hash_is_key_order_independent_and_ignores_embedded_hash(
         self,
     ) -> None:

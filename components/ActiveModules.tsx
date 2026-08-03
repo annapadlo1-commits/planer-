@@ -230,22 +230,18 @@ export function ActiveModules({
     return () => { portalLoadToken.current += 1; };
   }, [loadPortal]);
 
-  async function saveTimeConstraint(entry: { kind: "AVAILABLE_WINDOW" | "UNAVAILABLE"; startsAt: string; endsAt: string; note: string }) {
-    const employeeId = portal?.timeConstraints?.employeeId;
-    if (!employeeId) {
-      fail("Nie udało się potwierdzić pracownika w Matrixie. Odśwież portal.");
-      return false;
-    }
-    const result = await rpc("employee_time_constraint_save_v2", {
-      p_id: null,
-      p_employee_id: employeeId,
+  async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
+    const result = await rpc("employee_availability_days_save_v2", {
+      p_dates: entry.dates,
       p_kind: entry.kind,
-      p_starts_at: entry.startsAt,
-      p_ends_at: entry.endsAt,
+      p_all_day: entry.allDay,
+      p_local_start: entry.allDay ? null : entry.start,
+      p_local_end: entry.allDay ? null : entry.end,
+      p_preferred_location_id: entry.preferredLocationId || null,
       p_note: entry.note || null,
     });
     if (!result) return false;
-    notify(entry.kind === "AVAILABLE_WINDOW" ? "Dodano okno dostępności." : "Dodano okres niedostępności.");
+    notify("Zapisano wybrany zakres dostępności.");
     await loadPortal();
     await reload();
     return true;
@@ -253,7 +249,7 @@ export function ActiveModules({
 
   async function revokeTimeConstraint(id: string) {
     if (!confirm("Odwołać ten własny wpis dostępności? Historia pozostanie zachowana.")) return;
-    const result = await rpc("employee_time_constraint_revoke_v2", { p_id: id });
+    const result = await rpc("employee_availability_entry_revoke_uat_v2", { p_id: id });
     if (result) {
       notify("Wpis dostępności został odwołany.");
       await loadPortal();
@@ -295,8 +291,15 @@ export function ActiveModules({
     <PageHead
       eyebrow="PLANOWANIE ZESPOŁOWE"
       title="Grafiki według roli"
-      subtitle="Wybierz wariant każdej wymaganej roli, a następnie opublikuj wspólny grafik po globalnej walidacji."
+      subtitle="Lider wybiera scenariusz, porównuje trzy warianty i publikuje gotowy grafik swojego zespołu bez czekania na pozostałe role."
     />
+    <div className="role-plan-cards">{solverRoles.map((role) => <article key={role.id}>
+      <i style={{ background: "#7257d8" }} />
+      <div><small>GRAFIK ROLI</small><h3>{role.name}</h3><p>Scenariusze, warianty i analiza OR-Tools.</p></div>
+      <span className="workflow-status empty">Warianty dynamiczne</span>
+      <strong>OR-Tools</strong>
+      <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
+    </article>)}</div>
     {solverUserId && solverVersion ? <RoleCompositePanel
       engine="ORTOOLS_V2"
       solverVersion={solverVersion}
@@ -307,13 +310,6 @@ export function ActiveModules({
       refreshKey={roleCompositeRefreshKey}
       onPublished={async () => { notify("Scalony grafik ról został opublikowany"); await reload(); }}
     /> : <div className="solver-v2-notice warning"><AlertTriangle />Brak kompletnej konfiguracji generatora.</div>}
-    <div className="role-plan-cards">{solverRoles.map((role) => <article key={role.id}>
-      <i style={{ background: "#7257d8" }} />
-      <div><small>GRAFIK ROLI</small><h3>{role.name}</h3><p>Scenariusze, warianty i analiza OR-Tools.</p></div>
-      <span className="workflow-status empty">Warianty dynamiczne</span>
-      <strong>OR-Tools</strong>
-      <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
-    </article>)}</div>
   </>;
   return <>
     {portal ? <EmployeePortal
@@ -328,6 +324,7 @@ export function ActiveModules({
     {availabilityOpen && portal?.timeConstraints && <AvailabilityWindowsDrawer
       workspace={portal.timeConstraints}
       month={month}
+      locations={data.locations}
       close={() => setAvailabilityOpen(false)}
       save={saveTimeConstraint}
       revoke={revokeTimeConstraint}
@@ -361,6 +358,14 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
   const grouped = new Map<string, PortalAssignment[]>();
   portal.assignments.forEach((assignment) => grouped.set(assignment.date, [...(grouped.get(assignment.date) || []), assignment]));
+  const monthlyMinutes = portal.assignments.reduce((sum, assignment) => sum + Math.max(0, Math.round((new Date(assignment.endsAt).getTime() - new Date(assignment.startsAt).getTime()) / 60_000)), 0);
+  const periodCounts = portal.assignments.reduce((counts, assignment) => {
+    const label = `${assignment.shiftName ?? ""} ${assignment.shiftCode ?? ""}`.toLocaleLowerCase("pl-PL");
+    const localHour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: assignmentTimezone(assignment, timezone) }).format(new Date(assignment.startsAt)));
+    const period = label.includes("rano") || label.includes("morning") || localHour < 14 ? "morning" : label.includes("wiecz") || label.includes("evening") || localHour >= 16 ? "evening" : "middle";
+    counts[period] += 1;
+    return counts;
+  }, { morning: 0, middle: 0, evening: 0 });
   const [year, monthNumber] = month.split("-").map(Number);
   const first = new Date(Date.UTC(year, monthNumber - 1, 1, 12));
   const offset = (first.getUTCDay() + 6) % 7;
@@ -378,7 +383,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
     }))), "MÓJ_GRAFIK");
     XLSX.writeFile(workbook, `MOJ_GRAFIK_${month.replace("-", "_")}.xlsx`);
   };
-  return <><PageHead eyebrow="WIDOK PRACOWNIKA" title="Mój grafik i sprawy pracownicze" subtitle="Opublikowane zmiany, dokładne okna dostępności i proste preferencje zmianowe." actions={<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>} /><div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{dynamic ? <><h3>Moje konto</h3><p>Profil Matrix v2</p><span>Role i lokale wynikają z opublikowanego Matrixa.</span></> : <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ")}</span></>}</section><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Zarządzaj oknami</button><p>{portal.timeConstraints?.constraints.length || 0} zapisanych przedziałów.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy w Matrixie ma pierwszeństwo.</p></section></div><section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć współpracowników.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
+  return <><PageHead eyebrow="WIDOK PRACOWNIKA" title="Mój grafik i sprawy pracownicze" subtitle="Opublikowane zmiany, dokładne okna dostępności i proste preferencje zmianowe." actions={<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>} /><div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{dynamic ? <><h3>Moje konto</h3><p>Profil Matrix v2</p><span>Role i lokale wynikają z opublikowanego Matrixa.</span></> : <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ")}</span></>}</section><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Zarządzaj oknami</button><p>{portal.timeConstraints?.constraints.length || 0} zapisanych przedziałów.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy w Matrixie ma pierwszeństwo.</p></section></div><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span><small>Poranne</small><strong>{periodCounts.morning}</strong></span><span><small>Środkowe</small><strong>{periodCounts.middle}</strong></span><span><small>Wieczorne</small><strong>{periodCounts.evening}</strong></span></section><section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć współpracowników.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     return <section className={!day ? "blank" : ""} key={index}>{day && <><strong>{day}</strong>{(grouped.get(date) || []).map((assignment) => <button key={assignment.id} onClick={() => setSelected(assignment)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}</>}</section>;
   })}</div></section>{selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} />}</>;
@@ -390,15 +395,32 @@ function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { works
   return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer shift-preferences-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • PREFERENCJE</p><h2>Pory zmian • {labelMonth(month)}</h2></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content"><p>Preferencje są miękkie; dostępność godzinową ustaw osobno.</p>{periods.map(([period, label]) => <section className="shift-preference-row" key={period}><span><strong>{label}</strong>{workspace.managerOverrides?.[period] ? <small><ShieldCheck /> Nadrzędnie w Matrixie: {preferenceLevelLabel(workspace.managerOverrides[period])}</small> : <small>Efektywnie: {preferenceLevelLabel(workspace.effective?.[period] ?? preferences[period])}</small>}</span><select value={preferences[period]} onChange={(event) => setPreferences((current) => ({ ...current, [period]: event.target.value as ShiftPreferenceLevel }))}><option value="PREFERRED">Preferuję</option><option value="NEUTRAL">Neutralnie</option><option value="AVOIDED">Wolę unikać</option></select></section>)}<button className="primary-button full" disabled={busy} onClick={() => void save(preferences)}><Save /> {busy ? "Zapisuję…" : "Zapisz preferencje"}</button></div></aside></>;
 }
 
-function AvailabilityWindowsDrawer({ workspace, month, close, save, revoke, fail, busy }: { workspace: PortalTimeConstraintsWorkspace; month: string; close: () => void; save: (entry: { kind: "AVAILABLE_WINDOW" | "UNAVAILABLE"; startsAt: string; endsAt: string; note: string }) => Promise<boolean>; revoke: (id: string) => Promise<void>; fail: (message: string) => void; busy: boolean }) {
+function AvailabilityWindowsDrawer({ workspace, month, locations, close, save, revoke, fail, busy }: { workspace: PortalTimeConstraintsWorkspace; month: string; locations: MatrixItem[]; close: () => void; save: (entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) => Promise<boolean>; revoke: (id: string) => Promise<void>; fail: (message: string) => void; busy: boolean }) {
   const timezone = workspace.timezone;
-  const [date, setDate] = useState(`${month}-01`);
-  const [kind, setKind] = useState<"AVAILABLE_WINDOW" | "UNAVAILABLE">("AVAILABLE_WINDOW");
+  const [from, setFrom] = useState(`${month}-01`);
+  const [to, setTo] = useState(`${month}-01`);
+  const [kind, setKind] = useState<"AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK">("AVAILABLE");
+  const [allDay, setAllDay] = useState(true);
   const [start, setStart] = useState("08:00");
   const [end, setEnd] = useState("16:00");
+  const [preferredLocationId, setPreferredLocationId] = useState("");
   const [note, setNote] = useState("");
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [rangeAnchor, setRangeAnchor] = useState<string | null>(null);
   const [year, monthNumber] = month.split("-").map(Number);
   const maxDate = `${month}-${String(new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate()).padStart(2, "0")}`;
+  const monthDates = useMemo(() => Array.from({ length: Number(maxDate.slice(-2)) }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`), [maxDate, month]);
+  const calendarOffset = (new Date(`${month}-01T12:00:00Z`).getUTCDay() + 6) % 7;
+  const dateRange = (startDate: string, endDate: string) => monthDates.filter(day => day >= startDate && day <= endDate);
+  const setRange = (startDate: string, endDate: string) => {
+    const ordered = startDate <= endDate ? [startDate, endDate] : [endDate, startDate];
+    setFrom(ordered[0]); setTo(ordered[1]); setSelectedDays(dateRange(ordered[0], ordered[1])); setRangeAnchor(null);
+  };
+  const clickDay = (date: string) => {
+    if (!selectedDays.length) { setSelectedDays([date]); setFrom(date); setTo(date); setRangeAnchor(date); return; }
+    if (rangeAnchor) { setRange(rangeAnchor, date); return; }
+    setSelectedDays(current => current.includes(date) ? current.filter(day => day !== date) : [...current, date].sort());
+  };
   const grouped = useMemo(() => {
     const result = new Map<string, PortalTimeConstraint[]>();
     [...workspace.constraints].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).forEach((row) => {
@@ -409,16 +431,14 @@ function AvailabilityWindowsDrawer({ workspace, month, close, save, revoke, fail
   }, [timezone, workspace.constraints]);
   const submit = async () => {
     try {
-      const endDate = end <= start ? nextIsoDate(date) : date;
-      const startsAt = localDateTimeToIso(date, start, timezone);
-      const endsAt = localDateTimeToIso(endDate, end, timezone);
-      if (await save({ kind, startsAt, endsAt, note })) setNote("");
+      if (!selectedDays.length) throw new Error("Zaznacz co najmniej jeden dzień.");
+      if (await save({ dates: selectedDays, kind, allDay, start, end, preferredLocationId, note })) setNote("");
     } catch (cause) {
       fail(cause instanceof Error ? cause.message : "Nie udało się przygotować przedziału.");
     }
   };
-  return <><button className="drawer-scrim" onClick={close} /><aside className="drawer role-drawer availability-windows-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • MATRIX V2</p><h2>Okna dostępności • {labelMonth(month, timezone)}</h2><small>Strefa {timezone}</small></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content availability-window-layout"><form className="availability-window-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}><h3>Dodaj własny przedział</h3><p>Możesz zapisać kilka okien tego samego dnia.</p><label>Rodzaj<select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="AVAILABLE_WINDOW">Okno dostępności</option><option value="UNAVAILABLE">Niedostępność</option></select></label><label>Data<input required type="date" min={`${month}-01`} max={maxDate} value={date} onChange={(event) => setDate(event.target.value)} /></label><div className="form-row"><label>Od<input required type="time" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Do<input required type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></label></div><label>Notatka<textarea maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} /></label><button disabled={busy} className="primary-button full"><Plus /> Dodaj przedział</button></form><section className="availability-window-list"><div className="availability-window-list-head"><div><h3>Zapisane przedziały</h3><p>Wpisy kadr i przełożonego pozostają tylko do odczytu.</p></div><span>{workspace.constraints.length}</span></div>{grouped.map(([day, rows]) => <article className="availability-window-day" key={day}><h4>{day}</h4>{rows.map((row) => {
-    const editable = row.editable && row.source === "GRAFIK_PRO" && ["AVAILABLE_WINDOW", "UNAVAILABLE"].includes(row.kind);
+  return <><button className="drawer-scrim" onClick={close} /><aside className="drawer role-drawer availability-windows-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • MATRIX V2</p><h2>Dostępność • {labelMonth(month, timezone)}</h2><small>Zaznacz cały zakres, a potem odkliknij pojedyncze wyjątki • strefa {timezone}</small></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content availability-window-layout"><form className="availability-window-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}><h3>Ustaw dni dostępności</h3><p>Kliknij pierwszy i ostatni dzień zakresu. Każdy zaznaczony dzień możesz potem odkliknąć.</p><div className="availability-day-picker"><div className="availability-weekdays">{days.map(day=><b key={day}>{day}</b>)}</div><div className="availability-days">{Array.from({length:calendarOffset},(_,index)=><i key={`blank-${index}`}/>)}{monthDates.map(date=><button type="button" key={date} className={selectedDays.includes(date)?"selected":""} onClick={()=>clickDay(date)}>{Number(date.slice(-2))}</button>)}</div><small>{rangeAnchor?"Wybierz ostatni dzień zakresu.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go dodać lub odznaczyć.`:"Wybierz pierwszy dzień zakresu."}</small></div><div className="form-row"><label>Od dnia<input required type="date" min={`${month}-01`} max={maxDate} value={from} onChange={(event) => setRange(event.target.value,to<event.target.value?event.target.value:to)} /></label><label>Do dnia<input required type="date" min={from} max={maxDate} value={to} onChange={(event) => setRange(from,event.target.value)} /></label></div><label>Co deklarujesz?<select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="AVAILABLE">Mogę pracować</option><option value="PREFER_NOT_TO_WORK">Wolę nie pracować (preferencja)</option><option value="CANNOT_WORK">Nie mogę pracować (twarda blokada)</option></select></label><label className="availability-all-day"><input type="checkbox" checked={!allDay} onChange={(event) => setAllDay(!event.target.checked)} /> Chcę podać konkretne godziny</label>{!allDay && <div className="form-row"><label>Od<input required type="time" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Do<input required type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></label></div>}<label>Preferowany lokal (opcjonalnie)<select value={preferredLocationId} onChange={(event) => setPreferredLocationId(event.target.value)}><option value="">Bez preferencji</option>{locations.filter((location) => location.active).map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}</select></label><label>Notatka (opcjonalnie)<textarea maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} /></label><button disabled={busy||!selectedDays.length} className="primary-button full"><Plus /> Zapisz {selectedDays.length||""} {selectedDays.length===1?"dzień":"dni"}</button></form><section className="availability-window-list"><div className="availability-window-list-head"><div><h3>Zapisane dni i przedziały</h3><p>Miękka preferencja wpływa na ocenę wariantu; twarda blokada wyklucza przydział.</p></div><span>{workspace.constraints.length}</span></div>{grouped.map(([day, rows]) => <article className="availability-window-day" key={day}><h4>{day}</h4>{rows.map((row) => {
+    const editable = row.editable && row.source === "GRAFIK_PRO" && ["AVAILABLE_WINDOW", "UNAVAILABLE", "PREFER_NOT_TO_WORK", "PREFERRED_LOCATION"].includes(row.kind);
     return <div className={`availability-window-row ${row.kind.toLowerCase().replaceAll("_", "-")}`} key={row.id}><span className="availability-window-kind">{timeConstraintKindPl(row.kind)}</span><span className="availability-window-time"><b>{time(row.startsAt, timezone)}–{time(row.endsAt, timezone)}</b><small>{timeConstraintSourcePl(row.source)}{row.note ? ` • ${row.note}` : ""}</small></span>{editable ? <button disabled={busy} className="danger-button" onClick={() => void revoke(row.id)}><Trash2 /> Odwołaj</button> : <em><ShieldCheck /> Tylko do odczytu</em>}</div>;
   })}</article>)}</section></div></aside></>;
 }
@@ -450,7 +470,7 @@ function time(value?: string, timezone = "Europe/Warsaw") { return value ? new D
 function portalShiftLabel(assignment: PortalAssignment) { return assignment.shiftName?.trim() || assignment.shiftCode || "Zmiana"; }
 function assignmentTimezone(assignment: PortalAssignment, fallback: string) { return assignment.locationTimezone?.trim() || fallback; }
 function preferenceLevelLabel(value: string) { return ({ PREFERRED: "preferowana", NEUTRAL: "neutralna", AVOIDED: "unikać", BLOCKED: "zablokowana", INHERIT: "wg pracownika" } as Record<string, string>)[value] || value; }
-function timeConstraintKindPl(kind: string) { return ({ AVAILABLE_WINDOW: "Dostępność", UNAVAILABLE: "Niedostępność", LEAVE: "Urlop", SICKNESS: "L4 / zwolnienie" } as Record<string, string>)[kind] || kind; }
+function timeConstraintKindPl(kind: string) { return ({ AVAILABLE_WINDOW: "Dostępność", UNAVAILABLE: "Twarda niedostępność", PREFER_NOT_TO_WORK: "Wolę nie pracować", PREFERRED_LOCATION: "Preferowany lokal", LEAVE: "Urlop", SICKNESS: "L4 / zwolnienie" } as Record<string, string>)[kind] || kind; }
 function timeConstraintSourcePl(source: string) { return ({ GRAFIK_PRO: "Wpis własny", MANAGER: "Przełożony", HR: "Kadry", KADROMIERZ: "Kadromierz", IMPORT: "Import", SYSTEM: "System" } as Record<string, string>)[source] || source; }
 function translateError(message: string) {
   const translations: Record<string, string> = {

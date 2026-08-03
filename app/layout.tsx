@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppAuthProvider } from "@/components/AppAuthProvider";
 import "./globals.css";
 import "./complete.css";
+import "./uat-overhaul.css";
 import "./alpha11.css";
 import "./alpha12.css";
 import "./solver-v2.css";
