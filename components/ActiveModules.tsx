@@ -153,6 +153,7 @@ export function ActiveModules({
   const [portal, setPortal] = useState<PortalWorkspace | null>(null);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [shiftPreferencesOpen, setShiftPreferencesOpen] = useState(false);
+  const rolePlanningEnabled = solverEngine === "ORTOOLS_V2" || solverEngine === "SHADOW";
   const portalLoadToken = useRef(0);
   const portalMonthRef = useRef(selectedMonthDate);
   portalMonthRef.current = selectedMonthDate;
@@ -284,7 +285,7 @@ export function ActiveModules({
     if (solverEngine !== "ORTOOLS_V2") return <RetiredModule title="Integracje starego grafiku są wyłączone" />;
     return <IntegrationView busy={busy} onExport={() => void exportKadromierz()} runCount={data.integrationRuns.length} />;
   }
-  if (view === "rolePlans" && solverEngine !== "ORTOOLS_V2") {
+  if (view === "rolePlans" && !rolePlanningEnabled) {
     return <RetiredModule title="Generator ról czeka na kontrolowane przełączenie OR-Tools" />;
   }
   if (view === "rolePlans") return <>
@@ -296,12 +297,13 @@ export function ActiveModules({
     <div className="role-plan-cards">{solverRoles.map((role) => <article key={role.id}>
       <i style={{ background: "#7257d8" }} />
       <div><small>GRAFIK ROLI</small><h3>{role.name}</h3><p>Scenariusze, warianty i analiza OR-Tools.</p></div>
-      <span className="workflow-status empty">Warianty dynamiczne</span>
+      <span className="workflow-status empty">{solverEngine === "SHADOW" ? "Test bez publikacji" : "Warianty dynamiczne"}</span>
       <strong>OR-Tools</strong>
       <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
     </article>)}</div>
-    {solverUserId && solverVersion ? <RoleCompositePanel
-      engine="ORTOOLS_V2"
+    {solverEngine === "SHADOW" && <div className="solver-v2-notice warning"><ShieldCheck />Tryb SHADOW pozwala wygenerować i porównać trzy warianty każdej roli. Publikacja zespołu i wspólnego grafiku pozostaje zablokowana do kontrolowanego przełączenia.</div>}
+    {solverEngine === "ORTOOLS_V2" && solverUserId && solverVersion ? <RoleCompositePanel
+      engine={solverEngine}
       solverVersion={solverVersion}
       userId={solverUserId}
       month={selectedMonthDate}
@@ -309,7 +311,7 @@ export function ActiveModules({
       scenarios={solverScenarios}
       refreshKey={roleCompositeRefreshKey}
       onPublished={async () => { notify("Scalony grafik ról został opublikowany"); await reload(); }}
-    /> : <div className="solver-v2-notice warning"><AlertTriangle />Brak kompletnej konfiguracji generatora.</div>}
+    /> : solverEngine === "ORTOOLS_V2" ? <div className="solver-v2-notice warning"><AlertTriangle />Brak kompletnej konfiguracji generatora.</div> : null}
   </>;
   return <>
     {portal ? <EmployeePortal
