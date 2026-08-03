@@ -345,6 +345,12 @@ class CpSatScheduleEngine:
 
         common = self._build_model(snapshot, slots, eligibility, coverage_only=True)
         if certificate is not None:
+            # The exact certificate supersedes the generic greedy warm start.
+            # CP-SAT rejects duplicate hint variables, and the independently
+            # solved certificate blocks are not guaranteed to form a monthly
+            # hard-feasible assignment that could safely be fixed in place.
+            common.model.clear_hints()
+            common.complete_coverage_hint = False
             common.model.add(common.metrics["UNFILLED"] >= certificate.lower_bound)
             for key, value in certificate.assignment_hints.items():
                 variable = common.x.get(key)
