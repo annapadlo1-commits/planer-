@@ -4,7 +4,7 @@ import logging
 import signal
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -80,6 +80,7 @@ class WorkerRuntime:
         *,
         rpc: RpcProtocol | None = None,
         engine: CpSatScheduleEngine | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self.config = config
         self.rpc = rpc or SolverGatewayClient(
@@ -96,6 +97,11 @@ class WorkerRuntime:
         self._progress_lock = threading.Lock()
         self._heartbeat_done = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
+        self._heartbeat_lock = threading.Lock()
+        self._heartbeat_failures = 0
+        self._last_heartbeat_monotonic = 0.0
+        self._active_claim: Claim | None = None
+        self._clock = clock
         set_progress_callback = getattr(self.engine, "set_progress_callback", None)
         if callable(set_progress_callback):
             set_progress_callback(self._solver_progress)
@@ -111,6 +117,13 @@ class WorkerRuntime:
         }
         if heartbeat_values:
             self._set_progress(**heartbeat_values)
+        # OR-Tools can hold the GIL long enough to starve the background
+        # heartbeat thread. Every completed solver stage reaches this callback,
+        # so use the boundary as a synchronous lease-renewal checkpoint when
+        # the regular heartbeat interval has elapsed.
+        claim = self._active_claim
+        if claim is not None:
+            self._heartbeat_once(claim)
 
     def request_stop(self, reason: str) -> None:
         self._stop.request(reason)
@@ -124,45 +137,71 @@ class WorkerRuntime:
         with self._progress_lock:
             return dict(self._progress)
 
-    def _heartbeat_loop(self, claim: Claim) -> None:
-        failures = 0
-        while not self._heartbeat_done.wait(self.config.heartbeat_seconds):
+    def _heartbeat_once(self, claim: Claim, *, force: bool = False) -> bool:
+        with self._heartbeat_lock:
+            now = self._clock()
+            if (
+                not force
+                and now - self._last_heartbeat_monotonic
+                < self.config.heartbeat_seconds
+            ):
+                return True
             try:
                 heartbeat = self.rpc.heartbeat(claim, self._progress_snapshot())
-                failures = 0
+                self._heartbeat_failures = 0
+                self._last_heartbeat_monotonic = self._clock()
                 if heartbeat.cancel_requested:
                     self.request_stop("CANCEL_REQUESTED")
-                    return
+                    return False
                 if not heartbeat.lease_valid:
                     self.request_stop("LEASE_LOST")
-                    return
+                    return False
+                return True
             except RpcError as exc:
-                failures += 1
-                LOGGER.warning("Heartbeat RPC failed (attempt %s)", failures)
-                if not exc.retryable or failures >= 3:
+                self._heartbeat_failures += 1
+                LOGGER.warning(
+                    "Heartbeat RPC failed (attempt %s)", self._heartbeat_failures
+                )
+                if not exc.retryable or self._heartbeat_failures >= 3:
                     self.request_stop("HEARTBEAT_FAILED")
-                    return
+                    return False
+                return True
             except Exception:
-                failures += 1
+                self._heartbeat_failures += 1
                 LOGGER.exception("Unexpected heartbeat failure")
-                if failures >= 3:
+                if self._heartbeat_failures >= 3:
                     self.request_stop("HEARTBEAT_FAILED")
-                    return
+                    return False
+                return True
+
+    def _heartbeat_loop(
+        self, claim: Claim, heartbeat_done: threading.Event
+    ) -> None:
+        while not heartbeat_done.wait(self.config.heartbeat_seconds):
+            if not self._heartbeat_once(claim):
+                return
 
     def _start_heartbeat(self, claim: Claim) -> None:
-        self._heartbeat_done.clear()
+        heartbeat_done = threading.Event()
+        self._heartbeat_done = heartbeat_done
+        with self._heartbeat_lock:
+            self._heartbeat_failures = 0
+            self._last_heartbeat_monotonic = self._clock()
+            self._active_claim = claim
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
-            args=(claim,),
+            args=(claim, heartbeat_done),
             daemon=True,
             name="solver-heartbeat",
         )
         self._heartbeat_thread.start()
 
     def _stop_heartbeat(self) -> None:
+        self._active_claim = None
         self._heartbeat_done.set()
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=2.0)
+        self._heartbeat_thread = None
 
     def _claim_run(self) -> Claim | None:
         return self.rpc.claim(

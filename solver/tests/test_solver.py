@@ -1221,6 +1221,70 @@ class SolverTests(unittest.TestCase):
             },
         )
 
+    def test_solver_stage_boundary_renews_starved_heartbeat(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 0)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertTrue(rpc.finalized)
+
+    def test_solver_stage_boundary_stops_after_lease_loss(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=False)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 1)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertFalse(rpc.finalized)
+        self.assertEqual(rpc.interrupt_reason, None)
+
     def test_pull_worker_claims_the_next_queued_run(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
@@ -1674,6 +1738,25 @@ class _FakeEngine:
         return None
 
 
+class _StageBoundaryEngine(_FakeEngine):
+    def __init__(self, variants):
+        super().__init__(variants)
+        self.progress_callback = None
+
+    def set_progress_callback(self, callback):
+        self.progress_callback = callback
+
+    def solve(self, _snapshot):
+        assert self.progress_callback is not None
+        self.progress_callback(
+            {
+                "solverStage": "UNFILLED",
+                "solverStatus": "OPTIMAL",
+            }
+        )
+        return self.variants
+
+
 class _FakeRpc:
     def __init__(self, raw):
         self.raw = copy.deepcopy(raw)
@@ -1683,6 +1766,9 @@ class _FakeRpc:
         self.finalized = False
         self.failed = False
         self.claim_requests = []
+        self.heartbeat_calls = 0
+        self.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=True)
+        self.interrupt_reason = None
 
     def claim(self, **kwargs):
         self.claim_requests.append(kwargs)
@@ -1694,7 +1780,8 @@ class _FakeRpc:
         )
 
     def heartbeat(self, _claim, _progress):
-        return Heartbeat(cancel_requested=False, lease_valid=True)
+        self.heartbeat_calls += 1
+        return self.heartbeat_value
 
     def save_variant(self, _claim, variant):
         self.saved.append(variant)
@@ -1703,6 +1790,7 @@ class _FakeRpc:
         self.finalized = True
 
     def interrupt(self, _claim, _reason):
+        self.interrupt_reason = _reason
         return None
 
     def fail_attempt(self, _claim, **_kwargs):
