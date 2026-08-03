@@ -781,6 +781,54 @@ class SolverTests(unittest.TestCase):
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
 
+    def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
+        raw = load_raw()
+        for strategy in raw["strategies"]:
+            for term in strategy["objectiveTerms"]:
+                term["tier"] += 1
+            strategy["objectiveTerms"].insert(
+                0,
+                {
+                    "tier": 1,
+                    "metric": "UNFILLED",
+                    "weight": 1_000,
+                    "direction": "MIN",
+                    "tolerance": 0,
+                    "parameters": {},
+                },
+            )
+        snapshot = Snapshot.from_dict(raw)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+        original_solve_model = engine._solve_model
+        strategy_stages: list[str] = []
+        initial_hint_counts: list[int] = []
+
+        def observe_stages(*args, **kwargs):
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if strategy is not None:
+                strategy_stages.append(stage_name)
+                if stage_name == "TIER_2":
+                    model = args[0]
+                    initial_hint_counts.append(
+                        len(model.proto.solution_hint.vars)
+                    )
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), 2)
+        self.assertNotIn("TIER_1", strategy_stages)
+        self.assertTrue(initial_hint_counts)
+        self.assertTrue(all(count > 0 for count in initial_hint_counts))
+        for variant in variants:
+            fixed_tier = variant.stage_objectives[1]
+            self.assertEqual(fixed_tier["name"], "TIER_1")
+            self.assertEqual(fixed_tier["status"], "OPTIMAL")
+
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:
             @staticmethod

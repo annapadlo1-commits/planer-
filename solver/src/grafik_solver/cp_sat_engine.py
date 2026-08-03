@@ -177,6 +177,84 @@ class CpSatScheduleEngine:
             self._progress_callback(values)
 
     @staticmethod
+    def _apply_coverage_solution_hint(
+        source: _Artifacts,
+        source_solver: Any,
+        target: _Artifacts,
+        slots: tuple[Slot, ...],
+    ) -> int:
+        """Expand the aggregate coverage incumbent into a full-model hint."""
+        coverage_groups: dict[tuple[str, str], list[Slot]] = defaultdict(list)
+        for slot in slots:
+            coverage_groups[(slot.demand_id, slot.occurrence_id)].append(slot)
+
+        hinted = 0
+        source_is_aggregate = set(source.unfilled) != {slot.id for slot in slots}
+        if source_is_aggregate:
+            for group_slots in coverage_groups.values():
+                ordered_slots = sorted(
+                    group_slots, key=lambda item: (item.seat_index, item.id)
+                )
+                representative = ordered_slots[0]
+                selected_employees = sorted(
+                    employee_id
+                    for (employee_id, slot_id), variable in source.x.items()
+                    if slot_id == representative.id
+                    and source_solver.value(variable)
+                )
+                selected_by_slot = {
+                    slot.id: (
+                        selected_employees[index]
+                        if index < len(selected_employees)
+                        else None
+                    )
+                    for index, slot in enumerate(ordered_slots)
+                }
+                for (employee_id, slot_id), variable in target.x.items():
+                    if slot_id not in selected_by_slot:
+                        continue
+                    target.model.add_hint(
+                        variable,
+                        int(selected_by_slot[slot_id] == employee_id),
+                    )
+                    hinted += 1
+                for slot in ordered_slots:
+                    variable = target.unfilled.get(slot.id)
+                    if variable is not None:
+                        target.model.add_hint(
+                            variable, int(selected_by_slot[slot.id] is None)
+                        )
+                        hinted += 1
+        else:
+            for key, variable in target.x.items():
+                source_variable = source.x.get(key)
+                if source_variable is not None:
+                    target.model.add_hint(
+                        variable, int(source_solver.value(source_variable))
+                    )
+                    hinted += 1
+            for slot in slots:
+                variable = target.unfilled.get(slot.id)
+                source_variable = source.unfilled.get(slot.id)
+                if variable is not None and source_variable is not None:
+                    target.model.add_hint(
+                        variable, int(source_solver.value(source_variable))
+                    )
+                    hinted += 1
+
+        for name in ("work", "day_work"):
+            source_variables = getattr(source, name)
+            target_variables = getattr(target, name)
+            for key, variable in target_variables.items():
+                source_variable = source_variables.get(key)
+                if source_variable is not None:
+                    target.model.add_hint(
+                        variable, int(source_solver.value(source_variable))
+                    )
+                    hinted += 1
+        return hinted
+
+    @staticmethod
     def _solver_measure(solver: Any, name: str) -> Any | None:
         value = getattr(solver, name, None)
         if value is None:
@@ -347,6 +425,14 @@ class CpSatScheduleEngine:
             )
             self._ensure_deadline(strategy_deadline, strategy.code)
             artifacts.model.add(artifacts.metrics["UNFILLED"] == minimum_unfilled)
+            coverage_hint_count = self._apply_coverage_solution_hint(
+                common, common_solver, artifacts, slots
+            )
+            LOGGER.info(
+                "Strategy %s seeded with %s coverage hint values",
+                strategy.code,
+                coverage_hint_count,
+            )
             stage_results: list[dict[str, Any]] = [
                 {
                     "tier": 0,
@@ -463,13 +549,65 @@ class CpSatScheduleEngine:
                 ordered_tiers = sorted(tiers)
                 for tier_index, tier in enumerate(ordered_tiers, start=1):
                     expression = _sum(tiers[tier])
-                    artifacts.model.clear_hints()
                     if incumbent is not None:
+                        artifacts.model.clear_hints()
                         for variable in artifacts.hint_variables:
                             if variable.index in incumbent:
                                 artifacts.model.add_hint(
                                     variable, incumbent[variable.index]
                                 )
+                    fixed_unfilled_tier = (
+                        tier_index < len(ordered_tiers)
+                        and all(
+                            term["metric"] == "UNFILLED"
+                            and "targetValue" not in term["parameters"]
+                            for term in tier_terms[tier]
+                        )
+                    )
+                    if fixed_unfilled_tier:
+                        exact_value = sum(
+                            (1 if term["direction"] == "MIN" else -1)
+                            * term["weight"]
+                            * minimum_unfilled
+                            for term in tier_terms[tier]
+                        )
+                        allowed_degradation = tier_tolerances[tier]
+                        stage_results.append(
+                            {
+                                "tier": tier,
+                                "name": f"TIER_{tier}",
+                                "value": exact_value,
+                                "status": "OPTIMAL",
+                                "bestBound": float(exact_value),
+                                "tolerance": allowed_degradation,
+                                "frozenUpperBound": (
+                                    exact_value + allowed_degradation
+                                ),
+                                "terms": tier_terms[tier],
+                            }
+                        )
+                        artifacts.model.add(
+                            expression <= exact_value + allowed_degradation
+                        )
+                        self._emit_progress(
+                            phase=f"TIER_{tier}",
+                            progress=10
+                            + (
+                                80
+                                * (
+                                    strategy_index * len(ordered_tiers)
+                                    + tier_index
+                                )
+                                // (strategy_count * len(ordered_tiers))
+                            ),
+                            strategyId=strategy.id,
+                            strategyProgress=(
+                                90 * tier_index // len(ordered_tiers)
+                            ),
+                            strategyCount=strategy_count,
+                            completedStrategies=strategy_index,
+                        )
+                        continue
                     artifacts.model.clear_objective()
                     artifacts.model.minimize(expression)
                     final_solver, final_status = self._solve_model(
