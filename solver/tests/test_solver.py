@@ -84,6 +84,57 @@ def boundary_snapshot_raw(
     return raw
 
 
+def decomposed_certificate_snapshot_raw(*, required_count: int = 1) -> dict:
+    raw = load_raw()
+    raw.pop("slots")
+    raw["periodStart"] = "2026-08-02"
+    raw["periodEnd"] = "2026-08-03"
+    raw["settings"]["missingAvailabilityMeansAvailable"] = True
+    raw["strategies"] = [raw["strategies"][0]]
+    morning = next(
+        item for item in raw["shiftTemplates"] if item["id"] == "shift-morning"
+    )
+    evening = next(
+        item for item in raw["shiftTemplates"] if item["id"] == "shift-evening"
+    )
+    morning["weekdays"] = [1]
+    evening["weekdays"] = [7]
+    evening["endTime"] = "23:00"
+    raw["demand"] = [
+        {
+            **raw["demand"][0],
+            "dates": ["2026-08-03"],
+            "requiredCount": required_count,
+        },
+        {
+            **raw["demand"][1],
+            "dates": ["2026-08-02"],
+            "requiredCount": required_count,
+        },
+    ]
+    bob = next(
+        employee for employee in raw["employees"] if employee["id"] == "employee-bob"
+    )
+    bob["nominalMonthlyMinutes"] = 660
+    bob["maximumMonthlyMinutes"] = 2_000
+    bob["maximumWeeklyMinutes"] = 2_000
+    bob["minimumRestMinutes"] = 660
+    raw["employees"] = [bob]
+    raw["availabilityWindows"] = []
+    raw["payRules"] = []
+    raw["budget"] = {"amountMinor": None, "hard": False}
+    raw["externalAssignments"] = []
+    raw["lockedAssignments"] = [
+        {
+            "slotId": (
+                "2026-08-03|shift-morning|role-sommelier|duty-service|demand-morning|1"
+            ),
+            "employeeId": "employee-bob",
+        }
+    ]
+    return raw
+
+
 def scoped_budget_snapshot_raw() -> dict:
     first_slot = "2026-08-01|shift-a|role-a|duty-a|demand-a|1"
     second_slot = "2026-08-02|shift-b|role-b|duty-b|demand-b|1"
@@ -834,6 +885,63 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(status, cp_model.OPTIMAL)
         self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
 
+    def test_weekly_certificate_is_exact_lower_bound_across_rest_boundary(
+        self,
+    ) -> None:
+        snapshot = Snapshot.from_dict(
+            decomposed_certificate_snapshot_raw(required_count=2)
+        )
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            certificate = engine._coverage_certificate(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                engine._clock() + 29,
+            )
+
+        self.assertIsNotNone(certificate)
+        assert certificate is not None
+        self.assertEqual(certificate.lower_bound, 2)
+        self.assertEqual(len(certificate.blocks), 2)
+
+        artifacts = engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 3)
+        self.assertLessEqual(
+            certificate.lower_bound,
+            solver.value(artifacts.metrics["UNFILLED"]),
+        )
+
+    def test_solver_records_exact_weekly_certificate(self) -> None:
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            result = engine.solve(snapshot)[0]
+
+        certificate = result.stage_objectives[0]["certificate"]
+        self.assertEqual(certificate["kind"], "EXACT_WEEKLY_RELAXATION")
+        self.assertEqual(certificate["lowerBound"], 0)
+        self.assertEqual(len(certificate["blocks"]), 2)
+        self.assertEqual(result.metrics["UNFILLED"], 1)
+        self.assertTrue(result.optimal)
+
     def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
         raw = load_raw()
         raw.pop("slots")
@@ -964,12 +1072,8 @@ class SolverTests(unittest.TestCase):
             self.engine.solve(Snapshot.from_dict(unknown))
 
         conflicting = load_raw()
-        conflicting["employees"][0]["preferredShiftTemplateIds"] = [
-            "shift-morning"
-        ]
-        conflicting["employees"][0]["blockedShiftTemplateIds"] = [
-            "shift-morning"
-        ]
+        conflicting["employees"][0]["preferredShiftTemplateIds"] = ["shift-morning"]
+        conflicting["employees"][0]["blockedShiftTemplateIds"] = ["shift-morning"]
         with self.assertRaisesRegex(SnapshotError, "prefer and block"):
             self.engine.solve(Snapshot.from_dict(conflicting))
 
