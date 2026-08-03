@@ -26,7 +26,7 @@ from grafik_solver.eligibility import EligibilityIndex
 from grafik_solver.lifecycle import WorkerRuntime
 from grafik_solver.models import Assignment, Snapshot, SnapshotError
 from grafik_solver.pay_rules import quote_assignment
-from grafik_solver.rpc import Claim, Heartbeat, SnapshotEnvelope
+from grafik_solver.rpc import Claim, Heartbeat, RpcError, SnapshotEnvelope
 from grafik_solver.slots import generate_slots
 from grafik_solver.validator import validate_variant
 
@@ -79,6 +79,57 @@ def boundary_snapshot_raw(
                 "2026-08-01|shift-morning|role-sommelier|duty-service|demand-morning|1"
             ),
             "employeeId": "employee-alice",
+        }
+    ]
+    return raw
+
+
+def decomposed_certificate_snapshot_raw(*, required_count: int = 1) -> dict:
+    raw = load_raw()
+    raw.pop("slots")
+    raw["periodStart"] = "2026-08-02"
+    raw["periodEnd"] = "2026-08-03"
+    raw["settings"]["missingAvailabilityMeansAvailable"] = True
+    raw["strategies"] = [raw["strategies"][0]]
+    morning = next(
+        item for item in raw["shiftTemplates"] if item["id"] == "shift-morning"
+    )
+    evening = next(
+        item for item in raw["shiftTemplates"] if item["id"] == "shift-evening"
+    )
+    morning["weekdays"] = [1]
+    evening["weekdays"] = [7]
+    evening["endTime"] = "23:00"
+    raw["demand"] = [
+        {
+            **raw["demand"][0],
+            "dates": ["2026-08-03"],
+            "requiredCount": required_count,
+        },
+        {
+            **raw["demand"][1],
+            "dates": ["2026-08-02"],
+            "requiredCount": required_count,
+        },
+    ]
+    bob = next(
+        employee for employee in raw["employees"] if employee["id"] == "employee-bob"
+    )
+    bob["nominalMonthlyMinutes"] = 660
+    bob["maximumMonthlyMinutes"] = 2_000
+    bob["maximumWeeklyMinutes"] = 2_000
+    bob["minimumRestMinutes"] = 660
+    raw["employees"] = [bob]
+    raw["availabilityWindows"] = []
+    raw["payRules"] = []
+    raw["budget"] = {"amountMinor": None, "hard": False}
+    raw["externalAssignments"] = []
+    raw["lockedAssignments"] = [
+        {
+            "slotId": (
+                "2026-08-03|shift-morning|role-sommelier|duty-service|demand-morning|1"
+            ),
+            "employeeId": "employee-bob",
         }
     ]
     return raw
@@ -307,6 +358,28 @@ class SnapshotTests(unittest.TestCase):
             "2026-08-01|shift-morning|role-sommelier|duty-service|demand-morning|1",
         )
         self.assertEqual(slots[1].duty_ids, ("duty-close", "duty-service"))
+
+    def test_empty_duty_slot_uses_canonical_dash_sentinel(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dutyIds": [],
+                "dates": ["2026-08-01"],
+                "requiredCount": 1,
+            }
+        ]
+
+        slots = generate_slots(Snapshot.from_dict(raw))
+
+        self.assertEqual(len(slots), 1)
+        self.assertEqual(
+            slots[0].id,
+            "2026-08-01|shift-morning|role-sommelier|-|demand-morning|1",
+        )
+        self.assertEqual(slots[0].duty_ids, ())
 
     def test_resolved_slot_timestamp_is_authoritative_during_dst_fold(self) -> None:
         raw = load_raw()
@@ -708,6 +781,133 @@ class SolverTests(unittest.TestCase):
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
 
+    def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
+        raw = load_raw()
+        for strategy in raw["strategies"]:
+            for term in strategy["objectiveTerms"]:
+                term["tier"] += 1
+            strategy["objectiveTerms"].insert(
+                0,
+                {
+                    "tier": 1,
+                    "metric": "UNFILLED",
+                    "weight": 1_000,
+                    "direction": "MIN",
+                    "tolerance": 0,
+                    "parameters": {},
+                },
+            )
+        snapshot = Snapshot.from_dict(raw)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+        original_solve_model = engine._solve_model
+        strategy_stages: list[str] = []
+        initial_hint_counts: list[int] = []
+
+        def observe_stages(*args, **kwargs):
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if strategy is not None:
+                strategy_stages.append(stage_name)
+                if stage_name == "TIER_2":
+                    model = args[0]
+                    initial_hint_counts.append(
+                        len(model.proto.solution_hint.vars)
+                    )
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), 2)
+        self.assertNotIn("TIER_1", strategy_stages)
+        self.assertTrue(initial_hint_counts)
+        self.assertTrue(all(count > 0 for count in initial_hint_counts))
+        for variant in variants:
+            fixed_tier = variant.stage_objectives[1]
+            self.assertEqual(fixed_tier["name"], "TIER_1")
+            self.assertEqual(fixed_tier["status"], "OPTIMAL")
+
+    def test_relaxed_strategy_completes_full_model_hint_before_tiers(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        warm_start_limits: list[float] = []
+        full_hint_counts: list[tuple[int, int]] = []
+        expect_full_hint = False
+
+        def observe_stages(*args, **kwargs):
+            nonlocal expect_full_hint
+            model = args[0]
+            if expect_full_hint:
+                full_hint_counts.append(
+                    (
+                        len(model.proto.solution_hint.vars),
+                        len(model.proto.variables),
+                    )
+                )
+                expect_full_hint = False
+            result = original_solve_model(*args, **kwargs)
+            if kwargs["stage_name"] == "WARM_START":
+                self.assertTrue(kwargs["fix_hints"])
+                warm_start_limits.append(kwargs["time_limit_seconds"])
+                expect_full_hint = True
+            return result
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(warm_start_limits), len(snapshot.strategies))
+        self.assertTrue(all(limit <= 30.0 for limit in warm_start_limits))
+        self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
+        self.assertTrue(
+            all(
+                hint_count == variable_count
+                for hint_count, variable_count in full_hint_counts
+            )
+        )
+        for variant in variants:
+            report = validate_variant(snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+
+    def test_relaxed_strategy_uses_verified_fallback_on_unknown(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        forced_unknown_stages: list[str] = []
+
+        def force_unknown(*args, **kwargs):
+            stage_name = kwargs["stage_name"]
+            if stage_name.startswith("TIER_"):
+                forced_unknown_stages.append(stage_name)
+                return object(), cp_model.UNKNOWN
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=force_unknown):
+            variants = engine.solve(snapshot)
+
+        self.assertTrue(forced_unknown_stages)
+        self.assertEqual(len(variants), len(snapshot.strategies))
+        for variant in variants:
+            self.assertFalse(variant.optimal)
+            self.assertEqual(variant.stage_objectives[-1]["status"], "FEASIBLE")
+            self.assertNotIn("bestBound", variant.stage_objectives[-1])
+            report = validate_variant(snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:
             @staticmethod
@@ -727,6 +927,290 @@ class SolverTests(unittest.TestCase):
             self.engine._require_optimal(
                 FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "TEST"
             )
+
+    def test_incomplete_status_reports_solver_proof_diagnostics(self) -> None:
+        class FeasibleSolver:
+            objective_value = 7.0
+            best_objective_bound = 5.0
+            wall_time = 12.5
+            num_branches = 321
+            num_conflicts = 45
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+        with self.assertRaisesRegex(
+            OptimizationIncomplete,
+            r"status=FEASIBLE; objectiveValue=7; bestBound=5; "
+            r"absoluteGap=2; wallTimeSeconds=12.5; branches=321; conflicts=45",
+        ):
+            self.engine._require_optimal(
+                FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "UNFILLED"
+            )
+
+    def test_coverage_model_aggregates_interchangeable_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 1)
+        self.assertEqual(len(artifacts.unfilled), 1)
+        self.assertTrue(artifacts.complete_coverage_hint)
+        self.assertGreater(len(artifacts.model.proto.solution_hint.vars), 0)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
+
+    def test_aggregate_coverage_hint_accounts_for_unfilled_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 4,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        hint = dict(
+            zip(
+                artifacts.model.proto.solution_hint.vars,
+                artifacts.model.proto.solution_hint.values,
+                strict=True,
+            )
+        )
+        selected = sum(hint[variable.index] for variable in artifacts.x.values())
+        missing = next(iter(artifacts.unfilled.values()))
+        self.assertEqual(hint[missing.index], len(slots) - selected)
+        self.assertFalse(artifacts.complete_coverage_hint)
+
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(
+            solver.value(artifacts.metrics["UNFILLED"]),
+            len(slots) - selected,
+        )
+
+    def test_relaxed_coverage_stage_has_a_bounded_uat_budget(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=900,
+            finalization_reserve_seconds=30,
+        )
+        original_solve_model = engine._solve_model
+        observed_limit: list[float] = []
+
+        def observe_limit(*args, **kwargs):
+            if kwargs["stage_name"] == "UNFILLED":
+                observed_limit.append(kwargs["time_limit_seconds"])
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_limit):
+            engine.solve(snapshot)
+
+        self.assertEqual(observed_limit, [120.0])
+
+    def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        first = {
+            **raw["demand"][0],
+            "dates": ["2026-08-01"],
+            "requiredCount": 1,
+        }
+        raw["demand"] = [first, {**first, "id": "demand-second"}]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(len({slot.occurrence_id for slot in slots}), 1)
+        self.assertEqual(len(artifacts.unfilled), 2)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 0)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
+
+    def test_weekly_certificate_is_exact_lower_bound_across_rest_boundary(
+        self,
+    ) -> None:
+        snapshot = Snapshot.from_dict(
+            decomposed_certificate_snapshot_raw(required_count=2)
+        )
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            certificate = engine._coverage_certificate(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                engine._clock() + 29,
+            )
+
+        self.assertIsNotNone(certificate)
+        assert certificate is not None
+        self.assertEqual(certificate.lower_bound, 3)
+        self.assertEqual(len(certificate.blocks), 2)
+        self.assertEqual(len(certificate.boundary_partitions), 2)
+        self.assertTrue(certificate.all_weeks_optimal)
+
+        artifacts = engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 3)
+        self.assertLessEqual(
+            certificate.lower_bound,
+            solver.value(artifacts.metrics["UNFILLED"]),
+        )
+
+    def test_solver_records_exact_weekly_certificate(self) -> None:
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            result = engine.solve(snapshot)[0]
+
+        certificate = result.stage_objectives[0]["certificate"]
+        self.assertEqual(certificate["kind"], "BOUNDARY_AWARE_PERIOD_DECOMPOSITION")
+        self.assertEqual(certificate["lowerBound"], 1)
+        self.assertEqual(len(certificate["blocks"]), 2)
+        self.assertEqual(len(certificate["boundaryPartitions"]), 2)
+        self.assertTrue(certificate["allWeeksOptimal"])
+        self.assertEqual(result.metrics["UNFILLED"], 1)
+        self.assertTrue(result.optimal)
+
+    def test_incomplete_period_subproblem_keeps_proven_integer_bound(self) -> None:
+        class FeasibleSolver:
+            best_objective_bound = 1.2
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+            @staticmethod
+            def value(_expression):
+                return 3
+
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch.object(
+            engine,
+            "_solve_model",
+            return_value=(FeasibleSolver(), cp_model.FEASIBLE),
+        ):
+            proof = engine._solve_coverage_subproblem(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                stage_name="TEST_PERIOD_BOUND",
+                time_limit_seconds=1,
+            )
+
+        self.assertEqual(proof.status, "FEASIBLE")
+        self.assertFalse(proof.optimal)
+        self.assertEqual(proof.incumbent, 3)
+        self.assertEqual(proof.lower_bound, 2)
+
+    def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["lockedAssignments"] = [
+            {
+                "slotId": (
+                    "2026-08-01|shift-morning|role-sommelier|"
+                    "duty-service|demand-morning|2"
+                ),
+                "employeeId": "employee-alice",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
 
     def test_objective_target_and_tolerance_are_applied_and_reported(self) -> None:
         raw = load_raw()
@@ -825,12 +1309,8 @@ class SolverTests(unittest.TestCase):
             self.engine.solve(Snapshot.from_dict(unknown))
 
         conflicting = load_raw()
-        conflicting["employees"][0]["preferredShiftTemplateIds"] = [
-            "shift-morning"
-        ]
-        conflicting["employees"][0]["blockedShiftTemplateIds"] = [
-            "shift-morning"
-        ]
+        conflicting["employees"][0]["preferredShiftTemplateIds"] = ["shift-morning"]
+        conflicting["employees"][0]["blockedShiftTemplateIds"] = ["shift-morning"]
         with self.assertRaisesRegex(SnapshotError, "prefer and block"):
             self.engine.solve(Snapshot.from_dict(conflicting))
 
@@ -894,6 +1374,147 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
+
+    def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        runtime._solver_progress(
+            {
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+                "slotCount": 1362,
+                "eligibleDecisionPairs": 21048,
+                "coverageSymmetryConstraints": 798,
+                "solverStatus": "OPTIMAL",
+                "solverBestBound": None,
+            }
+        )
+
+        self.assertEqual(
+            runtime._progress_snapshot(),
+            {
+                "schemaVersion": 2,
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+            },
+        )
+
+    def test_solver_stage_boundary_renews_starved_heartbeat(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 0)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertTrue(rpc.finalized)
+
+    def test_solver_stage_boundary_stops_after_lease_loss(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=False)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 1)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertFalse(rpc.finalized)
+        self.assertEqual(rpc.interrupt_reason, None)
+
+    def test_retryable_heartbeat_response_error_does_not_stop_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_errors = [
+            RpcError(
+                "Gateway action solver_heartbeat_v2 returned invalid JSON",
+                retryable=True,
+            )
+        ]
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        with self.assertLogs("grafik_solver.lifecycle", level="WARNING") as logs:
+            self.assertTrue(runtime._heartbeat_once(rpc.claim_value, force=True))
+
+        self.assertFalse(runtime._stop.event.is_set())
+        self.assertEqual(runtime._heartbeat_failures, 1)
+        self.assertIn("status=None; retryable=True", "\n".join(logs.output))
+        self.assertIn("returned invalid JSON", "\n".join(logs.output))
 
     def test_pull_worker_claims_the_next_queued_run(self) -> None:
         rpc = _FakeRpc(self.raw)
@@ -1099,6 +1720,48 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(len(observed_limits), 3)
         self.assertEqual(observed_limits, [8.0, 5.0, 2.0])
         self.assertTrue(snapshot.settings.require_optimal)
+
+    def test_solver_status_is_reported_before_wall_clock_overrun(self) -> None:
+        class FeasibleSolver:
+            objective_value = 1.0
+            best_objective_bound = 0.0
+            wall_time = 8.1
+            num_branches = 10
+            num_conflicts = 2
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+            @staticmethod
+            def value(_expression):
+                return 1
+
+        fake_clock = _FakeClock()
+        engine = CpSatScheduleEngine(
+            max_total_seconds=10,
+            finalization_reserve_seconds=2,
+            clock=fake_clock,
+        )
+
+        def overrun(*_args, **_kwargs):
+            fake_clock.advance(9)
+            return FeasibleSolver(), cp_model.FEASIBLE
+
+        with (
+            patch.object(engine, "_solve_model", side_effect=overrun),
+            self.assertRaisesRegex(
+                OptimizationIncomplete,
+                r"UNFILLED ended incomplete; status=FEASIBLE",
+            ),
+        ):
+            engine.solve(self.snapshot)
+
+    def test_proof_budget_exhaustion_is_not_retried_unchanged(self) -> None:
+        self.assertEqual(
+            WorkerRuntime._classify_failure(OptimizationIncomplete("budget")),
+            (False, "OPTIMIZATION_INCOMPLETE"),
+        )
 
     def test_scoped_budgets_allocate_monthly_threshold_to_exact_assignment(
         self,
@@ -1306,6 +1969,25 @@ class _FakeEngine:
         return None
 
 
+class _StageBoundaryEngine(_FakeEngine):
+    def __init__(self, variants):
+        super().__init__(variants)
+        self.progress_callback = None
+
+    def set_progress_callback(self, callback):
+        self.progress_callback = callback
+
+    def solve(self, _snapshot):
+        assert self.progress_callback is not None
+        self.progress_callback(
+            {
+                "solverStage": "UNFILLED",
+                "solverStatus": "OPTIMAL",
+            }
+        )
+        return self.variants
+
+
 class _FakeRpc:
     def __init__(self, raw):
         self.raw = copy.deepcopy(raw)
@@ -1315,6 +1997,10 @@ class _FakeRpc:
         self.finalized = False
         self.failed = False
         self.claim_requests = []
+        self.heartbeat_calls = 0
+        self.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=True)
+        self.heartbeat_errors = []
+        self.interrupt_reason = None
 
     def claim(self, **kwargs):
         self.claim_requests.append(kwargs)
@@ -1326,7 +2012,10 @@ class _FakeRpc:
         )
 
     def heartbeat(self, _claim, _progress):
-        return Heartbeat(cancel_requested=False, lease_valid=True)
+        self.heartbeat_calls += 1
+        if self.heartbeat_errors:
+            raise self.heartbeat_errors.pop(0)
+        return self.heartbeat_value
 
     def save_variant(self, _claim, variant):
         self.saved.append(variant)
@@ -1335,6 +2024,7 @@ class _FakeRpc:
         self.finalized = True
 
     def interrupt(self, _claim, _reason):
+        self.interrupt_reason = _reason
         return None
 
     def fail_attempt(self, _claim, **_kwargs):

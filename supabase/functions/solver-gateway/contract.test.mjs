@@ -117,6 +117,31 @@ test("rejects malformed lease arguments before invoking RPC", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("accepts PostgreSQL UUIDs used by stable matrix identifiers", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const stableStrategyId = "2c6ca898-8d99-e28f-59f1-ac829a5fbee6";
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_progress: {
+      schemaVersion: 2,
+      phase: "SOLVING",
+      progress: 10,
+      strategyId: stableStrategyId,
+      strategyProgress: 1,
+      strategyCount: 3,
+      completedStrategies: 0,
+    },
+  };
+
+  const response = await handler(gatewayRequest("solver_heartbeat_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_heartbeat_v2", args }]);
+});
+
 test("rejects non-JSON requests and unsupported methods", async () => {
   const handler = handlerWith();
   const get = await handler(new Request("https://example.test", {

@@ -49,8 +49,12 @@ class GatewayError extends Error {
   }
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL's uuid type accepts the full 128-bit UUID text representation.
+// Matrix v2 also deliberately stores deterministic md5-derived identifiers,
+// whose version and variant bits are not rewritten to the RFC 4122 ranges.
+// Match the database boundary here instead of rejecting those persisted IDs.
+const POSTGRES_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const CODE_PATTERN = /^[A-Z][A-Z0-9_:-]{0,99}$/;
 const METRIC_PATTERN = /^[A-Z][A-Z0-9_]{0,79}$/;
@@ -110,7 +114,7 @@ function assertUuid(
   nullable = false,
 ): asserts value is string | null {
   if (nullable && value === null) return;
-  if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
+  if (typeof value !== "string" || !POSTGRES_UUID_PATTERN.test(value)) {
     fail(400, `INVALID_${name}`);
   }
 }
@@ -276,7 +280,8 @@ function validateCostComponent(value: unknown): void {
   assertExactKeys(value, ["ruleId", "calculationType", "costUnits"]);
   if (
     value.ruleId !== "BASE" &&
-    (typeof value.ruleId !== "string" || !UUID_PATTERN.test(value.ruleId))
+    (typeof value.ruleId !== "string" ||
+      !POSTGRES_UUID_PATTERN.test(value.ruleId))
   ) {
     fail(400, "INVALID_COST_RULE_ID");
   }
