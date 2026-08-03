@@ -877,6 +877,37 @@ class SolverTests(unittest.TestCase):
             report = validate_variant(snapshot, variant)
             self.assertTrue(report.valid, report.errors)
 
+    def test_relaxed_strategy_uses_verified_fallback_on_unknown(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        forced_unknown_stages: list[str] = []
+
+        def force_unknown(*args, **kwargs):
+            stage_name = kwargs["stage_name"]
+            if stage_name.startswith("TIER_"):
+                forced_unknown_stages.append(stage_name)
+                return object(), cp_model.UNKNOWN
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=force_unknown):
+            variants = engine.solve(snapshot)
+
+        self.assertTrue(forced_unknown_stages)
+        self.assertEqual(len(variants), len(snapshot.strategies))
+        for variant in variants:
+            self.assertFalse(variant.optimal)
+            self.assertEqual(variant.stage_objectives[-1]["status"], "FEASIBLE")
+            self.assertNotIn("bestBound", variant.stage_objectives[-1])
+            report = validate_variant(snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:
             @staticmethod

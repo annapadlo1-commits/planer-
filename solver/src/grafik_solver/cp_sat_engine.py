@@ -94,6 +94,7 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_COVERAGE_SECONDS = 120.0
 MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 30.0
+RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS = 5.0
 
 
 def _sum(expressions: Iterable[Any]) -> Any:
@@ -481,6 +482,7 @@ class CpSatScheduleEngine:
             incumbent: dict[int, int] | None = None
             final_solver: Any | None = None
             final_status: Any | None = None
+            feasible_fallback_solver: Any | None = None
             tiers: dict[int, list[Any]] = defaultdict(list)
             tier_tolerances: dict[int, int] = defaultdict(int)
             tier_upper_bounds: dict[int, int] = defaultdict(int)
@@ -574,6 +576,7 @@ class CpSatScheduleEngine:
                     strategy.code,
                     len(artifacts.model.proto.solution_hint.vars),
                 )
+                feasible_fallback_solver = warm_start_solver
 
             self._emit_progress(
                 phase="SOLVING",
@@ -590,10 +593,27 @@ class CpSatScheduleEngine:
                     snapshot,
                     strategy=strategy,
                     stage_name="FEASIBILITY",
-                    time_limit_seconds=self._remaining_seconds(
-                        strategy_deadline, strategy.code
+                    time_limit_seconds=max(
+                        0.001,
+                        self._remaining_seconds(strategy_deadline, strategy.code)
+                        - (
+                            RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS
+                            if feasible_fallback_solver is not None
+                            else 0.0
+                        ),
                     ),
                 )
+                if (
+                    final_status == cp_model.UNKNOWN
+                    and feasible_fallback_solver is not None
+                ):
+                    LOGGER.warning(
+                        "Strategy %s feasibility search ended UNKNOWN; using the "
+                        "verified full-model warm start",
+                        strategy.code,
+                    )
+                    final_solver = feasible_fallback_solver
+                    final_status = cp_model.FEASIBLE
                 all_stages_optimal &= self._require_optimal(
                     final_solver,
                     final_status,
@@ -671,10 +691,30 @@ class CpSatScheduleEngine:
                         snapshot,
                         strategy=strategy,
                         stage_name=f"TIER_{tier}",
-                        time_limit_seconds=self._remaining_seconds(
-                            strategy_deadline, strategy.code
+                        time_limit_seconds=max(
+                            0.001,
+                            self._remaining_seconds(strategy_deadline, strategy.code)
+                            - (
+                                RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS
+                                if feasible_fallback_solver is not None
+                                else 0.0
+                            ),
                         ),
                     )
+                    used_fallback = False
+                    if (
+                        final_status == cp_model.UNKNOWN
+                        and feasible_fallback_solver is not None
+                    ):
+                        LOGGER.warning(
+                            "Strategy %s tier %s ended UNKNOWN; using the "
+                            "verified full-model warm start/incumbent",
+                            strategy.code,
+                            tier,
+                        )
+                        final_solver = feasible_fallback_solver
+                        final_status = cp_model.FEASIBLE
+                        used_fallback = True
                     all_stages_optimal &= self._require_optimal(
                         final_solver,
                         final_status,
@@ -690,13 +730,20 @@ class CpSatScheduleEngine:
                         variable.index: int(final_solver.value(variable))
                         for variable in artifacts.hint_variables
                     }
+                    feasible_fallback_solver = final_solver
                     stage_results.append(
                         {
                             "tier": tier,
                             "name": f"TIER_{tier}",
                             "value": exact_value,
                             "status": final_solver.status_name(final_status),
-                            "bestBound": final_solver.best_objective_bound,
+                            **(
+                                {}
+                                if used_fallback
+                                else {
+                                    "bestBound": final_solver.best_objective_bound
+                                }
+                            ),
                             "tolerance": allowed_degradation,
                             "frozenUpperBound": exact_value + allowed_degradation,
                             "terms": tier_terms[tier],
