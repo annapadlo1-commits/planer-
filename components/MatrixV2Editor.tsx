@@ -869,8 +869,12 @@ async function readMatrixWorkbook(file:File){
     };
   });
   const functionRows=rows(["FUNKCJE_DODATKOWE"]);
-  const dutyCodes=functionRows.map(row=>importCell(row,"KOD")).filter(Boolean);
-  const employeeDuties=sourceEmployeeLayout?employeeRows.flatMap((row,index)=>dutyCodes.filter(code=>importBoolean(importCell(row,code))).map(code=>({
+  const dictionaryRows=rows(["Słowniki","Slowniki"]);
+  const dutyCodes=[...new Set([
+    ...functionRows.map(row=>importCell(row,"KOD")),
+    ...dictionaryRows.filter(row=>importCell(row,"TYP").toLocaleUpperCase("pl-PL")==="OBOWIĄZEK").map(row=>importCell(row,"KOD")),
+  ].filter(Boolean))];
+  const employeeDuties=dutyCodes.length?employeeRows.flatMap((row,index)=>dutyCodes.filter(code=>importBoolean(importCell(row,code))).map(code=>({
     employeeNo:employees[index].employeeNo,email:employees[index].email,dutyCode:code,roleCode:employees[index].primaryRoleCode,active:true,
   }))):[];
   const shiftRows=rows(["Zmiany","Shifts","DEFINICJE_ZMIAN"]);
@@ -936,13 +940,15 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     ["Aktualizacja pracownika","Podaj istniejący numer lub e-mail. Nieistniejący numer zostanie odrzucony w podglądzie."],
     ["Kody","Kody ról, lokali, obowiązków i scenariuszy skopiuj z arkusza Słowniki."],
     ["Listy","Kody lokali oraz dni rozdzielaj przecinkiem; dni: 1=poniedziałek, 7=niedziela."],
+    ["Kompetencje pracownika","Każdy aktywny obowiązek ma osobną kolumnę w arkuszu Pracownicy. Wpisz TAK tylko przy osobach, które mogą go wykonywać."],
     ["Pory","MORNING, MIDDLE albo EVENING."],
     ["Preferencje","INHERIT, PREFERRED, NEUTRAL, AVOIDED albo BLOCKED. Matrix pracodawcy ma pierwszeństwo."],
     ["Bezpieczeństwo","Najpierw użyj Podglądu. Zapis wszystkich arkuszy odbywa się atomowo w jednej transakcji."],
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
-  add("Pracownicy",["Numer pracownika","Imię","Nazwisko","E-mail","Kod roli","Kody lokali","Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy","Miesiąc preferencji","Preferencja rano","Preferencja środek","Preferencja wieczór"]);
+  const activeDutyCodes=data.duties.filter(item=>item.active).map(item=>item.code);
+  add("Pracownicy",["Numer pracownika","Imię","Nazwisko","E-mail","Kod roli","Kody lokali","Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy","Miesiąc preferencji","Preferencja rano","Preferencja środek","Preferencja wieczór",...activeDutyCodes]);
   add("Zmiany",["Kod","Nazwa","Kod lokalu","Pora","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"]);
   add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Aktywna"]);
   add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Obowiązek zmianowy","Pora","Aktywne"]);
