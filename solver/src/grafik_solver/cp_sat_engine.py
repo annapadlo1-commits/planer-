@@ -79,6 +79,14 @@ MAX_SOLVER_STRATEGIES = 32
 MAX_SOLVER_DECISION_PAIRS = 2_000_000
 SAFE_CP_SAT_INTEGER = 2**60
 
+# Large coverage proofs can spend a bounded part of the shared CP-SAT budget on
+# exact weekly relaxations.  Their summed optima are a valid monthly lower
+# bound: every feasible monthly roster, restricted to one week, is feasible in
+# that week's relaxed model.  Small models stay on the cheaper monolithic path.
+MIN_DECOMPOSED_PROOF_SLOTS = 500
+DECOMPOSED_PROOF_BUDGET_FRACTION = 0.25
+MAX_DECOMPOSED_PROOF_SECONDS = 75.0
+
 
 def _sum(expressions: Iterable[Any]) -> Any:
     return sum(expressions, 0)
@@ -106,6 +114,14 @@ class _Artifacts:
     complete_coverage_hint: bool = False
     coverage_symmetry_constraints: int = 0
     coverage_aggregated_seats: int = 0
+
+
+@dataclass(frozen=True)
+class _CoverageCertificate:
+    lower_bound: int
+    blocks: tuple[Mapping[str, Any], ...]
+    assignment_hints: Mapping[tuple[str, str], int]
+    unfilled_hints: Mapping[str, int]
 
 
 class CpSatScheduleEngine:
@@ -203,10 +219,7 @@ class CpSatScheduleEngine:
             value = diagnostics.get(name)
             if value is None:
                 continue
-            if isinstance(value, float):
-                rendered = f"{value:.6g}"
-            else:
-                rendered = str(value)
+            rendered = f"{value:.6g}" if isinstance(value, float) else str(value)
             values.append(f"{name}={rendered}")
         return "; ".join(values)
 
@@ -226,20 +239,44 @@ class CpSatScheduleEngine:
         self._validate_capacity(snapshot, slots)
         eligibility = EligibilityIndex(snapshot)
 
+        certificate = self._coverage_certificate(
+            snapshot,
+            slots,
+            eligibility,
+            global_deadline,
+        )
+
         common = self._build_model(snapshot, slots, eligibility, coverage_only=True)
+        if certificate is not None:
+            common.model.add(common.metrics["UNFILLED"] >= certificate.lower_bound)
+            for key, value in certificate.assignment_hints.items():
+                variable = common.x.get(key)
+                if variable is not None:
+                    common.model.add_hint(variable, value)
+            for slot_id, value in certificate.unfilled_hints.items():
+                variable = common.unfilled.get(slot_id)
+                if variable is not None:
+                    common.model.add_hint(variable, value)
         LOGGER.info(
             "Coverage model slots=%s eligiblePairs=%s symmetryConstraints=%s "
-            "aggregatedSeats=%s",
+            "aggregatedSeats=%s certificateLowerBound=%s",
             len(slots),
             len(common.x),
             common.coverage_symmetry_constraints,
             common.coverage_aggregated_seats,
+            certificate.lower_bound if certificate is not None else None,
         )
         self._emit_progress(
             slotCount=len(slots),
             eligibleDecisionPairs=len(common.x),
             coverageSymmetryConstraints=common.coverage_symmetry_constraints,
             coverageAggregatedSeats=common.coverage_aggregated_seats,
+            coverageCertificateLowerBound=(
+                certificate.lower_bound if certificate is not None else None
+            ),
+            coverageCertificateBlocks=(
+                len(certificate.blocks) if certificate is not None else 0
+            ),
         )
         common.model.clear_objective()
         common.model.minimize(common.metrics["UNFILLED"])
@@ -304,6 +341,17 @@ class CpSatScheduleEngine:
                     "status": common_solver.status_name(common_status),
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
+                    **(
+                        {
+                            "certificate": {
+                                "kind": "EXACT_WEEKLY_RELAXATION",
+                                "lowerBound": certificate.lower_bound,
+                                "blocks": [dict(item) for item in certificate.blocks],
+                            }
+                        }
+                        if certificate is not None
+                        else {}
+                    ),
                 }
             ]
             all_stages_optimal = all_common_stages_optimal
@@ -486,6 +534,129 @@ class CpSatScheduleEngine:
             self._ensure_deadline(global_deadline, "GLOBAL")
         return tuple(results)
 
+    def _coverage_certificate(
+        self,
+        snapshot: Snapshot,
+        slots: tuple[Slot, ...],
+        eligibility: EligibilityIndex,
+        global_deadline: float,
+    ) -> _CoverageCertificate | None:
+        if (
+            not snapshot.settings.require_optimal
+            or len(slots) < MIN_DECOMPOSED_PROOF_SLOTS
+            or any(budget.hard for budget in snapshot.budgets)
+        ):
+            return None
+
+        slots_by_week: dict[tuple[int, int], list[Slot]] = defaultdict(list)
+        for slot in slots:
+            iso = slot.date.isocalendar()
+            slots_by_week[(iso.year, iso.week)].append(slot)
+        ordered_blocks = [
+            tuple(sorted(block, key=lambda item: (item.start, item.id)))
+            for _, block in sorted(slots_by_week.items())
+            if block
+        ]
+        if len(ordered_blocks) < 2:
+            return None
+
+        started = self._clock()
+        certificate_seconds = min(
+            MAX_DECOMPOSED_PROOF_SECONDS,
+            self._cp_sat_budget_seconds * DECOMPOSED_PROOF_BUDGET_FRACTION,
+        )
+        certificate_deadline = min(global_deadline, started + certificate_seconds)
+        lower_bound = 0
+        blocks: list[Mapping[str, Any]] = []
+        assignment_hints: dict[tuple[str, str], int] = {}
+        unfilled_hints: dict[str, int] = {}
+
+        for block_index, block_slots in enumerate(ordered_blocks, start=1):
+            if self._cancel_event.is_set():
+                raise OptimizationCancelled("Optimization was cancelled")
+            remaining_blocks = len(ordered_blocks) - block_index + 1
+            remaining = certificate_deadline - self._clock()
+            if remaining <= 0.001:
+                LOGGER.info(
+                    "Coverage certificate stopped before block %s/%s: "
+                    "proof budget exhausted",
+                    block_index,
+                    len(ordered_blocks),
+                )
+                return None
+            block_slot_ids = {slot.id for slot in block_slots}
+            block_snapshot = replace(
+                snapshot,
+                locked_assignments=tuple(
+                    lock
+                    for lock in snapshot.locked_assignments
+                    if lock.slot_id in block_slot_ids
+                ),
+            )
+            artifacts = self._build_model(
+                block_snapshot,
+                block_slots,
+                eligibility,
+                coverage_only=True,
+            )
+            artifacts.model.clear_objective()
+            artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+            solver, status = self._solve_model(
+                artifacts.model,
+                block_snapshot,
+                strategy=None,
+                stage_name=f"UNFILLED_CERTIFICATE_{block_index}",
+                time_limit_seconds=max(0.001, remaining / remaining_blocks),
+            )
+            if status != cp_model.OPTIMAL:
+                diagnostics = self._solver_diagnostics(
+                    solver, status, f"UNFILLED_CERTIFICATE_{block_index}"
+                )
+                LOGGER.info(
+                    "Coverage certificate unavailable: block %s/%s incomplete; %s",
+                    block_index,
+                    len(ordered_blocks),
+                    self._format_solver_diagnostics(diagnostics),
+                )
+                return None
+
+            value = int(solver.value(artifacts.metrics["UNFILLED"]))
+            lower_bound += value
+            assignment_hints.update(
+                {
+                    key: int(solver.value(variable))
+                    for key, variable in artifacts.x.items()
+                }
+            )
+            unfilled_hints.update(
+                {
+                    slot_id: int(solver.value(variable))
+                    for slot_id, variable in artifacts.unfilled.items()
+                }
+            )
+            blocks.append(
+                {
+                    "start": min(slot.date for slot in block_slots).isoformat(),
+                    "end": max(slot.date for slot in block_slots).isoformat(),
+                    "slotCount": len(block_slots),
+                    "minimumUnfilled": value,
+                }
+            )
+
+        LOGGER.info(
+            "Exact weekly coverage certificate lowerBound=%s blocks=%s "
+            "wallTimeSeconds=%.3f",
+            lower_bound,
+            len(blocks),
+            self._clock() - started,
+        )
+        return _CoverageCertificate(
+            lower_bound=lower_bound,
+            blocks=tuple(blocks),
+            assignment_hints=assignment_hints,
+            unfilled_hints=unfilled_hints,
+        )
+
     def _remaining_seconds(self, deadline: float, scope: str) -> float:
         remaining = deadline - self._clock()
         if remaining <= 0.001:
@@ -570,7 +741,6 @@ class CpSatScheduleEngine:
     def _require_optimal(
         solver: Any, status: Any, snapshot: Snapshot, stage_name: str
     ) -> bool:
-        name = solver.status_name(status)
         if status == cp_model.OPTIMAL:
             return True
         if status == cp_model.FEASIBLE and not snapshot.settings.require_optimal:
@@ -676,9 +846,8 @@ class CpSatScheduleEngine:
                     f"Employee {employee.id} shift-period preferences reference "
                     "missing templates"
                 )
-            if (
-                set(employee.preferred_shift_template_ids)
-                & set(employee.blocked_shift_template_ids)
+            if set(employee.preferred_shift_template_ids) & set(
+                employee.blocked_shift_template_ids
             ):
                 raise SnapshotError(
                     f"Employee {employee.id} cannot prefer and block the same template"
@@ -924,21 +1093,25 @@ class CpSatScheduleEngine:
         added = 0
         for group_slots in grouped.values():
             ordered = sorted(group_slots, key=lambda item: (item.seat_index, item.id))
-            if len(ordered) < 2 or any(
-                slot.id in locked_slot_ids for slot in ordered
-            ):
+            if len(ordered) < 2 or any(slot.id in locked_slot_ids for slot in ordered):
                 continue
-            for left, right in zip(ordered, ordered[1:]):
-                left_rank = _sum(
-                    rank * variable
-                    for employee_id, rank in employee_ranks.items()
-                    if (variable := x.get((employee_id, left.id))) is not None
-                ) + unfilled_rank * unfilled[left.id]
-                right_rank = _sum(
-                    rank * variable
-                    for employee_id, rank in employee_ranks.items()
-                    if (variable := x.get((employee_id, right.id))) is not None
-                ) + unfilled_rank * unfilled[right.id]
+            for left, right in zip(ordered, ordered[1:], strict=False):
+                left_rank = (
+                    _sum(
+                        rank * variable
+                        for employee_id, rank in employee_ranks.items()
+                        if (variable := x.get((employee_id, left.id))) is not None
+                    )
+                    + unfilled_rank * unfilled[left.id]
+                )
+                right_rank = (
+                    _sum(
+                        rank * variable
+                        for employee_id, rank in employee_ranks.items()
+                        if (variable := x.get((employee_id, right.id))) is not None
+                    )
+                    + unfilled_rank * unfilled[right.id]
+                )
                 model.add(left_rank <= right_rank)
                 added += 1
         return added
@@ -977,9 +1150,7 @@ class CpSatScheduleEngine:
         static_quotes: dict[tuple[str, str], Any] = {}
         for employee in snapshot.employees:
             decision_slots = (
-                representative_by_group.values()
-                if aggregate_coverage
-                else slots
+                representative_by_group.values() if aggregate_coverage else slots
             )
             for slot in decision_slots:
                 if eligibility.evaluate(employee, slot).allowed:
@@ -1004,9 +1175,7 @@ class CpSatScheduleEngine:
                 unfilled[representative.id] = missing
                 model.add(_sum(candidates) + missing == len(group_slots))
         else:
-            unfilled = {
-                slot.id: model.new_bool_var(f"u|{slot.id}") for slot in slots
-            }
+            unfilled = {slot.id: model.new_bool_var(f"u|{slot.id}") for slot in slots}
             for slot in slots:
                 candidates = [
                     x[(employee.id, slot.id)]
@@ -1201,9 +1370,7 @@ class CpSatScheduleEngine:
                 metrics={"UNFILLED": _sum(unfilled.values())},
                 metric_bounds={"UNFILLED": len(slots)},
                 hint_variables=tuple(
-                    list(x.values())
-                    + list(unfilled.values())
-                    + list(day_work.values())
+                    list(x.values()) + list(unfilled.values()) + list(day_work.values())
                 ),
                 static_quotes=static_quotes,
                 coverage_aggregated_seats=len(slots) - len(coverage_groups),
