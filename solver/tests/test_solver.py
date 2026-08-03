@@ -906,8 +906,10 @@ class SolverTests(unittest.TestCase):
 
         self.assertIsNotNone(certificate)
         assert certificate is not None
-        self.assertEqual(certificate.lower_bound, 2)
+        self.assertEqual(certificate.lower_bound, 3)
         self.assertEqual(len(certificate.blocks), 2)
+        self.assertEqual(len(certificate.boundary_partitions), 2)
+        self.assertTrue(certificate.all_weeks_optimal)
 
         artifacts = engine._build_model(
             snapshot,
@@ -936,11 +938,49 @@ class SolverTests(unittest.TestCase):
             result = engine.solve(snapshot)[0]
 
         certificate = result.stage_objectives[0]["certificate"]
-        self.assertEqual(certificate["kind"], "EXACT_WEEKLY_RELAXATION")
-        self.assertEqual(certificate["lowerBound"], 0)
+        self.assertEqual(certificate["kind"], "BOUNDARY_AWARE_PERIOD_DECOMPOSITION")
+        self.assertEqual(certificate["lowerBound"], 1)
         self.assertEqual(len(certificate["blocks"]), 2)
+        self.assertEqual(len(certificate["boundaryPartitions"]), 2)
+        self.assertTrue(certificate["allWeeksOptimal"])
         self.assertEqual(result.metrics["UNFILLED"], 1)
         self.assertTrue(result.optimal)
+
+    def test_incomplete_period_subproblem_keeps_proven_integer_bound(self) -> None:
+        class FeasibleSolver:
+            best_objective_bound = 1.2
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+            @staticmethod
+            def value(_expression):
+                return 3
+
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch.object(
+            engine,
+            "_solve_model",
+            return_value=(FeasibleSolver(), cp_model.FEASIBLE),
+        ):
+            proof = engine._solve_coverage_subproblem(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                stage_name="TEST_PERIOD_BOUND",
+                time_limit_seconds=1,
+            )
+
+        self.assertEqual(proof.status, "FEASIBLE")
+        self.assertFalse(proof.optimal)
+        self.assertEqual(proof.incumbent, 3)
+        self.assertEqual(proof.lower_bound, 2)
 
     def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
         raw = load_raw()
