@@ -829,6 +829,54 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(fixed_tier["name"], "TIER_1")
             self.assertEqual(fixed_tier["status"], "OPTIMAL")
 
+    def test_relaxed_strategy_completes_full_model_hint_before_tiers(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        warm_start_limits: list[float] = []
+        full_hint_counts: list[tuple[int, int]] = []
+        expect_full_hint = False
+
+        def observe_stages(*args, **kwargs):
+            nonlocal expect_full_hint
+            model = args[0]
+            if expect_full_hint:
+                full_hint_counts.append(
+                    (
+                        len(model.proto.solution_hint.vars),
+                        len(model.proto.variables),
+                    )
+                )
+                expect_full_hint = False
+            result = original_solve_model(*args, **kwargs)
+            if kwargs["stage_name"] == "WARM_START":
+                self.assertTrue(kwargs["fix_hints"])
+                warm_start_limits.append(kwargs["time_limit_seconds"])
+                expect_full_hint = True
+            return result
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(warm_start_limits), len(snapshot.strategies))
+        self.assertTrue(all(limit <= 30.0 for limit in warm_start_limits))
+        self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
+        self.assertTrue(
+            all(
+                hint_count == variable_count
+                for hint_count, variable_count in full_hint_counts
+            )
+        )
+        for variant in variants:
+            report = validate_variant(snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:
             @staticmethod

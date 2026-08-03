@@ -93,6 +93,7 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # the entire shared worker budget trying to prove the monthly minimum.  The
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_COVERAGE_SECONDS = 120.0
+MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 30.0
 
 
 def _sum(expressions: Iterable[Any]) -> Any:
@@ -534,6 +535,44 @@ class CpSatScheduleEngine:
                         "tolerance": term.tolerance,
                         "parameters": dict(term.parameters),
                     }
+                )
+
+            if not snapshot.settings.require_optimal:
+                # Completing the aggregate coverage incumbent inside the full
+                # pay/preference model gives every strategy a hard-feasible
+                # solution before optimization starts.  A partial coverage
+                # hint alone can otherwise spend the whole tier budget merely
+                # trying to instantiate auxiliary cost and baseline variables.
+                warm_start_solver, warm_start_status = self._solve_model(
+                    artifacts.model,
+                    snapshot,
+                    strategy=strategy,
+                    stage_name="WARM_START",
+                    time_limit_seconds=min(
+                        self._remaining_seconds(strategy_deadline, strategy.code),
+                        MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
+                    ),
+                    fix_hints=True,
+                )
+                self._require_optimal(
+                    warm_start_solver,
+                    warm_start_status,
+                    snapshot,
+                    f"{strategy.code}:WARM_START",
+                )
+                artifacts.model.clear_hints()
+                for variable_index in range(len(artifacts.model.proto.variables)):
+                    variable = artifacts.model.get_int_var_from_proto_index(
+                        variable_index
+                    )
+                    artifacts.model.add_hint(
+                        variable,
+                        int(warm_start_solver.value(variable)),
+                    )
+                LOGGER.info(
+                    "Strategy %s completed a %s-variable full-model warm start",
+                    strategy.code,
+                    len(artifacts.model.proto.solution_hint.vars),
                 )
 
             self._emit_progress(
