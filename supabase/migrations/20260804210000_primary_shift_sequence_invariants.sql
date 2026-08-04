@@ -76,7 +76,8 @@ begin
     select assignment.value->>'employeeId' employee_id,
       (slot.value->>'date')::date work_date,
       'ASSIGNED:'||coalesce(
-        nullif(slot.value->>'occurrenceId',''),slot.value->>'slotId'
+        nullif(slot.value->>'occurrenceId',''),
+        concat_ws('|',slot.value->>'date',slot.value->>'shiftTemplateId')
       ) item_key
     from jsonb_array_elements(coalesce(p_variant->'assignments','[]'::jsonb)) assignment
     join jsonb_array_elements(coalesce(p_snapshot->'slots','[]'::jsonb)) slot
