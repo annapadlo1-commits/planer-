@@ -241,6 +241,11 @@ class ShiftTemplate:
     weekdays: tuple[int, ...]
     ends_next_day: bool = False
     shift_period: str = "MIDDLE"
+    # Business order of shifts within a location/day.  This is deliberately
+    # unrelated to how many shifts one employee may work: a Matrix may contain
+    # any number of templates, while an employee may still work only one
+    # primary shift per calendar day.
+    sequence_order: int | None = None
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> ShiftTemplate:
@@ -255,6 +260,10 @@ class ShiftTemplate:
         ).upper()
         if shift_period not in {"MORNING", "MIDDLE", "EVENING"}:
             raise SnapshotError("shiftPeriod must be MORNING, MIDDLE or EVENING")
+        sequence_order_raw = _pick(
+            raw, "sequenceOrder", "sequence_order", "sortOrder", "sort_order",
+            default=None,
+        )
         return cls(
             id=str(_pick(raw, "id")),
             location_id=str(_pick(raw, "locationId", "location_id")),
@@ -265,6 +274,11 @@ class ShiftTemplate:
                 _pick(raw, "endsNextDay", "ends_next_day", default=False)
             ),
             shift_period=shift_period,
+            sequence_order=(
+                None
+                if sequence_order_raw is None
+                else _integer(sequence_order_raw, "sequenceOrder", 0)
+            ),
         )
 
 

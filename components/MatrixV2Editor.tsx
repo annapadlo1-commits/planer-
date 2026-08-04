@@ -286,9 +286,11 @@ export function MatrixV2Editor({
       if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Waluta musi mieć trzyliterowy kod, np. PLN, EUR lub USD.");
       if (!timezone) throw new Error("Podaj strefę czasową Matrixa.");
       const minimumRestMinutes = requiredNumber(formText(form, "minimumRestMinutes"));
-      const maximumShiftsPerDay = requiredNumber(formText(form, "maximumShiftsPerDay"));
+      // Compatibility field for the published Matrix v2 schema.  Employee
+      // assignment capacity is an invariant of one and is not configurable;
+      // the editor itself does not cap the number of shift templates.
+      const maximumShiftsPerDay = 1;
       if (minimumRestMinutes < 0) throw new Error("Minimalny odpoczynek nie może być ujemny.");
-      if (maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) throw new Error("Liczba przydziałów jednego pracownika dziennie musi mieścić się w zakresie od 1 do 24.");
       await save("MATRIX_SETTINGS", null, {
         currency,
         timezone,
@@ -574,7 +576,7 @@ function MatrixSettingsCard({
       <details className="matrix-v2-advanced-settings"><summary>Zaawansowane ustawienia silnika</summary>
         <p className="matrix-v2-form-hint">Te wartości są technicznym zabezpieczeniem. Umowa i indywidualne ustalenia pracownika mają pierwszeństwo.</p>
         <label>Domyślny odpoczynek dla umów pracowniczych (minuty)<input name="minimumRestMinutes" type="number" min="0" step="15" required disabled={!editable} defaultValue={settings.minimumRestMinutes}/></label>
-        <label>Maksymalna liczba osobnych bloków pracy dziennie<input name="maximumShiftsPerDay" type="number" min="1" max="24" step="1" required disabled={!editable} defaultValue={settings.maximumShiftsPerDay}/><small>Dotyczy liczby przydzielonych bloków jednego pracownika, a nie liczby zdefiniowanych zmian.</small></label>
+        <p className="matrix-v2-form-hint">Możesz utworzyć dowolną liczbę szablonów zmian. Niezależnie od ich liczby jedna osoba może otrzymać najwyżej jedną zasadniczą zmianę dziennie.</p>
         <label className="check-label"><input name="missingAvailabilityMeansAvailable" type="checkbox" disabled={!editable} defaultChecked={settings.missingAvailabilityMeansAvailable}/> Dla umów pracowniczych brak deklaracji oznacza dostępność</label>
         <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Czekaj na matematycznie najlepszy wynik</label>
       </details>
@@ -1503,10 +1505,7 @@ function ScenarioSettingsOverrideFields({item}:{item?:Record<string,unknown>}) {
   return <fieldset className="matrix-v2-override-group">
     <legend>Nadpisania reguł dla tego scenariusza</legend>
     <p className="matrix-v2-form-hint">Puste pole lub „Dziedzicz” zachowuje wartość Matrixa bazowego albo scenariusza nadrzędnego.</p>
-    <div className="form-row">
-      <label>Maks. zmian dziennie<input name="scenarioMaximumShiftsPerDay" type="number" min="1" max="24" step="1" defaultValue={optionalInput(overrides.maximumShiftsPerDay)}/></label>
-      <label>Minimalny odpoczynek (min)<input name="scenarioMinimumRestMinutes" type="number" min="0" step="1" defaultValue={optionalInput(overrides.minimumRestMinutes)}/></label>
-    </div>
+    <label>Minimalny odpoczynek (min)<input name="scenarioMinimumRestMinutes" type="number" min="0" step="1" defaultValue={optionalInput(overrides.minimumRestMinutes)}/></label>
     <div className="form-row">
       <label>Brak dostępności<select name="scenarioMissingAvailability" defaultValue={booleanOverrideInput(overrides.missingAvailabilityMeansAvailable)}><option value="">Dziedzicz</option><option value="true">Traktuj jako dostępność</option><option value="false">Traktuj jako niedostępność</option></select></label>
       <label>Wymagaj optimum<select name="scenarioRequireOptimal" defaultValue={booleanOverrideInput(overrides.requireOptimal)}><option value="">Dziedzicz</option><option value="true">Tak</option><option value="false">Nie</option></select></label>
@@ -1636,12 +1635,10 @@ function optionalBooleanValue(value:string,label:string){if(value==="")return nu
 
 function scenarioSettingsOverridesFromForm(form:HTMLFormElement){
   const overrides:Record<string,unknown>={};
-  const maximumShifts=optionalIntegerValue(formText(form,"scenarioMaximumShiftsPerDay"),"Maksymalna liczba zmian dziennie",1,24);
   const minimumRest=optionalIntegerValue(formText(form,"scenarioMinimumRestMinutes"),"Minimalny odpoczynek",0);
   const missingAvailability=optionalBooleanValue(formText(form,"scenarioMissingAvailability"),"Brak wpisu dostępności");
   const requireOptimal=optionalBooleanValue(formText(form,"scenarioRequireOptimal"),"Wymaganie optimum");
   const randomSeed=optionalIntegerValue(formText(form,"scenarioRandomSeed"),"Ziarno losowe",0,2147483647);
-  if(maximumShifts!==null)overrides.maximumShiftsPerDay=maximumShifts;
   if(minimumRest!==null)overrides.minimumRestMinutes=minimumRest;
   if(missingAvailability!==null)overrides.missingAvailabilityMeansAvailable=missingAvailability;
   if(requireOptimal!==null)overrides.requireOptimal=requireOptimal;

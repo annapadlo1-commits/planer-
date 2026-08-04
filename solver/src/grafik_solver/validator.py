@@ -14,7 +14,12 @@ from .pay_rules import (
     quote_selected_assignments,
     validate_pay_rules,
 )
-from .slots import Slot, generate_slots
+from .slots import (
+    Slot,
+    consecutive_shift_sequence,
+    generate_slots,
+    shift_sequence_boundaries,
+)
 
 
 class VariantValidationError(ValueError):
@@ -148,6 +153,8 @@ def validate_variant(
     for external in snapshot.external_assignments:
         external_by_employee[external.employee_id].append(external)
 
+    sequence_boundaries = shift_sequence_boundaries(snapshot)
+
     for employee_id, employee in employees.items():
         employee_slots = sorted(
             selected_by_employee.get(employee_id, []), key=lambda slot: slot.start
@@ -165,6 +172,10 @@ def validate_variant(
                     errors.append(
                         f"OVERLAP_OR_REST:{employee_id}:{first.id}:{second.id}"
                     )
+                if consecutive_shift_sequence(sequence_boundaries, first, second):
+                    errors.append(
+                        f"CONSECUTIVE_SHIFT_SEQUENCE:{employee_id}:{first.id}:{second.id}"
+                    )
 
         daily_count: dict[date, int] = defaultdict(int)
         daily_minutes: dict[date, int] = defaultdict(int)
@@ -178,10 +189,7 @@ def validate_variant(
                 (external.end.timestamp() - external.start.timestamp()) // 60
             )
         for day, count in daily_count.items():
-            if (
-                snapshot.period_start <= day <= snapshot.period_end
-                and count > employee.maximum_shifts_per_day
-            ):
+            if snapshot.period_start <= day <= snapshot.period_end and count > 1:
                 errors.append(
                     f"DAILY_SHIFT_LIMIT:{employee_id}:{day.isoformat()}:{count}"
                 )

@@ -33,7 +33,12 @@ from .pay_rules import (
     quote_selected_assignments,
     validate_pay_rules,
 )
-from .slots import Slot, generate_slots
+from .slots import (
+    Slot,
+    consecutive_shift_sequence,
+    generate_slots,
+    shift_sequence_boundaries,
+)
 
 
 class SolverUnavailable(RuntimeError):
@@ -1525,6 +1530,7 @@ class CpSatScheduleEngine:
         monthly_minutes: dict[str, int] = defaultdict(int)
         weekly_minutes: dict[tuple[str, tuple[int, int]], int] = defaultdict(int)
         worked_days: dict[str, set[date]] = defaultdict(set)
+        sequence_boundaries = shift_sequence_boundaries(snapshot)
 
         for external in snapshot.external_assignments:
             local_day = external.start.astimezone(timezone).date()
@@ -1558,7 +1564,10 @@ class CpSatScheduleEngine:
         def can_add(employee: Employee, slot: Slot) -> bool:
             if (employee.id, slot.occurrence_id) in used_occurrences:
                 return False
-            if daily_count[(employee.id, slot.date)] >= employee.maximum_shifts_per_day:
+            # One employee may work at most one primary shift per calendar day.
+            # The number of shift templates configured in Matrix is a separate
+            # concept and must never relax this invariant.
+            if daily_count[(employee.id, slot.date)] >= 1:
                 return False
             if (
                 employee.maximum_monthly_minutes is not None
@@ -1581,6 +1590,8 @@ class CpSatScheduleEngine:
                     slot.end,
                     eligibility.minimum_rest(employee),
                 )
+                or consecutive_shift_sequence(sequence_boundaries, previous, slot)
+                or consecutive_shift_sequence(sequence_boundaries, slot, previous)
                 for previous in selected_by_employee[employee.id]
             ):
                 return False
@@ -1841,6 +1852,7 @@ class CpSatScheduleEngine:
             external_by_employee[assignment.employee_id].append(assignment)
 
         occurrence_items = sorted(occurrences.items(), key=lambda item: item[1].start)
+        sequence_boundaries = shift_sequence_boundaries(snapshot)
         for employee in snapshot.employees:
             rest_minutes = eligibility.minimum_rest(employee)
             candidate_occurrences = [
@@ -1856,6 +1868,8 @@ class CpSatScheduleEngine:
                         second.start,
                         second.end,
                         rest_minutes,
+                    ) or consecutive_shift_sequence(
+                        sequence_boundaries, first, second
                     ):
                         model.add(
                             work[(employee.id, first_id)]
@@ -1891,10 +1905,7 @@ class CpSatScheduleEngine:
                     if slot.date == day and (employee.id, occurrence_id) in work
                 ]
                 fixed_count = external_daily_count.get(day, 0)
-                model.add(
-                    _sum(day_occurrences) + fixed_count
-                    <= employee.maximum_shifts_per_day
-                )
+                model.add(_sum(day_occurrences) + fixed_count <= 1)
                 variable = model.new_bool_var(f"day|{employee.id}|{day.isoformat()}")
                 day_work[(employee.id, day)] = variable
                 if fixed_count:

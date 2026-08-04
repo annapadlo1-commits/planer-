@@ -887,6 +887,166 @@ class SolverTests(unittest.TestCase):
             )
             self.assertEqual(len(variant.unfilled_slot_ids), 2)
 
+    def _flexible_single_employee_sequence_snapshot(
+        self, locked_slot_ids: list[str]
+    ) -> Snapshot:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [raw["strategies"][0]]
+        raw["shiftTemplates"][0]["sequenceOrder"] = 1
+        raw["shiftTemplates"][1]["sequenceOrder"] = 2
+        employee = next(
+            item for item in raw["employees"] if item["id"] == "employee-bob"
+        )
+        employee.update(
+            {
+                "contractCode": "ZLECENIE",
+                "workTimePolicy": "CONTRACT_DEFAULT",
+                # This old field used to leak a Matrix template count into the
+                # workforce model.  A deliberately high value must not permit
+                # more than one primary shift per day.
+                "maximumShiftsPerDay": 7,
+                "minimumRestMinutes": 0,
+            }
+        )
+        raw["employees"] = [employee]
+        raw["availabilityWindows"] = []
+        raw["lockedAssignments"] = [
+            {"slotId": slot_id, "employeeId": employee["id"]}
+            for slot_id in locked_slot_ids
+        ]
+        return Snapshot.from_dict(raw)
+
+    def test_matrix_template_count_never_allows_two_employee_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_last_shift_cannot_be_followed_by_first_shift_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+                (
+                    "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_morning_can_be_followed_by_evening_on_the_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        variant = self.engine.solve(snapshot)[0]
+        self.assertEqual(len(variant.assignments), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
+
+    def test_independent_validator_rejects_daily_and_sequence_invariants(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        valid = self.engine.solve(snapshot)[0]
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        morning_day_one = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        )
+        evening_day_two = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-02"
+        )
+
+        same_day = replace(
+            valid,
+            assignments=(
+                morning_day_one,
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+            ),
+        )
+        same_day_report = validate_variant(snapshot, same_day)
+        self.assertTrue(
+            any(
+                error.startswith("DAILY_SHIFT_LIMIT:")
+                for error in same_day_report.errors
+            )
+        )
+
+        last_then_first = replace(
+            valid,
+            assignments=(
+                replace(
+                    morning_day_one,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                        "demand-morning|1"
+                    ),
+                ),
+            ),
+        )
+        sequence_report = validate_variant(snapshot, last_then_first)
+        self.assertTrue(
+            any(
+                error.startswith("CONSECUTIVE_SHIFT_SEQUENCE:")
+                for error in sequence_report.errors
+            )
+        )
+
     def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
         raw = load_raw()
         for strategy in raw["strategies"]:
