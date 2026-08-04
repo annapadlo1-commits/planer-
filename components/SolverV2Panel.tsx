@@ -82,6 +82,17 @@ function variantCountLabel(value: number) {
   return `${value} wariantów`;
 }
 
+function aggregateVariantFingerprint(variant: SolverVariant) {
+  const metrics = Object.entries(variant.metrics)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify({
+    assignmentCount: variant.assignmentCount,
+    unfilledCount: variant.unfilledCount,
+    totalCostMinor: variant.totalCostMinor ?? null,
+    metrics,
+  });
+}
+
 function publicationIssueTime(value:string|undefined,timezone:string){
   if(!value)return "—";
   const date=new Date(value);
@@ -169,6 +180,14 @@ export function SolverV2Panel({
     ? publishedWorkspace
     : selectedWorkspace ?? (!run ? publishedWorkspace : null));
   const allVariantsEquivalent = variants.length > 1 && variants.every((variant, index) => index === 0 || variant.equivalentToVariantId || variants[0].equivalentToVariantId === variant.id);
+  const aggregateVariantCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const variant of variants) {
+      const fingerprint = aggregateVariantFingerprint(variant);
+      counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+    }
+    return counts;
+  }, [variants]);
   const messageIsWarning = [
     "Nie udało",
     "Nie masz",
@@ -651,6 +670,7 @@ export function SolverV2Panel({
             {variant.unfilledCount>0||variant.hardViolations>0?<AlertTriangle/>:<Check/>}<span><strong>{variant.hardViolations>0?"Wariant zawiera niedozwolone przydziały":variant.unfilledCount>0?`Technicznie poprawny, ale niekompletny: ${variant.unfilledCount} nieobsadzonych miejsc`:"Kompletny grafik bez naruszeń"}</strong><small>{variant.unfilledCount>0?`Silnik nie złamał reguł pracownika — pozostawił wakaty zamiast wykonać niedozwolony przydział. ${solutionLabel(variant.solverStatus)}.`:solutionLabel(variant.solverStatus)}</small></span>
           </div>
           {variant.equivalentToVariantId && <small className="solver-v2-equivalent">Ten wariant ma taki sam skład jak inny wynik.</small>}
+          {!variant.equivalentToVariantId && (aggregateVariantCounts.get(aggregateVariantFingerprint(variant)) ?? 0) > 1 && <small className="solver-v2-equivalent">Te same wskaźniki zbiorcze, ale inny skład pracowników. Otwórz szczegóły, aby porównać przydziały.</small>}
           <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}><Search/> Pokaż grafik i rozkład braków</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
