@@ -899,9 +899,7 @@ class SolverTests(unittest.TestCase):
                 strategy_stages.append(stage_name)
                 if stage_name == "TIER_2":
                     model = args[0]
-                    initial_hint_counts.append(
-                        len(model.proto.solution_hint.vars)
-                    )
+                    initial_hint_counts.append(len(model.proto.solution_hint.vars))
             return original_solve_model(*args, **kwargs)
 
         with patch.object(engine, "_solve_model", side_effect=observe_stages):
@@ -928,41 +926,57 @@ class SolverTests(unittest.TestCase):
         original_solve_model = engine._solve_model
         warm_start_limits: list[float] = []
         full_hint_counts: list[tuple[int, int]] = []
-        expect_full_hint = False
+        expect_sparse_hint = False
 
         def observe_stages(*args, **kwargs):
-            nonlocal expect_full_hint
+            nonlocal expect_sparse_hint
             model = args[0]
-            if expect_full_hint:
+            if expect_sparse_hint:
                 full_hint_counts.append(
                     (
                         len(model.proto.solution_hint.vars),
                         len(model.proto.variables),
                     )
                 )
-                expect_full_hint = False
+                expect_sparse_hint = False
             result = original_solve_model(*args, **kwargs)
             if kwargs["stage_name"] == "WARM_START":
-                self.assertTrue(kwargs["fix_hints"])
+                self.assertFalse(kwargs.get("fix_hints", False))
                 warm_start_limits.append(kwargs["time_limit_seconds"])
-                expect_full_hint = True
+                expect_sparse_hint = True
             return result
 
         with patch.object(engine, "_solve_model", side_effect=observe_stages):
             variants = engine.solve(snapshot)
 
         self.assertEqual(len(warm_start_limits), len(snapshot.strategies))
-        self.assertTrue(all(limit <= 30.0 for limit in warm_start_limits))
+        self.assertTrue(all(limit <= 6.0 for limit in warm_start_limits))
         self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
         self.assertTrue(
             all(
-                hint_count == variable_count
+                0 < hint_count < variable_count
                 for hint_count, variable_count in full_hint_counts
             )
         )
         for variant in variants:
             report = validate_variant(snapshot, variant)
             self.assertTrue(report.valid, report.errors)
+
+    def test_fixed_warm_start_skips_redundant_full_model_presolve(self) -> None:
+        fixed = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+            fix_hints=True,
+        )
+        regular = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+        )
+
+        self.assertFalse(fixed.parameters.cp_model_presolve)
+        self.assertTrue(regular.parameters.cp_model_presolve)
 
     def test_relaxed_strategy_uses_verified_fallback_on_unknown(self) -> None:
         snapshot = replace(
@@ -990,8 +1004,13 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(len(variants), len(snapshot.strategies))
         for variant in variants:
             self.assertFalse(variant.optimal)
-            self.assertEqual(variant.stage_objectives[-1]["status"], "FEASIBLE")
-            self.assertNotIn("bestBound", variant.stage_objectives[-1])
+            optimized_stage = next(
+                stage
+                for stage in reversed(variant.stage_objectives)
+                if stage["name"].startswith("TIER_")
+            )
+            self.assertEqual(optimized_stage["status"], "FEASIBLE")
+            self.assertNotIn("bestBound", optimized_stage)
             report = validate_variant(snapshot, variant)
             self.assertTrue(report.valid, report.errors)
 
@@ -1136,7 +1155,63 @@ class SolverTests(unittest.TestCase):
         with patch.object(engine, "_solve_model", side_effect=observe_limit):
             engine.solve(snapshot)
 
-        self.assertEqual(observed_limit, [120.0])
+        self.assertEqual(observed_limit, [30.0])
+
+    def test_relaxed_identical_strategies_receive_distinct_tied_rosters(
+        self,
+    ) -> None:
+        raw = load_raw()
+        template = raw["strategies"][0]
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                **template,
+                "id": f"strategy-tied-{index}",
+                "code": f"TIED_{index}",
+                "label": f"Tied {index}",
+                "sortOrder": index,
+            }
+            for index in range(2)
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        ).solve(snapshot)
+
+        self.assertEqual(len({item.solution_hash for item in variants}), 2)
+        self.assertIsNone(variants[0].equivalent_to_strategy_id)
+        for variant in variants[1:]:
+            self.assertIsNone(variant.equivalent_to_strategy_id)
+            diversity = variant.stage_objectives[-1]
+            self.assertEqual(diversity["name"], "DIVERSIFY")
+            self.assertTrue(diversity["businessObjectiveBoundsPreserved"])
+            self.assertTrue(diversity["excludedEquivalentStrategies"])
+            self.assertTrue(validate_variant(snapshot, variant).valid)
+
+    def test_full_model_is_built_once_and_cloned_for_all_strategies(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_build_model = engine._build_model
+        full_model_builds = 0
+
+        def observe_build(*args, **kwargs):
+            nonlocal full_model_builds
+            if not kwargs.get("coverage_only", False):
+                full_model_builds += 1
+            return original_build_model(*args, **kwargs)
+
+        with patch.object(engine, "_build_model", side_effect=observe_build):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), len(snapshot.strategies))
+        self.assertEqual(full_model_builds, 1)
 
     def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
         raw = load_raw()
@@ -1323,9 +1398,15 @@ class SolverTests(unittest.TestCase):
         snapshot = Snapshot.from_dict(raw)
         variant = self.engine.solve(snapshot)[0]
         stage = variant.stage_objectives[1]
-        self.assertEqual(stage["tolerance"], 250)
-        self.assertEqual(stage["frozenUpperBound"], stage["value"] + 250)
+        coefficient = stage["terms"][0]["normalizationCoefficient"]
+        self.assertEqual(stage["tolerance"], coefficient * 125)
+        self.assertEqual(
+            stage["frozenUpperBound"],
+            stage["value"] + coefficient * 125,
+        )
         self.assertEqual(stage["terms"][0]["parameters"], {"targetValue": 0})
+        self.assertEqual(stage["terms"][0]["tolerance"], 125)
+        self.assertGreater(coefficient, 0)
         self.assertTrue(validate_variant(snapshot, variant).valid)
 
     def test_zero_weight_objective_is_accepted_and_omitted(self) -> None:
@@ -1427,7 +1508,10 @@ class SolverTests(unittest.TestCase):
         report = validate_variant(self.snapshot, invalid)
         self.assertFalse(report.valid)
         self.assertTrue(
-            any(error.startswith("OVERLAP_OR_REST:") for error in report.errors)
+            any(
+                error.startswith(("OVERLAP_OR_REST:", "DAILY_SHIFT_LIMIT:"))
+                for error in report.errors
+            )
         )
 
     def test_worker_lifecycle_claims_validates_saves_and_finalizes(self) -> None:
