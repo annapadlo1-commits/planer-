@@ -223,7 +223,13 @@ export function MatrixV2Editor({
 
   async function publishDraft() {
     if (!supabase) return;
-    const effective = window.prompt("Od kiedy ta wersja ma obowiązywać?", `${month}-01`);
+    const todayInMatrixTimezone=new Intl.DateTimeFormat("en-CA",{
+      timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit",day:"2-digit",
+    }).format(new Date());
+    const effective = window.prompt(
+      `Od kiedy ta wersja ma obowiązywać?\n\nGrafik nadal zostanie policzony dla ${month}; ta data określa tylko moment aktywacji konfiguracji Matrixa.`,
+      todayInMatrixTimezone,
+    );
     if (!effective) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effective)) { fail("Podaj datę w formacie RRRR-MM-DD."); return; }
     setBusy(true);
@@ -1223,7 +1229,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     setBusy(true);setLocalError("");setPreview(null);
     try{
       const parsed=await readMatrixWorkbook(file);
-      const result=await supabase.rpc("matrix_v2_import_preview_uat_v4",{p_payload:parsed,p_mode:mode});
+      const result=await supabase.rpc("matrix_v2_import_preview_uat_v5",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
       setPayload(parsed);setPreview(result.data as MatrixImportPreview);
     }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
@@ -1234,7 +1240,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${preview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
     if(!window.confirm(`Zapisać atomowo ${preview.summary.total} wierszy w wersji roboczej Matrixa?${impact}`))return;
     setBusy(true);
-    const result=await supabase.rpc("matrix_v2_import_apply_uat_v4",{p_payload:payload,p_mode:mode});
+    const result=await supabase.rpc("matrix_v2_import_apply_uat_v5",{p_payload:payload,p_mode:mode});
     setBusy(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);

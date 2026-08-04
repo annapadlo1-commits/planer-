@@ -35,6 +35,8 @@ Po przejściu testów lokalnych paczka może zostać przedstawiona do wdrożenia
 - parser importu Matrixa: 5/5 testów zaliczonych,
 - rzeczywisty plik `matrix-alpha16-szablon (1).xlsx`: odczytano 76 pracowników i 62 kompetencje; rekord Weroniki Dąbrowskiej zachował e-mail, rolę BARMAN, lokale Krucza i Pawilony, datę rozpoczęcia, ZLECENIE i stawkę 25 zł,
 - migracje kandydata: zastosowane w izolowanym Supabase; testy zapisu MASTER wykonane w transakcji z wycofaniem,
+- końcowy smoke grafiku roli wykrył i zatrzymał regresję identyfikatora pustego obowiązku (`||` zamiast `|-|`); kontrakt snapshotu został ponownie utrwalony po migracjach stand-by/eventów,
+- ponowiony przebieg roli PREP zakończył się `READY`: trzy strategie zapisano jako trzy różne rozwiązania; transakcyjny test wyboru i publikacji utworzył 60 wpisów stand-by (Tier 1 + Tier 2 dla każdego z 30 dni), po czym został w całości wycofany bez pozostawienia publikacji testowej,
 - kontrola białych znaków i konfliktów patcha: zaliczona.
 
 Przed przekazaniem nowego adresu nadal obowiązuje bramka: publikacja gałęzi UAT, wdrożenie workera z tej samej rewizji oraz pełne desktopowe E2E UI. Produkcja pozostaje poza zakresem.
@@ -977,3 +979,63 @@ Nie wdrażać tej poprawki w trakcie zbierania znalezisk UAT.
 - Import ma być atomowy i idempotentny: błąd cofa wszystkie zmiany, ponowienie tego samego pliku nie tworzy duplikatów ani nie rozcina identycznych okresów stawek.
 - Przed kolejnym UAT obowiązkowo wykonać realny test: pobranie bieżącej bazy → zmiana reprezentatywnych pól → podgląd różnic → zapis → przeładowanie → porównanie wszystkich pól UI i bazy → ponowny import tego samego pliku.
 - Bramka wdrożeniowa ma automatycznie sprawdzać obecność i sygnatury wszystkich RPC wywoływanych przez frontend.
+
+## Wynik przygotowania UAT — runda 2 (2026-08-04)
+
+Poniższy status zastępuje wcześniejsze opisy stanu zastanego. Dotyczy wyłącznie
+izolowanego projektu UAT `nhthrtpkfpmufmrmdyjg`; produkcja nie została zmieniona.
+
+### Dane Matrixa i import
+
+- Zaimportowano w trybie `REPLACE` dokładnie 76 pracowników z przekazanego pliku.
+- Wszystkie 76 profili mają umowę `ZLECENIE`; wszystkie mają aktywną stawkę
+  obejmującą miesiąc grafiku.
+- Import tego samego pliku wykonano ponownie: nie utworzył duplikatów i nie
+  naruszył ograniczeń lokalizacji.
+- Weronika Dąbrowska jest zapisana jako GP-111 ze stawką 25,00 zł i umową
+  `ZLECENIE`, zgodnie z arkuszem.
+- 28 błędnie sklasyfikowanych pór zmian zostało poprawionych, a walidacja
+  publikacji Matrixa nie zgłasza już blokady klasyfikacji.
+- Matrix v5 jest aktywny od 2026-08-04; Matrix v6 jest roboczą kopią do dalszych
+  prób użytkowniczki.
+
+### Kontrakt silnika
+
+- Końcowy builder snapshotu ponownie dodaje `workTimePolicy`, obowiązującą
+  stawkę okresową i kontrakt.
+- Dla `ZLECENIE`/`B2B` z polityką domyślną wartości `0` oznaczają brak twardego
+  limitu miesięcznego/tygodniowego oraz brak narzuconego odpoczynku kodeksowego.
+- Walidator bazy stosuje tę samą semantykę co worker. Zakaz nakładania zmian,
+  twarda niedostępność, rola, lokal i kompetencje nadal pozostają twarde.
+- Test definicji końcowego kontraktu snapshotu i walidatora przeszedł w UAT.
+
+### Rzeczywiste przebiegi OR-Tools na Matrixie v5
+
+- PREP: `READY`, pierwsza próba, 93 s, 3 warianty, 150 przydziałów na wariant,
+  0 braków i 0 naruszeń twardych.
+- Firma: `READY`, pierwsza próba, 195 s, 3 warianty, 1362 przydziały na wariant,
+  0 braków i 0 naruszeń twardych.
+- Każdy z trzech wariantów w obu przebiegach ma inny `solutionHash`.
+- W firmie „Minimalny koszt” kosztuje 332 786,00 zł, „Zbalansowany”
+  334 914,00 zł, a „Preferencje i równy podział” 335 364,00 zł.
+- Różnice obciążenia są również realne: odpowiednio 10 980, 3 600 i 2 940 minut.
+
+### Publikacja i stand-by
+
+- Transakcyjnie potwierdzono, że opublikowana rola blokuje późniejszą publikację
+  firmową kodem `COMPANY_PUBLICATION_CONFLICTS_WITH_PUBLISHED_ROLES`.
+- Transakcyjnie potwierdzono odwrotną kolejność: opublikowana firma blokuje rolę
+  kodem `ROLE_PUBLICATION_CONFLICTS_WITH_COMPANY_SCHEDULE`.
+- Żaden test konfliktu nie pozostawił zmian; wcześniejsza publikacja Pizzabar
+  nadal jest jedyną aktywną publikacją roli, a publikacji firmowej brak.
+- Próbna publikacja PREP przeszła pełną rewalidację i utworzyła 60 pozycji
+  stand-by: 30 Tier 1 i 30 Tier 2, po dwie osoby na każdy z 30 dni. Całość
+  została wycofana po asercjach.
+
+### Bramka techniczna
+
+- Lint, testy importu, 79 testów solvera wraz z 26 podtestami oraz produkcyjny
+  build przechodzą lokalnie.
+- Automatyczne desktopowe UI E2E pozostaje zablokowane przez ochronę SSO
+  podglądu Vercel. Nie wolno oznaczyć kontroli UI jako wykonanej automatycznie;
+  ta część jest jawnie przekazana użytkowniczce jako manualny UAT.
