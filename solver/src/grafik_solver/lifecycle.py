@@ -259,7 +259,16 @@ class WorkerRuntime:
                 progress=99,
                 completedStrategies=len(variants),
             )
-            self.rpc.finalize(claim)
+            finalization = self.rpc.finalize(claim)
+            if isinstance(finalization, Mapping):
+                final_status = str(finalization.get("status", "READY")).upper()
+                if final_status not in {"READY", "CANCELLED"}:
+                    LOGGER.error(
+                        "Optimizer run %s finalization was rejected: %s",
+                        claim.run_id,
+                        finalization,
+                    )
+                    return 1
             LOGGER.info(
                 "Optimizer run %s finalized with %s variants",
                 claim.run_id,

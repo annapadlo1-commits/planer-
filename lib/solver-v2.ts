@@ -20,6 +20,7 @@ export type SolverConfiguration = {
   enabled: boolean;
   solverVersion: string | null;
   matrixVersionId: string | null;
+  matrixEffectiveFrom: string | null;
   scenarios: SolverScenario[];
   roles: SolverRole[];
   locations: SolverLocation[];
@@ -214,6 +215,17 @@ export type SolverVariantIssueDiagnostics = {
     blocked: number;
     reasons: { code: string; count: number }[];
   };
+  candidates: {
+    employeeId: string;
+    employeeNo: string;
+    employeeName: string;
+    roleMatch: boolean;
+    locationMatch: boolean;
+    dutyMatch: boolean;
+    hasDeclaredWindow: boolean;
+    coversShift: boolean;
+    reasons: string[];
+  }[];
 };
 
 export type SolverPublicationReadiness = {
@@ -760,6 +772,7 @@ export async function loadSolverConfiguration(
       enabled,
       solverVersion: null,
       matrixVersionId: null,
+      matrixEffectiveFrom: null,
       scenarios: [LEGACY_DEFAULT_SCENARIO],
       roles: [],
       locations: [],
@@ -888,6 +901,7 @@ export async function loadSolverConfiguration(
     enabled,
     solverVersion,
     matrixVersionId: activeMatrixId,
+    matrixEffectiveFrom: String(matrixVersion.effectiveFrom??"")||null,
     scenarios,
     roles,
     locations,
@@ -1100,6 +1114,20 @@ export async function getVariantIssueDiagnostics(
     const reason = record(value);
     return { code: String(reason.code ?? "UNKNOWN"), count: numberOf(reason, "count", "count") };
   }) : [];
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates.map(value => {
+    const candidate=record(value);
+    return {
+      employeeId:String(candidate.employeeId??""),
+      employeeNo:String(candidate.employeeNo??""),
+      employeeName:String(candidate.employeeName??""),
+      roleMatch:Boolean(candidate.roleMatch),
+      locationMatch:Boolean(candidate.locationMatch),
+      dutyMatch:Boolean(candidate.dutyMatch),
+      hasDeclaredWindow:Boolean(candidate.hasDeclaredWindow),
+      coversShift:Boolean(candidate.coversShift),
+      reasons:Array.isArray(candidate.reasons)?candidate.reasons.map(String):[],
+    };
+  }):[];
   return {
     variantId: String(payload.variantId ?? variantId),
     issueId: String(payload.issueId ?? issueId),
@@ -1115,6 +1143,7 @@ export async function getVariantIssueDiagnostics(
       blocked: numberOf(summary, "blocked", "blocked"),
       reasons,
     },
+    candidates,
   };
 }
 
@@ -1730,12 +1759,24 @@ const STATUS_LABELS: Record<string, string> = {
 
 const PHASE_LABELS: Record<string, string> = {
   QUEUED: "Przygotowanie danych",
+  RETRY_QUEUED: "Oczekiwanie na automatyczne ponowienie",
+  CLAIMED: "Worker odebrał zadanie",
+  STARTING: "Uruchamianie workera",
+  LOADING: "Wczytywanie danych Matrixa",
   SNAPSHOT: "Zapisywanie konfiguracji Matrixa",
   MODEL: "Budowanie modelu grafiku",
   SOLVING: "Szukanie najlepszego rozwiązania",
   VALIDATING: "Sprawdzanie wyniku",
+  SAVING: "Zapisywanie policzonych wariantów",
+  SAVING_VARIANTS: "Zapisywanie policzonych wariantów",
+  FINALIZING: "Końcowa kontrola i zamknięcie przebiegu",
+  DATABASE_VALIDATION: "Końcowa kontrola spójności w bazie",
   MATERIALIZING: "Zapisywanie wariantów",
   READY: "Gotowe do porównania",
+  FAILED: "Błąd generowania",
+  STALE_INPUT: "Dane zmieniły się podczas generowania",
+  CANCEL_REQUESTED: "Bezpieczne zatrzymywanie",
+  CANCELLED: "Generowanie zatrzymane",
 };
 
 export function solverStatusLabel(status: string) {
@@ -1748,6 +1789,9 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("RUN_VARIANTS_INCOMPLETE")) return "Końcowa kontrola wykryła, że nie zapisano wyniku dla każdej strategii. Przebieg nie zostanie opublikowany; szczegółowa przyczyna pozostaje w historii próby.";
+  if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Matrix wymaga matematycznego optimum, a co najmniej jeden wariant jest poprawny, lecz nie ma dowodu optimum w dostępnym czasie. Zmień świadomie ustawienie zaawansowane albo zwiększ limit czasu i uruchom ponownie.";
+  if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
   if (normalized.includes("SOLVER_CONFIGURATION_MISSING") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_MISSING")) return "Nie ustawiono aktywnego silnika grafiku.";
   if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji silnika. Odśwież stronę i spróbuj ponownie.";
   if (normalized.includes("SOLVER_ENGINE_INVALID") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_INVALID")) return "Konfiguracja silnika zawiera nieobsługiwaną wartość.";

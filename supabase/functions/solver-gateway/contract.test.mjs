@@ -117,6 +117,30 @@ test("rejects malformed lease arguments before invoking RPC", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("forwards only a validated upstream PostgreSQL error code", async () => {
+  const base = {
+    solverGatewayToken: TOKEN,
+    invokeRpc: async () => ({
+      status: 400,
+      errorCode: "RUN_VARIANTS_INCOMPLETE",
+    }),
+  };
+  const response = await createGatewayHandler(base)(gatewayRequest(
+    "solver_finalize_v2",
+    {p_run_id:RUN_ID,p_attempt_id:ATTEMPT_ID,p_lease_token:LEASE_TOKEN},
+  ));
+  assert.equal(response.status,400);
+  assert.deepEqual(await response.json(),{error:"RUN_VARIANTS_INCOMPLETE"});
+
+  const unsafe = await createGatewayHandler({
+    ...base,
+    invokeRpc: async () => ({status:400,errorCode:"SQL failed: private detail"}),
+  })(gatewayRequest("solver_finalize_v2",{
+    p_run_id:RUN_ID,p_attempt_id:ATTEMPT_ID,p_lease_token:LEASE_TOKEN,
+  }));
+  assert.deepEqual(await unsafe.json(),{error:"UPSTREAM_RPC_FAILED"});
+});
+
 test("accepts PostgreSQL UUIDs used by stable matrix identifiers", async () => {
   const calls = [];
   const handler = handlerWith(calls);

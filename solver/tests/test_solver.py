@@ -340,7 +340,7 @@ class _FakeClock:
 
 
 class SnapshotTests(unittest.TestCase):
-    def test_zlecenie_uses_declared_availability_without_etat_limits(self) -> None:
+    def test_zlecenie_inherits_default_availability_without_etat_limits(self) -> None:
         raw = load_raw()
         raw["settings"]["missingAvailabilityMeansAvailable"] = True
         employee_raw = raw["employees"][0]
@@ -365,7 +365,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertIsNone(employee.maximum_weekly_minutes)
         self.assertIsNone(employee.maximum_consecutive_days)
         self.assertEqual(employee.minimum_rest_minutes, 0)
-        self.assertFalse(employee.missing_availability_means_available)
+        self.assertIsNone(employee.missing_availability_means_available)
 
         slot = next(
             slot
@@ -374,6 +374,34 @@ class SnapshotTests(unittest.TestCase):
             and slot.location_id in employee.location_ids
         )
         eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+        self.assertTrue(eligibility.allowed)
+        self.assertNotIn("MISSING_AVAILABILITY", eligibility.reasons)
+
+    def test_zlecenie_can_explicitly_require_declared_availability(self) -> None:
+        raw = load_raw()
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "missingAvailabilityMeansAvailable": False,
+            }
+        )
+        raw["employees"] = [employee_raw]
+        raw["availabilityWindows"] = []
+
+        snapshot = Snapshot.from_dict(raw)
+        employee = snapshot.employees[0]
+        slot = next(
+            slot
+            for slot in generate_slots(snapshot)
+            if slot.role_id in employee.role_ids
+            and slot.location_id in employee.location_ids
+        )
+
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+
+        self.assertFalse(eligibility.allowed)
         self.assertIn("MISSING_AVAILABILITY", eligibility.reasons)
 
     def test_zlecenie_custom_policy_keeps_agreed_limits(self) -> None:
@@ -1434,6 +1462,39 @@ class SolverTests(unittest.TestCase):
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
 
+    def test_worker_treats_structured_finalization_failure_as_failed_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.finalization_value = {
+            "status": "FAILED",
+            "errorCode": "RUN_VARIANTS_INCOMPLETE",
+            "readyVariantCount": 2,
+            "expectedVariantCount": 3,
+        }
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        with self.assertLogs("grafik_solver.lifecycle", level="ERROR") as logs:
+            self.assertEqual(runtime.run_once(), 1)
+
+        self.assertTrue(rpc.finalized)
+        self.assertFalse(rpc.failed)
+        self.assertIn("RUN_VARIANTS_INCOMPLETE", "\n".join(logs.output))
+
     def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
@@ -2060,6 +2121,7 @@ class _FakeRpc:
         self.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=True)
         self.heartbeat_errors = []
         self.interrupt_reason = None
+        self.finalization_value = None
 
     def claim(self, **kwargs):
         self.claim_requests.append(kwargs)
@@ -2081,6 +2143,7 @@ class _FakeRpc:
 
     def finalize(self, _claim):
         self.finalized = True
+        return self.finalization_value
 
     def interrupt(self, _claim, _reason):
         self.interrupt_reason = _reason

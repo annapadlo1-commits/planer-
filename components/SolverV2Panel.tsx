@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Square, Upload, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -54,6 +54,7 @@ type Props = {
   scopeType: SolverScope;
   scopeRoleId?: string | null;
   scopeLabel: string;
+  matrixEffectiveFrom?: string|null;
   allowStart?: boolean;
   onNameChange: (value: string) => void;
   onScenarioChange: (value: string) => void;
@@ -120,6 +121,7 @@ export function SolverV2Panel({
   scopeType,
   scopeRoleId,
   scopeLabel,
+  matrixEffectiveFrom,
   allowStart = true,
   onNameChange,
   onScenarioChange,
@@ -151,6 +153,9 @@ export function SolverV2Panel({
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
+  const [refreshing,setRefreshing]=useState(false);
+  const [lastStatusCheck,setLastStatusCheck]=useState("");
+  const statusFingerprintRef=useRef("");
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
@@ -194,6 +199,7 @@ export function SolverV2Panel({
 
   const refreshStatus = useCallback(async (runId: string, silent = false): Promise<StatusRefreshOutcome> => {
     if (!supabase) return "RETRY";
+    if(!silent)setRefreshing(true);
     try {
       const result = await getSolverStatus(supabase, runId);
       if (result.run.id !== runId) {
@@ -208,7 +214,17 @@ export function SolverV2Panel({
       setRun(result.run);
       setStrategies(result.strategies);
       setPollWarning("");
-      if (result.run.status === "READY") await loadVariants(result.run.id);
+      if (result.run.status === "READY" || result.run.status === "FAILED") await loadVariants(result.run.id);
+      const fingerprint=`${result.run.status}:${result.run.phase}:${result.run.progress}:${result.run.updatedAt??""}`;
+      const changed=Boolean(statusFingerprintRef.current&&statusFingerprintRef.current!==fingerprint);
+      statusFingerprintRef.current=fingerprint;
+      if(!silent){
+        const checkedAt=new Intl.DateTimeFormat("pl-PL",{hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:timezone}).format(new Date());
+        setLastStatusCheck(checkedAt);
+        setMessage(changed
+          ?`Status sprawdzony o ${checkedAt} — nowy stan: ${solverStatusLabel(result.run.status)} (${result.run.progress}%).`
+          :`Status sprawdzony o ${checkedAt} — bez zmian. ${solverStatusLabel(result.run.status)} (${result.run.progress}%).`);
+      }
       if (isSolverRunTerminal(result.run.status)) {
         setPollingRunId(current => current === runId ? null : current);
         return "TERMINAL";
@@ -231,8 +247,10 @@ export function SolverV2Panel({
       if (!silent) setMessage(solverErrorMessage(detail));
       else setPollWarning("Nie udało się odświeżyć postępu. Kolejna próba nastąpi automatycznie.");
       return "RETRY";
+    } finally {
+      if(!silent)setRefreshing(false);
     }
-  }, [supabase, engine, expectedSolverVersion, loadVariants, context]);
+  }, [supabase, engine, expectedSolverVersion, loadVariants, context, timezone]);
 
   useEffect(() => {
     let disposed = false;
@@ -246,6 +264,8 @@ export function SolverV2Panel({
     setMessage("");
     setPollWarning("");
     setPublicationReadiness(null);
+    setLastStatusCheck("");
+    statusFingerprintRef.current="";
     const recovered = initialRunId ?? recoverSolverRun(context);
     if (recovered) setPollingRunId(recovered);
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
@@ -552,6 +572,8 @@ export function SolverV2Panel({
       {engine === "SHADOW" && <em>TRYB CIENIA</em>}
     </div>
 
+    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Źródło danych: opublikowany Matrix{matrixEffectiveFrom?` obowiązujący od ${matrixEffectiveFrom}`:""}</strong><small>Wersja robocza nie trafia do silnika. Nowa rola, pracownik, stawka lub reguła zostanie użyta dopiero po poprawnej publikacji Matrixa dla tego miesiąca.</small></span></div>
+
     {recovering && <div className="solver-v2-notice"><RefreshCw className="spin"/>Odzyskuję rozpoczęte wcześniej generowanie…</div>}
     {!run && !recovering && !allowStart && <div className="solver-v2-notice"><Sparkles/>Uruchamianie nowego silnika jest wyłączone w bieżącej konfiguracji.</div>}
     {!run && !recovering && allowStart && <div className="solver-v2-form">
@@ -589,17 +611,21 @@ export function SolverV2Panel({
         </div>)}
       </div>}
       {run.failureMessage && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
+      {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
+      {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>„Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
+      {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej wersji Matrixa.</small></span></div>}
       {pollWarning && <div className="solver-v2-poll-warning">{pollWarning}</div>}
       <div className="solver-v2-actions">
         {active && <button className="secondary-button" disabled={busy || run.status === "CANCEL_REQUESTED"} onClick={() => void cancel()}><Square/> Zatrzymaj bezpiecznie</button>}
-        <button className="secondary-button" disabled={busy} onClick={() => void refreshStatus(run.id)}><RefreshCw/> Odśwież</button>
-        {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>Nowe generowanie</button>}
+        <button className="secondary-button" disabled={busy||refreshing} onClick={() => void refreshStatus(run.id)}><RefreshCw className={refreshing?"spin":""}/> {refreshing?"Sprawdzam…":"Odśwież status"}</button>
+        {lastStatusCheck&&<small className="solver-v2-last-check">Ostatnie ręczne sprawdzenie: {lastStatusCheck}</small>}
+        {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>{["FAILED","STALE_INPUT"].includes(run.status)?"Spróbuj ponownie":"Nowe generowanie"}</button>}
       </div>
     </div>}
 
     {variants.length > 0 && <div className="solver-v2-results">
       <div className="solver-v2-results-head">
-        <span><strong>Porównaj gotowe warianty</strong><small>Każdy został policzony osobno według strategii zapisanej w Matrixie.</small></span>
+        <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy został policzony osobno według strategii zapisanej w Matrixie.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
@@ -621,14 +647,14 @@ export function SolverV2Panel({
             {Object.entries(variant.metrics).filter(([metric])=>metric!=="UNFILLED"&&metric!=="TOTAL_COST").map(([metric,value])=><div key={metric}><dt>{({PREFERENCE_VIOLATIONS:"Niespełnione preferencje",NOMINAL_DEVIATION_MINUTES:"Odchylenie od nominału (min)",OVERTIME_MINUTES:"Nadgodziny (min)",LOAD_SPREAD_MINUTES:"Rozpiętość obciążenia (min)",WEEKEND_SPREAD:"Różnica weekendów",BASELINE_CHANGES:"Zmiany wobec bazowego"} as Record<string,string>)[metric]??metric}</dt><dd>{String(value??"—")}</dd></div>)}
             {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
           </dl>
-          <div className="solver-v2-validation">
-            <Check/><span><strong>{variant.hardViolations === 0 ? "Wszystkie twarde reguły spełnione" : "Wariant wymaga poprawy"}</strong><small>{solutionLabel(variant.solverStatus)}</small></span>
+          <div className={`solver-v2-validation ${variant.unfilledCount>0||variant.hardViolations>0?"warning":""}`}>
+            {variant.unfilledCount>0||variant.hardViolations>0?<AlertTriangle/>:<Check/>}<span><strong>{variant.hardViolations>0?"Wariant zawiera niedozwolone przydziały":variant.unfilledCount>0?`Technicznie poprawny, ale niekompletny: ${variant.unfilledCount} nieobsadzonych miejsc`:"Kompletny grafik bez naruszeń"}</strong><small>{variant.unfilledCount>0?`Silnik nie złamał reguł pracownika — pozostawił wakaty zamiast wykonać niedozwolony przydział. ${solutionLabel(variant.solverStatus)}.`:solutionLabel(variant.solverStatus)}</small></span>
           </div>
           {variant.equivalentToVariantId && <small className="solver-v2-equivalent">Ten wariant ma taki sam skład jak inny wynik.</small>}
           <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}><Search/> Pokaż grafik i rozkład braków</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
-            : <button className="primary-button full" disabled={busy || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
+            : <button className="primary-button full" disabled={busy || run?.status!=="READY" || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
               {variant.selected ? <><Check/> Wybrano ten wariant</> : "Wybierz ten wariant"}
             </button>}
         </article>)}

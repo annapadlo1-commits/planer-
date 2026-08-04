@@ -31,6 +31,7 @@ type Props = {
   month: string;
   timezone: string;
   scenarios: SolverScenario[];
+  matrixEffectiveFrom?: string;
   refreshKey?: number;
   onPublished?: (scheduleId: string) => void | Promise<void>;
 };
@@ -72,7 +73,7 @@ function sameVariantSet(left: string[], right: string[]) {
   return [...left].sort().join(":") === [...right].sort().join(":");
 }
 
-export function RoleCompositePanel({ engine, solverVersion, userId, month, timezone, scenarios, refreshKey = 0, onPublished }: Props) {
+export function RoleCompositePanel({ engine, solverVersion, userId, month, timezone, scenarios, matrixEffectiveFrom, refreshKey = 0, onPublished }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const expectedSolverVersion = solverVersion.trim();
   const candidateRequestRef = useRef(0);
@@ -306,6 +307,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         <RefreshCw className={loading ? "spin" : ""}/> Odśwież zestaw
       </button>
     </div>
+
+    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Scalanie dotyczy opublikowanego Matrixa{matrixEffectiveFrom?` od ${matrixEffectiveFrom}`:""}</strong><small>Robocze zmiany pracowników i ról nie są uwzględniane, dopóki Matrix nie przejdzie walidacji i publikacji.</small></span></div>
 
     {overview&&<section className="role-publication-overview">
       <div className="role-publication-totals">

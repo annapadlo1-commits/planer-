@@ -20,6 +20,7 @@ export type RpcResult = {
   status: number;
   body?: BodyInit | null;
   contentType?: string | null;
+  errorCode?: string | null;
 };
 
 export type RpcInvoker = (
@@ -640,7 +641,11 @@ export function createGatewayHandler(options: GatewayOptions) {
         return jsonResponse(502, "INVALID_UPSTREAM_RESPONSE");
       }
       if (result.status >= 300) {
-        return jsonResponse(result.status, "UPSTREAM_RPC_FAILED");
+        const safeCode = typeof result.errorCode === "string"
+          && CODE_PATTERN.test(result.errorCode)
+          ? result.errorCode
+          : "UPSTREAM_RPC_FAILED";
+        return jsonResponse(result.status, safeCode);
       }
       if (
         result.body != null &&

@@ -622,15 +622,11 @@ class Employee:
                     raw, "softDayOffDates", "soft_day_off_dates", default=[]
                 )
             ),
-            missing_availability_means_available=(
-                False
-                if is_flexible_contractor
-                else _pick(
-                    raw,
-                    "missingAvailabilityMeansAvailable",
-                    "missing_availability_means_available",
-                    default=None,
-                )
+            missing_availability_means_available=_pick(
+                raw,
+                "missingAvailabilityMeansAvailable",
+                "missing_availability_means_available",
+                default=None,
             ),
         )
 

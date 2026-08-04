@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:matrix-import": "node --experimental-strip-types --test tests/matrix-workbook-import.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

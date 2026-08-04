@@ -89,6 +89,7 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
         scopeType="COMPANY"
         scopeRoleId={null}
         scopeLabel="Grafik całej firmy"
+        matrixEffectiveFrom={configuration.matrixEffectiveFrom}
         allowStart={Boolean(configuration.solverVersion)}
         initialRunId={selectedRunId}
         onNameChange={setName}

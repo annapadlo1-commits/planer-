@@ -147,8 +147,27 @@ class SolverGatewayClient:
                     return None if not raw else json.loads(raw.decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 retryable = exc.code == 429 or 500 <= exc.code < 600
+                detail = ""
+                try:
+                    error_body = exc.read(4097)
+                    if len(error_body) <= 4096:
+                        parsed_error = json.loads(error_body.decode("utf-8"))
+                        candidate = (
+                            parsed_error.get("error")
+                            if isinstance(parsed_error, Mapping)
+                            else None
+                        )
+                        if (
+                            isinstance(candidate, str)
+                            and candidate
+                            and len(candidate) <= 100
+                            and candidate.replace("_", "").replace(":", "").replace("-", "").isalnum()
+                        ):
+                            detail = f": {candidate}"
+                except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+                    detail = ""
                 last_error = RpcError(
-                    f"Gateway action {name} returned HTTP {exc.code}",
+                    f"Gateway action {name} returned HTTP {exc.code}{detail}",
                     retryable=retryable,
                     status=exc.code,
                 )

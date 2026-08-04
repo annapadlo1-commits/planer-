@@ -178,9 +178,12 @@ export type MatrixV2Employee = {
 
 export type MatrixV2PublicationBlocker = {
   code: "MISSING_PAY_RATE" | "MISSING_ROLE" | "MISSING_STANDARD_LOCATION" | string;
-  employeeId: string;
-  employeeNo: string;
-  employeeName: string;
+  employeeId?: string;
+  employeeNo?: string;
+  employeeName?: string;
+  shiftTemplateId?: string;
+  shiftCode?: string;
+  shiftName?: string;
   message: string;
 };
 
@@ -188,6 +191,7 @@ export type MatrixV2PublicationReadiness = {
   ready: boolean;
   blockers: MatrixV2PublicationBlocker[];
   effectiveFrom: string;
+  scheduleMonth?: string;
   matrixVersionId: string;
 };
 export type MatrixV2EmployeeRole = {
@@ -349,7 +353,7 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID_MATRIX_SETTINGS")) return "Aktywny Matrix nie ma kompletnych ustawień.";
   if (value.includes("INVALID_MATRIX_TIMEZONE")) return "Matrix musi mieć prawidłową, jawnie wybraną strefę czasową.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_ROLE_AND_LOCATION")) return "Każdy aktywny pracownik musi mieć co najmniej jedną aktywną rolę i dostęp do co najmniej jednego lokalu.";
-  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_PAY_RATE")) return "Co najmniej jeden aktywny pracownik nie ma stawki obowiązującej w dniu publikacji. Otwórz listę blokad, aby zobaczyć konkretną osobę.";
+  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_PAY_RATE")) return "Co najmniej jeden aktywny pracownik nie ma stawki obowiązującej w miesiącu grafiku. Otwórz listę blokad, aby zobaczyć konkretną osobę.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_STANDARD_LOCATION")) return "Wybierz co najmniej jeden lokal, w którym pracownik może pracować w zwykłym limicie.";
   if (value.includes("MATRIX_WORKFORCE_VERSION_IMMUTABLE")) return "Opublikowane dane pracownika są historyczne i nie mogą być zmieniane. Utwórz nową wersję roboczą Matrixa.";
   if (value.includes("MATRIX_EMPLOYEE_NOT_FOUND")) return "Nie znaleziono pracownika w bieżącej wersji roboczej Matrixa.";
@@ -360,6 +364,11 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID_SHIFT_PERIOD_PREFERENCES") || value.includes("INVALID_SHIFT_PREFERENCE_LEVEL")) return "Preferencje okresów zmian zawierają nieprawidłową wartość.";
   if (value.includes("MATRIX_IMPORT_HAS_ERRORS")) return "Import zawiera błędy. Wróć do podglądu i popraw wskazane wiersze.";
   if (value.includes("INVALID_EMPLOYMENT_DATES")) return "Data zakończenia zatrudnienia nie może być wcześniejsza od daty rozpoczęcia.";
+  if (value.includes("EMPLOYMENT_DATES_CONFLICT_PAY_RATES")) return "Nowy okres zatrudnienia jest sprzeczny z zapisaną historią stawek. Najpierw popraw daty odpowiednich okresów stawki.";
+  if (value.includes("PAY_RATE_BEFORE_EMPLOYMENT")) return "Stawka nie może obowiązywać przed datą rozpoczęcia zatrudnienia.";
+  if (value.includes("PAY_RATE_OUTSIDE_EMPLOYMENT")) return "Okres stawki musi mieścić się w okresie zatrudnienia pracownika.";
+  if (value.includes("OVERLAPPING_ACTIVE_PAY_RATE")) return "Ten okres nakłada się na inną aktywną stawkę pracownika. Zakończ poprzedni okres albo edytuj istniejący wpis.";
+  if (value.includes("INVALID_PAY_RATE")) return "Sprawdź datę rozpoczęcia, datę zakończenia i kwotę stawki.";
   if (value.includes("INVALID_EMPLOYEE_LIMITS")) return "Sprawdź nominał, limity czasu pracy i ograniczenia pracownika.";
   if (value.includes("MIXED_CURRENCIES_UNSUPPORTED")) return "Matrix może używać tylko jednej waluty rozliczeniowej. Ujednolić stawki, dodatki i budżety przed publikacją.";
   if (value.includes("INVALID_MATRIX_CURRENCY")) return "Waluta Matrixa musi być prawidłowym trzyliterowym kodem, np. PLN, EUR lub USD.";
