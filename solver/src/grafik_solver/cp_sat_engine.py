@@ -94,7 +94,7 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_COVERAGE_SECONDS = 30.0
 MAX_RELAXED_STRATEGY_SECONDS = 35.0
-MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 6.0
+MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 15.0
 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
 MAX_RELAXED_DIVERSITY_SECONDS = 6.0
 RELAXED_DIVERSITY_FRACTION = 0.01
@@ -510,6 +510,48 @@ class CpSatScheduleEngine:
             strategy_count,
             len(strategy_base.model.proto.variables),
         )
+        shared_warm_start_solver: Any | None = None
+        if not snapshot.settings.require_optimal:
+            # Feasibility of the complete pay/budget model is independent of
+            # the business strategy. Solve it once, with the proven minimum
+            # coverage fixed, and reuse the incumbent for every cloned
+            # strategy model. This removes three nondeterministic warm starts
+            # from a monthly run and gives a real snapshot enough time to
+            # establish its first full feasible roster.
+            warm_artifacts = replace(
+                strategy_base,
+                model=strategy_base.model.clone(),
+            )
+            warm_artifacts.model.add(
+                warm_artifacts.metrics["UNFILLED"] == minimum_unfilled
+            )
+            self._apply_coverage_solution_hint(
+                common,
+                common_solver,
+                warm_artifacts,
+                slots,
+            )
+            warm_start_solver, warm_start_status = self._solve_model(
+                warm_artifacts.model,
+                snapshot,
+                strategy=None,
+                stage_name="WARM_START",
+                time_limit_seconds=min(
+                    self._remaining_seconds(global_deadline, "GLOBAL:WARM_START"),
+                    MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
+                ),
+            )
+            self._require_optimal(
+                warm_start_solver,
+                warm_start_status,
+                snapshot,
+                "GLOBAL:WARM_START",
+            )
+            shared_warm_start_solver = warm_start_solver
+            LOGGER.info(
+                "Completed one reusable full-model warm start for %s strategies",
+                strategy_count,
+            )
         for strategy_index, strategy in enumerate(ordered_strategies):
             if self._cancel_event.is_set():
                 raise OptimizationCancelled("Optimization was cancelled")
@@ -572,41 +614,23 @@ class CpSatScheduleEngine:
             feasible_fallback_solver: Any | None = None
 
             if not snapshot.settings.require_optimal:
-                # Establish feasibility before adding normalized objective
-                # division variables. On full monthly models those auxiliary
-                # constraints make a feasibility-only warm start needlessly
-                # expensive, while the base pay/budget model solves quickly.
-                warm_start_solver, warm_start_status = self._solve_model(
-                    artifacts.model,
-                    snapshot,
-                    strategy=strategy,
-                    stage_name="WARM_START",
-                    time_limit_seconds=min(
-                        self._remaining_seconds(strategy_deadline, strategy.code),
-                        MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
-                    ),
-                )
-                self._require_optimal(
-                    warm_start_solver,
-                    warm_start_status,
-                    snapshot,
-                    f"{strategy.code}:WARM_START",
-                )
+                if shared_warm_start_solver is None:
+                    raise OptimizationIncomplete("GLOBAL:WARM_START missing incumbent")
                 full_variables = (
                     artifacts.model.get_int_var_from_proto_index(variable_index)
                     for variable_index in range(len(artifacts.model.proto.variables))
                 )
                 nonzero_hint_count = self._replace_with_nonzero_solution_hints(
                     artifacts.model,
-                    warm_start_solver,
+                    shared_warm_start_solver,
                     full_variables,
                 )
                 LOGGER.info(
-                    "Strategy %s completed a sparse %s-variable full-model warm start",
+                    "Strategy %s reused a sparse %s-variable full-model warm start",
                     strategy.code,
                     nonzero_hint_count,
                 )
-                feasible_fallback_solver = warm_start_solver
+                feasible_fallback_solver = shared_warm_start_solver
 
             tiers: dict[int, list[Any]] = defaultdict(list)
             tier_tolerances: dict[int, int] = defaultdict(int)
