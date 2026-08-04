@@ -321,13 +321,11 @@ function validateMetrics(value: unknown): void {
 
 function validateObjectiveTerm(value: unknown): void {
   assertObject(value, "OBJECTIVE_TERM");
-  assertExactKeys(value, [
-    "metric",
-    "direction",
-    "weight",
-    "tolerance",
-    "parameters",
-  ]);
+  assertExactKeys(
+    value,
+    ["metric", "direction", "weight", "tolerance", "parameters"],
+    ["normalizationCoefficient", "metricUpperBound"],
+  );
   if (typeof value.metric !== "string" || !METRIC_PATTERN.test(value.metric)) {
     fail(400, "INVALID_OBJECTIVE_METRIC");
   }
@@ -351,10 +349,58 @@ function validateObjectiveTerm(value: unknown): void {
       Number.MAX_SAFE_INTEGER,
     );
   }
+  if (Object.hasOwn(value, "normalizationCoefficient")) {
+    assertInteger(
+      value.normalizationCoefficient,
+      "OBJECTIVE_NORMALIZATION_COEFFICIENT",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "metricUpperBound")) {
+    assertInteger(
+      value.metricUpperBound,
+      "OBJECTIVE_METRIC_UPPER_BOUND",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
 }
 
 function validateStageObjective(value: unknown): void {
   assertObject(value, "STAGE_OBJECTIVE");
+  if (value.name === "DIVERSIFY") {
+    assertExactKeys(value, [
+      "tier",
+      "name",
+      "status",
+      "businessObjectiveBoundsPreserved",
+      "excludedEquivalentStrategies",
+    ]);
+    assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
+    assertString(value.status, "OBJECTIVE_STATUS", 1, 40);
+    assertBoolean(
+      value.businessObjectiveBoundsPreserved,
+      "BUSINESS_OBJECTIVE_BOUNDS_PRESERVED",
+    );
+    assertArray(
+      value.excludedEquivalentStrategies,
+      "EXCLUDED_EQUIVALENT_STRATEGIES",
+      100,
+    );
+    for (const exclusion of value.excludedEquivalentStrategies) {
+      assertObject(exclusion, "DIVERSITY_EXCLUSION");
+      assertExactKeys(exclusion, ["strategyId", "minimumAssignmentChanges"]);
+      assertUuid(exclusion.strategyId, "DIVERSITY_STRATEGY_ID");
+      assertInteger(
+        exclusion.minimumAssignmentChanges,
+        "MINIMUM_ASSIGNMENT_CHANGES",
+        1,
+        100_000,
+      );
+    }
+    return;
+  }
   assertExactKeys(
     value,
     ["tier", "name", "value", "status", "tolerance", "frozenUpperBound"],
