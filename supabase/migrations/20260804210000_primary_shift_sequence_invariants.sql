@@ -141,7 +141,7 @@ begin
     join jsonb_array_elements(coalesce(p_snapshot->'slots','[]'::jsonb)) slot
       on slot.value->>'slotId'=assignment.value->>'slotId'
   ), sequenced as (
-    select assigned.*,ranked.first_rank,ranked.last_rank
+    select assigned.*,ranked.first_rank,ranked.last_rank,ranked.template_count
     from assigned
     join ranked on ranked.template_id=assigned.template_id
       and ranked.location_id=assigned.location_id
