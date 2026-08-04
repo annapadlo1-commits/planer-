@@ -168,6 +168,43 @@ export type SolverWorkspace = {
   finance: SolverWorkspaceFinance | null;
 };
 
+export type SolverManagerStandby = {
+  id: string;
+  date: string;
+  tier: 1 | 2;
+  status: "PLANNED" | "ACTIVATED" | "DECLINED";
+  roleId: string;
+  roleName: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  sourceType: "COMPANY" | "ROLE";
+  activatedShiftId: string | null;
+};
+
+export async function getManagerStandbyMonth(
+  client: SupabaseClient,
+  month: string,
+  scopeRoleId?: string | null,
+): Promise<SolverManagerStandby[]> {
+  const value = await rpc(client, "manager_standby_month_uat_v2", {
+    p_month: month,
+    p_scope_role_id: scopeRoleId ?? null,
+  });
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    const row = record(item);
+    return {
+      id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
+      status: String(row.status) as SolverManagerStandby["status"],
+      roleId: String(row.roleId), roleName: String(row.roleName),
+      employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
+      employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
+      activatedShiftId: row.activatedShiftId ? String(row.activatedShiftId) : null,
+    };
+  });
+}
+
 export type SolverCandidateDiagnostic = {
   employeeId: string;
   employeeNo: string;

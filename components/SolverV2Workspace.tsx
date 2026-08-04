@@ -1,9 +1,9 @@
 "use client";
 
 import { AlertTriangle, CalendarDays, Check, CircleDollarSign, MapPin, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { emergencyAssignV2, getCandidateDiagnostics, getVariantIssueDiagnostics, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { emergencyAssignV2, getCandidateDiagnostics, getManagerStandbyMonth, getVariantIssueDiagnostics, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -107,6 +107,18 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [variantDiagnosticsLoading,setVariantDiagnosticsLoading]=useState(false);
   const [selectedEmployee,setSelectedEmployee]=useState("");
   const [notifyEmployee,setNotifyEmployee]=useState(true);
+  const [standby,setStandby]=useState<SolverManagerStandby[]>([]);
+  const [standbyError,setStandbyError]=useState("");
+  const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
+  useEffect(()=>{
+    let active=true;
+    if(!published||!supabase){setStandby([]);return;}
+    setStandbyError("");
+    void getManagerStandbyMonth(supabase,workspace.context.month,scopeRoleId)
+      .then(rows=>{if(active)setStandby(rows);})
+      .catch(error=>{if(active)setStandbyError(solverErrorMessage(error instanceof Error?error.message:String(error)));});
+    return()=>{active=false;};
+  },[published,scopeRoleId,supabase,workspace.context.month]);
   const shiftsByDate = new Map<string, typeof workspace.shifts>();
   for (const shift of workspace.shifts) {
     shiftsByDate.set(shift.date, [...(shiftsByDate.get(shift.date) ?? []), shift]);
@@ -196,6 +208,16 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <div><span><small>Łączny koszt</small><strong>{money(workspace.finance.totalCostMinor, workspace.finance.currency)}</strong></span></div>
       <div><span><small>Budżet scenariusza</small><strong>{money(workspace.finance.budgetMinor, workspace.finance.currency)}</strong></span></div>
     </div>}
+
+    {published && <details className="solver-workspace-standby" open>
+      <summary><span><ShieldCheck/><strong>Stand-by • Tier 1 i Tier 2</strong></span><small>{standby.length} dyżurów gotowości</small></summary>
+      {standbyError ? <p className="solver-workspace-empty">Nie udało się pobrać stand-by: {standbyError}</p>
+        : standby.length===0 ? <p className="solver-workspace-empty">Brak opublikowanych dyżurów stand-by dla tego widoku.</p>
+        : <div className="solver-standby-days">{[...new Map(standby.map(item=>[item.date,standby.filter(row=>row.date===item.date)]))].map(([date,rows])=><article key={date}>
+          <header><CalendarDays/><strong>{dateLabel(date)}</strong></header>
+          {(rows as SolverManagerStandby[]).map(entry=><div key={entry.id}><span><b>{entry.roleName}</b><small>{entry.employeeName} • {entry.employeeNo}</small></span><em className={`tier-${entry.tier}`}>Tier {entry.tier}{entry.status==="ACTIVATED"?" • aktywowany":entry.status==="DECLINED"?" • odrzucony":""}</em></div>)}
+        </article>)}</div>}
+    </details>}
 
     <div className="solver-workspace-calendar">
       <h4>Obsada według dni</h4>

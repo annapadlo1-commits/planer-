@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Square, Upload, Users } from "lucide-react";
+import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Square, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -420,7 +420,6 @@ export function SolverV2Panel({
     setMessage("");
     try {
       setInspectedWorkspace(await getVariantWorkspace(supabase, variant.id));
-      window.setTimeout(() => document.getElementById("solver-variant-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -681,7 +680,18 @@ export function SolverV2Panel({
       </div>
     </div>}
 
-    {previewWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/></div>}
+    {previewWorkspace && !inspectedWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/></div>}
+
+    {inspectedWorkspace && <>
+      <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>
+      <aside className="drawer role-drawer top solver-variant-preview-drawer" style={{width:"min(1280px, calc(100vw - 32px))"}} aria-label="Podgląd grafiku wariantu">
+        <div className="drawer-head">
+          <div><p className="eyebrow">WARIANT • PODGLĄD GRAFIKU</p><h2>{inspectedWorkspace.context.name}</h2><small>Pełny skład, obsada według dni oraz rozkład braków.</small></div>
+          <button className="icon-button" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}><X/></button>
+        </div>
+        <div className="drawer-content"><SolverV2Workspace workspace={inspectedWorkspace} timezone={timezone} published={false}/></div>
+      </aside>
+    </>}
 
     {engine === "ORTOOLS_V2" && selectedVariant && selectedWorkspace && scopeType === "ROLE"
       && <div className="solver-v2-publication">
