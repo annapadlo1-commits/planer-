@@ -868,6 +868,25 @@ class SolverTests(unittest.TestCase):
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
 
+    def test_daily_standby_reserve_keeps_two_role_members_off_duty(self) -> None:
+        raw = load_raw()
+        raw["settings"]["standbyTiersPerRoleDay"] = 2
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(snapshot)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        for variant in variants:
+            assigned_by_day: dict[str, set[str]] = {}
+            for assignment in variant.assignments:
+                day = slots[assignment.slot_id].date.isoformat()
+                assigned_by_day.setdefault(day, set()).add(assignment.employee_id)
+            self.assertTrue(
+                all(len(employees) <= 1 for employees in assigned_by_day.values())
+            )
+            self.assertEqual(len(variant.unfilled_slot_ids), 2)
+
     def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
         raw = load_raw()
         for strategy in raw["strategies"]:

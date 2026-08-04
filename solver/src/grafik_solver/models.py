@@ -1019,6 +1019,11 @@ class Settings:
     default_minimum_rest_minutes: int = 660
     require_optimal: bool = True
     random_seed: int = 1
+    standby_tiers_per_role_day: int = 0
+
+    def __post_init__(self) -> None:
+        if self.standby_tiers_per_role_day > 2:
+            raise SnapshotError("standbyTiersPerRoleDay must be between 0 and 2")
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Settings:
@@ -1047,6 +1052,16 @@ class Settings:
             ),
             random_seed=_integer(
                 _pick(raw, "randomSeed", "random_seed", default=1), "randomSeed", 0
+            ),
+            standby_tiers_per_role_day=_integer(
+                _pick(
+                    raw,
+                    "standbyTiersPerRoleDay",
+                    "standby_tiers_per_role_day",
+                    default=0,
+                ),
+                "standbyTiersPerRoleDay",
+                0,
             ),
         )
 

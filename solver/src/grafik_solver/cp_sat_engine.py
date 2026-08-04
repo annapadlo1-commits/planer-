@@ -1965,6 +1965,43 @@ class CpSatScheduleEngine:
                         assigned_week + external_week <= employee.maximum_weekly_minutes
                     )
 
+        # A published role schedule must leave real, eligible people off duty
+        # for daily Tier 1/Tier 2 readiness.  Reserve capacity in the model,
+        # instead of discovering only after publication that everybody was
+        # assigned.  The concrete Tier order remains a deterministic,
+        # auditable publication concern.
+        standby_tiers = snapshot.settings.standby_tiers_per_role_day
+        if standby_tiers:
+            role_day_slots: dict[tuple[str, date], list[Slot]] = defaultdict(list)
+            for slot in slots:
+                role_day_slots[(slot.role_id, slot.date)].append(slot)
+            for (role_id, day), role_slots in role_day_slots.items():
+                representative_slots = list({
+                    slot.occurrence_id: slot for slot in role_slots
+                }.values())
+                eligible_employee_ids = [
+                    employee.id
+                    for employee in snapshot.employees
+                    if employee.role_allowed_on(role_id, day)
+                    and all(
+                        eligibility.evaluate(
+                            employee,
+                            replace(slot, duty_ids=()),
+                        ).allowed
+                        for slot in representative_slots
+                    )
+                ]
+                if len(eligible_employee_ids) < standby_tiers:
+                    model.add(0 >= standby_tiers)
+                    continue
+                model.add(
+                    _sum(
+                        day_work[(employee_id, day)]
+                        for employee_id in eligible_employee_ids
+                    )
+                    <= len(eligible_employee_ids) - standby_tiers
+                )
+
         if aggregate_coverage:
             hinted_assignments = self._add_greedy_coverage_hint(
                 model, snapshot, slots, eligibility, x, unfilled

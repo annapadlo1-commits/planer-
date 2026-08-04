@@ -3,8 +3,10 @@
 ## Status dokumentu
 
 - Rejestr znalezisk, wymagań i stanu realizacji zbiorczej poprawki.
-- Po poleceniu „DO DZIEŁA” rozpoczęto implementację lokalną. Wcześniejsze zapisy o makietach zachowano niżej jako historię wymagań i kryteria oceny podczas kolejnego UAT.
-- Bez wdrożenia, commita, pushu, uruchomienia migracji i zmian danych w Supabase.
+- Po poleceniu „DO DZIEŁA” zakres `N1`–`UAT2` został włączony do kandydata kolejnego UAT. Wcześniejsze diagnozy i liczby pozostają niżej jako historyczny zapis znalezisk, nie jako opis aktualnej bazy.
+- Migracje kandydata zostały trwale zastosowane wyłącznie w izolowanym projekcie Supabase `nhthrtpkfpmufmrmdyjg`. Produkcja nie została zmieniona.
+- Stan danych po naprawie importu: dokładnie 76 aktywnych pracowników w tabeli głównej, 76 w aktywnym Matrixie v4 oraz 76 w roboczym Matrixie v5. Nie ma dodatkowych rekordów z błędnego importu.
+- Frontend i worker pozostają kandydatem gałęzi UAT do czasu zakończenia publikacji i pełnego E2E.
 - Nie podejmować decyzji produktowych bez akceptacji użytkowniczki.
 - Obowiązują wcześniejsze wymagania: całe UI po polsku, techniczne kody niewidoczne, Matrix nie może być długą listą, baza nie może wymyślać danych pracowników.
 
@@ -13,14 +15,15 @@
 | Obszar | Stan | Zakres poprawki |
 | --- | --- | --- |
 | Import Matrixa | zaimplementowany, bramka lokalna zaliczona | Eksport aktualnej bazy, tryby „aktualizuj” i „synchronizuj”, podgląd skutków, dopasowanie po stabilnej tożsamości, role, lokale standard/nadgodziny, obowiązki wraz z ich wycofaniem po odznaczeniu, umowa, stawka, daty i ograniczenia pracownika. |
-| Integralność pracownika i stawek | zaimplementowana, czeka na pełną bramkę testową | Spójne pola profilu, kontrolowany krok finansowy po dodaniu pracownika, walidacja okresu stawki względem zatrudnienia, kontrola pokrycia całego miesiąca grafiku i poprawna nawigacja z blokady publikacji. |
-| Grafik roli | zaimplementowany, czeka na pełną bramkę testową | Poprawiona interpretacja dostępności ZLECENIA/B2B, bezpieczna finalizacja, widoczny wynik odświeżenia, diagnostyka kandydatów i powodów odrzucenia. |
+| Integralność pracownika i stawek | zaimplementowana, kontrakty bazy zaliczone | Spójne pola profilu, kontrolowany krok finansowy po dodaniu pracownika, walidacja okresu stawki względem zatrudnienia, kontrola pokrycia całego miesiąca grafiku i poprawna nawigacja z blokady publikacji. |
+| Grafik roli | zaimplementowany, testy silnika zaliczone | Poprawiona interpretacja dostępności ZLECENIA/B2B, bezpieczna finalizacja, widoczny wynik odświeżenia, diagnostyka kandydatów i powodów odrzucenia. |
 | Portal pracownika | zaimplementowany, bramka lokalna zaliczona | Jeden kalendarz miesiąca, domyślnie zielona dostępność, zaznaczanie zakresów, wyjątki pomarańczowe i czerwone, chronione wpisy pracodawcy/urlopu/L4 tylko do odczytu, opcjonalne godziny/lokal/notatka, zapis bez opuszczania widoku. |
 | Role, obowiązki, lokale i zmiany | zaimplementowany roboczo, do oceny w UAT | Pierwszy etap Matrixa, połączone zależności roli i obowiązków, zmiany pogrupowane per lokal zamiast jednej długiej listy. |
 | Wymagana obsada | zaimplementowana roboczo, do oceny w UAT | Kompaktowy widok, wybór wielu zmian, język biznesowy operacji, edycja zbiorcza i usunięcie mylącego obowiązku „Dowolny”. |
 | Strategie i warianty | zaimplementowane roboczo, do oceny w UAT | Porównanie rzeczywistych priorytetów strategii oraz wyjaśnienie, dlaczego różne strategie mogą zwrócić ten sam skład. |
-| Historia Matrixa i audit trail | zaimplementowane roboczo, czeka na pełną bramkę testową | Lista wersji, podgląd, porównanie i historia zmian bez nadpisywania wcześniejszych wersji. |
-| Klasyfikacja pór zmian | naprawa kontrolowana, czeka na uruchomienie migracji | Automatyczna normalizacja tylko jednoznacznych nazw/kodów oraz blokada publikacji przy nierozstrzygniętej niezgodności. |
+| Historia Matrixa i audit trail | zaimplementowane roboczo, kontrakty bazy zaliczone | Lista wersji, podgląd, porównanie i historia zmian bez nadpisywania wcześniejszych wersji. |
+| Klasyfikacja pór zmian | naprawa zastosowana w izolowanym UAT | Automatyczna normalizacja tylko jednoznacznych nazw/kodów oraz blokada publikacji przy nierozstrzygniętej niezgodności. |
+| UAT MASTER | zaimplementowany i zabezpieczony | Właściciel może wyszukać pracownika, otworzyć jego portal oraz testować dostępność i preferencje. Wybór i zapisy są audytowane; funkcja jest włączona wyłącznie w izolowanym UAT. |
 
 Po przejściu testów lokalnych paczka może zostać przedstawiona do wdrożenia na osobne środowisko UAT. Samo wdrożenie pozostaje poza zakresem tej sesji i wymaga osobnego polecenia.
 
@@ -28,14 +31,13 @@ Po przejściu testów lokalnych paczka może zostać przedstawiona do wdrożenia
 
 - produkcyjny build Next.js: zaliczony,
 - kontrola typów TypeScript: zaliczona,
-- silnik OR-Tools i worker: 75/75 testów zaliczonych,
-- kontrakt gatewaya: 10/10 testów zaliczonych,
+- silnik OR-Tools, worker i kontrakt gatewaya: 79/79 testów oraz 26 podtestów zaliczonych,
 - parser importu Matrixa: 5/5 testów zaliczonych,
 - rzeczywisty plik `matrix-alpha16-szablon (1).xlsx`: odczytano 76 pracowników i 62 kompetencje; rekord Weroniki Dąbrowskiej zachował e-mail, rolę BARMAN, lokale Krucza i Pawilony, datę rozpoczęcia, ZLECENIE i stawkę 25 zł,
-- migracja: poprawna składniowo dla PostgreSQL, 46 instrukcji,
+- migracje kandydata: zastosowane w izolowanym Supabase; testy zapisu MASTER wykonane w transakcji z wycofaniem,
 - kontrola białych znaków i konfliktów patcha: zaliczona.
 
-Migracja nie została uruchomiona na Supabase, a kod nie został wypchnięty ani wdrożony. Dlatego nadal wymagany jest test integracyjny wszystkich RPC i pełny smoke test na osobnym wdrożeniu UAT po udzieleniu osobnego polecenia na publikację.
+Przed przekazaniem nowego adresu nadal obowiązuje bramka: publikacja gałęzi UAT, wdrożenie workera z tej samej rewizji oraz pełne desktopowe E2E UI. Produkcja pozostaje poza zakresem.
 
 ## Świadomie poza tą paczką
 
@@ -620,3 +622,358 @@ Nie wdrażać tej poprawki w trakcie zbierania znalezisk UAT.
 - twarda niedostępność/urlop/L4 — pracownik jest odrzucony z właściwym powodem,
 - diagnostyka grafiku roli pokazuje trzy osoby BARBACK i indywidualne decyzje,
 - pełna ścieżka: zapis/zmiana dostępności → nowy snapshot → generowanie trzech wariantów → faktyczne przydziały → odświeżenie → zgodny wynik.
+
+## N1 — NOWA FUNKCJA: tablica grafiku i kontrolowane zamiany
+
+### N1.1 Zamiana skierowana do konkretnej osoby
+
+- Pracownik może zaproponować przejęcie swojej opublikowanej zmiany innej osobie.
+- Zaproszona osoba przyjmuje albo odrzuca propozycję.
+- Przyjęcie przez pracownika nie zmienia jeszcze grafiku. System przesyła wniosek do właściwego lidera roli.
+- Dopiero akceptacja lidera aktualizuje opublikowany grafik.
+- Zmieniona pozycja jest wyraźnie oznaczona jako **ZAMIANA**.
+- Audit trail ma zachować co najmniej: zmianę źródłową, osobę oddającą, osobę przejmującą, daty propozycji/przyjęcia/akceptacji, lidera zatwierdzającego oraz stan przed i po zmianie.
+- Odrzucenie przez pracownika albo lidera również pozostaje w historii, ale nie zmienia grafiku.
+
+### N1.2 Ogłoszenie otwarte na tablicy grafiku
+
+- Pracownik może opublikować ogłoszenie o chęci oddania lub zamiany zmiany.
+- Ogłoszenie jest widoczne w panelach tych pracowników, którzy spełniają warunki przejęcia, w szczególności należą do właściwej roli.
+- Panel ma jasno pokazywać zachętę i akcję odpowiedzi na ogłoszenie, bez konieczności szukania go na długiej liście.
+- Odpowiedź pracownika uruchamia ten sam kontrolowany proces: deklaracja chęci → decyzja osoby oddającej, jeżeli potrzebna → akceptacja lidera → aktualizacja grafiku → audit trail.
+- Do ustalenia przed implementacją: czy autor może jednocześnie zaprosić konkretną osobę i opublikować ogłoszenie otwarte oraz kto wybiera zwycięską odpowiedź przy wielu chętnych.
+
+### N1.3 Walidacja możliwości przejęcia
+
+- Sam fakt posiadania tej samej roli nie wystarcza.
+- Przed pokazaniem akcji i ponownie przed akceptacją system sprawdza co najmniej:
+  - aktywność i okres współpracy,
+  - rolę i lokal,
+  - twardą dostępność/urlop/L4,
+  - konflikt z opublikowanymi zmianami i innymi zatwierdzonymi zobowiązaniami,
+  - odpoczynek, limity i inne twarde reguły właściwe dla formy współpracy,
+  - wymagane obowiązki i funkcje dodatkowe.
+- Jeżeli oddawana pozycja realizuje obowiązek dodatkowy, np. zamknięcie zmiany, zamiana jest dopuszczalna tylko wtedy, gdy po zamianie wymóg nadal jest pokryty:
+  1. osoba przejmująca posiada tę funkcję, albo
+  2. inna osoba pozostająca na tej samej zmianie posiada ją i może przejąć ten obowiązek bez naruszenia pozostałych wymogów obsady.
+- Walidacja musi dotyczyć stanu aktualnego w chwili zatwierdzania. Wcześniejsza pozytywna kwalifikacja nie może pozwolić na zatwierdzenie po zmianie dostępności lub grafiku.
+- Komunikat odmowy ma wyjaśniać przyczynę językiem biznesowym.
+
+## N2 — Wspólne oznaczenia kalendarzy: ogłoszenia, eventy i HOT DAY
+
+- Dzień z aktywnym ogłoszeniem na tablicy grafiku musi być oznaczony w kalendarzu miesiąca.
+- Wszystkie istniejące podglądy kalendarza mają korzystać z jednego systemu oznaczeń i legendy.
+- Co najmniej następujące stany muszą być wizualnie rozróżnialne:
+  - aktywne ogłoszenie o zamianie,
+  - event ze zwiększonym zapotrzebowaniem,
+  - HOT DAY,
+  - zwykła zmiana pracownika,
+  - stand-by Tier 1,
+  - stand-by Tier 2.
+- Jeżeli dzień ma kilka stanów, interfejs nie może ukrywać części informacji ani opierać rozróżnienia wyłącznie na jednym kolorze.
+- Kliknięcie oznaczenia ma prowadzić do właściwego kontekstu: ogłoszenia, eventu, alertu dostępności albo grafiku stand-by.
+- Finalna legenda, kolory i sposób łączenia oznaczeń wymagają akceptacji makiety.
+
+## N3 — Alerty i bieżący monitoring przyszłej dostępności
+
+- Lider roli ma widzieć na bieżąco przyszłe ryzyko dostępności jeszcze przed wygenerowaniem grafiku.
+- Widok ma prezentować agregację per dzień i per rola, np. ilu kelnerów jest dostępnych, ilu zgłosiło miękką preferencję, ilu twardą niedostępność i jaki jest postęp zbierania deklaracji.
+- Lider musi móc otworzyć dzień i zobaczyć listę osób, rodzaj zgłoszenia oraz czas jego zapisania/zmiany.
+- Przykład wymagany do testu: we wrześniu 20 kelnerów zapisuje niedostępność na 1–10 października; lider widzi zmianę agregacji każdego z tych dni bez czekania na generator.
+- Alert może być natychmiastowy i/lub objęty podsumowaniem dziennym. Kanały, częstotliwość oraz progi wymagają akceptacji przed implementacją.
+- Licznik „postęp” wymaga jednoznacznej definicji: kto ma obowiązek potwierdzić miesiąc i kiedy brak deklaracji jest informacją, a kiedy brakiem działania. Nie zgadywać tej definicji.
+
+## N4 — HOT DAY i kontrolowana niedostępność w okresach krytycznych
+
+- Lider może oznaczyć dzień jako **HOT DAY** i zapisać minimalne zapotrzebowanie, np. 16 barmanów 10 października.
+- Pracownik nadal może zgłosić twardą niedostępność w takim dniu.
+- Dzień ma być pokazany pracownikowi inaczej niż zwykły dzień i przed zapisem ma wyjaśniać, że zgłoszenie wywoła alert do lidera.
+- Po zapisie alert trafia automatycznie do lidera, a zgłoszenie otrzymuje widoczny status „oczekuje na weryfikację”.
+- Lider widzi wpływ zgłoszenia na prognozowaną obsadę i listę osób.
+- Przed implementacją wymagane są decyzje biznesowe, których system nie może wymyślić:
+  - czy lider **zatwierdza**, czy tylko **potwierdza przyjęcie do wiadomości** twardej niedostępności,
+  - co dokładnie oznacza odrzucenie zgłoszenia,
+  - czy w stanie oczekującym solver traktuje osobę jako twardo niedostępną,
+  - czy zasady różnią się dla UoP, ZLECENIA i B2B.
+- HOT DAY nie może po cichu zmienić twardej niedostępności w miękką preferencję.
+
+## N5 — Eventy liderów jako dynamiczne zapotrzebowanie solvera
+
+- Lider roli może tworzyć event w kalendarzu i określać dodatkowe wymagania obsady.
+- Minimalny zakres eventu: nazwa, data lub zakres godzin, lokal, rola, liczba dodatkowych osób oraz opcjonalne wymagane obowiązki/funkcje.
+- Przykład kontrolny: 10 października wymaganych jest 5 dodatkowych kelnerów przez cały dzień.
+- Opublikowany event musi automatycznie wejść do snapshotu i reguł wymaganej obsady używanych przez generator właściwego miesiąca.
+- Zmiana albo anulowanie eventu po wygenerowaniu grafiku ma oznaczyć istniejący wynik jako wymagający ponownej weryfikacji; nie może po cichu pozostawić nieaktualnego grafiku jako poprawnego.
+- Event jest widoczny we wszystkich kalendarzach zgodnie z zasadą `N2`.
+- Audit trail zapisuje autora, zmianę zapotrzebowania, publikację, edycję i anulowanie.
+
+## N6 — Grafik do odczytu dla pracowników
+
+- Pracownik musi mieć dostęp do czytelnego grafiku zespołu potrzebnego do zaplanowania zamiany, a nie wyłącznie do własnych zmian.
+- Widok ma pokazywać, kto i kiedy pracuje w zakresie dopuszczonym przez rolę i politykę dostępu.
+- Należy zachować jedno źródło opublikowanego grafiku; widok pracownika nie może tworzyć osobnej kopii danych.
+- Zakres widoczności wymaga akceptacji: cały lokal, własna rola, zespoły współdzielące zmianę czy cała firma.
+- Dane finansowe, prywatne notatki, przyczyny nieobecności i inne dane wrażliwe nie mogą być ujawnione w grafiku do odczytu.
+
+## N7 — KRYTYCZNE WYMAGANIE SILNIKA: stand-by/back-up Tier 1 i Tier 2
+
+### N7.1 Model biznesowy
+
+- Dla każdej roli i każdego dnia generator grafiku roli wyznacza dwie różne osoby awaryjne:
+  - **stand-by Tier 1** — pierwszy priorytet wezwania,
+  - **stand-by Tier 2** — drugi priorytet wezwania.
+- Stand-by generuje się razem z grafikiem roli, ale jest przypisaniem dziennym, a nie zwykłą zmianą.
+- Przykład:
+  - Jan Nowak ma zaplanowaną zmianę,
+  - Jan Kowalski jest stand-by Tier 1,
+  - Jan Tomczyk jest stand-by Tier 2.
+- Jeżeli nie przychodzi tylko Jan Nowak, wzywany jest Kowalski, a Tomczyk pozostaje wolny.
+- Jeżeli Nowak nie przychodzi, a Kowalski nie może go zastąpić, wzywany jest Tomczyk.
+- Jeżeli w tym samym dniu wystąpią dwie awaryjne nieobecności, Tier 1 i Tier 2 mogą zostać uruchomieni równolegle.
+- Tier 1 ma pierwszeństwo przed Tier 2; kolejność nie może być przypadkowa.
+
+### N7.2 Twarda kwalifikacja stand-by
+
+- Stand-by nie może nachodzić na zwykłą zmianę, inne przypisanie stand-by ani wymaganie innej roli, którego pracownik ma obowiązek dotrzymać.
+- Kandydat musi posiadać właściwą rolę, lokal oraz funkcje/obowiązki konieczne do realnego zastępstwa.
+- Twarda niedostępność, urlop i L4 wykluczają stand-by.
+- Stand-by musi być realnie wykonalny z uwzględnieniem odpoczynku, czasu pracy, zmian nocnych, innych opublikowanych zmian oraz zasad umowy.
+- Sam fakt, że stand-by jest tylko potencjalnym wezwaniem, nie pozwala przypisać osoby, która w razie wezwania naruszyłaby twardą regułę.
+- Dopuszczalne jest wyznaczenie na stand-by osoby, która ma tego dnia wolne i pracowała poprzedniego dnia, o ile potencjalne zastępstwo nadal spełnia wszystkie właściwe reguły.
+- Walidacja musi zostać powtórzona podczas faktycznego uruchomienia stand-by, ponieważ sytuacja pracownika mogła zmienić się od publikacji grafiku.
+
+### N7.3 Widoki i podsumowania
+
+- Stand-by Tier 1 i Tier 2 są widoczne w panelu pracownika, grafiku roli oraz wszystkich kalendarzach.
+- Korzystają z osobnych oznaczeń i kolorów zgodnie z `N2`.
+- W panelu pracownika nie wliczają się do zaplanowanych godzin ani liczby zwykłych zmian.
+- Panel pokazuje osobno liczbę dyżurów stand-by w miesiącu, daty, rolę, lokal i poziom Tier.
+- Po faktycznym uruchomieniu stand-by wykonana zmiana staje się zwykłym czasem pracy i musi wejść do godzin, kosztów oraz audit trail.
+
+### N7.4 Aktywacja i historia
+
+- Aktywacja stand-by ma wskazać nieobecnego pracownika, zastępowaną zmianę, uruchomiony Tier, osobę wzywającą oraz czas odpowiedzi.
+- System ma obsłużyć kolejno: wezwanie Tier 1, brak możliwości/odrzucenie, wezwanie Tier 2 oraz równoległe użycie obu Tierów przy dwóch brakach.
+- Po potwierdzeniu zastępstwa grafik jest aktualizowany i oznaczony jako zastępstwo awaryjne.
+- Wszystkie próby, odpowiedzi i decyzje lidera pozostają w audit trail.
+
+### N7.5 Decyzje wymagane przed projektowaniem solvera
+
+- Ponieważ stand-by jest dzienny, a nie przypisany do konkretnej zmiany, trzeba zatwierdzić, czy kandydat musi być zdolny przejąć **każdą** potencjalną zmianę swojej roli danego dnia, czy system ma pokazywać zakres zmian, które może pokryć. Nie wybierać tego samodzielnie.
+- Ustalić sposób rozliczania samego pozostawania w gotowości oraz uruchomionej zmiany.
+- Ustalić termin i kanał wezwania, czas na odpowiedź oraz znaczenie braku odpowiedzi.
+- Ustalić regułę sprawiedliwego rozdziału stand-by między pracowników i ewentualne preferencje pracownika.
+- Ustalić, czy jedna osoba może pełnić stand-by dla więcej niż jednej roli/lokalu tego samego dnia. Domyślnie nie wdrażać takiego nakładania bez akceptacji.
+
+### N7.6 Obowiązkowe testy
+
+- wygenerowanie dwóch różnych osób stand-by dla każdej roli i każdego dnia,
+- brak nakładania z grafikami, innym stand-by i twardymi regułami,
+- wezwanie Tier 1 przy jednej nieobecności,
+- przejście do Tier 2, gdy Tier 1 jest niedostępny,
+- uruchomienie obu Tierów przy dwóch nieobecnościach,
+- ponowna walidacja przed aktywacją,
+- osobna prezentacja i podsumowanie w panelu pracownika,
+- przeliczenie godzin i kosztów dopiero po faktycznym uruchomieniu,
+- zgodny audit trail i powiadomienia.
+
+## M5 — Architektura zakładek Matrix/Pracownicy/HR/Finanse
+
+- Matrix pozostaje jedynym źródłem edycji danych pracownika, umowy, ról, lokali, obowiązków i stawek.
+- Nie utrzymywać konkurencyjnych formularzy ani kopii danych w osobnych zakładkach.
+- Osobne zakładki mają sens wyłącznie wtedy, gdy realizują odmienny proces i zakres dostępu:
+  - **Pracownicy i role** — szybki katalog do odczytu i wejście do właściwego profilu Matrixa,
+  - **Kadry i HR** — procesy HR, statusy, dokumenty i raporty, których Matrix nie obsługuje,
+  - **Finanse** — chronione raporty, historia stawek, koszty i analizy dla uprawnionych osób.
+- Jeżeli dana zakładka jest tylko drugim miejscem edycji tych samych pól, należy ją usunąć z głównej nawigacji albo zmienić w skrót do odpowiedniej sekcji Matrixa.
+- Ostateczna decyzja o pozostawieniu każdej zakładki nastąpi po spisaniu jej unikalnych zadań i uprawnień; nie zachowywać zakładki wyłącznie dlatego, że już istnieje.
+
+## M6 — Wyszukiwanie i filtrowanie Matrixa
+
+- Wyszukiwanie pracownika ma działać po dowolnym fragmencie: imieniu, nazwisku, pełnym imieniu i nazwisku, numerze pracownika, e-mailu, roli, lokalu albo obowiązku.
+- Wyszukiwanie ma ignorować wielkość liter i bezpiecznie obsługiwać polskie znaki.
+- Wymagane filtry możliwe do łączenia: status aktywny/archiwalny, rola, lokal, forma współpracy, obowiązek/funkcja oraz kompletność danych.
+- Wyniki mają aktualizować się bez opuszczania bieżącej sekcji Matrixa.
+- Brak wyniku ma pokazywać aktywne filtry i umożliwiać ich wyczyszczenie jednym przyciskiem.
+
+## B1 — BŁĄD: „28 zmian ma błędnie zapisaną porę” nie wykonuje korekty
+
+- Matrix pokazuje komunikat „28 zmian ma błędnie zapisaną porę”.
+- Kliknięcie „Popraw klasyfikację” nie aktualizuje zmian albo nie pokazuje wyniku operacji.
+- Akcja ma przed zapisem pokazać listę jednoznacznych korekt i pozycje wymagające decyzji człowieka.
+- Automatycznie wolno zmieniać wyłącznie klasyfikacje wynikające jednoznacznie z kodu/nazwy/godzin według zatwierdzonej reguły.
+- Po zapisie interfejs pozostaje w tej samej sekcji, ponownie odczytuje dane i pokazuje: liczbę poprawionych, pominiętych i błędnych rekordów.
+- Operacja jest atomowa albo jasno wskazuje częściowe niepowodzenie per rekord; nie może wyglądać na sukces bez zmiany danych.
+- Każda korekta jest widoczna w audit trail.
+
+## INT1 — Możliwa integracja z Discordem
+
+- Integracja jest technicznie możliwa.
+- Potencjalny pierwszy zakres: powiadomienia o nowych ogłoszeniach zamiany, odpowiedziach, prośbach o akceptację lidera, HOT DAY, eventach, aktywacji stand-by i krytycznych brakach dostępności.
+- Discord może otrzymywać wiadomości przez webhook lub bota; wybór zależy od tego, czy komunikacja ma być wyłącznie wychodząca, czy także interaktywna.
+- GRAFIK PRO pozostaje źródłem prawdy. Discord nie może samodzielnie zmieniać grafiku na podstawie zwykłej reakcji bez bezpiecznej identyfikacji użytkownika i ponownej walidacji w aplikacji.
+- Najbezpieczniejszy wariant początkowy to powiadomienie z bezpośrednim linkiem do właściwej akcji w GRAFIK PRO.
+- Przed implementacją ustalić serwer/kanały, mapowanie kont, zakres danych widocznych w wiadomości oraz czy bot ma obsługiwać akceptacje.
+
+## UAT1 — KRYTYCZNE: pełny reset danych na izolowanym UAT
+
+- Na środowisku UAT użytkowniczka musi móc przeprowadzić pełny workflow od pustego stanu: usunąć rekordy testowe, dodać nowe i ponownie wykonać proces.
+- Funkcja nie może być dostępna na produkcji ani działać przypadkowo na projekcie produkcyjnym.
+- Wymagane zabezpieczenia: trwałe oznaczenie środowiska UAT, rola MASTER/OWNER UAT, wpisanie jawnego potwierdzenia, podgląd zakresu oraz audit operacji.
+- Do wyboru przed implementacją:
+  - reset do całkowicie pustej firmy,
+  - reset do minimalnych słowników technicznych bez pracowników i grafików,
+  - reset do zatwierdzonego zestawu danych demonstracyjnych.
+- Reset musi obejmować wszystkie zależne rekordy testowe w kontrolowanej kolejności albo odtworzyć izolowaną bazę z zatwierdzonego punktu. Nie pozostawiać osieroconych grafików, stawek, auditów, publikacji ani powiadomień.
+- Przed wykonaniem system pokazuje, co zostanie usunięte i co pozostanie; po wykonaniu pokazuje raport i umożliwia rozpoczęcie pełnego workflow.
+
+## UAT2 — MASTER i testowanie różnych ról/uprawnień
+
+- Końcowy UAT wymaga technicznej roli **MASTER UAT**, która pozwala świadomie przełączać testowaną personę bez tworzenia niekontrolowanych uprawnień produkcyjnych.
+- Wymagane persony co najmniej:
+  - pracownik,
+  - lider roli,
+  - HR,
+  - finanse,
+  - właściciel,
+  - MASTER UAT.
+- MASTER UAT może wybrać pracownika/personę, zobaczyć dokładnie jej zakres widoku i wykonać dozwolone dla niej operacje.
+- Tryb musi mieć stale widoczny baner „Testujesz jako…”, szybki powrót do MASTER oraz pełny audit przełączeń i operacji.
+- MASTER UAT musi móc:
+  - wprowadzać niedostępność różnych osób,
+  - otwierać ich Portal pracownika,
+  - sprawdzać widoczność zmian, stand-by, ogłoszeń i powiadomień,
+  - przejść pełny proces pracownik → lider → właściciel/HR/finanse.
+- Równolegle należy przetestować prawdziwe logowanie na konta z różnymi rolami i potwierdzić, że backend/RLS blokuje operacje spoza zakresu. Samo ukrycie elementu w interfejsie nie jest testem uprawnień.
+- MASTER jest funkcją wyłącznie izolowanego UAT. Nie przenosić jej do produkcji bez osobnego projektu bezpieczeństwa i akceptacji.
+
+## PUB1 — KRYTYCZNE: konflikt publikacji grafiku roli i grafiku firmowego
+
+### Pytanie zgłoszone w UAT
+
+- Co się stanie, jeżeli lider zespołu wygeneruje i opublikuje grafik swojej roli, a równolegle albo później właściciel wygeneruje i opublikuje grafik całej firmy?
+- Czy któryś grafik zostanie nadpisany, czy oba pozostaną dostępne?
+- Które źródło jest ważniejsze, kto rozstrzyga konflikt i jak użytkownik ma rozpoznać obowiązującą wersję?
+
+### Potwierdzony stan obecnego backendu UAT
+
+- Grafik firmowy i samodzielny grafik roli są zapisywane w dwóch różnych tabelach publikacji.
+- Dwa osobne indeksy pozwalają jednocześnie zachować:
+  - jeden aktywny grafik firmowy/composite dla miesiąca,
+  - po jednym aktywnym grafiku dla każdej roli w tym samym miesiącu.
+- Publikacja nowego grafiku firmowego archiwizuje poprzedni grafik firmowy/composite, ale **nie archiwizuje ani nie unieważnia** samodzielnych publikacji ról.
+- Publikacja nowego grafiku roli archiwizuje wyłącznie poprzedni grafik tej samej roli. Nie zmienia aktywnego grafiku firmowego.
+- Równoległe wywołania są serializowane blokadą miesiąca, więc nie powinny uszkodzić transakcji, ale blokada nie rozstrzyga konfliktu biznesowego. Po wykonaniu obu operacji oba źródła nadal pozostają aktywne.
+- Kolejność publikacji nie ustala wspólnego zwycięzcy.
+
+### Obecny, niespójny priorytet odczytu
+
+- Portal pracownika najpierw szuka aktywnej publikacji roli zawierającej przydział tego pracownika.
+- Jeżeli ją znajdzie, pokazuje grafik roli i pomija aktywny grafik firmowy — niezależnie od tego, który został opublikowany później.
+- Jeżeli pracownik nie ma żadnego przydziału w opublikowanym wariancie roli, Portal może zamiast tego spaść do grafiku firmowego. W efekcie dwie osoby z tego samego zespołu mogą czytać grafik z różnych źródeł.
+- Widok właściciela „aktywny grafik” odczytuje wyłącznie aktywną publikację firmową/composite i nie uwzględnia osobnych publikacji ról.
+- Lider może więc widzieć i komunikować grafik roli, pracownik może otrzymać grafik roli, a właściciel nadal analizować inny grafik firmowy.
+- To nie jest jeden grafik z wersjami. To są dwie konkurencyjne prawdy operacyjne.
+
+### Rzeczywisty przykład istniejący w izolowanym UAT
+
+- Dla września 2026 jednocześnie aktywne są:
+  - grafik firmowy `UAT E2E wrzesień 2026`, opublikowany wcześniej,
+  - grafik roli `UAT E2E Pizzabar powiadomienia`, opublikowany później.
+- Samodzielny grafik Pizzabar obejmuje 10 pracowników i 211 przypisań.
+- Grafik firmowy zawiera dla tych samych 10 osób 205 przypisań.
+- Porównanie źródeł wykazało 274 różniące się pary pracownik–zmiana.
+- Oba rekordy pozostają oznaczone jako `PUBLISHED`.
+- Nie wykonywano dodatkowej publikacji w trakcie tej diagnozy; wykorzystano istniejące dane UAT.
+
+### Wymagany model docelowy do akceptacji
+
+- W danym miesiącu ma istnieć **jeden skuteczny grafik operacyjny**, odczytywany identycznie przez właściciela, liderów, pracowników, kalendarze, Portal i raporty.
+- Grafik może być składany z komponentów per rola, ale komponenty nie mogą tworzyć osobnych, konkurencyjnych wersji rzeczywistości.
+- Rekomendowana zasada zgodna z ustalonym procesem biznesowym:
+  1. Lider odpowiada za publikację swojej roli.
+  2. Opublikowany komponent roli staje się zablokowaną częścią wspólnego grafiku miesiąca.
+  3. Generator firmowy wykorzystuje już opublikowane role jako twarde, widoczne wejście i generuje/uzupełnia wyłącznie role jeszcze nieopublikowane albo tworzy jawny projekt rewizji.
+  4. Publikacja firmowa nie może po cichu nadpisać wcześniej opublikowanej roli.
+  5. Późniejsza publikacja roli nie może po cichu nadpisać zatwierdzonego grafiku firmowego; ma tworzyć kontrolowaną rewizję tego samego wspólnego grafiku.
+- Właściciel ma finalne uprawnienie do rozstrzygnięcia konfliktu, ale nadpisanie komponentu lidera wymaga:
+  - pokazania różnic,
+  - jawnego wyboru roli/komponentu obowiązującego,
+  - podania powodu,
+  - powiadomienia lidera i pracowników objętych zmianą,
+  - nowej rewizji i kompletnego audit trail.
+- Lider nie może nadpisać komponentu innej roli ani decyzji właściciela poza własnym zakresem.
+- Sam timestamp „ostatni zapis wygrywa” jest niewystarczający i nie może być docelową regułą.
+
+### Statusy i widoczność
+
+- Każda rola w miesiącu ma czytelny status, np. `ROBOCZY`, `WYGENEROWANY`, `WYBRANY`, `OPUBLIKOWANY PRZEZ LIDERA`, `ZABLOKOWANY W GRAFIKU FIRMOWYM`, `WYMAGA REWIZJI`.
+- Właściciel widzi kompletność grafiku firmowego: które role są opublikowane, które czekają i które pozostają w konflikcie.
+- Pracownicy widzą wyłącznie skuteczny, rozstrzygnięty grafik oraz informację o późniejszej rewizji; nie wybierają pomiędzy wersją roli i firmy.
+- Analizy kosztów i obsady zawsze liczą dokładnie ten sam skuteczny zestaw przypisań, który widzą pracownicy.
+
+### Obowiązkowa obsługa współbieżności
+
+- Jeżeli publikacja roli i firmy rozpoczynają się w tym samym czasie, jedna transakcja może poczekać na drugą, ale po uzyskaniu blokady musi ponownie odczytać aktualną rewizję.
+- Druga publikacja nie może kontynuować na nieaktualnym snapshotcie. Ma zostać:
+  - ponownie zweryfikowana i świadomie scalona, albo
+  - zatrzymana komunikatem o nowej publikacji wymagającej odświeżenia i decyzji.
+- Konflikt i sposób jego rozstrzygnięcia są częścią audit trail.
+
+### Bramka testowa przed kolejnym UAT
+
+- rola opublikowana przed wygenerowaniem firmy,
+- rola opublikowana po wygenerowaniu, ale przed publikacją firmy,
+- rola i firma publikowane równocześnie,
+- grafik firmowy opublikowany jako pierwszy, a następnie próba publikacji roli,
+- ponowna publikacja tej samej roli,
+- właściciel świadomie zastępujący komponent roli,
+- konflikt scenariusza lub wersji Matrixa,
+- pracownik bez przydziału w opublikowanym komponencie roli,
+- zgodność Portalu, widoku lidera, widoku właściciela, kosztów, powiadomień i audit trail,
+- potwierdzenie, że w każdej sytuacji istnieje dokładnie jeden skuteczny zestaw przypisań dla miesiąca.
+
+### Decyzje do zatwierdzenia przed implementacją
+
+- Czy właściciel może jednostronnie zastąpić opublikowany komponent roli, czy wymagana jest ponowna akceptacja lidera?
+- Czy grafik firmowy może zostać opublikowany przed ukończeniem wszystkich ról, jako wersja częściowa, czy dopiero po osiągnięciu kompletności?
+- Czy zmiana scenariusza firmowego wymusza ponowne wygenerowanie już opublikowanych ról, czy właściciel może zachować wybrane komponenty?
+- Jak długo przed rozpoczęciem miesiąca lider może publikować rewizje bez dodatkowej zgody?
+- Nie implementować odpowiedzi na te pytania bez akceptacji użytkowniczki.
+
+## ENV1 — KRYTYCZNE: niejawna zmiana środowiska i pochodzenia danych 155/76
+
+### Potwierdzona diagnoza
+
+- Widok wcześniejszego UAT pokazywał 155–156 aktywnych pracowników po imporcie.
+- Aktualny, odizolowany projekt Supabase UAT `nhthrtpkfpmufmrmdyjg` nigdy nie zawierał 155 pracowników. Każda z wersji Matrixa v1–v4 zawiera dokładnie 76 profili.
+- Nie wykonano w tym projekcie operacji usunięcia ani archiwizacji zaimportowanych pracowników. Historia audytu nie zawiera takiej operacji.
+- Liczba 76 wynika z utworzenia nowego izolowanego UAT z bazą początkową 76 osób, a nie z usunięcia drugiej połowy rekordów.
+- Zmiana środowiska i zestawu danych nie została użytkowniczce wyjaśniona dostatecznie jasno. Uniemożliwia to wiarygodne porównanie kolejnych wyników UAT.
+
+### Wymagania
+
+- Każdy ekran UAT ma stale pokazywać nazwę środowiska, identyfikator projektu, aktywną/roboczą wersję Matrixa i liczbę rekordów źródłowych.
+- Przełączenie projektu, reset danych albo inicjalizacja nowego zestawu wymaga jawnego komunikatu przed testem i raportu po operacji.
+- W Matrixie ma być dostępna historia: utworzenie wersji, źródło danych, import, tryb importu, liczba dodanych/zaktualizowanych/zarchiwizowanych rekordów oraz wykonujący użytkownik.
+- Materiał przekazywany do UAT musi zawierać jednoznaczny opis zestawu startowego. Nie wolno przedstawiać nowego środowiska z innymi danymi jako kontynuacji poprzedniego bez informacji o różnicy.
+
+## I3 — KRYTYCZNE: zapis importu wywołuje brakującą funkcję i ukrywa prawdziwy błąd
+
+### Potwierdzona przyczyna
+
+- Podgląd pliku utworzył automatycznie wersję roboczą Matrixa v4 z kopią 76 profili.
+- Zapis importu nie zmodyfikował pracowników i nie utworzył wpisu audytu importu.
+- Log PostgreSQL zawiera dokładny błąd: `function public.matrix_v2_import_preview_uat_v2(jsonb) does not exist`.
+- Wdrożona funkcja `matrix_v2_import_apply_uat_v3` zależy od funkcji v2, ale migracja tworząca v2 nie została zastosowana w izolowanym projekcie UAT.
+- Frontend zamienił nierozpoznany komunikat bazy na ogólne „Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie”, przez co użytkownik nie otrzymał przyczyny ani wskazania sposobu naprawy.
+
+### Wymagania naprawy
+
+- Migracja importu musi być samowystarczalna albo przed utworzeniem funkcji publicznej jawnie sprawdzać wszystkie zależności i przerwać wdrożenie, jeśli ich brakuje.
+- Podgląd i zapis muszą używać tego samego, wersjonowanego kontraktu. Nie wolno wdrożyć nowszej funkcji publicznej bez jej zależności.
+- Błąd zapisu zachowuje kod techniczny, ale UI pokazuje również etap, arkusz, wiersz, pole i zrozumiałą przyczynę. Nieznany błąd otrzymuje identyfikator korelacyjny zamiast fałszywej sugestii poprawienia formularza.
+- Nieudany import nie może pozostawiać mylącej, anonimowej wersji roboczej. Wersja ma zostać utworzona dopiero przy zapisie albo oznaczona jako projekt importu z czytelnym statusem i możliwością bezpiecznego anulowania.
+- Import ma być atomowy i idempotentny: błąd cofa wszystkie zmiany, ponowienie tego samego pliku nie tworzy duplikatów ani nie rozcina identycznych okresów stawek.
+- Przed kolejnym UAT obowiązkowo wykonać realny test: pobranie bieżącej bazy → zmiana reprezentatywnych pól → podgląd różnic → zapis → przeładowanie → porównanie wszystkich pól UI i bazy → ponowny import tego samego pliku.
+- Bramka wdrożeniowa ma automatycznie sprawdzać obecność i sygnatury wszystkich RPC wywoływanych przez frontend.

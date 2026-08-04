@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuth } from "@/components/AppAuthProvider";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProjectRef } from "@/lib/supabase/client";
 import {ActiveModules,type ActiveWorkspace} from "@/components/ActiveModules";
 import {SolverV2Panel} from "@/components/SolverV2Panel";
 import {SolverV2Workspace} from "@/components/SolverV2Workspace";
@@ -34,6 +34,8 @@ import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,typ
 type NavKey = "centrum"|"generator"|"zespoly"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"budzet";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";role:null}|{type:"ROLE";role:SolverRole};
+type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
+type WorkforceCalendarContext = {events:WorkforceCalendarEvent[]};
 
 const DEFAULT_MONTH = new Date().toISOString().slice(0,7);
 function monthDate(month:string){return `${month}-01`;}
@@ -95,6 +97,7 @@ export default function GrafikPro() {
   const [complete,setComplete]=useState<ActiveWorkspace|null>(null);
   const [matrixV2,setMatrixV2]=useState<MatrixV2Workspace|null>(null);
   const [operationalWorkspace,setOperationalWorkspace]=useState<SolverWorkspace|null>(null);
+  const [workforceCalendar,setWorkforceCalendar]=useState<WorkforceCalendarContext>({events:[]});
   const [matrixFocusEmployeeId,setMatrixFocusEmployeeId]=useState<string|null>(null);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -117,6 +120,8 @@ export default function GrafikPro() {
   const loadTokenRef=useRef(0),loadMonthRef=useRef(selectedMonthDate);loadMonthRef.current=selectedMonthDate;
   const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:""});
   const isOrtools=solverConfiguration?.engine==="ORTOOLS_V2";
+  const environmentLabel=applicationEnvironmentLabel();
+  const projectRef=supabaseProjectRef();
   const activeTimezone=isOrtools?solverConfiguration?.timezone??"": "Europe/Warsaw";
   const activeCurrency=isOrtools?solverConfiguration?.currency??"": "PLN";
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
@@ -163,11 +168,12 @@ export default function GrafikPro() {
         .then(workspace=>({workspace,error:null as Error|null}))
         .catch(cause=>({workspace:null,error:cause instanceof Error?cause:new Error(String(cause))}))
       : Promise.resolve({workspace:null,error:null as Error|null});
-    const [result,completeResult,matrixV2Result,employeeDirectoryResult,activeWorkspaceResult]=await Promise.all([
+    const [result,completeResult,matrixV2Result,employeeDirectoryResult,calendarResult,activeWorkspaceResult]=await Promise.all([
       legacyPlanRequest,
       supabase.rpc("complete_workspace",{p_month:requestedMonth}),
       supabase.rpc("matrix_v2_workspace",{p_month:requestedMonth}),
       supabase.rpc("matrix_v2_employee_directory_alpha16",{p_month:requestedMonth}),
+      supabase.rpc("workforce_calendar_context_uat_v3",{p_month:requestedMonth}),
       activeWorkspaceRequest,
     ]);
     if(token!==loadTokenRef.current||loadMonthRef.current!==requestedMonth)return;
@@ -211,6 +217,11 @@ export default function GrafikPro() {
     }
     if(!completeResult.error&&completeResult.data)setComplete(completeResult.data as ActiveWorkspace);
     if(completeResult.error&&completeResult.error.message!=="Could not find the function public.complete_workspace")errors.push(completeResult.error.message);
+    if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
+    else{
+      setWorkforceCalendar({events:[]});
+      if(calendarResult.error)errors.push(`Nie udało się pobrać eventów i HOT DAY: ${calendarResult.error.message}`);
+    }
     if(!matrixV2Result.error&&matrixV2Result.data&&(matrixV2Result.data as MatrixV2Workspace).matrixVersion?.schema_version>=2){
       try{
         const workspace=matrixV2Result.data as MatrixV2Workspace;
@@ -298,7 +309,7 @@ export default function GrafikPro() {
         <button className="icon-button menu-button"><Menu size={20}/></button>
         <div><p className="eyebrow">OPERACJE / {selectedMonthLabel.toLocaleUpperCase("pl-PL")}</p><h1>{nav.find(x=>x[0]===active)?.[1]}</h1></div>
         <div className="topbar-actions">
-          <button className={`live-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}}><Wifi size={15}/><span>Supabase • {summary?.employees||0} osób</span></button>
+          <button className={`live-status environment-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}} title={`Projekt Supabase: ${projectRef}`}><Wifi size={15}/><span><b>{environmentLabel}</b><small>{projectRef} • Matrix {matrixV2?`v${matrixV2.matrixVersion.version} ${matrixV2.editable?"roboczy":"aktywny"}`:"niedostępny"} • {matrixV2?.workforceCounts?.active??summary?.employees??0} osób</small></span></button>
           <div className="month-selector" aria-label="Wybór miesiąca">
             <button type="button" aria-label="Poprzedni miesiąc" title="Poprzedni miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,-1))}><ChevronLeft size={17}/></button>
             <label className="date-selector" title="Wybierz miesiąc"><CalendarDays size={16}/><select aria-label="Wybierz miesiąc z listy" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{monthOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
@@ -333,7 +344,7 @@ export default function GrafikPro() {
         {active==="zespoly"&&(!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator zespołów jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverScenarios={solverConfiguration.scenarios} solverRoles={solverConfiguration.roles} solverUserId={user?.id} roleCompositeRefreshKey={roleCompositeRefreshKey} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>)}
         {active==="matrix"&&matrixV2&&<MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}`} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId}/>}
         {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Matrix v2 jest niedostępny</h2><p>Zapis w dawnym Matrixie został wyłączony. Odśwież dane albo sprawdź migracje Alpha 16 — aplikacja nie wróci do konkurencyjnego źródła danych.</p></section>}
-        {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} timezone={activeTimezone} onDay={(d)=>{setDay(d);setActive("grafik");}}/>}
+        {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} events={workforceCalendar.events} timezone={activeTimezone} onDay={(d)=>{setDay(d);setActive("grafik");}}/>}
         {active==="kadra"&&matrixV2&&<WorkforceCatalog data={matrixV2} onEdit={employeeId=>{setMatrixFocusEmployeeId(employeeId);setActive("matrix");}}/>}
         {["hr","finanse"].includes(active)&&matrixV2&&<MatrixDestination section={active==="hr"?"dane kadrowe i ograniczenia":"stawki, dodatki i budżety"} open={()=>{setMatrixFocusEmployeeId(null);setActive("matrix");}}/>}
         {active==="portal"&&complete&&<ActiveModules month={selectedMonth} view="portal" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
@@ -406,9 +417,9 @@ function ScheduleView({data,assignments,location,role,day,setLocation,setRole,se
     {!data.plan?<div className="empty-engine"><p>Najpierw wygeneruj wariant.</p></div>:<div className="schedule-list">{data.shifts.filter(s=>(location==="ALL"||(dynamic?s.location_id===location:s.location_code===location))&&(day==="ALL"||s.shift_date===day)).map(s=>{const staff=(grouped.get(s.id)||[]).filter(a=>role==="ALL"||(dynamic?a.role_id===role:a.role===role));if(role!=="ALL"&&!staff.length)return null;return <button className="real-shift" key={s.id} onClick={()=>onShift(s)}><span className={`shift-code ${dynamic?"dynamic":s.shift_code.toLowerCase()}`}>{s.shift_name??s.shift_code}</span><span><strong>{fmtDate(s.shift_date,s.location_timezone??timezone)} • {s.location_name??s.location_code}</strong><small>{fmtTime(s.starts_at,s.location_timezone??timezone)}–{fmtTime(s.ends_at,s.location_timezone??timezone)}</small></span><div className="shift-avatars">{staff.slice(0,6).map(a=><i key={a.id} title={`${a.name} • ${a.role_name??a.role}`}>{a.name.split(" ").map(x=>x[0]).join("")}</i>)}{staff.length>6&&<b>+{staff.length-6}</b>}</div><strong>{staff.length} os.</strong><ChevronRight/></button>;})}</div>}
   </section>;
 }
-function MonthView({month,data,timezone,onDay}:{month:string;data:Workspace;timezone:string;onDay:(d:string)=>void}) {
+function MonthView({month,data,events,timezone,onDay}:{month:string;data:Workspace;events:WorkforceCalendarEvent[];timezone:string;onDay:(d:string)=>void}) {
   const first=new Date(`${month}-01T12:00:00Z`);const offset=(first.getUTCDay()+6)%7;const count=daysInMonth(month);const cells=Array.from({length:offset+count},(_,i)=>i<offset?0:i-offset+1);
-  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>{monthLabel(month,timezone)}</h2></div></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`${month}-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);return <button key={date} className="month-day" onClick={()=>onDay(date)}><span className="day-number">{n}</span><div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div><small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
+  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>{monthLabel(month,timezone)}</h2></div></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`${month}-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);const dayEvents=events.filter(event=>event.date===date);return <button key={date} className={`month-day ${dayEvents.some(event=>event.kind==="HOT_DAY")?"has-hot-day":""}`} onClick={()=>onDay(date)}><span className="day-number">{n}</span>{dayEvents.map(event=><span key={event.id} className={`manager-calendar-event ${event.kind.toLowerCase()}`}><b>{event.kind==="HOT_DAY"?"HOT DAY":"EVENT"}</b>{event.title}</span>)}<div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div><small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
 }
 function EmployeeView({employees,onSelect}:{employees:{id:string;no:string;name:string;role:string;minutes:number;nominal:number;cost:number;shifts:number}[];selected:string;onSelect:(x:string)=>void}) {
   return <section className="live-module"><div className="section-head"><div><p className="eyebrow">OBCIĄŻENIE I SPRAWIEDLIWOŚĆ</p><h2>Widok per pracownik</h2></div><button className="secondary-button" onClick={()=>downloadCsv("pracownicy.csv",[["ID","Pracownik","Rola","Godziny","Nominał","Wykorzystanie","Zmiany","Koszt"],...employees.map(e=>[e.no,e.name,e.role,Math.round(e.minutes/60),Math.round(e.nominal/60),Math.round(e.minutes/Math.max(e.nominal,1)*100)+"%",e.shifts,Math.round(e.cost)])])}><Download/> CSV</button></div><div className="employee-table"><div className="table-head"><span>Pracownik</span><span>Rola</span><span>Godziny</span><span>Nominał</span><span>Wykorzystanie</span></div>{employees.map(e=>{const pct=Math.round(e.minutes/Math.max(e.nominal,1)*100);return <button key={e.id} onClick={()=>onSelect(e.id)}><span><strong>{e.name}</strong><small>{e.no} • {e.shifts} zmian</small></span><span>{LEGACY_ROLE_LABELS[e.role]??e.role}</span><strong>{Math.round(e.minutes/60)} h</strong><span>{Math.round(e.nominal/60)} h</span><span className={`load ${pct>110?"over":pct<70?"under":""}`}><i style={{width:`${Math.min(pct,130)}%`}}/>{pct}%</span></button>;})}</div></section>;

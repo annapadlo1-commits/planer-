@@ -357,11 +357,36 @@ export type SolverEmployeePublishedAssignment = {
   coworkers?: { name: string; role: string; capability?: string }[];
 };
 
+export type SolverEmployeeStandby = {
+  id: string;
+  date: string;
+  tier: 1 | 2;
+  status: "PLANNED" | "ACTIVATED" | "DECLINED" | "CANCELLED" | "SUPERSEDED";
+  roleId: string;
+  roleName: string;
+  activatedShiftId?: string;
+};
+
+export type SolverEmployeePublishedSchedule = {
+  assignments: SolverEmployeePublishedAssignment[];
+  standby: SolverEmployeeStandby[];
+};
+
 export type SolverPublication = {
   scheduleId: string;
   status: string;
   sourceType: string;
   reused: boolean;
+};
+
+export type SolverPublicationAuthorityStatus = {
+  month: string;
+  conflict: boolean;
+  company: null | { id: string; name: string; sourceType: string; publishedAt: string };
+  roles: Array<{ id: string; roleId: string; roleName: string; variantId: string; name: string; publishedAt: string }>;
+  conflicts: Array<{ reason: string; roleId: string; roleName: string; roleScheduleId: string; companyScheduleId: string }>;
+  resolved?: boolean;
+  keptSource?: "COMPANY" | "ROLES";
 };
 
 export type SolverRoleCompositeVariant = {
@@ -1423,17 +1448,34 @@ function normalizeEmployeeAssignment(value: unknown): SolverEmployeePublishedAss
   };
 }
 
-export async function getEmployeePublishedAssignments(
+export async function getEmployeePublishedSchedule(
   client: SupabaseClient,
   month: string,
-): Promise<SolverEmployeePublishedAssignment[]> {
-  const value = await rpc(client, "optimizer_employee_schedule_uat_v2", { p_month: month });
-  if (value === null || value === undefined) return [];
+): Promise<SolverEmployeePublishedSchedule> {
+  const value = await rpc(client, "optimizer_employee_schedule_uat_v3", { p_month: month });
+  if (value === null || value === undefined) return { assignments: [], standby: [] };
   const payload = record(value);
   if (payload.engine !== "ORTOOLS_V2") throw new Error("EMPLOYEE_PUBLISHED_SCHEDULE_ENGINE_INVALID");
-  if (Array.isArray(payload.assignments)) return payload.assignments.map(normalizeEmployeeAssignment);
+  const standby = Array.isArray(payload.standby) ? payload.standby.map((item) => {
+    const source = record(item);
+    const tier = Number(source.tier);
+    if (tier !== 1 && tier !== 2) throw new Error("EMPLOYEE_STANDBY_TIER_INVALID");
+    return {
+      id: String(source.id ?? ""),
+      date: String(source.date ?? ""),
+      tier,
+      status: String(source.status ?? "PLANNED") as SolverEmployeeStandby["status"],
+      roleId: String(source.roleId ?? ""),
+      roleName: String(source.roleName ?? ""),
+      activatedShiftId: source.activatedShiftId ? String(source.activatedShiftId) : undefined,
+    } satisfies SolverEmployeeStandby;
+  }) : [];
+  if (Array.isArray(payload.assignments)) return {
+    assignments: payload.assignments.map(normalizeEmployeeAssignment),
+    standby,
+  };
   if (!Array.isArray(payload.shifts)) throw new Error("EMPLOYEE_PUBLISHED_SCHEDULE_INVALID");
-  return payload.shifts.flatMap(shiftValue => {
+  const assignments = payload.shifts.flatMap(shiftValue => {
     const shift = record(shiftValue);
     const location = normalizeNamedEntity(shift.location);
     const locationSource = record(shift.location);
@@ -1459,6 +1501,36 @@ export async function getEmployeePublishedAssignments(
       } satisfies SolverEmployeePublishedAssignment;
     });
   });
+  return { assignments, standby };
+}
+
+export async function getEmployeePublishedAssignments(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverEmployeePublishedAssignment[]> {
+  return (await getEmployeePublishedSchedule(client, month)).assignments;
+}
+
+export async function getPublicationAuthorityStatus(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverPublicationAuthorityStatus> {
+  return record(await rpc(client, "schedule_publication_status_uat_v2", {
+    p_month: month,
+  })) as SolverPublicationAuthorityStatus;
+}
+
+export async function resolvePublicationAuthority(
+  client: SupabaseClient,
+  month: string,
+  keepSource: "COMPANY" | "ROLES",
+  reason: string,
+): Promise<SolverPublicationAuthorityStatus> {
+  return record(await rpc(client, "schedule_publication_resolve_with_standby_uat_v2", {
+    p_month: month,
+    p_keep_source: keepSource,
+    p_reason: reason,
+  })) as SolverPublicationAuthorityStatus;
 }
 
 export async function getVariantWorkspace(

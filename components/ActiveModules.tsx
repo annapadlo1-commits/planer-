@@ -2,8 +2,11 @@
 
 import {
   AlertTriangle,
+  ArrowLeftRight,
   CalendarDays,
   Download,
+  Flame,
+  Megaphone,
   Plus,
   Save,
   ShieldCheck,
@@ -16,8 +19,9 @@ import * as XLSX from "xlsx";
 
 import { RoleCompositePanel } from "@/components/RoleCompositePanel";
 import {
-  getEmployeePublishedAssignments,
+  getEmployeePublishedSchedule,
   type SolverEmployeePublishedAssignment,
+  type SolverEmployeeStandby,
   type SolverEngine,
   type SolverRole,
   type SolverScenario,
@@ -91,6 +95,71 @@ type PortalShiftPreferences = {
   effective: Record<string, string>;
   managerOverrides: Record<string, string>;
 };
+type WorkforceCalendarEvent = {
+  id: string;
+  date: string;
+  kind: "EVENT" | "HOT_DAY";
+  title: string;
+  description?: string | null;
+  locationId?: string | null;
+  locationName?: string | null;
+  demands?: { id: string; shiftTemplateId: string; shiftName: string; roleId: string; roleName: string; dutyId?: string | null; additionalCount: number }[];
+  hotLimits?: { roleId: string; roleName: string; maximumHardUnavailable: number }[];
+};
+type WorkforceCalendarContext = {
+  month: string;
+  matrixVersionId?: string;
+  canManage?: boolean;
+  roles?: { id: string; name: string; code: string }[];
+  locations?: { id: string; name: string; code: string }[];
+  shiftTemplates?: { id: string; name: string; code: string; locationId: string; startsAt: string; endsAt: string; endsNextDay: boolean; dayMask: number[] }[];
+  events: WorkforceCalendarEvent[];
+  pendingReviews: { id: string; employeeId: string; employeeName: string; employeeNo: string; date: string; roleId: string; roleName: string; status: string; note?: string | null; requestedAt: string }[];
+  availabilitySummary?: { date:string; roleId:string; roleName:string; hardCount:number; softCount:number; pendingCount:number; hardEmployees:string[]; softEmployees:string[]; pendingEmployees:string[] }[];
+};
+type ShiftSwapRequest = {
+  id: string;
+  status: string;
+  message?: string | null;
+  assignmentId: string;
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  locationName: string;
+  shiftName: string;
+  roleId: string;
+  roleName: string;
+  proposerEmployeeId: string;
+  proposerName: string;
+  targetEmployeeId?: string | null;
+  acceptedByEmployeeId?: string | null;
+  eligible: boolean;
+  ineligibilityReasons: string[];
+  isMine: boolean;
+  requiresLeaderDecision: boolean;
+};
+type ShiftSwapBoard = { employeeId?: string | null; month: string; canManage?: boolean; requests: ShiftSwapRequest[] };
+type CompanyCalendarAssignment = {
+  id: string; date: string; startsAt: string; endsAt: string;
+  locationId: string; locationName: string; shiftName: string;
+  roleId: string; roleName: string; employeeId: string;
+  employeeName: string; employeeNo: string; isSwap: boolean; swapAuditId?: string | null;
+};
+type CompanyCalendar = { month: string; assignments: CompanyCalendarAssignment[] };
+type UatMasterEmployee = {
+  id: string;
+  employeeNo: string;
+  name: string;
+  roleId?: string | null;
+  roleName?: string | null;
+  roleCode?: string | null;
+};
+type UatMasterPreview = {
+  enabled: boolean;
+  matrixVersionId?: string | null;
+  matrixVersion?: number | null;
+  employees: UatMasterEmployee[];
+};
 type PortalWorkspace = {
   employee?: {
     id: string;
@@ -101,9 +170,18 @@ type PortalWorkspace = {
     locations: { code: string; name: string }[];
   };
   assignments: PortalAssignment[];
+  standby: SolverEmployeeStandby[];
   attendance: { id: string; action: string; occurredAt: string; location: string }[];
   timeConstraints?: PortalTimeConstraintsWorkspace;
   shiftPreferences?: PortalShiftPreferences;
+  calendarContext?: WorkforceCalendarContext;
+  swapBoard?: ShiftSwapBoard;
+  companyCalendar?: CompanyCalendar;
+  publicationConflict?: boolean;
+  masterPersona?: boolean;
+};
+type UatMasterPortalContext = Omit<PortalWorkspace, "assignments"> & {
+  assignments: CompanyCalendarAssignment[];
 };
 
 type View = "rolePlans" | "portal" | "czas" | "integracje";
@@ -156,6 +234,10 @@ export function ActiveModules({
   const [portal, setPortal] = useState<PortalWorkspace | null>(null);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [shiftPreferencesOpen, setShiftPreferencesOpen] = useState(false);
+  const [operationalContext, setOperationalContext] = useState<WorkforceCalendarContext | null>(null);
+  const [uatMaster, setUatMaster] = useState<UatMasterPreview | null>(null);
+  const [uatMasterEmployeeId, setUatMasterEmployeeId] = useState<string | null>(null);
+  const [uatMasterSearch, setUatMasterSearch] = useState("");
   const rolePlanningEnabled = solverEngine === "ORTOOLS_V2" || solverEngine === "SHADOW";
   const portalLoadToken = useRef(0);
   const portalMonthRef = useRef(selectedMonthDate);
@@ -177,26 +259,91 @@ export function ActiveModules({
     return result.data ?? true;
   }, [fail, supabase]);
 
+  useEffect(() => {
+    if (!supabase || view !== "portal") {
+      setUatMaster(null);
+      setUatMasterEmployeeId(null);
+      setUatMasterSearch("");
+      return;
+    }
+    let current = true;
+    void supabase.rpc("uat_master_persona_preview_v2").then((result) => {
+      if (!current || result.error || !result.data) return;
+      const preview = result.data as UatMasterPreview;
+      if (preview.enabled) setUatMaster({ ...preview, employees: preview.employees || [] });
+    });
+    return () => { current = false; };
+  }, [supabase, view]);
+
   const loadPortal = useCallback(async () => {
     const requestedMonth = selectedMonthDate;
     if (!supabase || view !== "portal" || portalMonthRef.current !== requestedMonth) return;
     const token = ++portalLoadToken.current;
-    const assignmentsRequest: Promise<{ portal?: PortalWorkspace; assignments: PortalAssignment[]; error: Error | null }> =
+    if (uatMasterEmployeeId) {
+      const [contextResult, calendarResult] = await Promise.all([
+        supabase.rpc("uat_master_employee_portal_context_v2", {
+          p_employee_id: uatMasterEmployeeId,
+          p_month: requestedMonth,
+        }),
+        supabase.rpc("workforce_calendar_context_uat_v3", { p_month: requestedMonth }),
+      ]);
+      if (token !== portalLoadToken.current || portalMonthRef.current !== requestedMonth) return;
+      if (contextResult.error || !contextResult.data) {
+        fail(`Nie udało się otworzyć widoku pracownika w trybie MASTER: ${translateError(contextResult.error?.message || "Brak danych odpowiedzi.")}`);
+        setPortal(null);
+        return;
+      }
+      const targeted = contextResult.data as UatMasterPortalContext;
+      const assignments = (targeted.assignments || []).map((assignment) => ({
+        id: assignment.id,
+        date: assignment.date,
+        startsAt: assignment.startsAt,
+        endsAt: assignment.endsAt,
+        shiftCode: assignment.shiftName,
+        shiftName: assignment.shiftName,
+        location: assignment.locationName,
+        locationCode: assignment.locationId,
+        role: assignment.roleName,
+        roleCode: assignment.roleId,
+        coworkers: [],
+      }));
+      const calendarContext = calendarResult.error || !calendarResult.data
+        ? undefined : calendarResult.data as WorkforceCalendarContext;
+      if (calendarResult.error) fail(`Nie udało się pobrać eventów: ${translateError(calendarResult.error.message)}`);
+      setPortal({
+        ...targeted,
+        assignments,
+        standby: targeted.standby || [],
+        attendance: targeted.attendance || [],
+        calendarContext,
+        swapBoard: undefined,
+        masterPersona: true,
+      });
+      return;
+    }
+    const assignmentsRequest: Promise<{ portal?: PortalWorkspace; assignments: PortalAssignment[]; standby: SolverEmployeeStandby[]; error: Error | null }> =
       solverEngine === "ORTOOLS_V2"
-        ? getEmployeePublishedAssignments(supabase, requestedMonth)
-            .then((assignments) => ({ assignments, error: null }))
-            .catch((cause) => ({ assignments: [], error: cause instanceof Error ? cause : new Error(String(cause)) }))
+        ? getEmployeePublishedSchedule(supabase, requestedMonth)
+            .then((schedule) => ({ ...schedule, error: null }))
+            .catch((cause) => ({ assignments: [], standby: [], error: cause instanceof Error ? cause : new Error(String(cause)) }))
         : solverEngine
           ? Promise.resolve(supabase.rpc("employee_portal_workspace", { p_month: requestedMonth })).then((result) => {
-              if (result.error || !result.data) return { assignments: [], error: new Error(result.error?.message || "Brak danych portalu pracownika.") };
+              if (result.error || !result.data) return { assignments: [], standby: [], error: new Error(result.error?.message || "Brak danych portalu pracownika.") };
               const legacyPortal = result.data as PortalWorkspace;
-              return { portal: legacyPortal, assignments: legacyPortal.assignments || [], error: null };
+              return { portal: legacyPortal, assignments: legacyPortal.assignments || [], standby: legacyPortal.standby || [], error: null };
             })
-          : Promise.resolve({ assignments: [], error: new Error("Konfiguracja silnika jest niedostępna.") });
-    const [assignmentsResult, constraintsResult, preferencesResult] = await Promise.all([
+          : Promise.resolve({ assignments: [], standby: [], error: new Error("Konfiguracja silnika jest niedostępna.") });
+    const [assignmentsResult, constraintsResult, preferencesResult, calendarResult, swapResult, companyCalendarResult] = await Promise.all([
       assignmentsRequest,
       supabase.rpc("employee_time_constraints_self_v2", { p_month: requestedMonth }),
       supabase.rpc("employee_shift_preferences_self_v2", { p_month: requestedMonth }),
+      supabase.rpc("workforce_calendar_context_uat_v3", { p_month: requestedMonth }),
+      solverEngine === "ORTOOLS_V2"
+        ? supabase.rpc("shift_swap_board_uat_v2", { p_month: requestedMonth })
+        : Promise.resolve({ data: null, error: null }),
+      solverEngine === "ORTOOLS_V2"
+        ? supabase.rpc("published_company_calendar_uat_v2", { p_month: requestedMonth })
+        : Promise.resolve({ data: null, error: null }),
     ]);
     if (token !== portalLoadToken.current || portalMonthRef.current !== requestedMonth) return;
     const errors: string[] = [];
@@ -218,29 +365,56 @@ export function ActiveModules({
     if (preferencesResult.error || !preferencesResult.data) {
       errors.push(`Nie udało się pobrać preferencji zmianowych: ${translateError(preferencesResult.error?.message || "Brak danych odpowiedzi.")}`);
     } else shiftPreferences = preferencesResult.data as PortalShiftPreferences;
+    const calendarContext = calendarResult.error || !calendarResult.data
+      ? undefined : calendarResult.data as WorkforceCalendarContext;
+    if (calendarResult.error) errors.push(`Nie udało się pobrać eventów: ${translateError(calendarResult.error.message)}`);
+    const swapBoard = swapResult.error || !swapResult.data
+      ? undefined : swapResult.data as ShiftSwapBoard;
+    if (swapResult.error) errors.push(`Nie udało się pobrać tablicy zamian: ${translateError(swapResult.error.message)}`);
+    const companyCalendar = companyCalendarResult.error || !companyCalendarResult.data
+      ? undefined : companyCalendarResult.data as CompanyCalendar;
+    if (companyCalendarResult.error) errors.push(`Nie udało się pobrać grafiku firmy: ${translateError(companyCalendarResult.error.message)}`);
     if (errors.length) fail(errors.join(" • "));
     setPortal({
       ...assignmentsResult.portal,
       assignments: assignmentsResult.assignments,
+      standby: assignmentsResult.standby,
       attendance: assignmentsResult.portal?.attendance || [],
       timeConstraints,
       shiftPreferences,
+      calendarContext,
+      swapBoard,
+      companyCalendar,
     });
-  }, [fail, selectedMonthDate, solverEngine, supabase, timezone, view]);
+  }, [fail, selectedMonthDate, solverEngine, supabase, timezone, uatMasterEmployeeId, view]);
 
   useEffect(() => {
     setPortal(null);
     setAvailabilityOpen(false);
     setShiftPreferencesOpen(false);
     portalLoadToken.current += 1;
-  }, [selectedMonthDate, solverEngine]);
+  }, [selectedMonthDate, solverEngine, uatMasterEmployeeId]);
   useEffect(() => {
     void loadPortal();
     return () => { portalLoadToken.current += 1; };
   }, [loadPortal]);
 
+  const loadOperationalContext = useCallback(async () => {
+    if (!supabase || view !== "rolePlans") return;
+    const result = await supabase.rpc("workforce_calendar_context_uat_v3", { p_month: selectedMonthDate });
+    if (result.error) {
+      fail(`Nie udało się pobrać kalendarza operacyjnego: ${translateError(result.error.message)}`);
+      return;
+    }
+    setOperationalContext(result.data as WorkforceCalendarContext);
+  }, [fail, selectedMonthDate, supabase, view]);
+  useEffect(() => { void loadOperationalContext(); }, [loadOperationalContext]);
+
   async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
-    const result = await rpc("employee_availability_days_save_v2", {
+    const result = await rpc(uatMasterEmployeeId
+      ? "uat_master_employee_availability_days_save_v2"
+      : "employee_availability_days_save_uat_v3", {
+      ...(uatMasterEmployeeId ? { p_employee_id: uatMasterEmployeeId } : {}),
       p_dates: entry.dates,
       p_kind: entry.kind,
       p_all_day: entry.allDay,
@@ -250,14 +424,20 @@ export function ActiveModules({
       p_note: entry.note || null,
     });
     if (!result) return false;
-    notify("Zapisano wybrany zakres dostępności.");
+    const reviewCount = Number((result as { pendingReviewDays?: number }).pendingReviewDays || 0);
+    notify(reviewCount > 0
+      ? `${reviewCount} dni HOT DAY przekazano liderowi do weryfikacji.`
+      : "Zapisano wybrany zakres dostępności.");
     await loadPortal();
     await reload();
     return true;
   }
 
   async function saveShiftPreferences(preferences: Record<ShiftPeriod, ShiftPreferenceLevel>) {
-    const result = await rpc("employee_shift_preferences_save_self_v2", {
+    const result = await rpc(uatMasterEmployeeId
+      ? "uat_master_employee_shift_preferences_save_v2"
+      : "employee_shift_preferences_save_self_v2", {
+      ...(uatMasterEmployeeId ? { p_employee_id: uatMasterEmployeeId } : {}),
       p_month: selectedMonthDate,
       p_preferences: preferences,
     });
@@ -266,6 +446,103 @@ export function ActiveModules({
     notify("Preferencje zmianowe zostały zapisane.");
     await loadPortal();
     await reload();
+    return true;
+  }
+
+  async function selectUatMasterEmployee(employeeId: string | null) {
+    const result = await rpc("uat_master_persona_select_v2", {
+      p_persona: employeeId ? "EMPLOYEE" : "OWNER",
+      p_employee_id: employeeId,
+    });
+    if (!result) return;
+    setAvailabilityOpen(false);
+    setShiftPreferencesOpen(false);
+    setUatMasterEmployeeId(employeeId);
+    setUatMasterSearch("");
+    notify(employeeId
+      ? "Tryb MASTER: otwarto audytowany widok wskazanego pracownika."
+      : "Tryb MASTER: wrócono do własnego konta.");
+  }
+
+  async function createSwapRequest(assignmentId: string) {
+    const message = window.prompt("Opcjonalna wiadomość dla zespołu:", "Chcę zamienić tę zmianę.");
+    if (message === null) return false;
+    const result = await rpc("shift_swap_request_create_uat_v2", {
+      p_assignment_id: assignmentId,
+      p_target_employee_id: null,
+      p_message: message || null,
+    });
+    if (!result) return false;
+    notify("Ogłoszenie o zamianie zostało dodane do tablicy.");
+    await loadPortal();
+    return true;
+  }
+
+  async function decideSwapAsEmployee(requestId: string, decision: "ACCEPT" | "REJECT") {
+    const result = await rpc("shift_swap_employee_decide_uat_v2", {
+      p_request_id: requestId,
+      p_decision: decision,
+    });
+    if (!result) return false;
+    notify(decision === "ACCEPT" ? "Zgłoszenie wysłano liderowi do akceptacji." : "Propozycja została odrzucona.");
+    await loadPortal();
+    return true;
+  }
+
+  async function decideSwapAsLeader(requestId: string, decision: "APPROVE" | "REJECT") {
+    const reason = window.prompt(decision === "APPROVE" ? "Powód akceptacji zamiany:" : "Powód odrzucenia zamiany:");
+    if (!reason) return false;
+    const result = await rpc("shift_swap_leader_decide_uat_v2", {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_reason: reason,
+    });
+    if (!result) return false;
+    notify(decision === "APPROVE" ? "Zamiana została zatwierdzona i naniesiona na grafik." : "Zamiana została odrzucona.");
+    await loadPortal();
+    return true;
+  }
+
+  async function saveOperationalEvent(entry: {
+    date: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string;
+    locationId?: string; roleId: string; shiftTemplateIds: string[];
+    additionalCount: number; maximumHardUnavailable: number;
+  }) {
+    const result = await rpc("workforce_calendar_event_save_uat_v2", {
+      p_event_id: null,
+      p_month: selectedMonthDate,
+      p_event_date: entry.date,
+      p_event_kind: entry.kind,
+      p_title: entry.title,
+      p_description: entry.description || null,
+      p_location_id: entry.locationId || null,
+      p_demands: entry.kind === "EVENT" ? entry.shiftTemplateIds.map(shiftTemplateId => ({
+        shiftTemplateId,
+        roleId: entry.roleId,
+        additionalCount: entry.additionalCount,
+      })) : [],
+      p_hot_limits: entry.kind === "HOT_DAY" ? [{
+        roleId: entry.roleId,
+        maximumHardUnavailable: entry.maximumHardUnavailable,
+      }] : [],
+    });
+    if (!result) return false;
+    notify(entry.kind === "EVENT" ? "Event zapisany — dodatkowa obsada trafi do następnego uruchomienia solvera." : "HOT DAY zapisany — limit niedostępności jest aktywny.");
+    await loadOperationalContext();
+    return true;
+  }
+
+  async function reviewAvailability(reviewId: string, decision: "APPROVE" | "REJECT") {
+    const reason = window.prompt(decision === "APPROVE" ? "Powód akceptacji niedostępności:" : "Powód odrzucenia niedostępności:");
+    if (!reason) return false;
+    const result = await rpc("availability_exception_review_uat_v2", {
+      p_review_id: reviewId,
+      p_decision: decision,
+      p_reason: reason,
+    });
+    if (!result) return false;
+    notify(decision === "APPROVE" ? "Niedostępność została zatwierdzona." : "Wniosek został odrzucony.");
+    await loadOperationalContext();
     return true;
   }
 
@@ -293,6 +570,7 @@ export function ActiveModules({
       subtitle="Lider wybiera scenariusz, porównuje trzy warianty i publikuje gotowy grafik swojego zespołu bez czekania na pozostałe role."
     />
     <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Grafiki ról korzystają wyłącznie z opublikowanego Matrixa{solverMatrixEffectiveFrom?` od ${solverMatrixEffectiveFrom}`:""}</strong><small>Zmiany zapisane tylko w wersji roboczej nie są jeszcze widoczne dla generatora.</small></span></div>
+    {operationalContext && <OperationalCalendarPanel context={operationalContext} month={month} busy={busy} save={saveOperationalEvent} review={reviewAvailability} />}
     <div className="role-plan-cards">{solverRoles.map((role) => <article key={role.id}>
       <i style={{ background: "#7257d8" }} />
       <div><small>GRAFIK ROLI</small><h3>{role.name}</h3><p>Scenariusze, warianty i analiza OR-Tools.</p></div>
@@ -314,6 +592,14 @@ export function ActiveModules({
     /> : solverEngine === "ORTOOLS_V2" ? <div className="solver-v2-notice warning"><AlertTriangle />Brak kompletnej konfiguracji generatora.</div> : null}
   </>;
   return <>
+    {uatMaster && <UatMasterPersonaPanel
+      preview={uatMaster}
+      selectedEmployeeId={uatMasterEmployeeId}
+      search={uatMasterSearch}
+      setSearch={setUatMasterSearch}
+      select={selectUatMasterEmployee}
+      busy={busy}
+    />}
     {portal ? <EmployeePortal
       portal={portal}
       month={month}
@@ -322,6 +608,11 @@ export function ActiveModules({
       roleNames={dynamicRoleNames}
       openAvailability={() => portal.timeConstraints ? setAvailabilityOpen(true) : fail("Odśwież portal przed edycją dostępności.")}
       openPreferences={() => portal.shiftPreferences ? setShiftPreferencesOpen(true) : fail("Odśwież portal przed edycją preferencji.")}
+      requestSwap={createSwapRequest}
+      decideSwapAsEmployee={decideSwapAsEmployee}
+      decideSwapAsLeader={decideSwapAsLeader}
+      masterMode={Boolean(uatMasterEmployeeId)}
+      busy={busy}
     /> : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
     {availabilityOpen && portal?.timeConstraints && <AvailabilityCalendarDrawer
       workspace={portal.timeConstraints}
@@ -331,6 +622,7 @@ export function ActiveModules({
       save={saveTimeConstraint}
       fail={fail}
       busy={busy}
+      calendarContext={portal.calendarContext}
     />}
     {shiftPreferencesOpen && portal?.shiftPreferences && <ShiftPreferencesDrawer
       workspace={portal.shiftPreferences}
@@ -340,6 +632,27 @@ export function ActiveModules({
       busy={busy}
     />}
   </>;
+}
+
+function UatMasterPersonaPanel({ preview, selectedEmployeeId, search, setSearch, select, busy }: {
+  preview: UatMasterPreview;
+  selectedEmployeeId: string | null;
+  search: string;
+  setSearch: (value: string) => void;
+  select: (employeeId: string | null) => Promise<void>;
+  busy: boolean;
+}) {
+  const selected = preview.employees.find((employee) => employee.id === selectedEmployeeId);
+  const normalized = search.trim().toLocaleLowerCase("pl-PL");
+  const matches = preview.employees.filter((employee) => !normalized ||
+    `${employee.name} ${employee.employeeNo} ${employee.roleName || ""} ${employee.roleCode || ""}`
+      .toLocaleLowerCase("pl-PL").includes(normalized)).slice(0, 8);
+  return <section className="uat-master-persona-panel">
+    <div className="uat-master-persona-head"><span><ShieldCheck /><b>UAT MASTER — audytowany podgląd ról</b><small>Każde wybranie osoby i zapis testowy trafia do historii audytu. Funkcja działa wyłącznie w izolowanym UAT.</small></span>{selected && <button className="secondary-button" disabled={busy} onClick={() => void select(null)}>Wróć do mojego konta</button>}</div>
+    <label>Sprawdź aplikację jako pracownik<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Wpisz imię, nazwisko, numer GP lub rolę" /></label>
+    {selected && <div className="uat-master-selected"><UserRound /><span><b>{selected.name}</b><small>{selected.employeeNo} • {selected.roleName || "Brak roli"}</small></span></div>}
+    {(!selected || normalized) && <div className="uat-master-results">{matches.map((employee) => <button type="button" key={employee.id} disabled={busy || employee.id === selectedEmployeeId} onClick={() => void select(employee.id)}><b>{employee.name}</b><small>{employee.employeeNo} • {employee.roleName || "Brak roli"}</small></button>)}{!matches.length && <p>Brak pracownika pasującego do wyszukiwania.</p>}</div>}
+  </section>;
 }
 
 function PageHead({ eyebrow, title, subtitle, actions }: { eyebrow: string; title: string; subtitle: string; actions?: React.ReactNode }) {
@@ -354,11 +667,65 @@ function IntegrationView({ busy, onExport, runCount }: { busy: boolean; onExport
   return <><PageHead eyebrow="INTEGRACJE • OR-TOOLS" title="Kadromierz — bezpieczny eksport" subtitle="Eksport korzysta wyłącznie z opublikowanego grafiku nowego silnika." actions={<button disabled={busy} className="primary-button" onClick={onExport}><Download /> Eksport grafiku</button>} /><div className="integration-cards"><section><ShieldCheck /><h3>Import starego modelu jest wyłączony</h3><p>Dostępność i preferencje trafiają do Matrixa; duże zmiany są importowane w Matrixie z podglądem.</p></section><section><Download /><h3>Eksport do Kadromierza</h3><p>Opublikowane integracje w historii: {runCount}.</p><button disabled={busy} onClick={onExport}>Przygotuj eksport</button></section></div></>;
 }
 
-function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences }: { portal: PortalWorkspace; month: string; timezone: string; dynamic: boolean; roleNames: Record<string, string>; openAvailability: () => void; openPreferences: () => void }) {
+function OperationalCalendarPanel({ context, month, busy, save, review }: {
+  context: WorkforceCalendarContext;
+  month: string;
+  busy: boolean;
+  save: (entry: { date: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string; locationId?: string; roleId: string; shiftTemplateIds: string[]; additionalCount: number; maximumHardUnavailable: number }) => Promise<boolean>;
+  review: (reviewId: string, decision: "APPROVE" | "REJECT") => Promise<boolean>;
+}) {
+  const roles = context.roles || [];
+  const locations = context.locations || [];
+  const templates = context.shiftTemplates || [];
+  const [kind, setKind] = useState<"EVENT" | "HOT_DAY">("EVENT");
+  const [date, setDate] = useState(`${month}-01`);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [locationId, setLocationId] = useState(locations[0]?.id || "");
+  const [roleId, setRoleId] = useState(roles[0]?.id || "");
+  const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
+  const [count, setCount] = useState(1);
+  const [limit, setLimit] = useState(0);
+  useEffect(() => {
+    if (!roles.some(role => role.id === roleId)) setRoleId(roles[0]?.id || "");
+    if (!locations.some(location => location.id === locationId)) setLocationId(locations[0]?.id || "");
+  }, [locationId, locations, roleId, roles]);
+  const dayOfWeek = date ? ((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1 : 1;
+  const visibleTemplates = useMemo(() => templates.filter(template => template.locationId === locationId && template.dayMask.includes(dayOfWeek)), [dayOfWeek, locationId, templates]);
+  useEffect(() => { setSelectedTemplates(visibleTemplates.map(template => template.id)); }, [locationId, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!date || !title.trim() || !roleId) return;
+    if (kind === "EVENT" && (!locationId || !selectedTemplates.length)) return;
+    const ok = await save({ date, kind, title, description, locationId: kind === "EVENT" ? locationId : undefined, roleId, shiftTemplateIds: selectedTemplates, additionalCount: count, maximumHardUnavailable: limit });
+    if (ok) { setTitle(""); setDescription(""); }
+  };
+  return <section className="operational-calendar-panel"><div className="matrix-demand-head"><div><h3>Kalendarz operacyjny i alerty dostępności</h3><p>Event zwiększa twarde zapotrzebowanie solvera. HOT DAY kontroluje limit twardych nieobecności i kieruje nadmiarowe zgłoszenia do lidera.</p></div><span>{context.events.length} zdarzeń</span></div>{context.canManage && <form className="operational-event-form" onSubmit={event => void submit(event)}><div className="segmented-choice"><button type="button" className={kind === "EVENT" ? "active" : ""} onClick={() => setKind("EVENT")}><Megaphone /> Event + obsada</button><button type="button" className={kind === "HOT_DAY" ? "active" : ""} onClick={() => setKind("HOT_DAY")}><Flame /> HOT DAY</button></div><div className="form-row"><label>Data<input type="date" min={`${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={date} onChange={event => setDate(event.target.value)} required /></label><label>Nazwa<input value={title} maxLength={160} onChange={event => setTitle(event.target.value)} placeholder={kind === "EVENT" ? "np. Koncert — większy ruch" : "np. Długi weekend"} required /></label></div><label>Opis (opcjonalnie)<textarea value={description} maxLength={500} onChange={event => setDescription(event.target.value)} /></label><fieldset className="operational-card-picker"><legend>Rola</legend>{roles.map(role => <button type="button" key={role.id} className={roleId === role.id ? "active" : ""} onClick={() => setRoleId(role.id)}>{role.name}</button>)}</fieldset>{kind === "EVENT" ? <><fieldset className="operational-card-picker"><legend>Lokal</legend>{locations.map(location => <button type="button" key={location.id} className={locationId === location.id ? "active" : ""} onClick={() => setLocationId(location.id)}>{location.name}</button>)}</fieldset><fieldset className="operational-shift-picker"><legend>Zmiany objęte dodatkową obsadą</legend>{visibleTemplates.map(template => <label key={template.id}><input type="checkbox" checked={selectedTemplates.includes(template.id)} onChange={() => setSelectedTemplates(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])} /><span><b>{template.name}</b><small>{String(template.startsAt).slice(0, 5)}–{String(template.endsAt).slice(0, 5)}</small></span></label>)}</fieldset><label className="compact-number">Dodatkowe osoby na każdej zaznaczonej zmianie<input type="number" min={1} max={500} value={count} onChange={event => setCount(Number(event.target.value))} /></label></> : <label className="compact-number">Ile twardych niedostępności roli można przyjąć automatycznie?<input type="number" min={0} max={500} value={limit} onChange={event => setLimit(Number(event.target.value))} /><small>Kolejne zgłoszenie będzie oczekiwać na decyzję lidera.</small></label>}<button className="primary-button" disabled={busy || (kind === "EVENT" && !selectedTemplates.length)}><Save /> Zapisz i zostań tutaj</button></form>}<div className="operational-event-list">{context.events.map(event => <article key={event.id} className={event.kind.toLowerCase()}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><small>{event.date} • {event.kind === "HOT_DAY" ? "HOT DAY" : event.locationName || "Event"}</small><h4>{event.title}</h4><p>{event.kind === "EVENT" ? event.demands?.map(demand => `+${demand.additionalCount} ${demand.roleName} • ${demand.shiftName}`).join("; ") : event.hotLimits?.map(item => `${item.roleName}: automatycznie do ${item.maximumHardUnavailable}`).join("; ")}</p></span></article>)}</div>{context.canManage && Boolean(context.availabilitySummary?.length) && <section className="availability-daily-summary"><h4><CalendarDays /> Dostępność zespołów dzień po dniu</h4><div>{context.availabilitySummary?.map(item=><details key={`${item.date}:${item.roleId}`}><summary><b>{item.date} • {item.roleName}</b><span><em>{item.hardCount} twardych</em><em>{item.softCount} preferencji</em>{item.pendingCount>0&&<em>{item.pendingCount} oczekuje</em>}</span></summary><p>{item.hardEmployees.length?`Twardo niedostępni: ${item.hardEmployees.join(", ")}. `:""}{item.softEmployees.length?`Wolą nie pracować: ${item.softEmployees.join(", ")}. `:""}{item.pendingEmployees.length?`Do decyzji: ${item.pendingEmployees.join(", ")}.`:""}</p></details>)}</div></section>}{context.canManage && context.pendingReviews.length > 0 && <section className="availability-review-list"><h4><Flame /> Wnioski HOT DAY do weryfikacji</h4>{context.pendingReviews.map(item => <article key={item.id}><span><b>{item.employeeName} • {item.employeeNo}</b><small>{item.date} • {item.roleName}{item.note ? ` • ${item.note}` : ""}</small></span><div><button className="primary-button" disabled={busy} onClick={() => void review(item.id, "APPROVE")}>Akceptuj</button><button className="secondary-button" disabled={busy} onClick={() => void review(item.id, "REJECT")}>Odrzuć</button></div></article>)}</section>}</section>;
+}
+
+function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy }: {
+  portal: PortalWorkspace;
+  month: string;
+  timezone: string;
+  dynamic: boolean;
+  roleNames: Record<string, string>;
+  openAvailability: () => void;
+  openPreferences: () => void;
+  requestSwap: (assignmentId: string) => Promise<boolean>;
+  decideSwapAsEmployee: (requestId: string, decision: "ACCEPT" | "REJECT") => Promise<boolean>;
+  decideSwapAsLeader: (requestId: string, decision: "APPROVE" | "REJECT") => Promise<boolean>;
+  masterMode: boolean;
+  busy: boolean;
+}) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
+  useEffect(() => { setSelected(null); }, [employee?.id]);
   const grouped = new Map<string, PortalAssignment[]>();
   portal.assignments.forEach((assignment) => grouped.set(assignment.date, [...(grouped.get(assignment.date) || []), assignment]));
+  const standbyByDay = new Map<string, SolverEmployeeStandby[]>();
+  portal.standby.forEach((entry) => standbyByDay.set(entry.date, [...(standbyByDay.get(entry.date) || []), entry]));
+  const eventsByDay = new Map<string, WorkforceCalendarEvent[]>();
+  portal.calendarContext?.events.forEach((entry) => eventsByDay.set(entry.date, [...(eventsByDay.get(entry.date) || []), entry]));
   const monthlyMinutes = portal.assignments.reduce((sum, assignment) => sum + Math.max(0, Math.round((new Date(assignment.endsAt).getTime() - new Date(assignment.startsAt).getTime()) / 60_000)), 0);
   const periodCounts = portal.assignments.reduce((counts, assignment) => {
     const label = `${assignment.shiftName ?? ""} ${assignment.shiftCode ?? ""}`.toLocaleLowerCase("pl-PL");
@@ -384,10 +751,47 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
     }))), "MÓJ_GRAFIK");
     XLSX.writeFile(workbook, `MOJ_GRAFIK_${month.replace("-", "_")}.xlsx`);
   };
-  return <><PageHead eyebrow="WIDOK PRACOWNIKA" title="Mój grafik i sprawy pracownicze" subtitle="Opublikowane zmiany, dokładne okna dostępności i proste preferencje zmianowe." actions={<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>} /><div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{dynamic ? <><h3>Moje konto</h3><p>Profil Matrix v2</p><span>Role i lokale wynikają z opublikowanego Matrixa.</span></> : <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ")}</span></>}</section><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Zmieniasz tylko wyjątki.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy w Matrixie ma pierwszeństwo.</p></section></div><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span><small>Poranne</small><strong>{periodCounts.morning}</strong></span><span><small>Środkowe</small><strong>{periodCounts.middle}</strong></span><span><small>Wieczorne</small><strong>{periodCounts.evening}</strong></span></section><section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć współpracowników.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
+  return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title="Mój grafik i sprawy pracownicze" subtitle="Opublikowane zmiany, dostępność, stand-by i zamiany w jednym kalendarzu." actions={<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>} />
+    {masterMode && <div className="uat-master-active-banner"><ShieldCheck /><span><b>Testujesz widok: {employee?.firstName} {employee?.lastName} • {employee?.employeeNo}</b><small>Zapisy dostępności i preferencji są wykonywane dla tej osoby oraz oznaczone w audycie jako UAT MASTER. Akcje zamiany pozostają zablokowane.</small></span></div>}
+    {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
+    <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil Matrix v2</p><span>Role i lokale wynikają z opublikowanego Matrixa.</span></>}</section><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Zmieniasz tylko wyjątki.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy w Matrixie ma pierwszeństwo.</p></section></div>
+    <section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span><small>Poranne</small><strong>{periodCounts.morning}</strong></span><span><small>Środkowe</small><strong>{periodCounts.middle}</strong></span><span><small>Wieczorne</small><strong>{periodCounts.evening}</strong></span><span className="standby-summary"><small>Stand-by</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
+    <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć szczegóły lub ogłosić zamianę. Eventy i HOT DAY są widoczne na każdej dacie.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
-    return <section className={!day ? "blank" : ""} key={index}>{day && <><strong>{day}</strong>{(grouped.get(date) || []).map((assignment) => <button key={assignment.id} onClick={() => setSelected(assignment)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}</>}</section>;
-  })}</div></section>{selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} />}</>;
+    const events = eventsByDay.get(date) || [];
+    return <section className={`${!day ? "blank" : ""} ${events.some(event => event.kind === "HOT_DAY") ? "has-hot-day" : ""}`} key={index}>{day && <><strong>{day}</strong>{events.map(event => <div key={event.id} className={`portal-calendar-event ${event.kind.toLowerCase()}`}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><b>{event.title}</b><small>{event.kind === "HOT_DAY" ? "Ograniczona niedostępność" : event.locationName || "Event"}</small></span></div>)}{(grouped.get(date) || []).map((assignment) => <button key={assignment.id} onClick={() => setSelected(assignment)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}{(standbyByDay.get(date) || []).map((entry) => <div key={entry.id} className={`portal-standby tier-${entry.tier} ${entry.status.toLowerCase()}`}><b>Stand-by • Tier {entry.tier}</b><small>{entry.roleName}{entry.status === "ACTIVATED" ? " • aktywowany" : " • gotowość dzienna"}</small></div>)}</>}</section>;
+  })}</div></section>
+    {!masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
+    {portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
+    {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} requestSwap={requestSwap} allowSwap={!masterMode} busy={busy} />}
+  </>;
+}
+
+function ShiftSwapBoardPanel({ board, busy, decideAsEmployee, decideAsLeader }: {
+  board: ShiftSwapBoard;
+  busy: boolean;
+  decideAsEmployee: (requestId: string, decision: "ACCEPT" | "REJECT") => Promise<boolean>;
+  decideAsLeader: (requestId: string, decision: "APPROVE" | "REJECT") => Promise<boolean>;
+}) {
+  const visible = board.requests.filter(request => !["CANCELLED", "EMPLOYEE_REJECTED"].includes(request.status));
+  return <section className="swap-board-card"><div className="matrix-demand-head"><div><h3><ArrowLeftRight /> Tablica zamian</h3><p>Przejęcie zmiany zawsze wymaga zgodności roli, lokalu, kompetencji, dostępności i odpoczynku. Po zgodzie pracownika decyzję podejmuje lider.</p></div><span>{visible.length} ogłoszeń</span></div>{visible.length ? <div className="swap-board-list">{visible.map(request => <article key={request.id}><div><small>{request.date} • {time(request.startsAt)}–{time(request.endsAt)}</small><h4>{request.shiftName} • {request.locationName}</h4><p><b>{request.proposerName}</b> • {request.roleName}{request.message ? ` — ${request.message}` : ""}</p></div><span className={`swap-status ${request.status.toLowerCase()}`}>{swapStatusLabel(request.status)}</span><div className="swap-actions">{request.status === "OPEN" && !request.isMine && request.eligible && <button className="primary-button" disabled={busy} onClick={() => void decideAsEmployee(request.id, "ACCEPT")}>Mogę przejąć</button>}{request.status === "OPEN" && !request.isMine && !request.eligible && <small>{swapReasonLabel(request.ineligibilityReasons[0])}</small>}{request.status === "OPEN" && request.targetEmployeeId === board.employeeId && <button className="secondary-button" disabled={busy} onClick={() => void decideAsEmployee(request.id, "REJECT")}>Odrzuć</button>}{request.requiresLeaderDecision && board.canManage && <><button className="primary-button" disabled={busy} onClick={() => void decideAsLeader(request.id, "APPROVE")}>Akceptuj jako lider</button><button className="secondary-button" disabled={busy} onClick={() => void decideAsLeader(request.id, "REJECT")}>Odrzuć</button></>}</div></article>)}</div> : <p className="empty-inline">Brak aktywnych ogłoszeń o zamianie.</p>}</section>;
+}
+
+function CompanyScheduleCalendar({ calendar, month, timezone, events }: { calendar: CompanyCalendar; month: string; timezone: string; events: WorkforceCalendarEvent[] }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const offset = (new Date(Date.UTC(year, monthNumber - 1, 1, 12)).getUTCDay() + 6) % 7;
+  const dayCount = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
+  const cells = Array.from({ length: offset + dayCount }, (_, index) => index < offset ? 0 : index - offset + 1);
+  const byDate = new Map<string, CompanyCalendarAssignment[]>();
+  calendar.assignments.forEach(assignment => byDate.set(assignment.date, [...(byDate.get(assignment.date) || []), assignment]));
+  const eventDates = new Set(events.map(event => event.date));
+  const selected = selectedDate ? byDate.get(selectedDate) || [] : [];
+  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik firmy — do odczytu</h3><p>Każdy pracownik widzi, kto pracuje. Dni z ogłoszeniem, eventem lub HOT DAY są oznaczone.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
+    const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
+    const assignments = byDate.get(date) || [];
+    return <button type="button" key={index} className={`${!day ? "blank" : ""} ${eventDates.has(date) ? "has-event" : ""} ${selectedDate === date ? "selected" : ""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day && <><b>{day}</b><strong>{assignments.length} os.</strong>{assignments.some(assignment => assignment.isSwap) && <small>Zamiana</small>}{eventDates.has(date) && <Megaphone />}</>}</button>;
+  })}</div>{selectedDate && <div className="company-day-detail"><div><h4>{selectedDate}</h4><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></div>{selected.map(assignment => <article key={assignment.id}><span><b>{time(assignment.startsAt, timezone)}–{time(assignment.endsAt, timezone)}</b><small>{assignment.shiftName} • {assignment.locationName}</small></span><span><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap ? " • zamiana" : ""}</small></span></article>)}</div>}</section>;
 }
 
 function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { workspace: PortalShiftPreferences; month: string; close: () => void; save: (preferences: Record<ShiftPeriod, ShiftPreferenceLevel>) => Promise<boolean>; busy: boolean }) {
@@ -396,7 +800,7 @@ function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { works
   return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer shift-preferences-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • PREFERENCJE</p><h2>Pory zmian • {labelMonth(month)}</h2></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content"><p>Preferencje są miękkie; dostępność godzinową ustaw osobno.</p>{periods.map(([period, label]) => <section className="shift-preference-row" key={period}><span><strong>{label}</strong>{workspace.managerOverrides?.[period] ? <small><ShieldCheck /> Nadrzędnie w Matrixie: {preferenceLevelLabel(workspace.managerOverrides[period])}</small> : <small>Efektywnie: {preferenceLevelLabel(workspace.effective?.[period] ?? preferences[period])}</small>}</span><select value={preferences[period]} onChange={(event) => setPreferences((current) => ({ ...current, [period]: event.target.value as ShiftPreferenceLevel }))}><option value="PREFERRED">Preferuję</option><option value="NEUTRAL">Neutralnie</option><option value="AVOIDED">Wolę unikać</option></select></section>)}<button className="primary-button full" disabled={busy} onClick={() => void save(preferences)}><Save /> {busy ? "Zapisuję…" : "Zapisz preferencje"}</button></div></aside></>;
 }
 
-function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy }: {
+function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext }: {
   workspace: PortalTimeConstraintsWorkspace;
   month: string;
   locations: MatrixItem[];
@@ -404,6 +808,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   save: (entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) => Promise<boolean>;
   fail: (message: string) => void;
   busy: boolean;
+  calendarContext?: WorkforceCalendarContext;
 }) {
   const timezone=workspace.timezone;
   const [year,monthNumber]=month.split("-").map(Number);
@@ -495,7 +900,9 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
         <div className="availability-state-calendar">{Array.from({length:calendarOffset},(_,index)=><i key={`blank-${index}`}/>)}{monthDates.map(date=>{
           const state=dayState(date),entries=entriesByDay.get(date)??[];
           const protectedEntry=entries.some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO");
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{protectedEntry&&<ShieldCheck/>}</button>;
+          const events=calendarContext?.events.filter(event=>event.date===date)??[];
+          const pending=calendarContext?.pendingReviews.some(review=>review.date===date)??false;
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> HOT DAY</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> Event</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>
@@ -516,9 +923,9 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   </aside></>;
 }
 
-function CoworkerDrawer({ assignment, timezone, dynamic, roleNames, close }: { assignment: PortalAssignment; timezone: string; dynamic: boolean; roleNames: Record<string, string>; close: () => void }) {
+function CoworkerDrawer({ assignment, timezone, dynamic, roleNames, close, requestSwap, allowSwap, busy }: { assignment: PortalAssignment; timezone: string; dynamic: boolean; roleNames: Record<string, string>; close: () => void; requestSwap: (assignmentId: string) => Promise<boolean>; allowSwap: boolean; busy: boolean }) {
   const localTimezone = assignmentTimezone(assignment, timezone);
-  return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer"><div className="drawer-head"><div><p className="eyebrow">SZCZEGÓŁY ZMIANY</p><h2>{assignment.date} • {time(assignment.startsAt, localTimezone)}–{time(assignment.endsAt, localTimezone)}</h2><small>{assignment.location} • {portalShiftLabel(assignment)}</small></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content coworker-list"><h3>Osoby na tej zmianie</h3>{assignment.coworkers?.length ? assignment.coworkers.map((coworker, index) => <div key={index}><UserRound /><span><b>{coworker.name}</b><small>{dynamic ? roleNames[coworker.role] ?? coworker.role : rolePl[coworker.role] || coworker.role}</small></span></div>) : <p>Nie ma innych przypisanych osób.</p>}</div></aside></>;
+  return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer"><div className="drawer-head"><div><p className="eyebrow">SZCZEGÓŁY ZMIANY</p><h2>{assignment.date} • {time(assignment.startsAt, localTimezone)}–{time(assignment.endsAt, localTimezone)}</h2><small>{assignment.location} • {portalShiftLabel(assignment)}</small></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content coworker-list">{allowSwap ? <button className="primary-button full" disabled={busy || new Date(assignment.startsAt)<=new Date()} onClick={async()=>{if(await requestSwap(assignment.id))close();}}><ArrowLeftRight/> Zgłoś zmianę na tablicę</button> : <div className="uat-master-readonly"><ShieldCheck /> Akcje zamiany są niedostępne w symulowanym widoku MASTER.</div>}<h3>Osoby na tej zmianie</h3>{assignment.coworkers?.length ? assignment.coworkers.map((coworker, index) => <div key={index}><UserRound /><span><b>{coworker.name}</b><small>{dynamic ? roleNames[coworker.role] ?? coworker.role : rolePl[coworker.role] || coworker.role}</small></span></div>) : <p>Nie ma innych przypisanych osób.</p>}</div></aside></>;
 }
 
 function labelMonth(month: string, timezone = "Europe/Warsaw") {
@@ -532,6 +939,8 @@ function time(value?: string, timezone = "Europe/Warsaw") { return value ? new D
 function portalShiftLabel(assignment: PortalAssignment) { return assignment.shiftName?.trim() || assignment.shiftCode || "Zmiana"; }
 function assignmentTimezone(assignment: PortalAssignment, fallback: string) { return assignment.locationTimezone?.trim() || fallback; }
 function preferenceLevelLabel(value: string) { return ({ PREFERRED: "preferowana", NEUTRAL: "neutralna", AVOIDED: "unikać", BLOCKED: "zablokowana", INHERIT: "wg pracownika" } as Record<string, string>)[value] || value; }
+function swapStatusLabel(value: string) { return ({ OPEN: "Otwarte", EMPLOYEE_ACCEPTED: "Czeka na lidera", LEADER_APPROVED: "Zatwierdzone", LEADER_REJECTED: "Odrzucone przez lidera" } as Record<string, string>)[value] || value; }
+function swapReasonLabel(value?: string) { return ({ ROLE_REQUIRED: "Nie masz wymaganej roli.", LOCATION_NOT_ALLOWED: "Nie możesz pracować w tym lokalu.", DUTY_REQUIRED: "Brakuje wymaganej kompetencji.", HARD_UNAVAILABLE: "Masz twardą niedostępność.", STANDBY_CONFLICT: "Masz tego dnia stand-by.", SHIFT_OR_REST_CONFLICT: "Zmiana koliduje z grafikiem lub odpoczynkiem.", MAXIMUM_MONTHLY_HOURS: "Przekroczysz limit miesięczny.", MAXIMUM_WEEKLY_HOURS: "Przekroczysz limit tygodniowy." } as Record<string, string>)[value || ""] || "Ta zamiana nie spełnia twardych reguł."; }
 function timeConstraintKindPl(kind: string) { return ({ AVAILABLE_WINDOW: "Dostępność", UNAVAILABLE: "Twarda niedostępność", PREFER_NOT_TO_WORK: "Wolę nie pracować", PREFERRED_LOCATION: "Preferowany lokal", LEAVE: "Urlop", SICKNESS: "L4 / zwolnienie" } as Record<string, string>)[kind] || kind; }
 function translateError(message: string) {
   const translations: Record<string, string> = {
@@ -540,6 +949,10 @@ function translateError(message: string) {
     INVALID_TIME_RANGE: "Koniec przedziału musi przypadać po jego początku.",
     PROTECTED_TIME_CONSTRAINT: "Tego wpisu nie można zmienić w portalu pracownika.",
     FORBIDDEN: "Nie masz uprawnień do tej operacji.",
+    SCHEDULE_PUBLICATION_CONFLICT_REQUIRES_OWNER_RESOLUTION: "Grafik roli i grafik firmy są ze sobą sprzeczne. System nie pokaże pracownikom losowo wybranej wersji; konflikt musi rozstrzygnąć właściciel.",
+    STANDBY_COVERAGE_INSUFFICIENT: "Nie można opublikować grafiku: dla co najmniej jednego dnia i roli brakuje dwóch kwalifikujących się osób stand-by.",
+    STANDBY_TIER_1_MUST_BE_USED_OR_DECLINED_FIRST: "Najpierw aktywuj Tier 1 albo odnotuj, że ta osoba nie może przejąć zmiany.",
+    STANDBY_REVALIDATION_HARD_BLOCK: "Osoba stand-by ma obecnie twardą niedostępność i nie może przejąć tej zmiany.",
   };
   const code = Object.keys(translations).find((candidate) => message.includes(candidate));
   return code ? translations[code] : message;

@@ -217,6 +217,104 @@
 .availability-protected-note svg { width: 15px; height: 15px; }
 .availability-editor-actions { justify-content: flex-end; }
 
+.employee-month-summary .standby-summary {
+  background: #f0ebff;
+  border-color: #b9a8f5;
+}
+.employee-month-summary .standby-summary em {
+  display: block;
+  margin-top: 3px;
+  color: #675c7d;
+  font-size: 9px;
+  font-style: normal;
+}
+.portal-standby {
+  display: grid;
+  gap: 2px;
+  margin-top: 5px;
+  padding: 7px;
+  border: 1px dashed #7d63da;
+  border-left: 5px solid #7d63da;
+  border-radius: 7px;
+  background: #f1edff;
+  color: #412c92;
+}
+.portal-standby.tier-2 { border-color: #9c7a28; background: #fff5da; color: #715000; }
+.portal-standby.activated { border-style: solid; background: #dff5e7; color: #146c3b; }
+.portal-standby small { font-size: 9px; }
+.portal-calendar-event { display: flex; gap: 6px; align-items: center; padding: 6px 7px; border-radius: 9px; margin-top: 5px; background: #eef4ff; color: #315b9d; }
+.portal-calendar-event svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.portal-calendar-event span { min-width: 0; }
+.portal-calendar-event b, .portal-calendar-event small { display: block; font-size: 10px; line-height: 1.25; }
+.portal-calendar-event.hot_day { background: #fff0db; color: #9a5511; }
+.employee-month-calendar > section.has-hot-day { box-shadow: inset 0 0 0 2px #f2a13b; }
+.swap-board-card, .company-calendar-card { background: #fff; border: 1px solid #e4dfea; border-radius: 22px; padding: 24px; margin-top: 22px; }
+.swap-board-card h3 { display: flex; gap: 8px; align-items: center; }
+.swap-board-card h3 svg { width: 22px; }
+.swap-board-list { display: grid; gap: 10px; }
+.swap-board-list article { display: grid; grid-template-columns: minmax(240px, 1fr) auto auto; gap: 16px; align-items: center; border: 1px solid #e8e2ec; border-radius: 14px; padding: 14px; }
+.swap-board-list h4, .swap-board-list p { margin: 4px 0; }
+.swap-status { border-radius: 999px; padding: 7px 10px; background: #f3f0f7; font-size: 12px; font-weight: 700; }
+.swap-status.employee_accepted { background: #fff0d6; color: #8c5713; }
+.swap-status.leader_approved { background: #e6f6ef; color: #087052; }
+.swap-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.swap-actions button { padding: 9px 12px; }
+.swap-actions small { max-width: 220px; color: #8b6070; }
+.empty-inline { text-align: center; color: #7a7180; padding: 24px; }
+.company-month-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
+.company-month-calendar > button { min-height: 82px; border: 1px solid #e5dfea; border-radius: 12px; background: #fff; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; position: relative; }
+.company-month-calendar > button.blank { visibility: hidden; }
+.company-month-calendar > button.selected { border-color: #7457e8; background: #f7f4ff; }
+.company-month-calendar > button.has-event { box-shadow: inset 0 3px #f1a23f; }
+.company-month-calendar > button svg { position: absolute; right: 8px; top: 8px; width: 15px; }
+.company-month-calendar > button small { color: #7257d8; }
+.company-day-detail { margin-top: 15px; border-top: 1px solid #e5dfea; padding-top: 14px; }
+.company-day-detail > div { display: flex; justify-content: space-between; align-items: center; }
+.company-day-detail article { display: grid; grid-template-columns: minmax(180px, .7fr) 1fr; gap: 20px; padding: 10px 0; border-bottom: 1px solid #eee9f1; }
+.company-day-detail span b, .company-day-detail span small { display: block; }
+.availability-state-calendar button em { display: flex; align-items: center; gap: 3px; font-size: 9px; font-style: normal; font-weight: 800; margin-top: 3px; }
+.availability-state-calendar button em svg { position: static; width: 10px; height: 10px; }
+.availability-state-calendar button.hot-day { box-shadow: inset 0 0 0 2px #f2a13b; }
+.real-month .month-day.has-hot-day { box-shadow: inset 0 0 0 2px #f2a13b; background: #fffaf1; }
+.manager-calendar-event { display: block; margin-top: 5px; padding: 4px 6px; border-radius: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; color: #315b9d; background: #eef4ff; }
+.manager-calendar-event b { margin-right: 5px; font-size: 8px; }
+.manager-calendar-event.hot_day { color: #9a5511; background: #fff0db; }
+.availability-daily-summary { margin-top: 18px; padding: 16px; border: 1px solid #e8e0f7; border-radius: 14px; background: #fbf9ff; }
+.availability-daily-summary > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.availability-daily-summary > div { display: grid; gap: 7px; }
+.availability-daily-summary details { padding: 10px 12px; border: 1px solid #e4dde9; border-radius: 10px; background: #fff; }
+.availability-daily-summary summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+.availability-daily-summary summary span { display: flex; flex-wrap: wrap; gap: 6px; }
+.availability-daily-summary summary em { padding: 4px 7px; border-radius: 999px; background: #f2eef7; font-size: 10px; font-style: normal; }
+.availability-daily-summary p { margin: 9px 0 0; color: #6e6475; font-size: 12px; line-height: 1.5; }
+.secondary-button.danger { border-color: #d88984; color: #a53f3c; background: #fff8f7; }
+.availability-state-calendar button.pending-review { background: #fff8d9; }
+.availability-state-calendar button.pending-review small { color: #7b6110; }
+.operational-calendar-panel { background: #fff; border: 1px solid #e4dfea; border-radius: 22px; padding: 24px; margin: 22px 0; }
+.operational-event-form { display: grid; gap: 15px; padding: 18px; border-radius: 16px; background: #faf8fd; margin-bottom: 18px; }
+.operational-event-form label { display: grid; gap: 6px; font-weight: 750; }
+.operational-event-form input, .operational-event-form textarea { border: 1px solid #ddd6e4; border-radius: 10px; padding: 11px; background: #fff; }
+.operational-event-form textarea { min-height: 72px; resize: vertical; }
+.segmented-choice, .operational-card-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.segmented-choice button, .operational-card-picker button { border: 1px solid #dcd5e5; border-radius: 11px; padding: 10px 13px; background: #fff; display: inline-flex; align-items: center; gap: 7px; font-weight: 750; }
+.segmented-choice button.active, .operational-card-picker button.active { color: #fff; background: #6647d9; border-color: #6647d9; }
+.operational-card-picker, .operational-shift-picker { border: 1px solid #e3ddea; border-radius: 14px; padding: 13px; }
+.operational-card-picker legend, .operational-shift-picker legend { padding: 0 6px; font-weight: 850; }
+.operational-shift-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.operational-shift-picker label { display: flex; align-items: center; gap: 9px; padding: 10px; border-radius: 10px; background: #fff; border: 1px solid #e3ddea; }
+.operational-shift-picker span b, .operational-shift-picker span small { display: block; }
+.compact-number { max-width: 520px; }
+.operational-event-list { display: grid; gap: 9px; }
+.operational-event-list article { display: flex; gap: 12px; align-items: flex-start; border: 1px solid #dde7f5; background: #f4f8ff; border-radius: 13px; padding: 13px; }
+.operational-event-list article.hot_day { border-color: #f1c781; background: #fff7e8; }
+.operational-event-list article > svg { width: 20px; flex: 0 0 auto; }
+.operational-event-list h4, .operational-event-list p { margin: 3px 0; }
+.availability-review-list { margin-top: 18px; padding-top: 16px; border-top: 1px solid #e6dfea; }
+.availability-review-list h4 { display: flex; align-items: center; gap: 8px; }
+.availability-review-list article { display: flex; justify-content: space-between; align-items: center; gap: 14px; border: 1px solid #efc47e; border-radius: 12px; padding: 12px; margin-top: 8px; }
+.availability-review-list article span b, .availability-review-list article span small { display: block; }
+.availability-review-list article > div { display: flex; gap: 8px; }
+
 .matrix-v2-edit-mode {
   display: flex;
   align-items: center;
@@ -1602,7 +1700,127 @@
   white-space: nowrap;
 }
 
+.uat-master-persona-panel {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 22px;
+  padding: 18px;
+  border: 2px solid #7050df;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f6f2ff, #fff);
+  box-shadow: 0 14px 32px rgba(91, 63, 190, .1);
+}
+
+.uat-master-persona-head,
+.uat-master-persona-head > span,
+.uat-master-selected,
+.uat-master-active-banner,
+.uat-master-readonly {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.uat-master-persona-head {
+  justify-content: space-between;
+}
+
+.uat-master-persona-head svg,
+.uat-master-active-banner > svg {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: #6745dc;
+}
+
+.uat-master-persona-head b,
+.uat-master-persona-head small,
+.uat-master-selected b,
+.uat-master-selected small,
+.uat-master-active-banner b,
+.uat-master-active-banner small {
+  display: block;
+}
+
+.uat-master-persona-head small,
+.uat-master-selected small,
+.uat-master-active-banner small {
+  margin-top: 3px;
+  color: #756d82;
+}
+
+.uat-master-persona-panel > label {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.uat-master-persona-panel input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 15px;
+  border: 1px solid #d8d0e7;
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+}
+
+.uat-master-results {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.uat-master-results > button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid #ddd5ec;
+  border-radius: 13px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uat-master-results > button:hover {
+  border-color: #7050df;
+  background: #f8f5ff;
+}
+
+.uat-master-results small {
+  overflow: hidden;
+  color: #746c80;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uat-master-selected {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #ebe4ff;
+  color: #3f267f;
+}
+
+.uat-master-active-banner {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #9d84ef;
+  border-radius: 16px;
+  background: #f2edff;
+}
+
+.uat-master-readonly {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f1eef7;
+  color: #5d5567;
+  font-weight: 750;
+}
+
 @media (max-width: 760px) {
+  .swap-board-list article, .company-day-detail article { grid-template-columns: 1fr; }
+  .availability-review-list article { align-items: stretch; flex-direction: column; }
   .matrix-v2-advanced-settings[open],
   .matrix-contract-card {
     grid-template-columns: 1fr;
@@ -1672,6 +1890,15 @@
   .role-publication-totals,
   .role-publication-analysis,
   .role-publication-analysis dl {
+    grid-template-columns: 1fr;
+  }
+
+  .uat-master-persona-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .uat-master-results {
     grid-template-columns: 1fr;
   }
 }

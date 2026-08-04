@@ -8,11 +8,13 @@ import {
   createRoleCompositeIdempotencyKey,
   forgetPublishedSchedule,
   getPublishedSchedule,
+  getPublicationAuthorityStatus,
   getRoleCompositeCandidates,
   getRolePublicationOverview,
   isValidIdempotencyKey,
   publishRoleComposite,
   recoverPublishedSchedule,
+  resolvePublicationAuthority,
   rememberPublishedSchedule,
   roleCompositePublicationAttemptStorageKey,
   solverErrorMessage,
@@ -20,6 +22,7 @@ import {
   type SolverEngine,
   type SolverRoleCompositeCandidates,
   type SolverRolePublicationOverview,
+  type SolverPublicationAuthorityStatus,
   type SolverScenario,
   type SolverWorkspace,
 } from "@/lib/solver-v2";
@@ -82,6 +85,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const [scenarioId, setScenarioId] = useState(defaultScenarioId);
   const [candidates, setCandidates] = useState<SolverRoleCompositeCandidates | null>(null);
   const [overview, setOverview] = useState<SolverRolePublicationOverview | null>(null);
+  const [authority, setAuthority] = useState<SolverPublicationAuthorityStatus | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
   const [busy, setBusy] = useState(false);
@@ -140,13 +144,23 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
   }, [supabase, expectedSolverVersion, engine, month]);
 
+  const loadAuthority = useCallback(async () => {
+    if (!supabase || engine !== "ORTOOLS_V2") return;
+    try {
+      setAuthority(await getPublicationAuthorityStatus(supabase, month));
+    } catch (error) {
+      setAuthority(null);
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    }
+  }, [supabase, engine, month]);
+
   useEffect(() => {
     candidateRequestRef.current += 1;
     setCandidates(null);
     if (scenarioId) void loadCandidates();
   }, [scenarioId, refreshKey, loadCandidates]);
 
-  useEffect(() => { void loadOverview(); }, [loadOverview, refreshKey]);
+  useEffect(() => { void loadOverview(); void loadAuthority(); }, [loadOverview, loadAuthority, refreshKey]);
 
   useEffect(() => {
     setPublishedWorkspace(null);
@@ -295,6 +309,28 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
   }
 
+  async function resolveConflict(keepSource: "COMPANY" | "ROLES") {
+    if (!supabase || !authority?.conflict) return;
+    const label = keepSource === "COMPANY" ? "grafik firmowy" : "opublikowane grafiki zespołów";
+    const reason = window.prompt(
+      `Konflikt publikacji: jako obowiązujące pozostaną ${label}.\n\nPodaj powód decyzji do historii audytu:`,
+      `Decyzja właściciela: obowiązujące pozostają ${label}.`,
+    );
+    if (!reason) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const next = await resolvePublicationAuthority(supabase, month, keepSource, reason);
+      setAuthority(next);
+      await loadOverview();
+      setMessage(`Rozstrzygnięto konflikt. Obowiązujące pozostają ${label}; decyzję zapisano w audycie.`);
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <section className="role-composite-panel">
     <div className="role-composite-head">
       <span className="role-composite-icon"><Puzzle/></span>
@@ -309,6 +345,12 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     </div>
 
     <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Scalanie dotyczy opublikowanego Matrixa{matrixEffectiveFrom?` od ${matrixEffectiveFrom}`:""}</strong><small>Robocze zmiany pracowników i ról nie są uwzględniane, dopóki Matrix nie przejdzie walidacji i publikacji.</small></span></div>
+
+    {authority?.conflict&&<section className="publication-authority-conflict">
+      <AlertTriangle/>
+      <div><strong>Istnieją dwa konkurencyjne grafiki dla {monthLabel(month)}</strong><p>Grafik firmowy „{authority.company?.name ?? "—"}” oraz {authority.roles.length} opublikowany grafik zespołu nie mogą jednocześnie być źródłem prawdy. Do czasu decyzji pracownicy nie zobaczą losowo wybranej wersji.</p><ul>{authority.conflicts.map(conflict=><li key={`${conflict.roleScheduleId}:${conflict.companyScheduleId}`}>{conflict.roleName}: grafik zespołu koliduje z grafikiem firmy.</li>)}</ul></div>
+      <div className="publication-authority-actions"><button disabled={busy} className="secondary-button" onClick={()=>void resolveConflict("COMPANY")}>Zachowaj grafik firmy</button><button disabled={busy} className="primary-button" onClick={()=>void resolveConflict("ROLES")}>Zachowaj grafiki zespołów</button></div>
+    </section>}
 
     {overview&&<section className="role-publication-overview">
       <div className="role-publication-totals">

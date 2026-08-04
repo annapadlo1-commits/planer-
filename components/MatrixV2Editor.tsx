@@ -3,7 +3,7 @@
 import {
   AlertTriangle, Archive, Boxes, Check, ChevronRight, CircleDollarSign, Clock3,
   Download, Edit3, FileSpreadsheet, GitBranch, Layers3, Link2, MapPin, Plus,
-  Save, ShieldCheck, Upload, RefreshCw, Settings, Sparkles, Target, Users, X,
+  Save, ShieldCheck, Upload, RefreshCw, Settings, Sparkles, Target, Trash2, Users, X,
   History as HistoryIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -44,6 +44,7 @@ type MatrixAuditEntry={
 };
 type MatrixHistoryPayload={versions:MatrixRevisionVersion[];audit:MatrixAuditEntry[]};
 type MatrixVersionComparison={settingsChanged:boolean;sections:{key:string;label:string;leftCount:number;rightCount:number;changed:boolean}[]};
+type UatResetPreview={enabled:boolean;draftMatrixVersionId?:string|null;draftVersion?:number|null;confirmation:string;employees:number;roleAssignments:number;locationAssignments:number;dutyAssignments:number;preserves:string[]};
 
 const assignmentModeLabel: Record<string, string> = {
   REQUIRED: "Wymagany", OPTIONAL: "Opcjonalny", EXTRA: "Dodatkowy",
@@ -134,6 +135,7 @@ export function MatrixV2Editor({
   const [publicationReadiness,setPublicationReadiness]=useState<MatrixV2PublicationReadiness|null>(null);
   const [importOpen,setImportOpen]=useState(false);
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
   const settings = matrixV2Settings(data.matrixVersion);
   const mixedCurrencyItems = data.financeVisible ? [
     ...(data.payRules ?? []),
@@ -165,6 +167,29 @@ export function MatrixV2Editor({
     if (!data.financeVisible && tab === "finance") selectTab("structure");
   }, [data.financeVisible, tab]);
   useEffect(()=>{if(focusEmployeeId)selectTab("workforce");},[focusEmployeeId]);
+  useEffect(()=>{
+    let alive=true;
+    if(!supabase||!data.editable){setUatReset(null);return()=>{alive=false;};}
+    void supabase.rpc("uat_matrix_workforce_reset_preview_v2").then(result=>{
+      if(alive&&!result.error&&result.data)setUatReset(result.data as UatResetPreview);
+    });
+    return()=>{alive=false;};
+  },[data.editable,data.matrixVersion.id,supabase]);
+
+  async function resetUatDraftWorkforce(){
+    if(!supabase||!uatReset?.enabled)return;
+    const confirmation=window.prompt(`Ta operacja usunie ${uatReset.employees} profili wyłącznie z roboczego Matrixa v${uatReset.draftVersion}. Aktywny Matrix, grafiki, stawki i historia pozostaną zachowane.\n\nAby kontynuować, wpisz dokładnie: ${uatReset.confirmation}`);
+    if(confirmation!==uatReset.confirmation){if(confirmation!==null)fail("Reset anulowany: tekst potwierdzenia nie jest zgodny.");return;}
+    if(!window.confirm("Ostatnie potwierdzenie: wyczyścić pracowników, role, lokale i kompetencje z wersji roboczej UAT?"))return;
+    setBusy(true);
+    const result=await supabase.rpc("uat_matrix_workforce_reset_v2",{p_confirmation:confirmation});
+    setBusy(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    setWorkforceFocusEmployeeId(null);
+    selectTab("workforce");
+    notify("Robocza baza pracowników UAT została wyczyszczona. Aktywne dane i historia pozostały bez zmian.");
+    await reloadInPlace();
+  }
 
   async function createDraft() {
     if (!supabase) return;
@@ -465,7 +490,7 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <><button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={() => void publishDraft()}><Check/> Opublikuj Matrix</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={() => void publishDraft()}><Check/> Opublikuj Matrix</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
@@ -764,8 +789,8 @@ function WorkforceTab({
       </div>
       {rateEdit&&<div className="matrix-v2-edit-mode"><span><strong>Edytujesz istniejącą stawkę</strong><small>od {rateEdit.valid_from}{rateEdit.valid_to?` do ${rateEdit.valid_to}`:" • bez daty końcowej"}</small></span><button type="button" className="secondary-button" onClick={()=>setRateEdit(null)}><X/> Anuluj edycję</button></div>}
       <form id={`matrix-v2-rate-form-${employee.id}`} className="matrix-v2-inline-form rates" key={`${employee.id}:${rateEdit?.id??"new"}`} onSubmit={event=>{event.preventDefault();const form=new FormData(event.currentTarget);void saveRate({id:rateEdit?.id??null,employeeId:employee.id,validFrom:String(form.get("validFrom")),validTo:String(form.get("validTo")??""),amount:String(form.get("amount")),contractType:String(form.get("contractType")??""),active:form.has("active")}).then(ok=>{if(ok)setRateEdit(null);});}}>
-        <label>Od<input name="validFrom" type="date" min={employee.employmentStart??undefined} max={employee.employmentEnd??undefined} required defaultValue={rateEdit?.valid_from??maxDate(`${month}-01`,employee.employmentStart)}/><small>{employee.employmentStart?`Najwcześniej: ${employee.employmentStart}`:"Musi odpowiadać okresowi współpracy."}</small></label>
-        <label>Do<input name="validTo" type="date" min={rateEdit?.valid_from??employee.employmentStart??undefined} max={employee.employmentEnd??undefined} defaultValue={rateEdit?.valid_to??""}/><small>{employee.employmentEnd?`Najpóźniej: ${employee.employmentEnd}`:"Puste pole oznacza stawkę bez daty końcowej."}</small></label>
+        <label>Od<input name="validFrom" type="date" min={maxDate(dateHorizon(-50),employee.employmentStart)} max={minDate(dateHorizon(2),employee.employmentEnd)} required defaultValue={rateEdit?.valid_from??maxDate(`${month}-01`,employee.employmentStart)}/><small>{employee.employmentStart?`Najwcześniej: ${employee.employmentStart}`:"Musi odpowiadać okresowi współpracy."}</small></label>
+        <label>Do<input name="validTo" type="date" min={rateEdit?.valid_from??employee.employmentStart??undefined} max={minDate(dateHorizon(10),employee.employmentEnd)} defaultValue={rateEdit?.valid_to??""}/><small>{employee.employmentEnd?`Najpóźniej: ${employee.employmentEnd}`:"Puste pole oznacza stawkę bez daty końcowej."}</small></label>
         <label>Stawka godzinowa ({currency})<input name="amount" type="number" min="0" step="0.01" required defaultValue={minorToInput(rateEdit?.base_rate_minor)}/></label>
         <label>Forma współpracy w tym okresie<input type="hidden" name="contractType" value={rateEdit?.contract_type??employee.contractType??"INNE"}/><span className="matrix-v2-readonly-value">{contractTypeLabel(rateEdit?.contract_type??employee.contractType)}</span><small>Nie wpisujesz jej ponownie. Nowa stawka dziedziczy formę współpracy z profilu pracownika.</small></label>
         <label className="check-label"><input name="active" type="checkbox" defaultChecked={rateEdit?.active??true}/> Aktywna</label>
@@ -893,12 +918,16 @@ function strategySignature(data:MatrixV2Workspace,strategyId:string){
 
 function strategyRelativeLevel(data:MatrixV2Workspace,strategyId:string,metric:string){
   const strategies=data.strategies.filter(strategy=>strategy.active);
-  const values=strategies.map(strategy=>activeBusinessObjectives(data,strategy.id).find(objective=>objective.metric_code===metric)?.weight??0);
-  const current=activeBusinessObjectives(data,strategyId).find(objective=>objective.metric_code===metric)?.weight??0;
-  const minimum=Math.min(...values),maximum=Math.max(...values);
-  if(minimum===maximum)return {className:"same",label:"Taki sam nacisk"};
-  if(current===maximum)return {className:"high",label:"Najsilniejszy nacisk"};
-  if(current===minimum)return {className:"low",label:"Najsłabszy nacisk"};
+  const values=strategies.map(strategy=>{
+    const objective=activeBusinessObjectives(data,strategy.id).find(item=>item.metric_code===metric);
+    return {strategyId:strategy.id,tier:objective?.tier??101,weight:objective?.weight??0};
+  });
+  const current=values.find(value=>value.strategyId===strategyId)??{tier:101,weight:0};
+  const ordered=[...values].sort((left,right)=>left.tier-right.tier||right.weight-left.weight);
+  const best=ordered[0],worst=ordered.at(-1)!;
+  if(values.every(value=>value.tier===best.tier&&value.weight===best.weight))return {className:"same",label:"Taki sam nacisk"};
+  if(current.tier===best.tier&&current.weight===best.weight)return {className:"high",label:"Najwyższy priorytet"};
+  if(current.tier===worst.tier&&current.weight===worst.weight)return {className:"low",label:"Najniższy priorytet"};
   return {className:"medium",label:"Pośredni nacisk"};
 }
 
@@ -1194,7 +1223,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     setBusy(true);setLocalError("");setPreview(null);
     try{
       const parsed=await readMatrixWorkbook(file);
-      const result=await supabase.rpc("matrix_v2_import_preview_uat_v3",{p_payload:parsed,p_mode:mode});
+      const result=await supabase.rpc("matrix_v2_import_preview_uat_v4",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
       setPayload(parsed);setPreview(result.data as MatrixImportPreview);
     }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
@@ -1205,7 +1234,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${preview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
     if(!window.confirm(`Zapisać atomowo ${preview.summary.total} wierszy w wersji roboczej Matrixa?${impact}`))return;
     setBusy(true);
-    const result=await supabase.rpc("matrix_v2_import_apply_uat_v3",{p_payload:payload,p_mode:mode});
+    const result=await supabase.rpc("matrix_v2_import_apply_uat_v4",{p_payload:payload,p_mode:mode});
     setBusy(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);
@@ -1246,6 +1275,8 @@ function EmployeeProfileDrawer({employee,data,month,busy,close,save}:{employee:M
     try{
       const employmentStart=formText(form,"employmentStart");
       const employmentEnd=formText(form,"employmentEnd");
+      if(employmentStart&&(employmentStart<dateHorizon(-50)||employmentStart>dateHorizon(2)))throw new Error("Data rozpoczęcia zatrudnienia jest poza dozwolonym zakresem.");
+      if(employmentEnd&&employmentEnd>dateHorizon(10))throw new Error("Data zakończenia zatrudnienia jest zbyt odległa.");
       if(employmentStart&&employmentEnd&&employmentEnd<employmentStart)throw new Error("Data zakończenia zatrudnienia nie może być wcześniejsza od daty rozpoczęcia.");
       const nominal=requiredNumber(formText(form,"nominalHours"),60);
       const maximumMonthly=requiredNumber(formText(form,"maximumMonthlyHours"),60);
@@ -1289,7 +1320,7 @@ function EmployeeProfileDrawer({employee,data,month,busy,close,save}:{employee:M
       </div>
       <label>Rola podstawowa<select name="primaryRoleId" required defaultValue={employee?.primaryRoleId??""}><option value="" disabled>Wybierz rolę</option>{roles.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <fieldset className="matrix-v2-scopes"><legend>Zwykłe lokale pracy</legend><p className="matrix-v2-form-hint">Wszystkie zaznaczone lokale są równorzędne i mieszczą się w normalnym limicie pracownika.</p>{locations.map(item=><label key={item.id}><input type="checkbox" name="locationIds" value={item.id} defaultChecked={selectedLocations.has(item.id)}/>{item.name}</label>)}</fieldset>
-      <div className="form-row"><label>Zatrudniony od<input name="employmentStart" type="date" defaultValue={employee?.employmentStart??""}/></label><label>Zatrudniony do<input name="employmentEnd" type="date" defaultValue={employee?.employmentEnd??""}/></label></div>
+      <div className="form-row"><label>Zatrudniony od<input name="employmentStart" type="date" min={dateHorizon(-50)} max={dateHorizon(2)} defaultValue={employee?.employmentStart??""}/><small>Do 50 lat wstecz lub 2 lata naprzód.</small></label><label>Zatrudniony do<input name="employmentEnd" type="date" min={employee?.employmentStart??dateHorizon(-50)} max={dateHorizon(10)} defaultValue={employee?.employmentEnd??""}/></label></div>
       <h3>{employmentContract?"Czas pracy i limity umowy":"Ustalenia ewidencyjne"}</h3>
       {!employmentContract&&<p className="matrix-v2-form-hint">Poniższe wartości służą do raportowania i kosztów. Nie są automatycznie traktowane jako kodeksowe blokady zleceniobiorcy lub B2B.</p>}
       <div className="form-row"><label>{employmentContract?"Nominał miesięczny":"Planowana liczba godzin"} (godz.)<input name="nominalHours" type="number" min="0" max="744" step="0.25" required defaultValue={minutesAsHours(employee?.nominalMonthlyMinutes,employmentContract?10080:0)}/></label><label>{employmentContract?"Limit miesięczny":"Pułap uzgodniony"} (godz.)<input name="maximumMonthlyHours" type="number" min="0" max="744" step="0.25" required defaultValue={minutesAsHours(employee?.maximumMonthlyMinutes,employmentContract?12600:0)}/></label></div>
@@ -1372,8 +1403,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <ActiveToggle item={item}/>
   </>;
   if (kind === "EMPLOYEE_ROLE") return <>
-    <label>Pracownik<select name="employeeId" required disabled={Boolean(item?.employee_id)} defaultValue={String(item?.employee_id ?? "")}>{data.employees.filter(x=>x.active||x.id===item?.employee_id).map(x=><option value={x.id} key={x.id}>{x.firstName} {x.lastName} • {x.employeeNo}</option>)}</select></label>
-    {item?.employee_id&&<input type="hidden" name="employeeId" value={String(item.employee_id)}/>}
+    <EmployeeContextField data={data} employeeId={String(item?.employee_id??"")}/>
     <label>Rola<select name="roleId" required disabled={Boolean(item?.id)} defaultValue={String(item?.role_id ?? "")}>{data.roles.filter(x=>x.active||x.id===item?.role_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="roleId" value={String(item.role_id)}/>}
     <div className="form-row"><label>Ważna od<input name="validFrom" type="date" defaultValue={String(item?.valid_from??"")}/></label><label>Ważna do<input name="validTo" type="date" defaultValue={String(item?.valid_to??"")}/></label></div>
@@ -1382,8 +1412,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <ActiveToggle item={item}/>
   </>;
   if (kind === "EMPLOYEE_LOCATION") return <>
-    <label>Pracownik<select name="employeeId" required disabled={Boolean(item?.employee_id)} defaultValue={String(item?.employee_id ?? "")}>{data.employees.filter(x=>x.active||x.id===item?.employee_id).map(x=><option value={x.id} key={x.id}>{x.firstName} {x.lastName} • {x.employeeNo}</option>)}</select></label>
-    {item?.employee_id&&<input type="hidden" name="employeeId" value={String(item.employee_id)}/>}
+    <EmployeeContextField data={data} employeeId={String(item?.employee_id??"")}/>
     <label>Lokal<select name="locationId" required disabled={Boolean(item?.id)} defaultValue={String(item?.location_id ?? "")}>{data.locations.filter(x=>x.active||x.id===item?.location_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="locationId" value={String(item.location_id)}/>}
     <div className="form-row"><label>Ważny od<input name="validFrom" type="date" defaultValue={String(item?.valid_from??"")}/></label><label>Ważny do<input name="validTo" type="date" defaultValue={String(item?.valid_to??"")}/></label></div>
@@ -1392,8 +1421,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <ActiveToggle item={item}/>
   </>;
   if (kind === "EMPLOYEE_DUTY") return <>
-    <label>Pracownik<select name="employeeId" required disabled={Boolean(item?.employee_id)} defaultValue={String(item?.employee_id ?? "")}>{data.employees.filter(x=>x.active||x.id===item?.employee_id).map(x=><option value={x.id} key={x.id}>{x.firstName} {x.lastName} • {x.employeeNo}</option>)}</select></label>
-    {item?.employee_id&&<input type="hidden" name="employeeId" value={String(item.employee_id)}/>}
+    <EmployeeContextField data={data} employeeId={String(item?.employee_id??"")}/>
     <label>Obowiązek<select name="dutyId" required disabled={Boolean(item?.id)} defaultValue={String(item?.duty_id ?? "")}>{data.duties.filter(x=>x.active||x.id===item?.duty_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="dutyId" value={String(item.duty_id)}/>}
     <div className="form-row"><label>Rola<select name="roleId" defaultValue={String(item?.role_id??"")}><option value="">Wszystkie role</option>{data.roles.filter(x=>x.active||x.id===item?.role_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Lokal<select name="locationId" defaultValue={String(item?.location_id??"")}><option value="">Wszystkie lokale</option>{data.locations.filter(x=>x.active||x.id===item?.location_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label></div>
@@ -1522,6 +1550,11 @@ function ScenarioStrategyOverrideFields({item,data,strategyId}:{item?:Record<str
 }
 
 function NameAndCode({item}:{item?:Record<string,unknown>}) { return <><label>Nazwa<input name="name" required maxLength={160} defaultValue={String(item?.name ?? "")}/></label><label>Identyfikator konfiguracji<input name="code" maxLength={80} defaultValue={String(item?.code ?? "")} placeholder="Utworzy się automatycznie z nazwy"/><small>Stabilny identyfikator używany przy imporcie i integracjach.</small></label></>; }
+function EmployeeContextField({data,employeeId}:{data:MatrixV2Workspace;employeeId:string}){
+  const employee=data.employees.find(item=>item.id===employeeId);
+  if(employee)return <><div className="matrix-v2-selection-summary"><small>Pracownik</small><strong>{employee.firstName} {employee.lastName}</strong><span>{employee.employeeNo}</span></div><input type="hidden" name="employeeId" value={employeeId}/></>;
+  return <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Najpierw wybierz pracownika w sekcji „Pracownicy i umowy”</strong><small>Role, lokale i kompetencje dodaje się z karty konkretnej osoby — bez przewijania długiej listy pracowników.</small></span></div>;
+}
 function CommonState({item}:{item?:Record<string,unknown>}) { return <><label>Kolejność<input name="sortOrder" type="number" defaultValue={Number(item?.sort_order ?? 0)}/></label><label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Element aktywny</label></>; }
 function ActiveToggle({item}:{item?:Record<string,unknown>}) { return <label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Reguła aktywna</label>; }
 function DaySelector({selected}:{selected:number[]}) { return <fieldset className="matrix-v2-days"><legend>Dni tygodnia</legend>{WEEKDAYS.map(day=><label key={day.value}><input type="checkbox" name="days" value={day.value} defaultChecked={selected.includes(day.value)}/>{day.label}</label>)}</fieldset>; }
@@ -1564,7 +1597,16 @@ function StaffingOperationSelector({operation,setOperation,item,baseScenario=fal
   ];
   return <fieldset className="matrix-v2-operation-picker"><legend>Co ma zrobić ta reguła?</legend><div>{choices.map(choice=><label key={choice.value} className={operation===choice.value?"selected":""}><input type="radio" name="operation" value={choice.value} checked={operation===choice.value} onChange={()=>setOperation(choice.value)}/><span><b>{choice.title}</b><small>{choice.description}</small></span></label>)}</div>{["SET","ADD"].includes(operation)&&<label className="matrix-v2-operation-value">{operation==="SET"?"Łączna liczba wymaganych osób":"Ile osób dodać ponad bazę"}<input name="countValue" type="number" min="0" step="1" required defaultValue={Number(item?.count_value??0)}/></label>}{operation==="MULTIPLY"&&<label className="matrix-v2-operation-value">Nowa wartość procentowa<input name="multiplierPercent" type="number" min="0" step="0.01" required defaultValue={Number(item?.multiplier_basis_points??10000)/100}/><small>100% = bez zmiany, 150% = półtora raza więcej.</small></label>}</fieldset>;
 }
-function OperationSelector({operation,setOperation,currency,item,staffing=false,baseStaffingScenario=false}:{operation:string;setOperation:(value:string)=>void;currency:string;item?:Record<string,unknown>;staffing?:boolean;baseStaffingScenario?:boolean}) { if(staffing)return <StaffingOperationSelector operation={operation} setOperation={setOperation} item={item} baseScenario={baseStaffingScenario}/>;return <><label>Operacja<select name="operation" value={operation} onChange={event=>setOperation(event.target.value)}><option value="SET">Ustaw wartość</option><option value="ADD">Dodaj do wartości bazowej</option><option value="MULTIPLY">Pomnóż wartość bazową</option><option value="REMOVE">Usuń wymaganie</option></select></label>{["SET","ADD"].includes(operation)&&<label>{`Kwota (${currency})`}<input name="amount" type="number" min={operation==="SET"?"0":undefined} step="0.01" required defaultValue={minorToInput(item?.amount_minor)}/></label>}{operation==="MULTIPLY"&&<label>Nowa wartość procentowa<input name="multiplierPercent" type="number" min="0" step="0.01" required defaultValue={Number(item?.multiplier_basis_points ?? 10000)/100}/><small>100% = bez zmiany, 150% = półtora raza więcej.</small></label>}</>; }
+function OperationSelector({operation,setOperation,currency,item,staffing=false,baseStaffingScenario=false}:{operation:string;setOperation:(value:string)=>void;currency:string;item?:Record<string,unknown>;staffing?:boolean;baseStaffingScenario?:boolean}) {
+  if(staffing)return <StaffingOperationSelector operation={operation} setOperation={setOperation} item={item} baseScenario={baseStaffingScenario}/>;
+  const choices=[
+    {value:"SET",title:"Ustal budżet",description:"Wpisana kwota staje się budżetem dla wybranego zakresu."},
+    {value:"ADD",title:"Zmień budżet o kwotę",description:"Dodaj albo odejmij kwotę od budżetu odziedziczonego ze scenariusza bazowego."},
+    {value:"MULTIPLY",title:"Zmień budżet procentowo",description:"Przelicz budżet bazowy, np. 110% oznacza wzrost o 10%."},
+    {value:"REMOVE",title:"Nie stosuj limitu",description:"Usuń odziedziczony limit budżetu dla tego zakresu."},
+  ];
+  return <fieldset className="matrix-v2-operation-picker"><legend>Jak ma działać budżet w tym scenariuszu?</legend><div>{choices.map(choice=><label key={choice.value} className={operation===choice.value?"selected":""}><input type="radio" name="operation" value={choice.value} checked={operation===choice.value} onChange={()=>setOperation(choice.value)}/><span><b>{choice.title}</b><small>{choice.description}</small></span></label>)}</div>{["SET","ADD"].includes(operation)&&<label className="matrix-v2-operation-value">{operation==="SET"?`Kwota budżetu (${currency})`:`Zmiana kwoty (${currency})`}<input name="amount" type="number" min={operation==="SET"?"0":undefined} step="0.01" required defaultValue={minorToInput(item?.amount_minor)}/></label>}{operation==="MULTIPLY"&&<label className="matrix-v2-operation-value">Budżet po zmianie (%)<input name="multiplierPercent" type="number" min="0" step="0.01" required defaultValue={Number(item?.multiplier_basis_points ?? 10000)/100}/><small>100% = bez zmiany, 150% = o połowę więcej.</small></label>}</fieldset>;
+}
 function PayValueFields({method,item,currency}:{method:string;item?:Record<string,unknown>;currency:string}) { if(method==="FIXED_PER_SHIFT")return <label>Kwota za zmianę ({currency})<input name="amount" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.amount_minor)}/></label>;if(method==="PER_HOUR")return <label>Kwota za godzinę ({currency})<input name="hourly" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.rate_minor_per_hour)}/></label>;if(method==="PERCENT_BASE")return <label>Procent stawki podstawowej<input name="percent" type="number" min="0" step="0.01" required defaultValue={basisPercentToInput(item?.percent_basis_points)}/></label>;if(method==="MULTIPLIER")return <label>Mnożnik stawki<input name="multiplier" type="number" min="0" step="0.01" required defaultValue={basisMultiplierToInput(item?.multiplier_basis_points)}/></label>;return <div className="form-row"><label>Próg (minuty)<input name="thresholdMinutes" type="number" min="0" required defaultValue={Number(item?.threshold_minutes ?? 0)}/></label><label>Dodatek za godzinę po progu ({currency})<input name="hourly" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.rate_minor_per_hour)}/></label></div>; }
 
 function drawerTitle(kind:MatrixV2SaveKind,editing:boolean){const labels:Record<MatrixV2SaveKind,string>={MATRIX_SETTINGS:"ustawienia Matrixa",ROLE:"rolę",LOCATION:"lokal",DUTY:"obowiązek",SHIFT:"szablon zmiany",ROLE_DUTY:"powiązanie roli i obowiązku",EMPLOYEE_ROLE:"rolę pracownika",EMPLOYEE_LOCATION:"lokal pracownika",EMPLOYEE_DUTY:"kompetencję pracownika",SCENARIO:"scenariusz",STAFFING_RULE:"regułę obsady",STRATEGY:"strategię wariantu",OBJECTIVE:"kryterium strategii",SCENARIO_STRATEGY:"wariant scenariusza",PAY_RULE:"dodatek płacowy",SCENARIO_PAY_RULE:"modyfikację dodatku",SCENARIO_BUDGET:"budżet scenariusza"};return `${editing?"Edytuj":"Dodaj"} ${labels[kind]}`;}
@@ -1575,6 +1617,8 @@ function requiredNumber(value:string,multiplier=1){const result=optionalNumber(v
 function codeFrom(value:string){return value.replace(/[Łł]/g,"L").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,80);}
 function minorToInput(value:unknown){return value===undefined||value===null?"":Number(value)/100;}
 function maxDate(first:string,second?:string|null){return second&&second>first?second:first;}
+function minDate(first:string,second?:string|null){return second&&second<first?second:first;}
+function dateHorizon(years:number){const date=new Date();date.setUTCHours(12,0,0,0);date.setUTCFullYear(date.getUTCFullYear()+years);return date.toISOString().slice(0,10);}
 function basisPercentToInput(value:unknown){return value===undefined||value===null?"":Number(value)/100;}
 function basisMultiplierToInput(value:unknown){return value===undefined||value===null?"":Number(value)/10000;}
 function asRecord(value:unknown):Record<string,unknown>{return value!==null&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};}
@@ -1667,4 +1711,3 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
   if(kind==="SCENARIO_PAY_RULE")return{scenarioId:formText(form,"scenarioId"),payRuleId:formText(form,"payRuleId"),enabled:checked(form,"enabled"),amountMinor:optionalNumber(formText(form,"amount"),100),rateMinorPerHour:optionalNumber(formText(form,"hourly"),100),percentBasisPoints:optionalNumber(formText(form,"percent"),100),multiplierBasisPoints:optionalNumber(formText(form,"multiplier"),10000),formulaExpression:item?.formula_expression??null};
   const budgetMonth=formText(form,"budgetMonth");return{scenarioId:formText(form,"scenarioId"),budgetMonth:budgetMonth?`${budgetMonth}-01`:null,locationId:formText(form,"locationId")||null,roleId:formText(form,"roleId")||null,dutyId:formText(form,"dutyId")||null,operation,amountMinor:["SET","ADD"].includes(operation)?requiredNumber(formText(form,"amount"),100):null,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,currency,hardLimit:checked(form,"hardLimit"),warningPercent:requiredNumber(formText(form,"warningPercent")),sourceMetadata:item?.source_metadata??{}};
 }
-

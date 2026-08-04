@@ -201,6 +201,7 @@ button { color: inherit; }
 .insight-rail { display:grid; gap:12px; }
 .insight-card { background:#fff; border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); }
 .shortage-card { border-color:#f2b9b5; }.event-card { border-color:#f0c27f; }.budget-card { border-color:#9ed5ce; }
+.environment-status>span{display:grid;text-align:left;line-height:1.15}.environment-status b{font-size:8px;letter-spacing:.08em}.environment-status small{font-size:7px;font-weight:700;opacity:.82}
 .insight-head { min-height:50px; padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #eee9e3; }
 .insight-head h3 { margin:0; font-size:13px; letter-spacing:-.02em; }.status-icon { width:31px; height:31px; border-radius:9px; display:grid; place-items:center; }.status-icon.red{background:var(--coral-soft);color:var(--coral)}.status-icon.amber{background:var(--orange-soft);color:#e8841e}.status-icon.teal{background:var(--teal-soft);color:var(--teal)}
 .pill { margin-left:auto; padding:5px 7px; border-radius:7px; font-size:8px; font-weight:800; }.red-pill{background:var(--coral-soft);color:var(--coral)}.amber-pill{background:var(--orange-soft);color:#d77b20}.teal-pill{background:var(--teal-soft);color:#23887d}

@@ -350,6 +350,16 @@ export function objectiveName(code: string) {
 
 export function matrixV2ErrorMessage(message: string) {
   const value = message.toUpperCase();
+  const correlatedImportError = message.match(/MATRIX_IMPORT_(?:PREVIEW|APPLY)_FAILED\|([^|]+)\|([^|]+)\|(.+)/i);
+  if (correlatedImportError) {
+    return `Import nie został zapisany z powodu błędu systemowego. Identyfikator: ${correlatedImportError[1]}. Żadne dane z pliku nie zostały zastosowane.`;
+  }
+  if (value.includes("MATRIX_IMPORT_CONTRACT_INCOMPLETE") ||
+      value.includes("MATRIX_IMPORT_PREREQUISITE_MISSING") ||
+      value.includes("MATRIX_V2_IMPORT_PREVIEW_UAT_V2") ||
+      value.includes("MATRIX_V2_IMPORT_APPLY_UAT_V2")) {
+    return "Import jest chwilowo niedostępny, ponieważ środowisko UAT nie ma kompletnej wersji mechanizmu importu. Żadne dane z pliku nie zostały zastosowane.";
+  }
   if (value.includes("INVALID_MATRIX_SETTINGS")) return "Aktywny Matrix nie ma kompletnych ustawień.";
   if (value.includes("INVALID_MATRIX_TIMEZONE")) return "Matrix musi mieć prawidłową, jawnie wybraną strefę czasową.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_ROLE_AND_LOCATION")) return "Każdy aktywny pracownik musi mieć co najmniej jedną aktywną rolę i dostęp do co najmniej jednego lokalu.";
@@ -387,6 +397,11 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("EFFECTIVE_FROM_PRECEDES_ACTIVE_MATRIX")) return "Data obowiązywania nie może być wcześniejsza niż data aktywnego Matrixa.";
   if (value.includes("FUTURE_MATRIX_ACTIVATION_REQUIRES_SCHEDULER")) return "Przyszła wersja Matrixa wymaga osobnego mechanizmu zaplanowanej aktywacji. Na tym etapie opublikuj ją najwcześniej w dniu rozpoczęcia obowiązywania.";
   if (value.includes("NO_MATRIX_V2_DRAFT")) return "Nie ma wersji roboczej do opublikowania.";
+  if (value.includes("SCHEDULE_PUBLICATION_CONFLICT_REQUIRES_OWNER_RESOLUTION") ||
+      value.includes("COMPANY_PUBLICATION_CONFLICTS_WITH_PUBLISHED_ROLES") ||
+      value.includes("ROLE_PUBLICATION_CONFLICTS_WITH_COMPANY_SCHEDULE")) {
+    return "Dla tego miesiąca istnieją konkurencyjne publikacje grafiku roli i firmy. System nie wybierze jednej po cichu — właściciel musi najpierw rozstrzygnąć konflikt.";
+  }
   if (value.includes("UNIQUE") || value.includes("DUPLICATE")) return "Taki element lub powiązanie już istnieje w tej wersji Matrixa.";
   if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł Matrixa. Sprawdź formularz.";
   return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";

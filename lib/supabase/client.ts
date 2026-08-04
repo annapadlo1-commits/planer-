@@ -17,3 +17,16 @@ export function createSupabaseBrowserClient() {
   if (!url || !key) return null;
   return createBrowserClient(url, key);
 }
+
+export function supabaseProjectRef() {
+  const value = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!value) return "brak-projektu";
+  try { return new URL(value).hostname.split(".")[0] || "nieznany-projekt"; }
+  catch { return "nieznany-projekt"; }
+}
+
+export function applicationEnvironmentLabel() {
+  const configured = process.env.NEXT_PUBLIC_APP_ENV?.trim();
+  if (configured) return configured.toLocaleUpperCase("pl-PL");
+  return process.env.NODE_ENV === "production" ? "UAT/PRODUKCJA — SPRAWDŹ PROJEKT" : "LOKALNE";
+}
