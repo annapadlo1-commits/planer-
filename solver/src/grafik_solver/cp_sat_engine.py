@@ -92,9 +92,14 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # A relaxed UAT run accepts a feasible coverage incumbent, so it must not spend
 # the entire shared worker budget trying to prove the monthly minimum.  The
 # remaining time is more valuable for materializing and validating strategies.
-MAX_RELAXED_COVERAGE_SECONDS = 120.0
-MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 30.0
-RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS = 5.0
+MAX_RELAXED_COVERAGE_SECONDS = 30.0
+MAX_RELAXED_STRATEGY_SECONDS = 35.0
+MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 6.0
+RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
+MAX_RELAXED_DIVERSITY_SECONDS = 6.0
+RELAXED_DIVERSITY_FRACTION = 0.01
+MAX_RELAXED_DIVERSITY_ASSIGNMENT_CHANGES = 20
+OBJECTIVE_COEFFICIENT_SCALE = 1_000_000_000
 
 
 def _sum(expressions: Iterable[Any]) -> Any:
@@ -206,8 +211,7 @@ class CpSatScheduleEngine:
                 selected_employees = sorted(
                     employee_id
                     for (employee_id, slot_id), variable in source.x.items()
-                    if slot_id == representative.id
-                    and source_solver.value(variable)
+                    if slot_id == representative.id and source_solver.value(variable)
                 )
                 selected_by_slot = {
                     slot.id: (
@@ -220,33 +224,29 @@ class CpSatScheduleEngine:
                 for (employee_id, slot_id), variable in target.x.items():
                     if slot_id not in selected_by_slot:
                         continue
-                    target.model.add_hint(
-                        variable,
-                        int(selected_by_slot[slot_id] == employee_id),
-                    )
-                    hinted += 1
+                    if selected_by_slot[slot_id] == employee_id:
+                        target.model.add_hint(variable, 1)
+                        hinted += 1
                 for slot in ordered_slots:
                     variable = target.unfilled.get(slot.id)
-                    if variable is not None:
-                        target.model.add_hint(
-                            variable, int(selected_by_slot[slot.id] is None)
-                        )
+                    if variable is not None and selected_by_slot[slot.id] is None:
+                        target.model.add_hint(variable, 1)
                         hinted += 1
         else:
             for key, variable in target.x.items():
                 source_variable = source.x.get(key)
-                if source_variable is not None:
-                    target.model.add_hint(
-                        variable, int(source_solver.value(source_variable))
-                    )
+                if source_variable is not None and source_solver.value(source_variable):
+                    target.model.add_hint(variable, 1)
                     hinted += 1
             for slot in slots:
                 variable = target.unfilled.get(slot.id)
                 source_variable = source.unfilled.get(slot.id)
-                if variable is not None and source_variable is not None:
-                    target.model.add_hint(
-                        variable, int(source_solver.value(source_variable))
-                    )
+                if (
+                    variable is not None
+                    and source_variable is not None
+                    and source_solver.value(source_variable)
+                ):
+                    target.model.add_hint(variable, 1)
                     hinted += 1
 
         for name in ("work", "day_work"):
@@ -254,12 +254,87 @@ class CpSatScheduleEngine:
             target_variables = getattr(target, name)
             for key, variable in target_variables.items():
                 source_variable = source_variables.get(key)
-                if source_variable is not None:
-                    target.model.add_hint(
-                        variable, int(source_solver.value(source_variable))
-                    )
+                if source_variable is not None and source_solver.value(source_variable):
+                    target.model.add_hint(variable, 1)
                     hinted += 1
         return hinted
+
+    @staticmethod
+    def _add_diversity_constraints(
+        artifacts: _Artifacts,
+        previous_results: Iterable[VariantResult],
+    ) -> tuple[dict[str, Any], ...]:
+        """Exclude materially equivalent rosters without weakening objectives.
+
+        This runs only after every business objective tier has been frozen at
+        its Matrix-defined value plus tolerance.  A replacement roster must
+        therefore keep all hard rules, minimum coverage and the current
+        strategy's business bounds while changing a small, visible number of
+        employee assignments.
+        """
+        exclusions: list[dict[str, Any]] = []
+        for previous in previous_results:
+            selected = [
+                variable
+                for assignment in previous.assignments
+                if (
+                    variable := artifacts.x.get(
+                        (assignment.employee_id, assignment.slot_id)
+                    )
+                )
+                is not None
+            ]
+            if not selected:
+                continue
+            required_changes = max(
+                1,
+                min(
+                    MAX_RELAXED_DIVERSITY_ASSIGNMENT_CHANGES,
+                    math.ceil(len(selected) * RELAXED_DIVERSITY_FRACTION),
+                ),
+            )
+            artifacts.model.add(_sum(selected) <= len(selected) - required_changes)
+            exclusions.append(
+                {
+                    "strategyId": previous.strategy_id,
+                    "minimumAssignmentChanges": required_changes,
+                }
+            )
+        return tuple(exclusions)
+
+    @staticmethod
+    def _replace_with_nonzero_solution_hints(
+        model: Any,
+        solver: Any,
+        variables: Iterable[Any],
+    ) -> int:
+        """Keep useful incumbent decisions without a huge all-zero hint proto."""
+        model.clear_hints()
+        hinted = 0
+        for variable in variables:
+            value = int(solver.value(variable))
+            if value == 0:
+                continue
+            model.add_hint(variable, value)
+            hinted += 1
+        return hinted
+
+    @staticmethod
+    def _normalized_tier_value(
+        solver: Any,
+        artifacts: _Artifacts,
+        terms: Iterable[Mapping[str, Any]],
+    ) -> int:
+        """Evaluate a normalized objective from pre-objective solver metrics."""
+        value = 0
+        for term in terms:
+            raw_value = int(solver.value(artifacts.metrics[term["metric"]]))
+            target = term["parameters"].get("targetValue")
+            if target is not None:
+                raw_value = abs(raw_value - int(target))
+            sign = 1 if term["direction"] == "MIN" else -1
+            value += sign * int(term["normalizationCoefficient"]) * raw_value
+        return value
 
     @staticmethod
     def _solver_measure(solver: Any, name: str) -> Any | None:
@@ -385,9 +460,7 @@ class CpSatScheduleEngine:
         )
         common.model.clear_objective()
         common.model.minimize(common.metrics["UNFILLED"])
-        common_time_limit = self._remaining_seconds(
-            global_deadline, "GLOBAL:UNFILLED"
-        )
+        common_time_limit = self._remaining_seconds(global_deadline, "GLOBAL:UNFILLED")
         if not snapshot.settings.require_optimal:
             common_time_limit = min(
                 common_time_limit,
@@ -430,17 +503,31 @@ class CpSatScheduleEngine:
             snapshot.strategies, key=lambda item: (item.sort_order, item.id)
         )
         strategy_count = len(ordered_strategies)
+        strategy_base = self._build_model(snapshot, slots, eligibility)
+        self._ensure_deadline(global_deadline, "GLOBAL")
+        LOGGER.info(
+            "Built one reusable full model for %s strategies: variables=%s",
+            strategy_count,
+            len(strategy_base.model.proto.variables),
+        )
         for strategy_index, strategy in enumerate(ordered_strategies):
             if self._cancel_event.is_set():
                 raise OptimizationCancelled("Optimization was cancelled")
             self._ensure_deadline(global_deadline, "GLOBAL")
-            artifacts = self._build_model(snapshot, slots, eligibility)
-            self._ensure_deadline(global_deadline, "GLOBAL")
+            artifacts = replace(
+                strategy_base,
+                model=strategy_base.model.clone(),
+            )
             strategy_started = self._clock()
+            strategy_budget = strategy.time_limit_seconds or self._cp_sat_budget_seconds
+            if not snapshot.settings.require_optimal:
+                strategy_budget = min(
+                    strategy_budget,
+                    MAX_RELAXED_STRATEGY_SECONDS,
+                )
             strategy_deadline = min(
                 global_deadline,
-                strategy_started
-                + (strategy.time_limit_seconds or self._cp_sat_budget_seconds),
+                strategy_started + strategy_budget,
             )
             self._ensure_deadline(strategy_deadline, strategy.code)
             artifacts.model.add(artifacts.metrics["UNFILLED"] == minimum_unfilled)
@@ -483,6 +570,44 @@ class CpSatScheduleEngine:
             final_solver: Any | None = None
             final_status: Any | None = None
             feasible_fallback_solver: Any | None = None
+
+            if not snapshot.settings.require_optimal:
+                # Establish feasibility before adding normalized objective
+                # division variables. On full monthly models those auxiliary
+                # constraints make a feasibility-only warm start needlessly
+                # expensive, while the base pay/budget model solves quickly.
+                warm_start_solver, warm_start_status = self._solve_model(
+                    artifacts.model,
+                    snapshot,
+                    strategy=strategy,
+                    stage_name="WARM_START",
+                    time_limit_seconds=min(
+                        self._remaining_seconds(strategy_deadline, strategy.code),
+                        MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
+                    ),
+                )
+                self._require_optimal(
+                    warm_start_solver,
+                    warm_start_status,
+                    snapshot,
+                    f"{strategy.code}:WARM_START",
+                )
+                full_variables = (
+                    artifacts.model.get_int_var_from_proto_index(variable_index)
+                    for variable_index in range(len(artifacts.model.proto.variables))
+                )
+                nonzero_hint_count = self._replace_with_nonzero_solution_hints(
+                    artifacts.model,
+                    warm_start_solver,
+                    full_variables,
+                )
+                LOGGER.info(
+                    "Strategy %s completed a sparse %s-variable full-model warm start",
+                    strategy.code,
+                    nonzero_hint_count,
+                )
+                feasible_fallback_solver = warm_start_solver
+
             tiers: dict[int, list[Any]] = defaultdict(list)
             tier_tolerances: dict[int, int] = defaultdict(int)
             tier_upper_bounds: dict[int, int] = defaultdict(int)
@@ -517,9 +642,20 @@ class CpSatScheduleEngine:
                     )
                     metric_expression = targeted
                     expression_bound = target_bound
+                raw_expression_bound = expression_bound
+                normalization_coefficient = 0
+                if expression_bound > 0:
+                    normalization_coefficient = max(
+                        1,
+                        round(
+                            term.weight * OBJECTIVE_COEFFICIENT_SCALE / expression_bound
+                        ),
+                    )
                 sign = 1 if term.direction == "MIN" else -1
-                tier_upper_bounds[term.tier] += abs(term.weight) * expression_bound
-                tier_tolerances[term.tier] += term.weight * term.tolerance
+                tier_upper_bounds[term.tier] += (
+                    normalization_coefficient * expression_bound
+                )
+                tier_tolerances[term.tier] += normalization_coefficient * term.tolerance
                 if (
                     tier_upper_bounds[term.tier] + tier_tolerances[term.tier]
                     > SAFE_CP_SAT_INTEGER
@@ -528,7 +664,9 @@ class CpSatScheduleEngine:
                         f"Strategy {strategy.id} tier {term.tier} exceeds the "
                         "safe CP-SAT integer range"
                     )
-                tiers[term.tier].append(sign * term.weight * metric_expression)
+                tiers[term.tier].append(
+                    sign * normalization_coefficient * metric_expression
+                )
                 tier_terms[term.tier].append(
                     {
                         "metric": metric_name,
@@ -536,47 +674,10 @@ class CpSatScheduleEngine:
                         "weight": term.weight,
                         "tolerance": term.tolerance,
                         "parameters": dict(term.parameters),
+                        "normalizationCoefficient": normalization_coefficient,
+                        "metricUpperBound": raw_expression_bound,
                     }
                 )
-
-            if not snapshot.settings.require_optimal:
-                # Completing the aggregate coverage incumbent inside the full
-                # pay/preference model gives every strategy a hard-feasible
-                # solution before optimization starts.  A partial coverage
-                # hint alone can otherwise spend the whole tier budget merely
-                # trying to instantiate auxiliary cost and baseline variables.
-                warm_start_solver, warm_start_status = self._solve_model(
-                    artifacts.model,
-                    snapshot,
-                    strategy=strategy,
-                    stage_name="WARM_START",
-                    time_limit_seconds=min(
-                        self._remaining_seconds(strategy_deadline, strategy.code),
-                        MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
-                    ),
-                    fix_hints=True,
-                )
-                self._require_optimal(
-                    warm_start_solver,
-                    warm_start_status,
-                    snapshot,
-                    f"{strategy.code}:WARM_START",
-                )
-                artifacts.model.clear_hints()
-                for variable_index in range(len(artifacts.model.proto.variables)):
-                    variable = artifacts.model.get_int_var_from_proto_index(
-                        variable_index
-                    )
-                    artifacts.model.add_hint(
-                        variable,
-                        int(warm_start_solver.value(variable)),
-                    )
-                LOGGER.info(
-                    "Strategy %s completed a %s-variable full-model warm start",
-                    strategy.code,
-                    len(artifacts.model.proto.solution_hint.vars),
-                )
-                feasible_fallback_solver = warm_start_solver
 
             self._emit_progress(
                 phase="SOLVING",
@@ -597,7 +698,7 @@ class CpSatScheduleEngine:
                         0.001,
                         self._remaining_seconds(strategy_deadline, strategy.code)
                         - (
-                            RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS
+                            RELAXED_STRATEGY_FINAL_RESERVE_SECONDS
                             if feasible_fallback_solver is not None
                             else 0.0
                         ),
@@ -628,22 +729,22 @@ class CpSatScheduleEngine:
                     if incumbent is not None:
                         artifacts.model.clear_hints()
                         for variable in artifacts.hint_variables:
-                            if variable.index in incumbent:
+                            if (
+                                variable.index in incumbent
+                                and incumbent[variable.index] != 0
+                            ):
                                 artifacts.model.add_hint(
                                     variable, incumbent[variable.index]
                                 )
-                    fixed_unfilled_tier = (
-                        tier_index < len(ordered_tiers)
-                        and all(
-                            term["metric"] == "UNFILLED"
-                            and "targetValue" not in term["parameters"]
-                            for term in tier_terms[tier]
-                        )
+                    fixed_unfilled_tier = tier_index < len(ordered_tiers) and all(
+                        term["metric"] == "UNFILLED"
+                        and "targetValue" not in term["parameters"]
+                        for term in tier_terms[tier]
                     )
                     if fixed_unfilled_tier:
                         exact_value = sum(
                             (1 if term["direction"] == "MIN" else -1)
-                            * term["weight"]
+                            * term["normalizationCoefficient"]
                             * minimum_unfilled
                             for term in tier_terms[tier]
                         )
@@ -656,9 +757,7 @@ class CpSatScheduleEngine:
                                 "status": "OPTIMAL",
                                 "bestBound": float(exact_value),
                                 "tolerance": allowed_degradation,
-                                "frozenUpperBound": (
-                                    exact_value + allowed_degradation
-                                ),
+                                "frozenUpperBound": (exact_value + allowed_degradation),
                                 "terms": tier_terms[tier],
                             }
                         )
@@ -670,16 +769,11 @@ class CpSatScheduleEngine:
                             progress=10
                             + (
                                 80
-                                * (
-                                    strategy_index * len(ordered_tiers)
-                                    + tier_index
-                                )
+                                * (strategy_index * len(ordered_tiers) + tier_index)
                                 // (strategy_count * len(ordered_tiers))
                             ),
                             strategyId=strategy.id,
-                            strategyProgress=(
-                                90 * tier_index // len(ordered_tiers)
-                            ),
+                            strategyProgress=(90 * tier_index // len(ordered_tiers)),
                             strategyCount=strategy_count,
                             completedStrategies=strategy_index,
                         )
@@ -695,7 +789,7 @@ class CpSatScheduleEngine:
                             0.001,
                             self._remaining_seconds(strategy_deadline, strategy.code)
                             - (
-                                RELAXED_STRATEGY_FALLBACK_RESERVE_SECONDS
+                                RELAXED_STRATEGY_FINAL_RESERVE_SECONDS
                                 if feasible_fallback_solver is not None
                                 else 0.0
                             ),
@@ -724,7 +818,15 @@ class CpSatScheduleEngine:
                     self._ensure_deadline(
                         strategy_deadline, f"{strategy.code}:TIER_{tier}"
                     )
-                    exact_value = int(final_solver.value(expression))
+                    exact_value = (
+                        self._normalized_tier_value(
+                            final_solver,
+                            artifacts,
+                            tier_terms[tier],
+                        )
+                        if used_fallback
+                        else int(final_solver.value(expression))
+                    )
                     allowed_degradation = tier_tolerances[tier]
                     incumbent = {
                         variable.index: int(final_solver.value(variable))
@@ -740,9 +842,7 @@ class CpSatScheduleEngine:
                             **(
                                 {}
                                 if used_fallback
-                                else {
-                                    "bestBound": final_solver.best_objective_bound
-                                }
+                                else {"bestBound": final_solver.best_objective_bound}
                             ),
                             "tolerance": allowed_degradation,
                             "frozenUpperBound": exact_value + allowed_degradation,
@@ -776,6 +876,56 @@ class CpSatScheduleEngine:
             )
             self._ensure_deadline(strategy_deadline, strategy.code)
             owner = solution_owners.get(result.solution_hash)
+            if owner is not None and not snapshot.settings.require_optimal:
+                artifacts.model.clear_objective()
+                self._replace_with_nonzero_solution_hints(
+                    artifacts.model,
+                    final_solver,
+                    artifacts.hint_variables,
+                )
+                exclusions = self._add_diversity_constraints(artifacts, results)
+                remaining = strategy_deadline - self._clock()
+                if exclusions and remaining > 0.05:
+                    diversity_solver, diversity_status = self._solve_model(
+                        artifacts.model,
+                        snapshot,
+                        strategy=strategy,
+                        stage_name="DIVERSIFY",
+                        time_limit_seconds=min(
+                            MAX_RELAXED_DIVERSITY_SECONDS,
+                            max(0.001, remaining - 0.01),
+                        ),
+                    )
+                    if diversity_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+                        diversity_stages = [
+                            *stage_results,
+                            {
+                                "tier": max(tiers) + 1 if tiers else 1,
+                                "name": "DIVERSIFY",
+                                "status": diversity_solver.status_name(
+                                    diversity_status
+                                ),
+                                "businessObjectiveBoundsPreserved": True,
+                                "excludedEquivalentStrategies": list(exclusions),
+                            },
+                        ]
+                        candidate = self._extract_result(
+                            snapshot,
+                            slots,
+                            strategy,
+                            artifacts,
+                            diversity_solver,
+                            diversity_stages,
+                            optimal=all_stages_optimal,
+                        )
+                        if candidate.solution_hash not in solution_owners:
+                            LOGGER.info(
+                                "Strategy %s diversified a tied roster while "
+                                "preserving all frozen business bounds",
+                                strategy.code,
+                            )
+                            result = candidate
+                            owner = None
             if owner is not None:
                 result = replace(result, equivalent_to_strategy_id=owner)
             else:
@@ -1081,6 +1231,12 @@ class CpSatScheduleEngine:
         )
         solver.parameters.log_search_progress = False
         solver.parameters.fix_variables_to_their_hinted_value = fix_hints
+        if fix_hints:
+            # The coverage assignment is already fixed. Presolving the whole
+            # dynamic pay model can take far longer than evaluating its
+            # dependent variables and is not bounded reliably by CP-SAT's
+            # search timer on large monthly instances.
+            solver.parameters.cp_model_presolve = False
         return solver
 
     def _solve_model(
