@@ -10,6 +10,7 @@ const TOKEN = "solver-gateway-test-token".padEnd(64, "x");
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
+const STRATEGY_ID = "44444444-4444-4444-8444-444444444444";
 
 const claimArgs = {
   p_worker_id: "free-host-worker-1:42",
@@ -41,6 +42,40 @@ function handlerWith(calls = []) {
       };
     },
   });
+}
+
+function normalizedVariant() {
+  return {
+    schemaVersion: 2,
+    strategyId: STRATEGY_ID,
+    strategyCode: "COST",
+    label: "Minimalny koszt",
+    sortOrder: 1,
+    assignments: [],
+    unfilledSlotIds: [],
+    metrics: { UNFILLED: 0, TOTAL_COST: 0 },
+    stageObjectives: [{
+      tier: 1,
+      name: "TIER_1",
+      value: 0,
+      status: "OPTIMAL",
+      bestBound: 0,
+      tolerance: 0,
+      frozenUpperBound: 0,
+      terms: [{
+        metric: "TOTAL_COST",
+        direction: "MIN",
+        weight: 100,
+        tolerance: 0,
+        parameters: {},
+        normalizationCoefficient: 1_000_000,
+        metricUpperBound: 10_000,
+      }],
+    }],
+    optimal: true,
+    solutionHash: "a".repeat(64),
+    equivalentToStrategyId: null,
+  };
 }
 
 test("exposes only provider-neutral worker actions", () => {
@@ -164,6 +199,49 @@ test("accepts PostgreSQL UUIDs used by stable matrix identifiers", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{ action: "solver_heartbeat_v2", args }]);
+});
+
+test("accepts normalized objective metadata emitted by the worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: normalizedVariant(),
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
+});
+
+test("accepts a diversity proof that preserves frozen objectives", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives.push({
+    tier: 2,
+    name: "DIVERSIFY",
+    status: "OPTIMAL",
+    businessObjectiveBoundsPreserved: true,
+    excludedEquivalentStrategies: [{
+      strategyId: STRATEGY_ID,
+      minimumAssignmentChanges: 3,
+    }],
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
 });
 
 test("rejects non-JSON requests and unsupported methods", async () => {
