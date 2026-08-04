@@ -926,31 +926,36 @@ class SolverTests(unittest.TestCase):
         original_solve_model = engine._solve_model
         warm_start_limits: list[float] = []
         full_hint_counts: list[tuple[int, int]] = []
-        expect_sparse_hint = False
+        strategies_with_checked_hint: set[str] = set()
 
         def observe_stages(*args, **kwargs):
-            nonlocal expect_sparse_hint
             model = args[0]
-            if expect_sparse_hint:
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if (
+                strategy is not None
+                and stage_name.startswith("TIER_")
+                and strategy.id not in strategies_with_checked_hint
+            ):
                 full_hint_counts.append(
                     (
                         len(model.proto.solution_hint.vars),
                         len(model.proto.variables),
                     )
                 )
-                expect_sparse_hint = False
+                strategies_with_checked_hint.add(strategy.id)
             result = original_solve_model(*args, **kwargs)
-            if kwargs["stage_name"] == "WARM_START":
+            if stage_name == "WARM_START":
                 self.assertFalse(kwargs.get("fix_hints", False))
+                self.assertIsNone(strategy)
                 warm_start_limits.append(kwargs["time_limit_seconds"])
-                expect_sparse_hint = True
             return result
 
         with patch.object(engine, "_solve_model", side_effect=observe_stages):
             variants = engine.solve(snapshot)
 
-        self.assertEqual(len(warm_start_limits), len(snapshot.strategies))
-        self.assertTrue(all(limit <= 6.0 for limit in warm_start_limits))
+        self.assertEqual(len(warm_start_limits), 1)
+        self.assertTrue(all(limit <= 15.0 for limit in warm_start_limits))
         self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
         self.assertTrue(
             all(
