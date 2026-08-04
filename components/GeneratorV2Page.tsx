@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronRight, Plus, RefreshCw, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Panel } from "@/components/SolverV2Panel";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -32,6 +32,17 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
   const [selectedRunId,setSelectedRunId]=useState<string|null>(null);
   const [loading,setLoading]=useState(false);
   const [refreshKey,setRefreshKey]=useState(0);
+  const [skipRecovery,setSkipRecovery]=useState(false);
+  const workbenchRef=useRef<HTMLElement|null>(null);
+
+  function startNewGeneration(){
+    setSelectedRunId(null);
+    setSkipRecovery(true);
+    setRefreshKey(value=>value+1);
+    window.requestAnimationFrame(()=>window.requestAnimationFrame(()=>{
+      workbenchRef.current?.scrollIntoView({behavior:"smooth",block:"start"});
+    }));
+  }
 
   const loadCatalog=useCallback(async()=>{
     if(!supabase)return;
@@ -60,8 +71,8 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
     {configuration.engine==="SHADOW"&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Tryb testowy</strong><small>Możesz generować i porównywać wyniki, ale publikacja pozostaje zablokowana.</small></span></div>}
 
     <section className="generator-v2-scenarios">
-      <div className="section-head"><div><p className="eyebrow">ZAŁOŻENIA WEJŚCIOWE</p><h3>Wybierz scenariusz Matrixa</h3></div><button className="primary-button" onClick={()=>{setSelectedRunId(null);setRefreshKey(value=>value+1);}}><Plus/> Nowe generowanie</button></div>
-      <div>{configuration.scenarios.map(scenario=><button className={scenario.code===scenarioCode?"selected":""} key={scenario.id??scenario.code} onClick={()=>{setScenarioCode(scenario.code);setSelectedRunId(null);}}><span><Sparkles/><strong>{scenario.name}</strong>{scenario.isDefault&&<em>DOMYŚLNY</em>}</span><p>{scenario.description||"Scenariusz bez dodatkowego opisu."}</p><small>{scenario.strategyCount} {scenario.strategyCount===1?"strategia":"strategie/warianty"}</small></button>)}</div>
+      <div className="section-head"><div><p className="eyebrow">ZAŁOŻENIA WEJŚCIOWE</p><h3>Wybierz scenariusz Matrixa</h3></div><button className="primary-button" onClick={startNewGeneration}><Plus/> Nowe generowanie</button></div>
+      <div>{configuration.scenarios.map(scenario=><button className={scenario.code===scenarioCode?"selected":""} key={scenario.id??scenario.code} onClick={()=>{setScenarioCode(scenario.code);setSelectedRunId(null);setSkipRecovery(true);}}><span><Sparkles/><strong>{scenario.name}</strong>{scenario.isDefault&&<em>DOMYŚLNY</em>}</span><p>{scenario.description||"Scenariusz bez dodatkowego opisu."}</p><small>{scenario.strategyCount} {scenario.strategyCount===1?"strategia":"strategie/warianty"}</small></button>)}</div>
     </section>
 
     <section className="generator-v2-catalog">
@@ -71,11 +82,11 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
         <header><span><CalendarDays/><small>{timestamp(run.createdAt,timezone)}</small><strong>{run.name}</strong></span><em>{solverStatusLabel(run.status)} • {run.progress}%</em></header>
         <p>{run.scenario.name} • {run.variants.length} wariantów</p>
         <div className="generator-v2-catalog-variants">{run.variants.map(variant=><span className={variant.selected?"chosen":""} key={variant.id}><b>{variant.strategy.name}</b><small>{variant.assignmentCount} przydz. • {variant.unfilledCount} braków • {money(variant.totalCostMinor,variant.currency)}</small>{variant.selected&&<em><Check/> wybrany</em>}</span>)}</div>
-        <button className="secondary-button" onClick={()=>setSelectedRunId(run.id)}><BarChart3/> Otwórz analizę i porównanie</button>
+        <button className="secondary-button" onClick={()=>{setSkipRecovery(false);setSelectedRunId(run.id);}}><BarChart3/> Otwórz analizę i porównanie</button>
       </article>)}
     </section>
 
-    <section className="generator-v2-workbench">
+    <section className="generator-v2-workbench" ref={workbenchRef}>
       <SolverV2Panel
         key={`${refreshKey}:${selectedRunId??"new"}:${configuration.solverVersion}:${month}:${scenarioCode}`}
         engine={configuration.engine}
@@ -92,6 +103,7 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
         matrixEffectiveFrom={configuration.matrixEffectiveFrom}
         allowStart={Boolean(configuration.solverVersion)}
         initialRunId={selectedRunId}
+        skipRecovery={skipRecovery}
         onNameChange={setName}
         onScenarioChange={value=>{setScenarioCode(value);setSelectedRunId(null);}}
         onVariantSelected={async variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);await loadCatalog();}}

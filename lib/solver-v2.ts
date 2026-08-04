@@ -245,6 +245,7 @@ export type SolverCandidateDiagnostics = {
 export type SolverVariantIssueDiagnostics = {
   variantId: string;
   issueId: string;
+  publishedScheduleId: string | null;
   shift: { date: string; startsAt: string; endsAt: string; shiftPeriod: string };
   summary: {
     considered: number;
@@ -1193,6 +1194,7 @@ export async function getVariantIssueDiagnostics(
   return {
     variantId: String(payload.variantId ?? variantId),
     issueId: String(payload.issueId ?? issueId),
+    publishedScheduleId: payload.publishedScheduleId ? String(payload.publishedScheduleId) : null,
     shift: {
       date: String(shift.date ?? ""),
       startsAt: String(shift.startsAt ?? ""),

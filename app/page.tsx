@@ -225,7 +225,11 @@ export default function GrafikPro() {
       setData({plan:null,assignments:[],shifts:[],issues:[],events:legacyData.events,budget:{amount:0,warning_percent:100,hard_limit:false}});
     }
     if(!completeResult.error&&completeResult.data)setComplete(completeResult.data as ActiveWorkspace);
-    if(completeResult.error&&completeResult.error.message!=="Could not find the function public.complete_workspace")errors.push(completeResult.error.message);
+    if(completeResult.error
+      &&completeResult.error.message!=="Could not find the function public.complete_workspace"
+      &&!completeResult.error.message.includes("EMPLOYEE_ACCOUNT_NOT_LINKED")){
+      errors.push(completeResult.error.message);
+    }
     if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
     else{
       setWorkforceCalendar({events:[]});

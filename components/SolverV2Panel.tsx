@@ -61,6 +61,7 @@ type Props = {
   onVariantSelected?: (variant: SolverVariant) => void | Promise<void>;
   onPublished?: (scheduleId: string) => void | Promise<void>;
   initialRunId?: string | null;
+  skipRecovery?: boolean;
 };
 
 function money(value: number | null | undefined, currency: string) {
@@ -139,6 +140,7 @@ export function SolverV2Panel({
   onVariantSelected,
   onPublished,
   initialRunId,
+  skipRecovery = false,
 }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const selectedScenario = scenarios.find(item => item.code === scenarioCode);
@@ -285,7 +287,7 @@ export function SolverV2Panel({
     setPublicationReadiness(null);
     setLastStatusCheck("");
     statusFingerprintRef.current="";
-    const recovered = initialRunId ?? recoverSolverRun(context);
+    const recovered = skipRecovery ? null : (initialRunId ?? recoverSolverRun(context));
     if (recovered) setPollingRunId(recovered);
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
     if (publishedScheduleId && supabase) {
@@ -307,7 +309,7 @@ export function SolverV2Panel({
         });
     }
     return () => { disposed = true; };
-  }, [context, engine, month, supabase, initialRunId]);
+  }, [context, engine, month, supabase, initialRunId, skipRecovery]);
 
   useEffect(() => {
     if (!pollingRunId) return;

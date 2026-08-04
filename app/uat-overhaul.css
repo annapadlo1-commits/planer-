@@ -363,6 +363,14 @@
 .variant-role-candidates article small { color: var(--muted); }
 .variant-role-candidates ul { margin: 0; padding-left: 18px; color: #9c3e32; }
 .candidate-eligible { color: #137245; }
+.candidate-eligible-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.candidate-eligible-actions .primary-button { width: auto; }
 
 .matrix-import-mode {
   display: grid;

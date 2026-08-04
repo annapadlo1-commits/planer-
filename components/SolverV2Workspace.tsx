@@ -73,7 +73,7 @@ function publicationStatus(value?: string) {
   return "Gotowy do publikacji";
 }
 
-const hardReasonLabels:Record<string,string>={ROLE_REQUIRED:"Brak wymaganej roli",LOCATION_NOT_ALLOWED:"Lokal nie jest dozwolony w zwykłym limicie",LOCATION_REQUIRED:"Lokal nie jest dozwolony w zwykłym limicie",DUTY_REQUIRED:"Brak wymaganego obowiązku lub kompetencji",SHIFT_OVERLAP:"Nakładająca się zmiana",OVERLAPPING_SHIFT:"Nakładająca się zmiana",DECLARED_UNAVAILABLE:"Pracownik zgłosił twardą niedostępność, urlop albo L4",TIME_CONSTRAINT:"Niedostępność, urlop lub L4",OUTSIDE_AVAILABILITY_WINDOW:"Zmiana poza zadeklarowanym oknem dostępności",MISSING_AVAILABILITY:"Brak deklaracji dostępności, gdy Matrix jawnie jej wymaga",OUTSIDE_EMPLOYMENT:"Data poza okresem współpracy",WEEKEND_BLOCKED:"Pracownik ma zablokowane weekendy",REST_AFTER_PREVIOUS_SHIFT:"Za krótki odpoczynek po poprzedniej zmianie",REST_BEFORE_NEXT_SHIFT:"Za krótki odpoczynek przed następną zmianą",MINIMUM_REST:"Za krótki odpoczynek",MONTHLY_LIMIT:"Przekroczony indywidualny limit miesięczny",WEEKLY_LIMIT:"Przekroczony indywidualny limit tygodniowy",MAX_CONSECUTIVE_DAYS:"Przekroczona maksymalna liczba kolejnych dni pracy",MANAGER_SHIFT_BLOCK:"Pracodawca zablokował tę porę zmiany w Matrixie"};
+const hardReasonLabels:Record<string,string>={ROLE_REQUIRED:"Brak wymaganej roli",LOCATION_NOT_ALLOWED:"Lokal nie jest dozwolony w zwykłym limicie",LOCATION_REQUIRED:"Lokal nie jest dozwolony w zwykłym limicie",DUTY_REQUIRED:"Brak wymaganego obowiązku lub kompetencji",SHIFT_OVERLAP:"Nakładająca się zmiana",OVERLAPPING_SHIFT:"Nakładająca się zmiana",ONE_PRIMARY_SHIFT_PER_DAY:"Pracownik ma już inną zmianę tego dnia",CONSECUTIVE_SHIFT_SEQUENCE:"To byłaby ostatnia zmiana dnia, a następnego dnia pierwsza — albo pierwsza po ostatniej zmianie poprzedniego dnia",STANDBY_TIER_1_RESERVED:"Pracownik jest tego dnia opublikowany jako stand-by Tier 1",STANDBY_TIER_2_RESERVED:"Pracownik jest tego dnia opublikowany jako stand-by Tier 2",DECLARED_UNAVAILABLE:"Pracownik zgłosił twardą niedostępność, urlop albo L4",TIME_CONSTRAINT:"Niedostępność, urlop lub L4",OUTSIDE_AVAILABILITY_WINDOW:"Zmiana poza zadeklarowanym oknem dostępności",MISSING_AVAILABILITY:"Brak deklaracji dostępności, gdy Matrix jawnie jej wymaga",OUTSIDE_EMPLOYMENT:"Data poza okresem współpracy",WEEKEND_BLOCKED:"Pracownik ma zablokowane weekendy",REST_AFTER_PREVIOUS_SHIFT:"Za krótki odpoczynek po poprzedniej zmianie",REST_BEFORE_NEXT_SHIFT:"Za krótki odpoczynek przed następną zmianą",MINIMUM_REST:"Za krótki odpoczynek",MONTHLY_LIMIT:"Przekroczony indywidualny limit miesięczny",WEEKLY_LIMIT:"Przekroczony indywidualny limit tygodniowy",MAX_CONSECUTIVE_DAYS:"Przekroczona maksymalna liczba kolejnych dni pracy",MANAGER_SHIFT_BLOCK:"Pracodawca zablokował tę porę zmiany w Matrixie"};
 const softReasonLabels:Record<string,string>={SHIFT_PREFERENCE_AVOIDED:"Pracownik prosi, aby unikać tej pory",SHIFT_AVOIDED:"Pracownik prosi, aby unikać tej pory",OVERTIME_AFTER_ASSIGNMENT:"Po dopisaniu przekroczy nominał miesięczny",MONTHLY_OVERTIME:"Po dopisaniu przekroczy nominał miesięczny"};
 function reasonLabel(value:string){return hardReasonLabels[value]??softReasonLabels[value]??value;}
 function preferenceLevelLabel(value:string){
@@ -171,6 +171,29 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       setDiagnostics(null);setSelectedEmployee("");await onOperationalChanged?.();
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setDiagnosticsLoading(false);}
+  }
+  async function assignVariantCandidate(candidate:SolverVariantIssueDiagnostics["candidates"][number]){
+    const scheduleId=variantDiagnostics?.publishedScheduleId;
+    if(!supabase||!variantDiagnostics||!scheduleId||candidate.reasons.length)return;
+    setVariantDiagnosticsLoading(true);setSelectedEmployee(candidate.employeeId);
+    try{
+      const operational=await getCandidateDiagnostics(supabase,scheduleId,variantDiagnostics.issueId);
+      const current=operational.candidates.find(item=>item.employeeId===candidate.employeeId);
+      if(!current)throw new Error("CANDIDATE_NOT_FOUND");
+      if(current.classification==="BLOCKED"){
+        throw new Error(`EMERGENCY_ASSIGNMENT_HARD_BLOCK:${current.hardReasons.join(",")}`);
+      }
+      let reason="";
+      if(current.classification==="WARNING"){
+        reason=window.prompt(`Dopisanie naruszy regułę miękką:\n${current.softReasons.map(reasonLabel).join("\n")}\n\nPodaj powód decyzji:`)?.trim()??"";
+        if(reason.length<3)return;
+      }
+      if(!window.confirm(`Dopisać ${candidate.employeeName} do grafiku operacyjnego? Wariant źródłowy pozostanie bez zmian w historii.`))return;
+      await emergencyAssignV2(supabase,{scheduleId,issueId:variantDiagnostics.issueId,employeeId:candidate.employeeId,allowSoft:current.classification==="WARNING",reason,notify:true});
+      notify?.("Pracownik został dopisany do grafiku operacyjnego i powiadomiony. Wariant źródłowy pozostał niezmieniony dla audytu.");
+      setVariantDiagnostics(null);await onOperationalChanged?.();
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setVariantDiagnosticsLoading(false);setSelectedEmployee("");}
   }
 
   return <section className={`solver-workspace ${published ? "published" : ""}`}>
@@ -270,9 +293,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <div className="drawer-head"><div><p className="eyebrow">WARIANT • WYJAŚNIENIE BRAKU</p><h2>{variantDiagnostics.shift.date} • {timeLabel(variantDiagnostics.shift.startsAt,timezone)}–{timeLabel(variantDiagnostics.shift.endsAt,timezone)}</h2><small>Powody są liczone dla pracowników dostępnych w Matrixie i aktualnego składu tego wariantu.</small></div><button className="icon-button" onClick={()=>setVariantDiagnostics(null)}><X/></button></div>
       <div className="drawer-content">
         <div className="candidate-diagnostics-summary"><span><b>{variantDiagnostics.summary.considered}</b><small>sprawdzonych osób</small></span><span><b>{variantDiagnostics.summary.eligible}</b><small>bez blokady</small></span><span><b>{variantDiagnostics.summary.blocked}</b><small>z blokadą</small></span></div>
-        {variantDiagnostics.summary.eligible>0&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie miało twardej blokady w kontroli końcowej</strong><small>Jeżeli miejsce nadal pozostało puste, należy sprawdzić kolejność celów strategii albo konflikt powstały podczas jednoczesnego układania całego miesiąca.</small></span></div>}
+        {variantDiagnostics.summary.eligible>0&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie ma obecnie twardej blokady</strong><small>{variantDiagnostics.publishedScheduleId?"Możesz bezpiecznie dopisać wybraną osobę do grafiku operacyjnego. Przed zapisem system ponownie sprawdzi wszystkie twarde reguły.":"Wynik solvera pozostaje odtwarzalny. Ręczna korekta jest dostępna po wyborze i publikacji wariantu w Grafiku operacyjnym."}</small></span></div>}
         <div className="variant-reason-list">{variantDiagnostics.summary.reasons.map(reason=><article key={reason.code}><span><strong>{reasonLabel(reason.code)}</strong><small>{reason.code}</small></span><b>{reason.count} os.</b></article>)}</div>
-        {variantDiagnostics.candidates.some(candidate=>candidate.roleMatch)&&<section className="variant-role-candidates"><div><h3>Pracownicy z wymaganą rolą</h3><p>Ta lista pokazuje konkretnie, dlaczego osoby z właściwą rolą zostały użyte albo odrzucone.</p></div>{variantDiagnostics.candidates.filter(candidate=>candidate.roleMatch).map(candidate=><article key={candidate.employeeId}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo} • {candidate.locationMatch?"lokal pasuje":"lokal nie pasuje"}{candidate.dutyMatch?" • kompetencje pasują":" • brak wymaganej kompetencji"}</small></span>{candidate.reasons.length?<ul>{candidate.reasons.map(reason=><li key={reason}>{reasonLabel(reason)}</li>)}</ul>:<b className="candidate-eligible">Można przypisać</b>}</article>)}</section>}
+        {variantDiagnostics.candidates.some(candidate=>candidate.roleMatch)&&<section className="variant-role-candidates"><div><h3>Pracownicy z wymaganą rolą</h3><p>Ta lista pokazuje konkretnie, dlaczego osoby z właściwą rolą zostały użyte albo odrzucone.</p></div>{variantDiagnostics.candidates.filter(candidate=>candidate.roleMatch).map(candidate=><article key={candidate.employeeId}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo} • {candidate.locationMatch?"lokal pasuje":"lokal nie pasuje"}{candidate.dutyMatch?" • kompetencje pasują":" • brak wymaganej kompetencji"}</small></span>{candidate.reasons.length?<ul>{candidate.reasons.map(reason=><li key={reason}>{reasonLabel(reason)}</li>)}</ul>:<div className="candidate-eligible-actions"><b className="candidate-eligible">Można przypisać</b>{variantDiagnostics.publishedScheduleId&&<button className="primary-button" disabled={variantDiagnosticsLoading} onClick={()=>void assignVariantCandidate(candidate)}>{variantDiagnosticsLoading&&selectedEmployee===candidate.employeeId?<RefreshCw className="spin"/>:<Plus/>} Dopisz do grafiku operacyjnego</button>}</div>}</article>)}</section>}
         {!variantDiagnostics.summary.reasons.length&&<p>Nie znaleziono twardych blokad kandydatów. Ten przypadek wymaga kontroli celów strategii i materiału wejściowego solvera.</p>}
       </div>
     </aside></>}
