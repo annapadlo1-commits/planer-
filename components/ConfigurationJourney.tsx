@@ -108,7 +108,7 @@ export function ConfigurationJourney({
   const journey = configurationJourney(data, month, serverReadiness);
   const next = journey.next;
 
-  return <section className={`configuration-journey ${compact ? "compact" : ""}`} aria-labelledby="configuration-journey-title">
+  return <section id={compact ? undefined : "configuration-step-readiness"} className={`configuration-journey ${compact ? "compact" : ""}`} aria-labelledby="configuration-journey-title">
     <header className="configuration-journey-head">
       <div>
         <p className="eyebrow">PROWADZONA KONFIGURACJA</p>
