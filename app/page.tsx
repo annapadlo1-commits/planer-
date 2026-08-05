@@ -182,9 +182,11 @@ export default function GrafikPro() {
     window.setTimeout(()=>alignStep("auto"),1800);
   },[setActive]);
   const openEmployeeProfile=useCallback((employeeId:string)=>{
+    window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"employee",employeeId}));
     setMatrixCreateEmployeeRequest(0);setMatrixFocusEmployeeId(employeeId);setConfigurationTab("workforce");setConfigurationStep("employees");setActive("matrix");
   },[setActive]);
   const openNewEmployeeProfile=useCallback(()=>{
+    window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"new"}));
     setMatrixFocusEmployeeId(null);setConfigurationTab("workforce");setConfigurationStep("employees");setMatrixCreateEmployeeRequest(current=>current+1);setActive("matrix");
   },[setActive]);
   const markNewEmployeeProfileOpened=useCallback(()=>setMatrixCreateEmployeeRequest(0),[]);
