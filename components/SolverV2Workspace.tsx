@@ -109,6 +109,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [notifyEmployee,setNotifyEmployee]=useState(true);
   const [standby,setStandby]=useState<SolverManagerStandby[]>([]);
   const [standbyError,setStandbyError]=useState("");
+  const [standbyAction,setStandbyAction]=useState<SolverManagerStandby|null>(null);
+  const [standbyTargetAssignmentId,setStandbyTargetAssignmentId]=useState("");
+  const [standbyReason,setStandbyReason]=useState("");
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
   useEffect(()=>{
     let active=true;
@@ -195,6 +198,21 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setVariantDiagnosticsLoading(false);setSelectedEmployee("");}
   }
+  async function activateStandby(){
+    if(!supabase||!standbyAction||!standbyTargetAssignmentId||standbyReason.trim().length<3)return;
+    setDiagnosticsLoading(true);
+    const result=await supabase.rpc("standby_activate_uat_v2",{
+      p_standby_id:standbyAction.id,p_original_assignment_id:standbyTargetAssignmentId,
+      p_reason:standbyReason.trim(),
+    });
+    setDiagnosticsLoading(false);
+    if(result.error){fail?.(solverErrorMessage(result.error.message));return;}
+    notify?.(`Aktywowano stand-by Tier ${standbyAction.tier}. Zastępstwo jest widoczne w grafiku i audycie.`);
+    setStandbyAction(null);setStandbyTargetAssignmentId("");setStandbyReason("");
+    try{setStandby(await getManagerStandbyMonth(supabase,workspace.context.month,scopeRoleId));}
+    catch(error){setStandbyError(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    await onOperationalChanged?.();
+  }
 
   return <section className={`solver-workspace ${published ? "published" : ""}`}>
     <div className="solver-workspace-head">
@@ -238,8 +256,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         : standby.length===0 ? <p className="solver-workspace-empty">Brak opublikowanych dyżurów stand-by dla tego widoku.</p>
         : <div className="solver-standby-days">{[...new Map(standby.map(item=>[item.date,standby.filter(row=>row.date===item.date)]))].map(([date,rows])=><article key={date}>
           <header><CalendarDays/><strong>{dateLabel(date)}</strong></header>
-          {(rows as SolverManagerStandby[]).map(entry=><div key={entry.id}><span><b>{entry.roleName}</b><small>{entry.employeeName} • {entry.employeeNo}</small></span><em className={`tier-${entry.tier}`}>Tier {entry.tier}{entry.status==="ACTIVATED"?" • aktywowany":entry.status==="DECLINED"?" • odrzucony":""}</em></div>)}
+          {(rows as SolverManagerStandby[]).map(entry=><div key={entry.id}><span><b>{entry.roleName}</b><small>{entry.employeeName} • {entry.employeeNo}</small></span><em className={`tier-${entry.tier}`}>Tier {entry.tier}{entry.status==="ACTIVATED"?" • aktywowany":entry.status==="DECLINED"?" • odrzucony":""}</em>{entry.status==="PLANNED"&&<button className="secondary-button" disabled={diagnosticsLoading} onClick={()=>{setStandbyAction(entry);setStandbyTargetAssignmentId("");setStandbyReason("");}}>Aktywuj</button>}</div>)}
         </article>)}</div>}
+      {standbyAction&&<form className="standby-activation-form" onSubmit={event=>{event.preventDefault();void activateStandby();}}><div><strong>Aktywuj {standbyAction.employeeName} • Tier {standbyAction.tier}</strong><small>{standbyAction.date} • {standbyAction.roleName}. Wybierz osobę, której opublikowany przydział ma zostać zastąpiony.</small></div><label>Zastępowany przydział<select required value={standbyTargetAssignmentId} onChange={event=>setStandbyTargetAssignmentId(event.target.value)}><option value="">Wybierz przydział</option>{workspace.shifts.filter(shift=>shift.date===standbyAction.date).flatMap(shift=>shift.assignments.filter(assignment=>assignment.role.id===standbyAction.roleId&&assignment.employee.id!==standbyAction.employeeId).map(assignment=><option key={assignment.id} value={assignment.id}>{assignment.employee.firstName} {assignment.employee.lastName} • {shift.shiftTemplate.name} • {timeLabel(shift.startsAt,shift.location.timezone??timezone)}</option>))}</select></label><label>Powód aktywacji<textarea required minLength={3} value={standbyReason} onChange={event=>setStandbyReason(event.target.value)} placeholder="np. potwierdzona nieobecność pracownika"/></label><div><button type="button" className="secondary-button" onClick={()=>setStandbyAction(null)}>Anuluj</button><button className="primary-button" disabled={diagnosticsLoading||!standbyTargetAssignmentId||standbyReason.trim().length<3}>Potwierdź aktywację</button></div></form>}
     </details>}
 
     <div className="solver-workspace-calendar">

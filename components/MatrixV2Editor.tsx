@@ -6,9 +6,10 @@ import {
   Save, ShieldCheck, Upload, RefreshCw, Settings, Sparkles, Target, Trash2, Users, X,
   History as HistoryIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
+import { automaticShiftPeriod, equivalentShiftKey, parseTime24 } from "@/lib/uat006-workflows";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
   type MatrixV2Budget, type MatrixV2Duty, type MatrixV2Location,
@@ -206,11 +207,11 @@ export function MatrixV2Editor({
   async function normalizeShiftPeriods() {
     if (!supabase) return;
     const mismatches=data.shiftTemplates.filter(shift=>{
-      const expected=expectedShiftPeriodFromCode(shift.code);
+      const expected=expectedShiftPeriodFromStart(shift.starts_at);
       return shift.active&&expected!==null&&shift.shift_period!==expected;
     });
     if(!mismatches.length){notify("Klasyfikacja pór zmian jest już spójna.");return;}
-    if(!window.confirm(`Poprawić klasyfikację ${mismatches.length} zmian zgodnie z jednoznacznymi kodami RANO, SRODEK i WIECZOR? Zmiany trafią do wersji roboczej; opublikowany Matrix i istniejące grafiki pozostaną bez zmian.`))return;
+    if(!window.confirm(`Poprawić automatyczną klasyfikację ${mismatches.length} zmian według godziny rozpoczęcia? Zmiany trafią do wersji roboczej; opublikowany Matrix i istniejące grafiki pozostaną bez zmian.`))return;
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_normalize_shift_periods_uat_v2");
     setBusy(false);
@@ -218,6 +219,24 @@ export function MatrixV2Editor({
     const updated=Number((result.data as {updated?:number}|null)?.updated??0);
     notify(`Poprawiono klasyfikację ${updated} zmian w wersji roboczej.`);
     selectTab("structure");
+    await reloadInPlace();
+  }
+
+  async function mergeEquivalentShifts(){
+    if(!supabase)return;
+    setBusy(true);
+    const preview=await supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:false});
+    setBusy(false);
+    if(preview.error){fail(matrixV2ErrorMessage(preview.error.message));return;}
+    const payload=preview.data as {groups?:number;duplicates?:number;blockers?:{message:string}[]};
+    if(!payload.groups){notify("Nie znaleziono równoważnych wpisów zmian do scalenia.");return;}
+    if(payload.blockers?.length){fail(`Scalanie jest zablokowane: ${payload.blockers.map(item=>item.message).join(" • ")}`);return;}
+    if(!window.confirm(`Scalić ${payload.duplicates??0} powielonych wpisów w ${payload.groups} logicznych zmian? Dni tygodnia zostaną połączone, reguły obsady przepięte, a nadmiarowe wpisy bezpiecznie wyłączone z zachowaniem historii.`))return;
+    setBusy(true);
+    const result=await supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:true});
+    setBusy(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    notify(`Scalono ${Number((result.data as {groups?:number}|null)?.groups??0)} logicznych zmian. Dni są teraz zapisane wspólnie.`);
     await reloadInPlace();
   }
 
@@ -251,6 +270,13 @@ export function MatrixV2Editor({
 
   async function save(kind: MatrixV2SaveKind, id: string | null, payload: Record<string, unknown>) {
     if (!supabase) return false;
+    if(kind==="DUTY"&&id&&payload.active===false){
+      const preview=await supabase.rpc("matrix_v2_duty_archive_preview_uat_v2",{p_duty_id:id});
+      if(preview.error){fail(matrixV2ErrorMessage(preview.error.message));return false;}
+      const impact=preview.data as {roleDuties?:number;employeeDuties?:number;staffingRules?:number;payRules?:number};
+      const total=Number(impact.roleDuties??0)+Number(impact.employeeDuties??0)+Number(impact.staffingRules??0)+Number(impact.payRules??0);
+      if(total>0&&!window.confirm(`Ten obowiązek ma ${total} aktywnych zależności:\n• role: ${impact.roleDuties??0}\n• pracownicy: ${impact.employeeDuties??0}\n• reguły obsady: ${impact.staffingRules??0}\n• dodatki płacowe: ${impact.payRules??0}\n\nWyłączenie nie usunie historii, ale zablokuje publikację do czasu uporządkowania zależności. Kontynuować?`))return false;
+    }
     setBusy(true);
     const shiftTemplateIds=Array.isArray(payload.shiftTemplateIds)
       ?payload.shiftTemplateIds.filter((value):value is string=>typeof value==="string"&&Boolean(value))
@@ -527,7 +553,7 @@ export function MatrixV2Editor({
 
     {!data.editable && <div className="matrix-v2-readonly"><ShieldCheck/><span><strong>Oglądasz opublikowaną konfigurację</strong><small>Utwórz wersję roboczą, aby bezpiecznie wprowadzić zmiany bez wpływu na istniejące grafiki.</small></span></div>}
 
-    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods}/>}
+    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts}/>}
     {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding}/>}
     {tab === "staffing" && <StaffingTab data={data} editable={data.editable} busy={busy} edit={setEdit} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount}/>}
     {tab === "strategies" && <StrategiesTab data={data} editable={data.editable} edit={setEdit} unlinkedScenarios={unlinkedScenarios} incompleteStrategies={incompleteStrategies}/>}
@@ -585,41 +611,39 @@ function MatrixSettingsCard({
   </section>;
 }
 
-function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>}) {
+function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>}) {
   const [locationId,setLocationId]=useState("");
   const [shiftPeriod,setShiftPeriod]=useState("");
   const [query,setQuery]=useState("");
   const normalizedQuery=query.trim().toLocaleLowerCase("pl-PL");
   const periodMismatches=data.shiftTemplates.filter(shift=>{
-    const expected=expectedShiftPeriodFromCode(shift.code);
+    const expected=expectedShiftPeriodFromStart(shift.starts_at);
     return shift.active&&expected!==null&&shift.shift_period!==expected;
   });
   const shifts=data.shiftTemplates.filter(shift=>(!locationId||shift.location_id===locationId)
     &&(!shiftPeriod||shift.shift_period===shiftPeriod)
     &&(!normalizedQuery||`${shift.name} ${shift.code}`.toLocaleLowerCase("pl-PL").includes(normalizedQuery)));
   const visibleLocations=data.locations.filter(location=>!locationId||location.id===locationId);
+  const equivalentGroups=[...data.shiftTemplates.filter(shift=>shift.active).reduce((groups,shift)=>{const key=equivalentShiftKey({locationId:shift.location_id,name:shift.name,startsAt:shift.starts_at,endsAt:shift.ends_at,endsNextDay:shift.ends_next_day});groups.set(key,[...(groups.get(key)??[]),shift]);return groups;},new Map<string,MatrixV2Shift[]>()).values()].filter(group=>group.length>1);
   return <div className="matrix-v2-tab-content">
-    {periodMismatches.length>0&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>{periodMismatches.length} zmian ma błędnie zapisaną porę</strong><small>Filtry i preferencje silnika korzystają z pola zapisanego w Matrixie. Kody RANO, SRODEK i WIECZOR są jednoznaczne, dlatego system może bezpiecznie przygotować ich korektę w wersji roboczej.</small></span><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Popraw klasyfikację":"Utwórz wersję roboczą i popraw"}</button></div>}
+    {periodMismatches.length>0&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>{periodMismatches.length} zmian ma błędnie zapisaną klasyfikację</strong><small>Rano, środek i wieczór są polem technicznym dla preferencji. System może wyliczyć je automatycznie z godziny rozpoczęcia.</small></span><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Popraw automatycznie":"Utwórz wersję roboczą i popraw"}</button></div>}
+    {equivalentGroups.length>0&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>{equivalentGroups.length} zmian jest rozbitych na osobne wpisy dni</strong><small>Wpisy z tą samą nazwą, lokalem i godzinami mogą być jedną logiczną zmianą ze wspólną listą dni.</small></span>{editable&&<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Scal bezpiecznie</button>}</div>}
     <div className="matrix-v2-structure-overview">
       <RoleDutyOverview data={data} editable={editable} edit={edit}/>
       <EntityPanel title="Lokale" description="Miejsca, w których powstaje grafik" items={data.locations} editable={editable} add={() => edit({kind: "LOCATION"})} edit={item => edit({kind: "LOCATION", item})}/>
     </div>
     <section className="matrix-v2-card">
-      <SectionHead title="Zmiany i bloki zapotrzebowania" description="Dodaj dowolną liczbę pełnych zmian oraz krótkich, nakładających się bloków dodatkowej obsady. Nie ma limitu siedmiu pozycji." editable={editable} disabled={!data.locations.length} add={() => edit({kind: "SHIFT"})}/>
+      <SectionHead title="Zmiany i bloki zapotrzebowania" description="Każdy wpis jest niezależną zmianą albo blokiem obsady. Dni z tymi samymi godzinami zapisujesz wspólnie w jednym wpisie." editable={editable} disabled={!data.locations.length} add={() => edit({kind: "SHIFT"})}/>
       <div className="matrix-v2-filterbar">
         <label>Lokal<select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">Wszystkie lokale</option>{data.locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-        <label>Pora zmiany<select value={shiftPeriod} onChange={event=>setShiftPeriod(event.target.value)}><option value="">Wszystkie pory</option><option value="MORNING">Poranne</option><option value="MIDDLE">Środkowe</option><option value="EVENING">Wieczorne</option></select></label>
+        <label>Automatyczna klasyfikacja<select value={shiftPeriod} onChange={event=>setShiftPeriod(event.target.value)}><option value="">Wszystkie</option><option value="MORNING">Poranne</option><option value="MIDDLE">Środkowe</option><option value="EVENING">Wieczorne</option></select></label>
         <label>Szukaj<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nazwa lub kod zmiany"/></label>
         <strong>{shifts.length} z {data.shiftTemplates.length} zmian</strong>
       </div>
       <div className="matrix-v2-shift-groups">
         {visibleLocations.map(location=>{
           const localShifts=shifts.filter(shift=>shift.location_id===location.id);
-          return <section key={location.id} className="matrix-v2-shift-location"><header><span><MapPin/><div><h4>{location.name}</h4><small>{localShifts.length} widocznych • {data.shiftTemplates.filter(shift=>shift.location_id===location.id).length} wszystkich zmian</small></div></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"SHIFT",item:{location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj zmianę w tym lokalu</button>}</header><div className="matrix-v2-shift-period-groups">{([['MORNING','Rano'],['MIDDLE','Środek'],['EVENING','Wieczór']] as const).map(([period,label])=>{
-            const periodShifts=localShifts.filter(shift=>shift.shift_period===period);
-            if(!periodShifts.length)return null;
-            return <details key={period} open={localShifts.length<=6}><summary><span><Clock3/><b>{label}</b></span><small>{plural(periodShifts.length,"zmiana","zmiany","zmian")} • zobacz / edytuj</small></summary><div className="matrix-v2-table">{periodShifts.map(shift=><button key={shift.id} onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><span><i style={{background:shift.color??"#7257d8"}}/><b>{shift.name}</b><small>{shift.code}</small></span><span>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</span><span>{WEEKDAYS.filter(day=>shift.day_mask.includes(day.value)).map(day=>day.label).join(", ")}</span><em className={shift.active?"on":"off"}>{shift.active?"Aktywna":"Wyłączona"}</em>{editable&&<Edit3/>}</button>)}</div></details>;
-          })}{!localShifts.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów w tym lokalu.</p>}</div></section>;
+          return <section key={location.id} className="matrix-v2-shift-location"><header><span><MapPin/><div><h4>{location.name}</h4><small>{localShifts.length} widocznych • {data.shiftTemplates.filter(shift=>shift.location_id===location.id).length} wszystkich zmian</small></div></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"SHIFT",item:{location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj niezależną zmianę</button>}</header><div className="matrix-v2-table">{localShifts.map(shift=><button key={shift.id} onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><span><i style={{background:shift.color??"#7257d8"}}/><b>{shift.name}</b><small>{shift.code} • {shiftPeriodLabel(shift.shift_period)}</small></span><span>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</span><span>{WEEKDAYS.filter(day=>shift.day_mask.includes(day.value)).map(day=>day.label).join(", ")}</span><em className={shift.active?"on":"off"}>{shift.active?"Aktywna":"Wyłączona"}</em>{editable&&<Edit3/>}</button>)}{!localShifts.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów w tym lokalu.</p>}</div></section>;
         })}
         {!shifts.length&&!visibleLocations.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów.</p>}
       </div>
@@ -628,13 +652,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
   </div>;
 }
 
-function expectedShiftPeriodFromCode(code:string):"MORNING"|"MIDDLE"|"EVENING"|null{
-  const normalized=code.trim().toUpperCase();
-  if(normalized.startsWith("RANO"))return "MORNING";
-  if(normalized.startsWith("SRODEK")||normalized.startsWith("ŚRODEK"))return "MIDDLE";
-  if(normalized.startsWith("WIECZOR")||normalized.startsWith("WIECZÓR"))return "EVENING";
-  return null;
-}
+function expectedShiftPeriodFromStart(value:string):"MORNING"|"MIDDLE"|"EVENING"|null{const match=/^(\d{2}):/.exec(value);if(!match)return null;const hour=Number(match[1]);return hour<12?"MORNING":hour<17?"MIDDLE":"EVENING";}
 
 function RoleDutyOverview({data,editable,edit}:{data:MatrixV2Workspace;editable:boolean;edit:(value:EditTarget)=>void}){
   return <section className="matrix-v2-card matrix-v2-role-duty-overview"><SectionHead title="Role i ich obowiązki" description="W jednym miejscu widzisz zespół oraz wszystkie kompetencje dozwolone dla tej roli." editable={editable} add={()=>edit({kind:"ROLE"})}/><div className="matrix-v2-role-duty-grid">{data.roles.map(role=>{
@@ -721,7 +739,13 @@ function WorkforceTab({
   const rates = (data.employeePayRates ?? []).filter(item=>item.employee_id===employee?.id)
     .sort((a,b)=>b.valid_from.localeCompare(a.valid_from));
   const employeeMatches=employeeQuery.trim()?employees.filter(item=>{
-    const haystack=`${item.firstName} ${item.lastName} ${item.employeeNo} ${item.email??""}`.toLocaleLowerCase("pl-PL");
+    const roleNames=(data.employeeRoles??[]).filter(link=>link.employee_id===item.id&&link.active)
+      .map(link=>data.roles.find(role=>role.id===link.role_id)?.name??"");
+    const locationNames=(data.employeeLocations??[]).filter(link=>link.employee_id===item.id&&link.active)
+      .map(link=>data.locations.find(location=>location.id===link.location_id)?.name??"");
+    const dutyNames=(data.employeeDuties??[]).filter(link=>link.employee_id===item.id&&link.active)
+      .map(link=>data.duties.find(duty=>duty.id===link.duty_id)?.name??"");
+    const haystack=`${item.firstName} ${item.lastName} ${item.employeeNo} ${item.email??""} ${roleNames.join(" ")} ${locationNames.join(" ")} ${dutyNames.join(" ")}`.toLocaleLowerCase("pl-PL");
     return haystack.includes(employeeQuery.trim().toLocaleLowerCase("pl-PL"));
   }).slice(0,12):[];
 
@@ -749,7 +773,7 @@ function WorkforceTab({
   return <div className="matrix-v2-tab-content matrix-v2-workforce">
     <section className="matrix-v2-card workforce-picker">
       <div><h3>Konfiguracja pracownika</h3><p>{data.workforceCounts?.active ?? employees.filter(item=>item.active).length} aktywnych • {data.workforceCounts?.archived ?? employees.filter(item=>!item.active).length} w archiwum. Zmiany profilu trafiają wyłącznie do wersji roboczej.</p></div>
-      <div className="workforce-employee-search"><label htmlFor="matrix-employee-search">Znajdź pracownika<input id="matrix-employee-search" type="search" value={employeeQuery} onChange={event=>setEmployeeQuery(event.target.value)} placeholder="Imię, nazwisko, numer lub e-mail" autoComplete="off"/></label>{employeeMatches.length>0&&<div role="listbox" aria-label="Wyniki wyszukiwania pracowników">{employeeMatches.map(item=><button type="button" role="option" aria-selected={item.id===employee.id} key={item.id} onClick={()=>{setEmployeeId(item.id);setEmployeeQuery("");setTimeEdit(null);setRateEdit(null);}}><span><b>{item.firstName} {item.lastName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span>{!item.active&&<em>Archiwalny</em>}</button>)}</div>}{employeeQuery.trim()&&!employeeMatches.length&&<small>Brak pracownika pasującego do wyszukiwania.</small>}</div>
+      <div className="workforce-employee-search"><label htmlFor="matrix-employee-search">Znajdź pracownika<input id="matrix-employee-search" type="search" value={employeeQuery} onChange={event=>setEmployeeQuery(event.target.value)} placeholder="Imię, nazwisko, numer, e-mail, rola, lokal lub obowiązek" autoComplete="off"/></label>{employeeMatches.length>0&&<div role="listbox" aria-label="Wyniki wyszukiwania pracowników">{employeeMatches.map(item=><button type="button" role="option" aria-selected={item.id===employee.id} key={item.id} onClick={()=>{setEmployeeId(item.id);setEmployeeQuery("");setTimeEdit(null);setRateEdit(null);}}><span><b>{item.firstName} {item.lastName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span>{!item.active&&<em>Archiwalny</em>}</button>)}</div>}{employeeQuery.trim()&&!employeeMatches.length&&<small>Brak pracownika pasującego do wyszukiwania.</small>}</div>
       {editable&&<button className="secondary-button" onClick={()=>editProfile("new")}><Plus/> Dodaj pracownika</button>}
     </section>
 
@@ -1054,6 +1078,8 @@ function MatrixHistoryDrawer({currentVersionId,close,fail}:{currentVersionId:str
   const [view,setView]=useState<"versions"|"audit">("versions");
   const [compareIds,setCompareIds]=useState<string[]>([]);
   const [comparison,setComparison]=useState<MatrixVersionComparison|null>(null);
+  const [comparisonLoading,setComparisonLoading]=useState(false);
+  const comparisonRef=useRef<HTMLElement|null>(null);
   const [section,setSection]=useState("");
   const [actor,setActor]=useState("");
   const [fromDate,setFromDate]=useState("");
@@ -1076,14 +1102,18 @@ function MatrixHistoryDrawer({currentVersionId,close,fail}:{currentVersionId:str
   useEffect(()=>{
     let alive=true;
     setComparison(null);
+    setComparisonLoading(false);
     if(compareIds.length!==2||!supabase)return()=>{alive=false;};
+    setComparisonLoading(true);
     void (async()=>{
       const result=await supabase.rpc("matrix_v2_compare_versions_uat_v2",{
         p_left_version_id:compareIds[0],p_right_version_id:compareIds[1],
       });
       if(!alive)return;
+      setComparisonLoading(false);
       if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
       setComparison(result.data as MatrixVersionComparison);
+      window.requestAnimationFrame(()=>comparisonRef.current?.scrollIntoView({behavior:"smooth",block:"start"}));
     })();
     return()=>{alive=false;};
   },[compareIds,fail,supabase]);
@@ -1111,7 +1141,8 @@ function MatrixHistoryDrawer({currentVersionId,close,fail}:{currentVersionId:str
       {loading&&<p className="matrix-v2-empty">Wczytuję historię…</p>}
       {!loading&&view==="versions"&&<>
         <div className="matrix-history-compare-help"><span><strong>Porównanie wersji</strong><small>Zaznacz dokładnie dwie wersje. Porównanie pokaże, które sekcje i liczby elementów się zmieniły.</small></span><b>{compareIds.length}/2</b></div>
-        {left&&right&&comparison&&<section className="matrix-version-comparison"><header><strong>v{left.version} → v{right.version}</strong><small>{comparison.sections.filter(item=>item.changed).length+(comparison.settingsChanged?1:0)} zmienionych sekcji</small></header>{comparison.settingsChanged&&<div><span>Ustawienia firmy</span><b>Zmienione</b></div>}{comparison.sections.filter(item=>item.changed).map(item=><div key={item.key}><span>{item.label}</span><strong>{item.leftCount} → {item.rightCount}</strong></div>)}{!comparison.settingsChanged&&!comparison.sections.some(item=>item.changed)&&<p>Wersje mają identyczną konfigurację operacyjną.</p>}</section>}
+        <div className="matrix-history-compare-status" role="status" aria-live="polite">{compareIds.length<2?`Wybierz jeszcze ${2-compareIds.length} ${compareIds.length===0?"wersje":"wersję"}.`:comparisonLoading?"Porównuję wybrane wersje…":comparison?"Porównanie jest gotowe i znajduje się poniżej.":"Oczekiwanie na wynik porównania."}</div>
+        {left&&right&&comparison&&<section ref={comparisonRef} tabIndex={-1} className="matrix-version-comparison"><header><strong>Wynik: v{left.version} → v{right.version}</strong><small>{comparison.sections.filter(item=>item.changed).length+(comparison.settingsChanged?1:0)} zmienionych sekcji</small></header>{comparison.settingsChanged&&<div><span>Ustawienia firmy</span><b>Zmienione</b></div>}{comparison.sections.filter(item=>item.changed).map(item=><div key={item.key}><span>{item.label}</span><strong>{item.leftCount} → {item.rightCount}</strong></div>)}{!comparison.settingsChanged&&!comparison.sections.some(item=>item.changed)&&<p>Wersje mają identyczną konfigurację operacyjną.</p>}</section>}
         <div className="matrix-version-list">{(payload?.versions??[]).map(version=><details key={version.id} open={version.id===currentVersionId}>
           <summary><label onClick={event=>event.stopPropagation()}><input type="checkbox" checked={compareIds.includes(version.id)} onChange={()=>toggleCompare(version.id)}/><span>Porównaj</span></label><span><b>v{version.version} • {version.name}</b><small>{matrixVersionStatusLabel(version.status)}{version.id===currentVersionId?" • obecnie otwarta":""}</small></span><time>{formatHistoryDate(version.publishedAt??version.createdAt)}</time></summary>
           <div className="matrix-version-readonly"><div><ShieldCheck/><span><strong>Podgląd tylko do odczytu</strong><small>Utworzona przez: {version.createdBy}{version.publishedBy?` • opublikowana przez: ${version.publishedBy}`:""}</small></span></div><dl>{Object.entries(version.counts).map(([key,value])=><div key={key}><dt>{matrixVersionCountLabel(key)}</dt><dd>{value}</dd></div>)}</dl><p>Obowiązuje: {version.effectiveFrom}{version.effectiveTo?` – ${version.effectiveTo}`:" – bez daty końcowej"}</p></div>
@@ -1389,13 +1420,13 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     {kind === "DUTY" && <label>Opis<textarea name="description" defaultValue={String(item?.description ?? "")}/></label>}
     {kind === "STRATEGY" && <><label>Opis wariantu<textarea name="description" defaultValue={String(item?.description ?? "")}/></label><input type="hidden" name="solverCode" value="CP_SAT"/></>}
     {(kind === "ROLE" || kind === "DUTY") && <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? (kind === "ROLE" ? "#7257d8" : "#4a8d78"))}/></label>}
-    <CommonState item={item}/>
+    {kind==="DUTY"?<DutyState item={item}/>:<CommonState item={item}/>}
   </>;
   if (kind === "SHIFT") return <>
     <label>Lokal<select name="locationId" required defaultValue={String(item?.location_id ?? "")}>{data.locations.filter(x=>x.active).map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label>
     <NameAndCode item={item}/>
-    <label>Podstawowa pora zmiany<select name="shiftPeriod" required defaultValue={String(item?.shift_period??"MIDDLE")}><option value="MORNING">Poranna</option><option value="MIDDLE">Środek</option><option value="EVENING">Wieczorna</option></select><small>Ta krótka klasyfikacja zasila preferencje; dokładne godziny pozostają poniżej.</small></label>
-    <div className="form-row"><label>Od<input name="startsAt" type="time" required defaultValue={time(String(item?.starts_at ?? "10:00"))}/></label><label>Do<input name="endsAt" type="time" required defaultValue={time(String(item?.ends_at ?? "18:00"))}/></label></div>
+    <div className="matrix-v2-form-hint"><strong>To jest niezależna zmiana.</strong> Klasyfikacja rano/środek/wieczór zostanie wyliczona automatycznie z godziny rozpoczęcia wyłącznie na potrzeby preferencji.</div>
+    <div className="form-row"><label>Od (24 h)<input name="startsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="10:00" defaultValue={time(String(item?.starts_at ?? "10:00"))}/><small>Wpisz godzinę i minuty, np. 10:30.</small></label><label>Do (24 h)<input name="endsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="18:00" defaultValue={time(String(item?.ends_at ?? "18:00"))}/><small>Wpisz godzinę i minuty, np. 18:45.</small></label></div>
     <label className="check-label"><input name="endsNextDay" type="checkbox" defaultChecked={Boolean(item?.ends_next_day)}/> Kończy się następnego dnia</label>
     <DaySelector selected={(item?.day_mask as number[] | undefined) ?? WEEKDAYS.map(day=>day.value)}/>
     <CommonState item={item}/>
@@ -1405,7 +1436,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <label>Rola<select name="roleId" required disabled={Boolean(item?.id)} defaultValue={String(item?.role_id ?? "")}>{data.roles.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     <label>Obowiązek<select name="dutyId" required disabled={Boolean(item?.id)} defaultValue={String(item?.duty_id ?? "")}>{data.duties.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     <label>Znaczenie<select name="assignmentMode" defaultValue={String(item?.assignment_mode ?? "OPTIONAL")}><option value="REQUIRED">Wymagany</option><option value="OPTIONAL">Opcjonalny</option><option value="EXTRA">Dodatkowy</option></select></label>
-    <label>Minimalna liczba na zmianie<input name="minimumCount" type="number" min="0" defaultValue={Number(item?.minimum_count ?? 0)}/></label>
+    <label>Minimalna liczba na zmianie<input name="minimumCount" type="number" min="0" defaultValue={Number(item?.minimum_count ?? 0)}/><small>Dla obowiązku wymaganego minimum musi wynosić co najmniej 1.</small></label>
     <label className="check-label"><input name="shiftObligation" type="checkbox" defaultChecked={Boolean(item?.shift_obligation)}/> Obowiązek dotyczy wskazanej pory zmiany</label>
     <label>Pora obowiązku<select name="shiftPeriod" defaultValue={String(item?.shift_period??"MIDDLE")}><option value="MORNING">Poranna</option><option value="MIDDLE">Środek</option><option value="EVENING">Wieczorna</option></select><small>Ignorowana, gdy obowiązek nie jest zmianowy.</small></label>
     <ActiveToggle item={item}/>
@@ -1472,7 +1503,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <PayValueFields method={payMethod} item={item} currency={currency}/>
     <div className="form-row"><label>Priorytet<input name="priority" type="number" min="0" defaultValue={Number(item?.priority ?? 100)}/></label><label>Łączenie dodatków<select name="stackingMode" defaultValue={String(item?.stacking_mode ?? "STACK")}><option value="STACK">Sumuj</option><option value="MAX">Wybierz najwyższy</option><option value="FIRST">Pierwszy wg priorytetu</option></select></label></div>
     <label>Grupa wzajemnego wykluczania<input name="stackingGroup" defaultValue={String(item?.stacking_group ?? "")} placeholder="Puste = bez grupy"/></label>
-    <DaySelector selected={(item?.day_mask as number[] | undefined) ?? WEEKDAYS.map(day=>day.value)}/><div className="form-row"><label>Godziny płatnego okna od<input name="localStart" type="time" disabled={payMethod.includes("THRESHOLD")} defaultValue={time(String(item?.local_start ?? "")) === "—" ? "" : time(String(item?.local_start))}/></label><label>Godziny płatnego okna do<input name="localEnd" type="time" disabled={payMethod.includes("THRESHOLD")} defaultValue={time(String(item?.local_end ?? "")) === "—" ? "" : time(String(item?.local_end))}/></label></div><p className="matrix-v2-form-hint">Dla dodatku godzinowego, procentowego lub mnożnika naliczane są wyłącznie minuty rzeczywiście przecinające to okno. Reguły progowe nie łączą się z oknem godzinowym.</p>
+    <DaySelector selected={(item?.day_mask as number[] | undefined) ?? WEEKDAYS.map(day=>day.value)}/><div className="form-row"><label>Godziny płatnego okna od (24 h)<input name="localStart" type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="22:00" disabled={payMethod.includes("THRESHOLD")} defaultValue={time(String(item?.local_start ?? "")) === "—" ? "" : time(String(item?.local_start))}/></label><label>Godziny płatnego okna do (24 h)<input name="localEnd" type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="06:00" disabled={payMethod.includes("THRESHOLD")} defaultValue={time(String(item?.local_end ?? "")) === "—" ? "" : time(String(item?.local_end))}/></label></div><p className="matrix-v2-form-hint">Dla dodatku godzinowego, procentowego lub mnożnika naliczane są wyłącznie minuty rzeczywiście przecinające to okno. Reguły progowe nie łączą się z oknem godzinowym.</p>
     <div className="form-row"><label>Ważny od<input name="validFrom" type="date" defaultValue={String(item?.valid_from ?? "")}/></label><label>Ważny do<input name="validTo" type="date" defaultValue={String(item?.valid_to ?? "")}/></label></div>
     <ScopeSelector title="Role" name="roleIds" items={data.roles} selected={data.payRuleRoles.filter(x=>x.pay_rule_id===item?.id).map(x=>x.role_id)}/>
     <ScopeSelector title="Obowiązki" name="dutyIds" items={data.duties} selected={data.payRuleDuties.filter(x=>x.pay_rule_id===item?.id).map(x=>x.duty_id)}/>
@@ -1560,7 +1591,8 @@ function EmployeeContextField({data,employeeId}:{data:MatrixV2Workspace;employee
   if(employee)return <><div className="matrix-v2-selection-summary"><small>Pracownik</small><strong>{employee.firstName} {employee.lastName}</strong><span>{employee.employeeNo}</span></div><input type="hidden" name="employeeId" value={employeeId}/></>;
   return <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Najpierw wybierz pracownika w sekcji „Pracownicy i umowy”</strong><small>Role, lokale i kompetencje dodaje się z karty konkretnej osoby — bez przewijania długiej listy pracowników.</small></span></div>;
 }
-function CommonState({item}:{item?:Record<string,unknown>}) { return <><label>Kolejność<input name="sortOrder" type="number" defaultValue={Number(item?.sort_order ?? 0)}/></label><label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Element aktywny</label></>; }
+function CommonState({item}:{item?:Record<string,unknown>}) { return <><input name="sortOrder" type="hidden" value={Number(item?.sort_order ?? 0)}/><label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Element aktywny</label><small className="matrix-v2-form-hint">Kolejność wyświetlania jest zarządzana automatycznie przez system.</small></>; }
+function DutyState({item}:{item?:Record<string,unknown>}) { return <><input name="sortOrder" type="hidden" value={Number(item?.sort_order ?? 0)}/><label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Obowiązek aktywny</label><small className="matrix-v2-form-hint">Odznaczenie bezpiecznie archiwizuje obowiązek. Przed zapisem system pokaże wszystkie aktywne zależności; historia nie zostanie usunięta.</small></>; }
 function ActiveToggle({item}:{item?:Record<string,unknown>}) { return <label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Reguła aktywna</label>; }
 function DaySelector({selected}:{selected:number[]}) { return <fieldset className="matrix-v2-days"><legend>Dni tygodnia</legend>{WEEKDAYS.map(day=><label key={day.value}><input type="checkbox" name="days" value={day.value} defaultChecked={selected.includes(day.value)}/>{day.label}</label>)}</fieldset>; }
 function ScopeSelector({title,name,items,selected}:{title:string;name:string;items:{id:string;name:string;active:boolean}[];selected:string[]}) { return <fieldset className="matrix-v2-scopes"><legend>{title}</legend>{items.filter(x=>x.active||selected.includes(x.id)).map(x=><label key={x.id}><input type="checkbox" name={name} value={x.id} defaultChecked={selected.includes(x.id)}/>{x.name}{!x.active?" (wyłączony)":""}</label>)}</fieldset>; }
@@ -1695,8 +1727,8 @@ function scenarioStrategySummary(link:MatrixV2ScenarioStrategy){
 function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<string,unknown>|undefined,operation:string,payMethod:string,currency:string,workspace:MatrixV2Workspace):Record<string,unknown>{
   const data=new FormData(form);const name=formText(form,"name");const code=formText(form,"code")||codeFrom(name);const common=()=>({code,name,sortOrder:requiredNumber(formText(form,"sortOrder")||"0"),active:checked(form,"active")});
   if(["ROLE","LOCATION","DUTY","STRATEGY"].includes(kind)){if(!name||!code)throw new Error("Podaj nazwę elementu.");if(kind==="ROLE")return{...common(),color:formText(form,"color")};if(kind==="LOCATION"){const timezone=formText(form,"timezone");if(!timezone)throw new Error("Wybierz strefę czasową lokalu.");try{new Intl.DateTimeFormat("en",{timeZone:timezone}).format(new Date(0));}catch{throw new Error("Podaj prawidłową strefę czasową IANA, np. Europe/Warsaw.");}return{...common(),timezone};}if(kind==="DUTY")return{...common(),description:formText(form,"description"),color:formText(form,"color")};return{...common(),description:formText(form,"description"),solverCode:"CP_SAT"};}
-  if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");return{...common(),locationId:formText(form,"locationId"),shiftPeriod:formText(form,"shiftPeriod"),startsAt:formText(form,"startsAt"),endsAt:formText(form,"endsAt"),endsNextDay:checked(form,"endsNextDay"),days};}
-  if(kind==="ROLE_DUTY")return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode:formText(form,"assignmentMode"),minimumCount:requiredNumber(formText(form,"minimumCount")||"0"),shiftObligation:checked(form,"shiftObligation"),shiftPeriod:checked(form,"shiftObligation")?formText(form,"shiftPeriod"):null,active:checked(form,"active")};
+  if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const startsAt=parseTime24(formText(form,"startsAt"),"Godzina rozpoczęcia") as string;const endsAt=parseTime24(formText(form,"endsAt"),"Godzina zakończenia") as string;return{...common(),locationId:formText(form,"locationId"),shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt,endsNextDay:checked(form,"endsNextDay"),days};}
+  if(kind==="ROLE_DUTY"){const assignmentMode=formText(form,"assignmentMode"),minimumCount=requiredNumber(formText(form,"minimumCount")||"0");if(assignmentMode==="REQUIRED"&&minimumCount<1)throw new Error("Obowiązek wymagany musi mieć minimalną liczbę co najmniej 1.");return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode,minimumCount,shiftObligation:checked(form,"shiftObligation"),shiftPeriod:checked(form,"shiftObligation")?formText(form,"shiftPeriod"):null,active:checked(form,"active")};}
   if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary:checked(form,"isPrimary"),canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");if(!checked(form,"standardAllowed")&&!checked(form,"overtimeAllowed"))throw new Error("Wybierz zwykły limit lub dopuszczenie nadgodzin.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:checked(form,"standardAllowed"),overtimeAllowed:checked(form,"overtimeAllowed"),homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_DUTY"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),dutyId:formText(form,"dutyId"),roleId:formText(form,"roleId")||null,locationId:formText(form,"locationId")||null,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
@@ -1710,7 +1742,7 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
   }
   if(kind==="OBJECTIVE")return{strategyId:formText(form,"strategyId"),tier:requiredNumber(formText(form,"tier")),metricCode:formText(form,"metricCode"),direction:formText(form,"direction"),weight:requiredNumber(formText(form,"weight")),tolerance:requiredNumber(formText(form,"tolerance")),sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),parameters:item?.parameters??{},active:checked(form,"active")};
   if(kind==="SCENARIO_STRATEGY"){const strategyId=formText(form,"strategyId");if(!strategyId)throw new Error("Wybierz strategię wariantu.");return{scenarioId:formText(form,"scenarioId"),strategyId,sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),active:checked(form,"active"),objectiveOverrides:objectiveOverridesFromForm(form,workspace,strategyId),solverOverrides:solverOverridesFromForm(form)};}
-  if(kind==="PAY_RULE"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const payload:Record<string,unknown>={...common(),description:formText(form,"description"),calculationMethod:payMethod,currency,priority:requiredNumber(formText(form,"priority")),stackingGroup:formText(form,"stackingGroup")||null,stackingMode:formText(form,"stackingMode"),days,localStart:formText(form,"localStart")||null,localEnd:formText(form,"localEnd")||null,validFrom:formText(form,"validFrom")||null,validTo:formText(form,"validTo")||null,roleIds:data.getAll("roleIds"),dutyIds:data.getAll("dutyIds"),locationIds:data.getAll("locationIds"),shiftIds:data.getAll("shiftIds")};if(payMethod==="FIXED_PER_SHIFT")payload.amountMinor=requiredNumber(formText(form,"amount"),100);if(["PER_HOUR","SHIFT_DURATION_THRESHOLD_PER_HOUR","MONTHLY_THRESHOLD_PER_HOUR"].includes(payMethod))payload.rateMinorPerHour=requiredNumber(formText(form,"hourly"),100);if(payMethod==="PERCENT_BASE")payload.percentBasisPoints=requiredNumber(formText(form,"percent"),100);if(payMethod==="MULTIPLIER")payload.multiplierBasisPoints=requiredNumber(formText(form,"multiplier"),10000);if(payMethod.includes("THRESHOLD"))payload.thresholdMinutes=requiredNumber(formText(form,"thresholdMinutes"));return payload;}
+  if(kind==="PAY_RULE"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const localStart=parseTime24(formText(form,"localStart"),"Początek płatnego okna",true),localEnd=parseTime24(formText(form,"localEnd"),"Koniec płatnego okna",true);if((localStart===null)!==(localEnd===null))throw new Error("Uzupełnij obie godziny płatnego okna albo pozostaw obie puste.");const payload:Record<string,unknown>={...common(),description:formText(form,"description"),calculationMethod:payMethod,currency,priority:requiredNumber(formText(form,"priority")),stackingGroup:formText(form,"stackingGroup")||null,stackingMode:formText(form,"stackingMode"),days,localStart,localEnd,validFrom:formText(form,"validFrom")||null,validTo:formText(form,"validTo")||null,roleIds:data.getAll("roleIds"),dutyIds:data.getAll("dutyIds"),locationIds:data.getAll("locationIds"),shiftIds:data.getAll("shiftIds")};if(payMethod==="FIXED_PER_SHIFT")payload.amountMinor=requiredNumber(formText(form,"amount"),100);if(["PER_HOUR","SHIFT_DURATION_THRESHOLD_PER_HOUR","MONTHLY_THRESHOLD_PER_HOUR"].includes(payMethod))payload.rateMinorPerHour=requiredNumber(formText(form,"hourly"),100);if(payMethod==="PERCENT_BASE")payload.percentBasisPoints=requiredNumber(formText(form,"percent"),100);if(payMethod==="MULTIPLIER")payload.multiplierBasisPoints=requiredNumber(formText(form,"multiplier"),10000);if(payMethod.includes("THRESHOLD"))payload.thresholdMinutes=requiredNumber(formText(form,"thresholdMinutes"));return payload;}
   if(kind==="SCENARIO_PAY_RULE")return{scenarioId:formText(form,"scenarioId"),payRuleId:formText(form,"payRuleId"),enabled:checked(form,"enabled"),amountMinor:optionalNumber(formText(form,"amount"),100),rateMinorPerHour:optionalNumber(formText(form,"hourly"),100),percentBasisPoints:optionalNumber(formText(form,"percent"),100),multiplierBasisPoints:optionalNumber(formText(form,"multiplier"),10000),formulaExpression:item?.formula_expression??null};
   const budgetMonth=formText(form,"budgetMonth");return{scenarioId:formText(form,"scenarioId"),budgetMonth:budgetMonth?`${budgetMonth}-01`:null,locationId:formText(form,"locationId")||null,roleId:formText(form,"roleId")||null,dutyId:formText(form,"dutyId")||null,operation,amountMinor:["SET","ADD"].includes(operation)?requiredNumber(formText(form,"amount"),100):null,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,currency,hardLimit:checked(form,"hardLimit"),warningPercent:requiredNumber(formText(form,"warningPercent")),sourceMetadata:item?.source_metadata??{}};
 }
