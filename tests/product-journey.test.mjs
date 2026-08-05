@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  configurationBlockerAction,
   configurationJourney,
   isEmployeePersona,
   pathForSection,
   sectionFromPath,
 } from "../lib/product-journey.ts";
+import { readFile } from "node:fs/promises";
 
 function workspace(overrides = {}) {
   return {
@@ -61,4 +63,35 @@ test("server blockers keep readiness as the only current step", () => {
   assert.equal(result.next?.key, "readiness");
   assert.equal(result.steps.find(step => step.key === "readiness")?.state, "current");
   assert.equal(result.blockers.length, 1);
+});
+
+test("roles do not require optional duties to complete setup", () => {
+  const data = workspace({ duties: [], roleDuties: [] });
+  const result = configurationJourney(data, "2026-08", { ready: true, blockers: [], effectiveFrom: "2026-08-05", scheduleMonth: "2026-08-01", matrixVersionId: "matrix" });
+  assert.equal(result.steps.find(step => step.key === "roles")?.state, "complete");
+  assert.equal(result.ready, true);
+});
+
+test("missing pay rate blocker opens the exact employee and required period", () => {
+  const data = workspace();
+  const action = configurationBlockerAction({ code: "MISSING_PAY_RATE", message: "Brak stawki", employeeId: "employee", employeeName: "A B", requiredFrom: "2026-08-01", requiredTo: "2026-08-31" }, data, "2026-08");
+  assert.equal(action.step, "employees");
+  assert.equal(action.focus?.employeeId, "employee");
+  assert.equal(action.focus?.targetId, "matrix-v2-rate-employee");
+  assert.match(action.message, /01\.08\.2026–31\.08\.2026/);
+  assert.equal(action.actionLabel, "Uzupełnij stawkę");
+});
+
+test("schedule opens with role plans before company merge", async () => {
+  const appSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(appSource, /schedule:\"zespoly\"/);
+  assert.match(appSource, /1\. Grafiki ról/);
+  assert.match(appSource, /2\. Scal i porównaj grafik firmy/);
+  assert.ok(appSource.indexOf("1. Grafiki ról") < appSource.indexOf("2. Scal i porównaj grafik firmy"));
+});
+
+test("employee search input is constrained inside its grid cell", async () => {
+  const cssSource = await readFile(new URL("../app/matrix-v2.css", import.meta.url), "utf8");
+  assert.match(cssSource, /\.workforce-picker>\*\{min-width:0\}/);
+  assert.match(cssSource, /\.workforce-employee-search input\{width:100%;min-width:0;max-width:100%;box-sizing:border-box\}/);
 });
