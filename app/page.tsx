@@ -36,6 +36,7 @@ import {
   type SolverWorkspace,
 } from "@/lib/solver-v2";
 import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,type MatrixV2Workspace} from "@/lib/matrix-v2";
+import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import {
   employeeNavigation,
   isEmployeePersona,
@@ -43,6 +44,7 @@ import {
   pathForSection,
   sectionFromPath,
   type ProductSection,
+  type SetupFocus,
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
@@ -83,7 +85,7 @@ const productIcons: Record<ProductSection, LucideIcon> = {
   "my-schedule": CalendarDays, "company-schedule": Users, availability: Clock3, swaps: ArrowLeftRight, messages: Bell, time: Clock3,
 };
 const legacySection: Record<NavKey, ProductSection> = {
-  centrum:"start",kadra:"team",zespoly:"team",generator:"schedule",grafik:"schedule",
+  centrum:"start",kadra:"team",zespoly:"schedule",generator:"schedule",grafik:"schedule",
   kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",
   budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
 };
@@ -123,6 +125,7 @@ export default function GrafikPro() {
   const [swapAnnouncements,setSwapAnnouncements]=useState<ShiftSwapAnnouncement[]>([]);
   const [workforceCalendar,setWorkforceCalendar]=useState<WorkforceCalendarContext>({events:[]});
   const [matrixFocusEmployeeId,setMatrixFocusEmployeeId]=useState<string|null>(null);
+  const [matrixCreateEmployeeRequest,setMatrixCreateEmployeeRequest]=useState(0);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [solverConfiguration,setSolverConfiguration]=useState<SolverConfiguration|null>(null);
@@ -158,19 +161,33 @@ export default function GrafikPro() {
     if(sectionFromPath(pathname,employeeShell)!==section)router.push(pathForSection(section));
   },[employeeShell,pathname,router]);
   const openProductSection=useCallback((section:ProductSection)=>{
-    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"generator",operations:"alerty",analytics:"budzet",settings:"matrix"};
+    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(pathForSection(section));
   },[employeeShell,router]);
-  const openSetupStep=useCallback((section:SetupSection,step:SetupStepKey)=>{
-    setConfigurationTab(section);setConfigurationStep(step);setMatrixFocusEmployeeId(null);setActive("matrix");
-    const alignStep=(behavior:ScrollBehavior)=>document.getElementById(`configuration-step-${step}`)?.scrollIntoView({behavior,block:"start"});
+  const openSetupStep=useCallback((section:SetupSection,step:SetupStepKey,focus?:SetupFocus)=>{
+    setConfigurationTab(section);setConfigurationStep(step);setMatrixFocusEmployeeId(focus?.employeeId??null);setActive("matrix");
+    const targetId=focus?.targetId??`configuration-step-${step}`;
+    const alignStep=(behavior:ScrollBehavior)=>{
+      const target=document.getElementById(targetId);
+      target?.scrollIntoView({behavior,block:"start"});
+      if(focus?.employeeId&&targetId.startsWith("matrix-v2-rate-")){
+        target?.querySelector<HTMLInputElement>('input[name="amount"]')?.focus({preventScroll:true});
+      }
+    };
     window.setTimeout(()=>alignStep("smooth"),220);
     // Readiness data and editor panels hydrate independently. Re-align after they
     // settle so content inserted above the target cannot move it out of view.
     window.setTimeout(()=>alignStep("auto"),900);
     window.setTimeout(()=>alignStep("auto"),1800);
   },[setActive]);
+  const openEmployeeProfile=useCallback((employeeId:string)=>{
+    setMatrixCreateEmployeeRequest(0);setMatrixFocusEmployeeId(employeeId);setConfigurationTab("workforce");setConfigurationStep("employees");setActive("matrix");
+  },[setActive]);
+  const openNewEmployeeProfile=useCallback(()=>{
+    setMatrixFocusEmployeeId(null);setConfigurationTab("workforce");setConfigurationStep("employees");setMatrixCreateEmployeeRequest(current=>current+1);setActive("matrix");
+  },[setActive]);
+  const markNewEmployeeProfileOpened=useCallback(()=>setMatrixCreateEmployeeRequest(0),[]);
   const monthOptions=useMemo(()=>Array.from({length:48},(_,index)=>{
     const [year,number]=selectedMonth.split("-").map(Number);
     const date=new Date(year,number-1-12+index,1,12);
@@ -306,7 +323,7 @@ export default function GrafikPro() {
   useEffect(()=>{void load();return()=>{loadTokenRef.current+=1};},[load]);
   useEffect(()=>{
     if(employeeShell){setActiveState("portal");return;}
-    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"generator",operations:"alerty",analytics:"budzet",settings:"matrix"};
+    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
   },[employeeShell,primarySection]);
   useEffect(()=>{
@@ -397,11 +414,10 @@ export default function GrafikPro() {
           {["my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
           {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
-        {primarySection==="team"&&<ContextTabs items={[["kadra","Pracownicy"],["zespoly","Grafiki zespołów"]]} active={active} select={setActive}/>} 
-        {primarySection==="schedule"&&<ContextTabs items={[["generator","Przygotuj i porównaj warianty"],["grafik","Opublikowany grafik"]]} active={active} select={setActive}/>} 
+        {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["generator","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
         {primarySection==="operations"&&<ContextTabs items={[["alerty","Alerty"],["kalendarz","Kalendarz"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
         {active==="centrum"&&<>
-          {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/>} 
+          {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")}/>} 
           <section className="kpi-grid">
             <button className="kpi-card" onClick={()=>setActive("grafik")}><span className="kpi-icon violet"><Users/></span><span><small>Obsada</small><strong>{data.plan?`${coverage}%`:"—"}</strong><em>{data.plan?`${data.assignments.length} przydziałów`:"Brak planu"}</em></span></button>
             <button className="kpi-card" onClick={()=>setActive("alerty")}><span className="kpi-icon coral"><AlertTriangle/></span><span><small>Otwarte alerty</small><strong>{data.issues.length}</strong><em>{data.issues.filter(i=>i.severity==="CRITICAL").length} krytycznych</em></span></button>
@@ -420,11 +436,18 @@ export default function GrafikPro() {
         {active==="grafik"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
         {active==="grafik"&&isOrtools&&!operationalWorkspace&&<section className="empty-engine"><CalendarDays/><h2>Brak opublikowanego grafiku operacyjnego</h2><p>W Generatorze wybierz gotowy wariant, przejrzyj analizę i opublikuj go jako osobną wersję operacyjną.</p><button className="primary-button" onClick={()=>setActive("generator")}>Otwórz Generator i warianty</button></section>}
         {active==="grafik"&&!isOrtools&&<ScheduleView data={data} assignments={assignments} location={location} role={role} day={day} setLocation={setLocation} setRole={setRole} setDay={setDay} onShift={(s)=>{setSelectedShift(s);setModal("shift");}} onGenerate={()=>setActive("generator")} roleOptions={roleOptions} locationOptions={locationOptions} dynamic={false} timezone={activeTimezone} currency={activeCurrency}/>}
-        {active==="zespoly"&&(!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator zespołów jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverScenarios={solverConfiguration.scenarios} solverRoles={solverConfiguration.roles} solverUserId={user?.id} roleCompositeRefreshKey={roleCompositeRefreshKey} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>)}
-        {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId}/></>}
+        {active==="zespoly"&&<>
+          <section className="schedule-role-first-intro">
+            <span>ETAP 1 Z 3 • GRAFIKI RÓL</span>
+            <h2>Najpierw przygotuj i zatwierdź grafik każdej roli</h2>
+            <p>Każdy lider przegląda swój grafik roli. Dopiero po akceptacji ról przejdź do etapu 2, aby scalić je w jeden grafik firmy i porównać warianty.</p>
+          </section>
+          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików ról jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverScenarios={solverConfiguration.scenarios} solverRoles={solverConfiguration.roles} solverUserId={user?.id} roleCompositeRefreshKey={roleCompositeRefreshKey} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
+        </>}
+        {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened}/></>}
         {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Konfiguracja firmy jest niedostępna</h2><p>Odśwież dane albo sprawdź migracje UAT. Aplikacja nie przełączy się po cichu na konkurencyjne źródło danych.</p></section>}
         {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} events={workforceCalendar.events} standby={managerStandby} swaps={swapAnnouncements} timezone={activeTimezone} onDay={(d)=>{setDay(d);setActive("grafik");}}/>}
-        {active==="kadra"&&matrixV2&&<WorkforceCatalog data={matrixV2} onEdit={employeeId=>{setMatrixFocusEmployeeId(employeeId);setActive("matrix");}}/>}
+        {active==="kadra"&&matrixV2&&<WorkforceCatalog data={matrixV2} onEdit={openEmployeeProfile} onAdd={openNewEmployeeProfile}/>}
         {["hr","finanse"].includes(active)&&matrixV2&&<MatrixDestination section={active==="hr"?"dane kadrowe i ograniczenia":"stawki, dodatki i budżety"} open={()=>{setMatrixFocusEmployeeId(null);setActive("matrix");}}/>}
         {active==="portal"&&complete&&<ActiveModules month={selectedMonth} view="portal" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
         {active==="czas"&&complete&&<ActiveModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
@@ -478,17 +501,15 @@ type FilterOption={value:string;label:string;code:string};
 function ContextTabs({items,active,select}:{items:[NavKey,string][];active:NavKey;select:(key:NavKey)=>void}){
   return <nav className="product-section-tabs" aria-label="Widoki modułu">{items.map(([key,label])=><button type="button" key={key} className={active===key?"active":""} onClick={()=>select(key)}>{label}</button>)}</nav>;
 }
-function WorkforceCatalog({data,onEdit}:{data:MatrixV2Workspace;onEdit:(employeeId:string)=>void}){
+function WorkforceCatalog({data,onEdit,onAdd}:{data:MatrixV2Workspace;onEdit:(employeeId:string)=>void;onAdd:()=>void}){
   const [query,setQuery]=useState("");
   const roleName=(employeeId:string)=>{
     const primary=data.employeeRoles.find(item=>item.employee_id===employeeId&&item.active&&item.is_primary)??data.employeeRoles.find(item=>item.employee_id===employeeId&&item.active);
     return data.roles.find(item=>item.id===primary?.role_id)?.name??"Brak roli";
   };
   const locationNames=(employeeId:string)=>data.employeeLocations.filter(item=>item.employee_id===employeeId&&item.active&&item.standard_allowed).map(item=>data.locations.find(location=>location.id===item.location_id)?.name).filter(Boolean).join(", ")||"Brak lokalu";
-  const dutyNames=(employeeId:string)=>data.employeeDuties.filter(item=>item.employee_id===employeeId&&item.active).map(item=>data.duties.find(duty=>duty.id===item.duty_id)?.name).filter(Boolean).join(", ");
-  const normalized=query.trim().toLocaleLowerCase("pl-PL");
-  const rows=data.employees.filter(employee=>`${employee.firstName} ${employee.lastName} ${employee.employeeNo} ${employee.email??""} ${roleName(employee.id)} ${locationNames(employee.id)} ${dutyNames(employee.id)}`.toLocaleLowerCase("pl-PL").includes(normalized));
-  return <section className="workforce-catalog"><header><div><p className="eyebrow">KATALOG • JEDNO ŹRÓDŁO DANYCH</p><h2>Pracownicy i role</h2><p>Ten ekran jest podsumowaniem. Każda zmiana profilu, roli, lokalu, limitu lub preferencji odbywa się w Matrixie.</p></div><span className="matrix-v2-version">MATRIX v{data.matrixVersion.version}</span></header><label className="workforce-catalog-search"><Users/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, nazwisko, numer, e-mail, rola, lokal lub obowiązek"/></label><div className="workforce-catalog-list">{rows.map(employee=>{const flexible=["ZLECENIE","B2B"].includes(employee.contractType??"")&&employee.workTimePolicy!=="CUSTOM";return <article className={employee.active?"":"archived"} key={employee.id}><span className="avatar violet">{`${employee.firstName[0]??""}${employee.lastName[0]??""}`}</span><span><small>{employee.employeeNo}</small><strong>{employee.firstName} {employee.lastName}</strong></span><span><small>Rola</small><b>{roleName(employee.id)}</b></span><span><small>Zwykłe lokale</small><b>{locationNames(employee.id)}</b></span><span><small>{flexible?"Uzgodniony pułap (informacyjny)":"Twardy limit miesięczny"}</small><b>{Math.round(employee.maximumMonthlyMinutes/60)} godz.{flexible?" • nie blokuje silnika":""}</b></span><button className="secondary-button" onClick={()=>onEdit(employee.id)}><Edit3/> Edytuj w Matrixie</button></article>})}{!rows.length&&<p className="solver-workspace-empty">Nie znaleziono pracowników.</p>}</div></section>;
+  const rows=data.employees.filter(employee=>employeeMatchesWorkforceQuery(data,employee,query));
+  return <section className="workforce-catalog"><header><div><p className="eyebrow">ZESPÓŁ • JEDNO ŹRÓDŁO DANYCH</p><h2>Pracownicy</h2><p>W jednym profilu edytujesz dane, umowę, role, lokale, kompetencje, limity, dostępność i stawki.</p></div><div className="workforce-catalog-actions"><span className="matrix-v2-version">WERSJA ROBOCZA v{data.matrixVersion.version}</span>{data.editable&&<button className="primary-button" onClick={onAdd}><Plus/> Dodaj pracownika</button>}</div></header><label className="workforce-catalog-search"><Users/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Połącz kryteria: imię, numer, rola, lokal lub obowiązek"/></label><div className="workforce-catalog-list">{rows.map(employee=>{const flexible=["ZLECENIE","B2B"].includes(employee.contractType??"")&&employee.workTimePolicy!=="CUSTOM";return <article className={employee.active?"":"archived"} key={employee.id}><span className="avatar violet">{`${employee.firstName[0]??""}${employee.lastName[0]??""}`}</span><span><small>{employee.employeeNo}</small><strong>{employee.firstName} {employee.lastName}</strong></span><span><small>Rola</small><b>{roleName(employee.id)}</b></span><span><small>Zwykłe lokale</small><b>{locationNames(employee.id)}</b></span><span><small>{flexible?"Uzgodniony pułap (informacyjny)":"Twardy limit miesięczny"}</small><b>{Math.round(employee.maximumMonthlyMinutes/60)} godz.{flexible?" • nie blokuje silnika":""}</b></span><button className="secondary-button" onClick={()=>onEdit(employee.id)}><Edit3/> Otwórz profil</button></article>})}{!rows.length&&<p className="solver-workspace-empty">Nie znaleziono pracowników.</p>}</div></section>;
 }
 function MatrixDestination({section,open}:{section:string;open:()=>void}){
   return <section className="empty-engine"><Boxes size={36}/><h2>Matrix jest jedynym miejscem edycji</h2><p>Przejdź do Matrixa, aby zmienić {section}. Dzięki temu generator, grafik operacyjny, portal i katalog pracowników zawsze czytają te same dane.</p><button className="primary-button" onClick={open}>Otwórz Matrix organizacji</button></section>;
