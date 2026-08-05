@@ -189,6 +189,7 @@ type UatMasterPortalContext = Omit<PortalWorkspace, "assignments"> & {
 };
 
 type View = "rolePlans" | "portal" | "czas" | "integracje";
+export type EmployeePortalSection = "overview" | "my-schedule" | "company-schedule" | "availability" | "swaps";
 const days = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
 const rolePl: Record<string, string> = {
   KELNER: "Kelner",
@@ -214,6 +215,7 @@ export function ActiveModules({
   roleCompositeRefreshKey = 0,
   timezone,
   onOpenSolverV2,
+  portalSection = "overview",
 }: {
   month: string;
   view: View;
@@ -231,6 +233,7 @@ export function ActiveModules({
   timezone: string;
   currency: string;
   onOpenSolverV2?: (role: SolverRole) => void;
+  portalSection?: EmployeePortalSection;
 }) {
   const selectedMonthDate = `${month}-01`;
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -621,6 +624,7 @@ export function ActiveModules({
       decideSwapAsLeader={decideSwapAsLeader}
       masterMode={Boolean(uatMasterEmployeeId)}
       busy={busy}
+      section={portalSection}
     /> : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
     {availabilityOpen && portal?.timeConstraints && <AvailabilityCalendarDrawer
       workspace={portal.timeConstraints}
@@ -711,7 +715,7 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   return <section className="operational-calendar-panel"><div className="matrix-demand-head"><div><h3>Kalendarz operacyjny i alerty dostępności</h3><p>Event zwiększa twarde zapotrzebowanie solvera. HOT DAY kontroluje limit twardych nieobecności i kieruje nadmiarowe zgłoszenia do lidera.</p></div><span>{context.events.length} zdarzeń</span></div>{context.canManage && <form className="operational-event-form" onSubmit={event => void submit(event)}><div className="segmented-choice"><button type="button" className={kind === "EVENT" ? "active" : ""} onClick={() => setKind("EVENT")}><Megaphone /> Event + obsada</button><button type="button" className={kind === "HOT_DAY" ? "active" : ""} onClick={() => setKind("HOT_DAY")}><Flame /> HOT DAY</button></div><div className="form-row"><label>Data<input type="date" min={`${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={date} onChange={event => setDate(event.target.value)} required /></label><label>Nazwa<input value={title} maxLength={160} onChange={event => setTitle(event.target.value)} placeholder={kind === "EVENT" ? "np. Koncert — większy ruch" : "np. Długi weekend"} required /></label></div><label>Opis (opcjonalnie)<textarea value={description} maxLength={500} onChange={event => setDescription(event.target.value)} /></label><fieldset className="operational-card-picker"><legend>Rola</legend>{roles.map(role => <button type="button" key={role.id} className={roleId === role.id ? "active" : ""} onClick={() => setRoleId(role.id)}>{role.name}</button>)}</fieldset>{kind === "EVENT" ? <><fieldset className="operational-card-picker"><legend>Lokal</legend>{locations.map(location => <button type="button" key={location.id} className={locationId === location.id ? "active" : ""} onClick={() => setLocationId(location.id)}>{location.name}</button>)}</fieldset><fieldset className="operational-shift-picker"><legend>Zmiany objęte dodatkową obsadą</legend>{visibleTemplates.map(template => <label key={template.id}><input type="checkbox" checked={selectedTemplates.includes(template.id)} onChange={() => setSelectedTemplates(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])} /><span><b>{template.name}</b><small>{String(template.startsAt).slice(0, 5)}–{String(template.endsAt).slice(0, 5)}</small></span></label>)}</fieldset><label className="compact-number">Dodatkowe osoby na każdej zaznaczonej zmianie<input type="number" min={1} max={500} value={count} onChange={event => setCount(Number(event.target.value))} /></label></> : <label className="compact-number">Ile twardych niedostępności roli można przyjąć automatycznie?<input type="number" min={0} max={500} value={limit} onChange={event => setLimit(Number(event.target.value))} /><small>Kolejne zgłoszenie będzie oczekiwać na decyzję lidera.</small></label>}<button className="primary-button" disabled={busy || (kind === "EVENT" && !selectedTemplates.length)}><Save /> Zapisz i zostań tutaj</button></form>}<div className="operational-event-list">{context.events.map(event => <article key={event.id} className={event.kind.toLowerCase()}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><small>{event.date} • {event.kind === "HOT_DAY" ? "HOT DAY" : event.locationName || "Event"}</small><h4>{event.title}</h4><p>{event.kind === "EVENT" ? event.demands?.map(demand => `+${demand.additionalCount} ${demand.roleName} • ${demand.shiftName}`).join("; ") : event.hotLimits?.map(item => `${item.roleName}: automatycznie do ${item.maximumHardUnavailable}`).join("; ")}</p></span></article>)}</div>{context.canManage && Boolean(context.availabilitySummary?.length) && <section className="availability-daily-summary"><h4><CalendarDays /> Dostępność zespołów dzień po dniu</h4><div>{context.availabilitySummary?.map(item=><details key={`${item.date}:${item.roleId}`}><summary><b>{item.date} • {item.roleName}</b><span><em>{item.hardCount} twardych</em><em>{item.availableCount??"—"}/{item.totalCount??"—"} dostępnych</em><em>{item.progressPercent??0}% zgłoszeń</em>{item.pendingCount>0&&<em>{item.pendingCount} oczekuje</em>}</span></summary><p>{item.hardEmployees.length?`Twardo niedostępni: ${item.hardEmployees.join(", ")}. `:""}{item.softEmployees.length?`Wolą nie pracować: ${item.softEmployees.join(", ")}. `:""}{item.pendingEmployees.length?`Do decyzji: ${item.pendingEmployees.join(", ")}.`:""}</p>{item.lastUpdatedAt&&<small>Ostatnia aktualizacja: {new Intl.DateTimeFormat("pl-PL",{dateStyle:"short",timeStyle:"short"}).format(new Date(item.lastUpdatedAt))}</small>}</details>)}</div></section>}{context.canManage && context.pendingReviews.length > 0 && <section className="availability-review-list"><h4><Flame /> Wnioski HOT DAY do weryfikacji</h4>{context.pendingReviews.map(item => <article key={item.id}><span><b>{item.employeeName} • {item.employeeNo}</b><small>{item.date} • {item.roleName}{item.note ? ` • ${item.note}` : ""}</small></span><div><button className="primary-button" disabled={busy} onClick={() => void review(item.id, "APPROVE")}>Akceptuj</button><button className="secondary-button" disabled={busy} onClick={() => void review(item.id, "REJECT")}>Odrzuć</button></div></article>)}</section>}</section>;
 }
 
-function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy }: {
+function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section }: {
   portal: PortalWorkspace;
   month: string;
   timezone: string;
@@ -725,6 +729,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
   decideSwapAsLeader: (requestId: string, decision: "APPROVE" | "REJECT") => Promise<boolean>;
   masterMode: boolean;
   busy: boolean;
+  section: EmployeePortalSection;
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
@@ -751,6 +756,17 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
   const dayCount = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
   const cells = Array.from({ length: offset + dayCount }, (_, index) => index < offset ? 0 : index - offset + 1);
   const monthName = labelMonth(month, timezone);
+  const showMine = section === "overview" || section === "my-schedule";
+  const showCompany = section === "overview" || section === "company-schedule";
+  const showAvailability = section === "overview" || section === "availability";
+  const showSwaps = section === "overview" || section === "swaps";
+  const sectionCopy: Record<EmployeePortalSection, { title: string; subtitle: string }> = {
+    overview: { title: "Mój grafik i sprawy pracownicze", subtitle: "Opublikowane zmiany, dostępność, stand-by i zamiany w jednym miejscu." },
+    "my-schedule": { title: "Mój grafik", subtitle: "Moje opublikowane zmiany, eventy i dyżury stand-by." },
+    "company-schedule": { title: "Grafik firmy", subtitle: "Czytelny podgląd tego, kto pracuje w wybranym dniu." },
+    availability: { title: "Moja dostępność", subtitle: "Zaznacz wyjątki i preferowane pory pracy bez szukania formularza w grafiku." },
+    swaps: { title: "Zamiany zmian", subtitle: "Ogłoszenia, zgody pracowników i decyzje liderów w jednym procesie." },
+  };
   const exportSchedule = () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(portal.assignments.map((assignment) => ({
@@ -762,19 +778,19 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
     }))), "MÓJ_GRAFIK");
     XLSX.writeFile(workbook, `MOJ_GRAFIK_${month.replace("-", "_")}.xlsx`);
   };
-  return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title="Mój grafik i sprawy pracownicze" subtitle="Opublikowane zmiany, dostępność, stand-by i zamiany w jednym kalendarzu." actions={<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>} />
+  return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title={sectionCopy[section].title} subtitle={sectionCopy[section].subtitle} actions={showMine?<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>:undefined} />
     {masterMode && <div className="uat-master-active-banner"><ShieldCheck /><span><b>Testujesz widok: {employee?.firstName} {employee?.lastName} • {employee?.employeeNo}</b><small>Zapisy dostępności i preferencji są wykonywane dla tej osoby oraz oznaczone w audycie jako UAT MASTER. Akcje zamiany pozostają zablokowane.</small></span></div>}
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
-    <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil Matrix v2</p><span>Role i lokale wynikają z opublikowanego Matrixa.</span></>}</section><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Zmieniasz tylko wyjątki.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy w Matrixie ma pierwszeństwo.</p></section></div>
-    <section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span><small>Poranne</small><strong>{periodCounts.morning}</strong></span><span><small>Środkowe</small><strong>{periodCounts.middle}</strong></span><span><small>Wieczorne</small><strong>{periodCounts.evening}</strong></span><span className="standby-summary"><small>Stand-by</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
+    {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<><section><h3>Moja dostępność</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Zmieniasz tylko wyjątki.</p></section><section><h3>Moje preferencje</h3><button className="primary-button portal-action-visible" onClick={openPreferences}><Plus /> Ustaw pory zmian</button><p>Ustawienie pracodawcy ma pierwszeństwo.</p></section></>}</div>}
+    {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span><small>Poranne</small><strong>{periodCounts.morning}</strong></span><span><small>Środkowe</small><strong>{periodCounts.middle}</strong></span><span><small>Wieczorne</small><strong>{periodCounts.evening}</strong></span><span className="standby-summary"><small>Stand-by</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
     <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć szczegóły lub ogłosić zamianę. Eventy i HOT DAY są widoczne na każdej dacie.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const events = eventsByDay.get(date) || [];
     const swapAnnouncements=swapAnnouncementsByDay.get(date)||[];
     return <section className={`${!day ? "blank" : ""} ${events.some(event => event.kind === "HOT_DAY") ? "has-hot-day" : ""} ${swapAnnouncements.length?"has-swap-announcement":""}`} key={index}>{day && <><strong>{day}</strong>{swapAnnouncements.length>0&&<div className="portal-calendar-swap"><ArrowLeftRight/><span><b>Aktywna zamiana</b><small>{swapAnnouncements.length} {swapAnnouncements.length===1?"ogłoszenie":"ogłoszenia"}</small></span></div>}{events.map(event => <div key={event.id} className={`portal-calendar-event ${event.kind.toLowerCase()}`}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><b>{event.title}</b><small>{event.kind === "HOT_DAY" ? "Ograniczona niedostępność" : event.locationName || "Event"}</small></span></div>)}{(grouped.get(date) || []).map((assignment) => <button key={assignment.id} onClick={() => setSelected(assignment)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}{(standbyByDay.get(date) || []).map((entry) => <div key={entry.id} className={`portal-standby tier-${entry.tier} ${entry.status.toLowerCase()}`}><b>Stand-by • Tier {entry.tier}</b><small>{entry.roleName}{entry.status === "ACTIVATED" ? " • aktywowany" : " • gotowość dzienna"}</small></div>)}</>}</section>;
-  })}</div></section>
-    {!masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
-    {portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
+  })}</div></section></>}
+    {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
+    {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} />}
   </>;
 }
