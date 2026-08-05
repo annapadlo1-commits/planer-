@@ -232,7 +232,6 @@ export default function GrafikPro() {
     if(solverConfigurationResult.error){
       const message=solverErrorMessage(solverConfigurationResult.error.message);
       setSolverConfigurationError(message);
-      errors.push(`Konfiguracja generatora jest niedostępna: ${message}`);
     }else if(currentSolverConfiguration){
       setSolverConfiguration(currentSolverConfiguration);
       setPlanForm(current=>{
