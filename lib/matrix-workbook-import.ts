@@ -28,14 +28,6 @@ function importDays(value:string){
   return importList(value).map(item=>Number(item)||labels[item.toLocaleLowerCase("pl-PL")]).filter(day=>Number.isInteger(day)&&day>=1&&day<=7);
 }
 
-function periodFromExplicitCode(code:string){
-  const normalized=code.toLocaleUpperCase("pl-PL");
-  if(normalized.includes("RANO"))return "MORNING";
-  if(normalized.includes("SRODEK")||normalized.includes("ŚRODEK"))return "MIDDLE";
-  if(normalized.includes("WIECZ"))return "EVENING";
-  return "";
-}
-
 export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayload>{
   const XLSX=await import("xlsx");
   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
@@ -50,7 +42,9 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     if(["UMOWAOPRACĘ","UMOWAOPRACE","UOP"].includes(key))return "UMOWA_O_PRACE";
     if(["UMOWAZLECENIE","ZLECENIE","UZ"].includes(key))return "ZLECENIE";
     if(["CZĘŚĆETATU","CZESCETATU"].includes(key))return "CZESC_ETATU";
-    return key==="B2B"?"B2B":"INNE";
+    if(key==="B2B")return "B2B";
+    if(["INNE","OTHER"].includes(key))return "INNE";
+    return "";
   };
   const normalizeDate=(value:string)=>{
     const trimmed=value.trim();
@@ -110,10 +104,13 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       dutyCodes,
       employmentFraction:importCell(row,"ETAT*","ETAT","employmentFraction"),
       workTimePolicy:importCell(row,"Polityka czasu pracy","workTimePolicy","POLITYKA_CZASU_PRACY").toUpperCase(),
-      preferenceMonth:normalizeDate(importCell(row,"Miesiąc preferencji","preferenceMonth")),shiftPeriodPreferences:{
-        MORNING:importCell(row,"Preferencja rano","morningPreference")||"INHERIT",MIDDLE:importCell(row,"Preferencja środek","middlePreference")||"INHERIT",EVENING:importCell(row,"Preferencja wieczór","eveningPreference")||"INHERIT",
-      },
     };
+    if(hasImportColumn(row,"Miesiąc preferencji","preferenceMonth"))employee.preferenceMonth=normalizeDate(importCell(row,"Miesiąc preferencji","preferenceMonth"));
+    const shiftPeriodPreferences:Record<string,string>={};
+    if(hasImportColumn(row,"Preferencja rano","morningPreference"))shiftPeriodPreferences.MORNING=importCell(row,"Preferencja rano","morningPreference")||"INHERIT";
+    if(hasImportColumn(row,"Preferencja środek","middlePreference"))shiftPeriodPreferences.MIDDLE=importCell(row,"Preferencja środek","middlePreference")||"INHERIT";
+    if(hasImportColumn(row,"Preferencja wieczór","eveningPreference"))shiftPeriodPreferences.EVENING=importCell(row,"Preferencja wieczór","eveningPreference")||"INHERIT";
+    if(Object.keys(shiftPeriodPreferences).length)employee.shiftPeriodPreferences=shiftPeriodPreferences;
     if(locationColumns.length)employee.locationGrants=sourceLocationGrants;
     if(hasImportColumn(row,"Aktywny","active","AKTYWNY*"))employee.active=importBoolean(importCell(row,"Aktywny","active","AKTYWNY*"),true);
     if(hasImportColumn(row,"Tylko rano","onlyMorning","TYLKO_RANO"))employee.onlyMorning=importBoolean(importCell(row,"Tylko rano","onlyMorning","TYLKO_RANO"));
@@ -138,7 +135,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const day=importCell(row,"DZIEŃ_TYGODNIA");
     return {
       code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
-      shiftPeriod:(importCell(row,"Pora","shiftPeriod")||periodFromExplicitCode(baseCode)).toUpperCase(),startsAt:importCell(row,"Od","startsAt","START"),endsAt:importCell(row,"Do","endsAt","KONIEC"),
+      shiftPeriod:importCell(row,"Pora","shiftPeriod","PORA").toUpperCase(),startsAt:importCell(row,"Od","startsAt","START"),endsAt:importCell(row,"Do","endsAt","KONIEC"),
       endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni","days")),
       sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
@@ -152,17 +149,21 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const group=importCell(row,"GRUPA_DNI");
     const sourceShift=importCell(row,"ZMIANA_ID");
     return {
-      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode")||"BAZOWY",shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
-      roleCode:importCell(row,"Kod roli","roleCode","ROLA"),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),operation:(importCell(row,"Operacja","operation")||"SET").toUpperCase(),
+      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
+      roleCode:importCell(row,"Kod roli","roleCode","ROLA"),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase(),
       countValue:importCell(row,"Liczba osób","countValue","OPTYMALNIE_OSÓB","MIN_OSÓB"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
-  const roleDuties=functionRows.length?functionRows.filter(row=>importBoolean(importCell(row,"AKTYWNA"),true)&&!["DOWOLNA",""].includes(importCell(row,"ROLA_WYMAGANA"))).map(row=>({
-    roleCode:importCell(row,"ROLA_WYMAGANA"),dutyCode:importCell(row,"KOD"),assignmentMode:importCell(row,"TYP_PRZYDZIAŁU")==="WYMÓG_ZMIANY"?"REQUIRED":"OPTIONAL",
-    minimumCount:importCell(row,"TYP_PRZYDZIAŁU")==="WYMÓG_ZMIANY"?"1":"0",shiftObligation:importCell(row,"TYP_PRZYDZIAŁU")==="WYMÓG_ZMIANY",
-    shiftPeriod:importCell(row,"KOD").includes("ZAMKNIĘCIE")?"EVENING":"",active:true,
-  })):rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]).map(row=>({
-    roleCode:importCell(row,"Kod roli","roleCode"),dutyCode:importCell(row,"Kod obowiązku","dutyCode"),assignmentMode:(importCell(row,"Znaczenie","assignmentMode")||"OPTIONAL").toUpperCase(),
+  const roleDuties=functionRows.length?functionRows.filter(row=>importBoolean(importCell(row,"AKTYWNA"),true)&&!["DOWOLNA",""].includes(importCell(row,"ROLA_WYMAGANA"))).map(row=>{
+    const sourceMode=importCell(row,"TYP_PRZYDZIAŁU","ASSIGNMENT_MODE").toLocaleUpperCase("pl-PL");
+    const assignmentMode=["WYMÓG_ZMIANY","REQUIRED"].includes(sourceMode)?"REQUIRED":["OPCJONALNY","OPTIONAL"].includes(sourceMode)?"OPTIONAL":"";
+    return {
+      roleCode:importCell(row,"ROLA_WYMAGANA"),dutyCode:importCell(row,"KOD"),assignmentMode,
+      minimumCount:assignmentMode==="REQUIRED"?"1":"0",shiftObligation:assignmentMode==="REQUIRED",
+      shiftPeriod:importCell(row,"PORA","SHIFT_PERIOD").toUpperCase(),active:true,
+    };
+  }):rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]).map(row=>({
+    roleCode:importCell(row,"Kod roli","roleCode"),dutyCode:importCell(row,"Kod obowiązku","dutyCode"),assignmentMode:importCell(row,"Znaczenie","assignmentMode").toUpperCase(),
     minimumCount:importCell(row,"Minimum","minimumCount"),shiftObligation:importBoolean(importCell(row,"Obowiązek zmianowy","shiftObligation")),
     shiftPeriod:importCell(row,"Pora","shiftPeriod").toUpperCase(),active:importBoolean(importCell(row,"Aktywne","active"),true),
   }));
