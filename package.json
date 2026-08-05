@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test:matrix-import": "node --experimental-strip-types --test tests/matrix-workbook-import.test.mjs",
-    "test:uat006": "node --experimental-strip-types --test tests/uat006-workflows.test.mjs tests/unified-matrix-workflow.test.mjs tests/product-journey.test.mjs"
+    "test:uat006": "node --experimental-strip-types --test tests/uat006-workflows.test.mjs tests/unified-matrix-workflow.test.mjs tests/product-journey.test.mjs tests/workforce-profile.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
