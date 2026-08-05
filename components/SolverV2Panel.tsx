@@ -10,6 +10,7 @@ import {
   forgetSolverRun,
   getPublishedSchedule,
   getPublicationReadiness,
+  getPublicationAuthorityStatus,
   getSelectedVariantWorkspace,
   getVariantWorkspace,
   getSolverStatus,
@@ -463,6 +464,24 @@ export function SolverV2Panel({
         return;
       }
     }
+    let roleReplacementReason:string|null=null;
+    try {
+      const authority=await getPublicationAuthorityStatus(supabase,month);
+      if(authority.roles.length>0){
+        roleReplacementReason=window.prompt(
+          `Dla tego miesiąca istnieje ${authority.roles.length} opublikowanych grafików zespołów. Publikacja grafiku firmy zastąpi je atomowo i zachowa w historii.\n\nPodaj powód decyzji właściciela do audytu:`,
+        )?.trim()??null;
+        if(!roleReplacementReason||roleReplacementReason.length<5){
+          setBusy(false);
+          setMessage("Publikacja anulowana: zastąpienie grafików zespołów wymaga powodu do audytu.");
+          return;
+        }
+      }
+    }catch(error){
+      setBusy(false);
+      setMessage(solverErrorMessage(errorText(error)));
+      return;
+    }
     const costSummary = selectedVariant.totalCostMinor === undefined || selectedVariant.totalCostMinor === null
       ? ""
       : ` • koszt ${money(selectedVariant.totalCostMinor, selectedVariant.currency)}`;
@@ -493,6 +512,7 @@ export function SolverV2Panel({
         name: trimmedName,
         idempotencyKey,
         warningReason,
+        roleReplacementReason,
       });
       rememberPublishedSchedule(context, publication.scheduleId);
       window.localStorage.removeItem(attemptKey);

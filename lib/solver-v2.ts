@@ -1046,14 +1046,16 @@ export async function publishCompanyVariant(
     name: string;
     idempotencyKey: string;
     warningReason?: string | null;
+    roleReplacementReason?: string | null;
   },
 ): Promise<SolverPublication> {
-  const payload = record(await rpc(client, "optimizer_publish_company_variant_alpha16", {
+  const payload = record(await rpc(client, "optimizer_publish_company_variant_resolved_uat_v2", {
     p_run_id: input.runId,
     p_variant_id: input.variantId,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
     p_warning_reason: input.warningReason?.trim()||null,
+    p_role_replacement_reason: input.roleReplacementReason?.trim()||null,
   }));
   if(payload.published===false){
     throw new Error(`${String(payload.code??"PUBLICATION_FAILED")}: ${String(payload.message??"Publikacja nie powiodła się.")}`);
@@ -1233,7 +1235,10 @@ export async function getOperationalSolverWorkspace(
   month: string,
 ): Promise<SolverWorkspace | null> {
   const payload = record(await rpc(client, "optimizer_operational_workspace_alpha16", { p_month: month }));
-  if (!payload.workspace) return null;
+  // Older operational wrappers returned `workspace: null` when the month had
+  // no publication. The UI still needs the canonical EMPTY ORTOOLS workspace
+  // so a manager can open the generator and create the first schedule.
+  if (!payload.workspace) return getActiveSolverWorkspace(client, month);
   const workspace = normalizeWorkspace(payload.workspace);
   const overrides = Array.isArray(payload.overrides) ? payload.overrides.map(record) : [];
   if (!overrides.length) return workspace;
