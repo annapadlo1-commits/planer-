@@ -19,8 +19,10 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { MatrixV2PublicationReadiness, MatrixV2Workspace } from "@/lib/matrix-v2";
 import {
+  configurationBlockerAction,
   configurationJourney,
   type SetupSection,
+  type SetupFocus,
   type SetupStepKey,
 } from "@/lib/product-journey";
 
@@ -53,7 +55,7 @@ export function ConfigurationJourney({
 }: {
   data: MatrixV2Workspace;
   month: string;
-  onOpenStep: (section: SetupSection, step: SetupStepKey) => void;
+  onOpenStep: (section: SetupSection, step: SetupStepKey, focus?: SetupFocus) => void;
   onCreateSchedule: () => void;
   compact?: boolean;
 }) {
@@ -107,6 +109,15 @@ export function ConfigurationJourney({
 
   const journey = configurationJourney(data, month, serverReadiness);
   const next = journey.next;
+  const payRateBlockers = journey.blockers.filter(blocker => blocker.code === "MISSING_PAY_RATE");
+  const onlyPayRateBlockers = payRateBlockers.length === journey.blockers.length && payRateBlockers.length > 0;
+  const blockerTitle = serverError
+    || (onlyPayRateBlockers
+      ? `${payRateBlockers.length} ${payRateBlockers.length === 1 ? "pracownik nie ma" : "pracowników nie ma"} stawki obejmującej cały miesiąc`
+      : `${journey.blockers.length} problemów blokuje publikację`);
+  const blockerHelp = onlyPayRateBlockers
+    ? "Kliknij osobę. Otworzymy jej profil, przewiniemy do historii stawek i ustawimy kursor w formularzu."
+    : "Kliknij problem, aby przejść bezpośrednio do miejsca naprawy.";
 
   return <section id={compact ? undefined : "configuration-step-readiness"} className={`configuration-journey ${compact ? "compact" : ""}`} aria-labelledby="configuration-journey-title">
     <header className="configuration-journey-head">
@@ -146,10 +157,14 @@ export function ConfigurationJourney({
     </ol>
 
     {(serverError || journey.blockers.length > 0) && <div className="configuration-blockers">
-      <div><AlertTriangle /><span><strong>{serverError || `${journey.blockers.length} problemów blokuje publikację`}</strong><small>Każdy problem prowadzi do miejsca, w którym można go naprawić.</small></span></div>
-      {journey.blockers.slice(0, 5).map(blocker => <button type="button" key={`${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`} onClick={() => onOpenStep(blocker.employeeId ? "workforce" : "structure", blocker.employeeId ? "employees" : "shifts")}>
-        <span><b>{blocker.employeeName ?? blocker.shiftName ?? "Konfiguracja firmy"}</b><small>{blocker.message}</small></span><ArrowRight />
-      </button>)}
+      <div><AlertTriangle /><span><strong>{blockerTitle}</strong><small>{serverError ? "Odśwież dane i ponów kontrolę gotowości." : blockerHelp}</small></span></div>
+      {journey.blockers.slice(0, 5).map(blocker => {
+        const action = configurationBlockerAction(blocker, data, month);
+        return <button type="button" key={`${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`} onClick={() => onOpenStep(action.section, action.step, action.focus)}>
+          <span><b>{action.title}</b><small>{action.message}</small><em>{action.actionLabel}</em></span><ArrowRight />
+        </button>;
+      })}
+      {journey.blockers.length > 5 && <small className="configuration-blockers-more">Pokazano 5 z {journey.blockers.length} problemów. Po naprawieniu profilu lista odświeży się automatycznie.</small>}
     </div>}
   </section>;
 }
