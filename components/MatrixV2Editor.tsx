@@ -160,24 +160,6 @@ export function MatrixV2Editor({
     window.sessionStorage.setItem(tabStorageKey, next);
   }
 
-  useEffect(()=>{
-    let persisted:{kind?:string;employeeId?:string}|null=null;
-    try{
-      const raw=window.sessionStorage.getItem("grafik-pro:matrix-v2:employee-request");
-      if(raw)persisted=JSON.parse(raw) as {kind?:string;employeeId?:string};
-    }catch{persisted=null;}
-    if(!createEmployeeRequest&&!persisted)return;
-    if(!data.editable)return;
-    window.sessionStorage.removeItem("grafik-pro:matrix-v2:employee-request");
-    selectTab("workforce");
-    if(persisted?.kind==="employee"&&persisted.employeeId){
-      setWorkforceFocusEmployeeId(persisted.employeeId);
-      return;
-    }
-    setEmployeeEdit("new");
-    onCreateEmployeeOpened?.();
-  },[createEmployeeRequest,data.editable,onCreateEmployeeOpened]);
-
   async function reloadInPlace() {
     const scrollTop = window.scrollY;
     await reload();
@@ -210,6 +192,23 @@ export function MatrixV2Editor({
   }, [data.financeVisible, tab]);
   useEffect(()=>{if(focusEmployeeId)selectTab("workforce");},[focusEmployeeId]);
   useEffect(()=>{if(initialTab)selectTab(initialTab);},[initialTab]);
+  useEffect(()=>{
+    let persisted:{kind?:string;employeeId?:string}|null=null;
+    try{
+      const raw=window.sessionStorage.getItem("grafik-pro:matrix-v2:employee-request");
+      if(raw)persisted=JSON.parse(raw) as {kind?:string;employeeId?:string};
+    }catch{persisted=null;}
+    if(!createEmployeeRequest&&!persisted)return;
+    if(!data.editable)return;
+    window.sessionStorage.removeItem("grafik-pro:matrix-v2:employee-request");
+    selectTab("workforce");
+    if(persisted?.kind==="employee"&&persisted.employeeId){
+      setWorkforceFocusEmployeeId(persisted.employeeId);
+      return;
+    }
+    setEmployeeEdit("new");
+    onCreateEmployeeOpened?.();
+  },[createEmployeeRequest,data.editable,onCreateEmployeeOpened]);
   useEffect(()=>{
     let alive=true;
     if(!supabase||!data.editable){setUatReset(null);return()=>{alive=false;};}
