@@ -164,6 +164,7 @@ export default function GrafikPro() {
   },[employeeShell,router]);
   const openSetupStep=useCallback((section:SetupSection,step:SetupStepKey)=>{
     setConfigurationTab(section);setConfigurationStep(step);setMatrixFocusEmployeeId(null);setActive("matrix");
+    window.setTimeout(()=>document.getElementById(`configuration-step-${step}`)?.scrollIntoView({behavior:"smooth",block:"start"}),220);
   },[setActive]);
   const monthOptions=useMemo(()=>Array.from({length:48},(_,index)=>{
     const [year,number]=selectedMonth.split("-").map(Number);
