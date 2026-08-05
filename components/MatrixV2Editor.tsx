@@ -139,7 +139,9 @@ export function MatrixV2Editor({
   });
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState<EditTarget | null>(null);
-  const [employeeEdit, setEmployeeEdit] = useState<MatrixV2Employee | "new" | null>(null);
+  const [employeeEdit, setEmployeeEdit] = useState<MatrixV2Employee | "new" | null>(() =>
+    createEmployeeRequest ? "new" : null
+  );
   const [workforceFocusEmployeeId,setWorkforceFocusEmployeeId]=useState<string|null>(focusEmployeeId??null);
   const [financeOnboardingEmployeeId,setFinanceOnboardingEmployeeId]=useState<string|null>(null);
   const [publicationReadiness,setPublicationReadiness]=useState<MatrixV2PublicationReadiness|null>(null);
