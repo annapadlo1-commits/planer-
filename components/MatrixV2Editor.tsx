@@ -110,7 +110,7 @@ function scenarioHasActiveStrategy(
 }
 
 export function MatrixV2Editor({
-  month, data, reload, notify, fail, focusEmployeeId,
+  month, data, reload, notify, fail, focusEmployeeId, initialTab,
 }: {
   month: string;
   data: MatrixV2Workspace;
@@ -118,10 +118,12 @@ export function MatrixV2Editor({
   notify: (message: string) => void;
   fail: (message: string) => void;
   focusEmployeeId?: string | null;
+  initialTab?: MatrixTab;
 }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const tabStorageKey = `grafik-pro:matrix-v2:${data.matrixVersion.id}:tab`;
   const [tab, setTab] = useState<MatrixTab>(() => {
+    if (initialTab) return initialTab;
     if (typeof window === "undefined") return "structure";
     const saved = window.sessionStorage.getItem(tabStorageKey);
     if(saved==="staffing")return "structure";
@@ -169,6 +171,7 @@ export function MatrixV2Editor({
     if (!data.financeVisible && tab === "finance") selectTab("structure");
   }, [data.financeVisible, tab]);
   useEffect(()=>{if(focusEmployeeId)selectTab("workforce");},[focusEmployeeId]);
+  useEffect(()=>{if(initialTab)selectTab(initialTab);},[initialTab]);
   useEffect(()=>{
     let alive=true;
     if(!supabase||!data.editable){setUatReset(null);return()=>{alive=false;};}
@@ -633,6 +636,8 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
   const shifts=data.shiftTemplates.filter(shift=>(!locationId||shift.location_id===locationId)
     &&(!normalizedQuery||`${shift.name} ${time(shift.starts_at)} ${time(shift.ends_at)}`.toLocaleLowerCase("pl-PL").includes(normalizedQuery)));
   const visibleLocations=data.locations.filter(location=>!locationId||location.id===locationId);
+  const baseScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)
+    ??data.scenarios.find(scenario=>scenario.active);
   const equivalentGroups=[...data.shiftTemplates.filter(shift=>shift.active).reduce((groups,shift)=>{const key=equivalentShiftKey({locationId:shift.location_id,name:shift.name,startsAt:shift.starts_at,endsAt:shift.ends_at,endsNextDay:shift.ends_next_day});groups.set(key,[...(groups.get(key)??[]),shift]);return groups;},new Map<string,MatrixV2Shift[]>()).values()].filter(group=>group.length>1);
   return <div className="matrix-v2-tab-content">
     {periodMismatches.length>0&&<details className="matrix-v2-technical-repair"><summary><AlertTriangle/> System wykrył {periodMismatches.length} niespójnych danych zmian</summary><p>To pole techniczne jest wyliczane automatycznie z godziny rozpoczęcia i nie wymaga decyzji biznesowej.</p><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Napraw dane zmian":"Utwórz wersję roboczą i napraw"}</button></details>}
@@ -641,22 +646,42 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
       <RoleDutyOverview data={data} editable={editable} edit={edit}/>
       <EntityPanel title="Lokale" description="Miejsca, w których powstaje grafik" items={data.locations} editable={editable} add={() => edit({kind: "LOCATION"})} edit={item => edit({kind: "LOCATION", item})}/>
     </div>
-    <section className="matrix-v2-card">
+    <section className="matrix-v2-card guided-shift-workflow">
       <SectionHead title="Zmiany i obsada" description="Zacznij od konkretnej zmiany. Następnie przypisz rolę, opcjonalny obowiązek lub kompetencję i wymaganą liczbę osób." editable={editable} disabled={!data.locations.length} add={() => edit({kind: "SHIFT"})}/>
       <div className="matrix-v2-filterbar">
         <label>Lokal<select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">Wszystkie lokale</option>{data.locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
         <label>Szukaj<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nazwa lub godziny zmiany"/></label>
         <strong>{shifts.length} z {data.shiftTemplates.length} zmian</strong>
       </div>
-      <div className="matrix-v2-shift-groups">
+      <div className="guided-shift-grid">
         {visibleLocations.map(location=>{
           const localShifts=shifts.filter(shift=>shift.location_id===location.id);
-          return <section key={location.id} className="matrix-v2-shift-location"><header><span><MapPin/><div><h4>{location.name}</h4><small>{localShifts.length} widocznych • {data.shiftTemplates.filter(shift=>shift.location_id===location.id).length} wszystkich zmian</small></div></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"SHIFT",item:{location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj niezależną zmianę</button>}</header><div className="matrix-v2-table">{localShifts.map(shift=><button key={shift.id} onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><span><i style={{background:shift.color??"#7257d8"}}/><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span><span>{WEEKDAYS.filter(day=>shift.day_mask.includes(day.value)).map(day=>day.label).join(", ")}</span><em className={shift.active?"on":"off"}>{shift.active?"Aktywna":"Wyłączona"}</em>{editable&&<Edit3/>}</button>)}{!localShifts.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów w tym lokalu.</p>}</div></section>;
+          return <section key={location.id} className="guided-location-group">
+            <header className="guided-location-head"><span><MapPin/><div><h4>{location.name}</h4><small>{localShifts.length} widocznych • {data.shiftTemplates.filter(shift=>shift.location_id===location.id).length} wszystkich zmian</small></div></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"SHIFT",item:{location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj zmianę</button>}</header>
+            {localShifts.map(shift=>{
+              const shiftRules=data.staffingRules.filter(rule=>rule.active&&rule.shift_template_id===shift.id&&rule.scenario_id===baseScenario?.id);
+              return <article className="guided-shift-card" key={shift.id}>
+                <header>
+                  <button type="button" onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><i style={{background:shift.color??"#7257d8"}}/><span><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span>{editable&&<Edit3/>}</button>
+                  <span className="guided-shift-card-days"><b>{WEEKDAYS.filter(day=>shift.day_mask.includes(day.value)).map(day=>day.label).join(", ")}</b><small>{shiftRules.length?plural(shiftRules.length,"wymagana rola","wymagane role","wymaganych ról"):"Brak ustawionej obsady"}</small></span>
+                  <div className="guided-shift-card-actions">{editable&&<button className="primary-button" onClick={()=>edit({kind:"STAFFING_RULE",item:{scenario_id:baseScenario?.id,shift_template_id:shift.id,location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj rolę i liczbę osób</button>}</div>
+                </header>
+                <div className="guided-staffing-list">
+                  {shiftRules.map(rule=><button type="button" className={`guided-staffing-row ${editable?"editable":""}`} key={rule.id} onClick={()=>editable&&edit({kind:"STAFFING_RULE",item:rule})}>
+                    <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Kompetencja: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu kompetencji"}</small></span>
+                    <strong>{staffingValue(rule)}</strong><em>{baseScenario?.name??"Scenariusz bazowy"}</em>{editable&&<Edit3/>}
+                  </button>)}
+                  {!shiftRules.length&&<div className="guided-empty-staffing"><span><strong>Ta zmiana nie ma jeszcze wymaganej obsady</strong><small>Dodaj rolę, opcjonalną kompetencję i liczbę osób bez opuszczania karty.</small></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"STAFFING_RULE",item:{scenario_id:baseScenario?.id,shift_template_id:shift.id,location_id:location.id} as Record<string,unknown>})}>Uzupełnij obsadę <ChevronRight/></button>}</div>}
+                </div>
+              </article>;
+            })}
+            {!localShifts.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów w tym lokalu.</p>}
+          </section>;
         })}
         {!shifts.length&&!visibleLocations.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów.</p>}
       </div>
     </section>
-    <StaffingTab embedded data={data} editable={editable} busy={busy} edit={edit} bulkAdjust={bulkAdjust} defaultScenarioCount={defaultScenarioCount}/>
+    {data.scenarios.filter(scenario=>scenario.active).length>1&&<details className="matrix-v2-company-settings"><summary><Target/> Zaawansowane scenariusze obsady</summary><p>Scenariusz bazowy edytujesz bezpośrednio na kartach zmian. Tutaj ustawiasz wyłącznie różnice wariantów alternatywnych.</p><StaffingTab embedded data={data} editable={editable} busy={busy} edit={edit} bulkAdjust={bulkAdjust} defaultScenarioCount={defaultScenarioCount}/></details>}
     <details className="matrix-v2-company-settings"><summary><Settings/> Ustawienia firmy i zaawansowane zabezpieczenia silnika</summary><MatrixSettingsCard settings={settings} editable={editable} busy={busy} save={saveSettings}/></details>
   </div>;
 }
@@ -1483,7 +1508,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <label>Scenariusz<select name="scenarioId" required disabled={Boolean(item?.id)} value={staffingScenarioId} onChange={event=>setStaffingScenarioId(event.target.value)}>{data.scenarios.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select><small>{baseStaffingScenario?"Scenariusz bazowy ustala docelową liczbę osób.":`Ten scenariusz dziedziczy po „${itemName(data.scenarios,staffingScenario?.parent_scenario_id)}” i może zmienić bazową obsadę.`}</small></label>
     {item?.id
       ?<div className="matrix-v2-selection-summary"><small>Zmiana</small><strong>{itemName(data.shiftTemplates,String(item.shift_template_id))}</strong><span>{itemName(data.locations,data.shiftTemplates.find(shift=>shift.id===item.shift_template_id)?.location_id??"")}</span></div>
-      :<ShiftTemplateMultiPicker data={data} initialLocationId={String(item?.location_id??"")}/>}
+      :<ShiftTemplateMultiPicker data={data} initialLocationId={String(item?.location_id??"")} initialSelectedIds={item?.shift_template_id?[String(item.shift_template_id)]:[]}/>}
     <div className="form-row"><label>Rola<select name="roleId" required disabled={Boolean(item?.id)} value={staffingRoleId} onChange={event=>setStaffingRoleId(event.target.value)}>{data.roles.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Obowiązek lub kompetencja<select name="dutyId" disabled={Boolean(item?.id)} value={staffingDutyId} onChange={event=>setStaffingDutyId(event.target.value)}><option value="">Bez dodatkowego wymogu</option>{data.duties.filter(x=>x.active||x.id===item?.duty_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select><small>Jeżeli wybierzesz obowiązek, zapis atomowo połączy go z rolą. Nic nie zostanie cicho pominięte.</small></label></div>
     {baseStaffingScenario
       ?<label>Wymagana liczba osób<input name="countValue" type="number" min="1" step="1" required defaultValue={Number(item?.count_value??1)}/><small>Co najmniej jedna osoba na każdej wybranej zmianie.</small></label>
@@ -1602,8 +1627,8 @@ function DutyState({item}:{item?:Record<string,unknown>}) { return <><input name
 function ActiveToggle({item}:{item?:Record<string,unknown>}) { return <label className="check-label"><input name="active" type="checkbox" defaultChecked={item?.active === undefined ? true : Boolean(item.active)}/> Reguła aktywna</label>; }
 function DaySelector({selected}:{selected:number[]}) { return <fieldset className="matrix-v2-days"><legend>Dni tygodnia</legend>{WEEKDAYS.map(day=><label key={day.value}><input type="checkbox" name="days" value={day.value} defaultChecked={selected.includes(day.value)}/>{day.label}</label>)}</fieldset>; }
 function ScopeSelector({title,name,items,selected}:{title:string;name:string;items:{id:string;name:string;active:boolean}[];selected:string[]}) { return <fieldset className="matrix-v2-scopes"><legend>{title}</legend>{items.filter(x=>x.active||selected.includes(x.id)).map(x=><label key={x.id}><input type="checkbox" name={name} value={x.id} defaultChecked={selected.includes(x.id)}/>{x.name}{!x.active?" (wyłączony)":""}</label>)}</fieldset>; }
-function ShiftTemplateMultiPicker({data,initialLocationId}:{data:MatrixV2Workspace;initialLocationId:string}){
-  const [selected,setSelected]=useState<string[]>([]);
+function ShiftTemplateMultiPicker({data,initialLocationId,initialSelectedIds=[]}:{data:MatrixV2Workspace;initialLocationId:string;initialSelectedIds?:string[]}){
+  const [selected,setSelected]=useState<string[]>(initialSelectedIds);
   const locations=[...data.locations.filter(location=>location.active)].sort((left,right)=>{
     if(left.id===initialLocationId)return -1;
     if(right.id===initialLocationId)return 1;
