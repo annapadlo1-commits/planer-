@@ -8,7 +8,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { configurationBlockerAction } from "@/lib/product-journey";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
+import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, equivalentShiftKey, parseTime24 } from "@/lib/uat006-workflows";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
@@ -22,6 +24,7 @@ import {
   type MatrixV2Settings,
   type MatrixV2ScenarioStrategy, type MatrixV2Shift,
   type MatrixV2StaffingRule, type MatrixV2Strategy, type MatrixV2Workspace,
+  type MatrixV2PublicationBlocker,
   type MatrixV2PublicationReadiness,
 } from "@/lib/matrix-v2";
 
@@ -61,6 +64,7 @@ const payMethodLabel: Record<string, string> = {
   SHIFT_DURATION_THRESHOLD_PER_HOUR: "Dodatek po długości zmiany",
   MONTHLY_THRESHOLD_PER_HOUR: "Dodatek po progu miesięcznym",
 };
+const EXPECTED_ACTIVE_EMPLOYEES = 76;
 
 function time(value?: string | null) { return value ? value.slice(0, 5) : "—"; }
 function money(value: number | null | undefined, currency: string) {
@@ -110,7 +114,7 @@ function scenarioHasActiveStrategy(
 }
 
 export function MatrixV2Editor({
-  month, data, reload, notify, fail, focusEmployeeId, initialTab,
+  month, data, reload, notify, fail, focusEmployeeId, initialTab, createEmployeeRequest, onCreateEmployeeOpened,
 }: {
   month: string;
   data: MatrixV2Workspace;
@@ -119,6 +123,8 @@ export function MatrixV2Editor({
   fail: (message: string) => void;
   focusEmployeeId?: string | null;
   initialTab?: MatrixTab;
+  createEmployeeRequest?: number;
+  onCreateEmployeeOpened?: () => void;
 }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const tabStorageKey = `grafik-pro:matrix-v2:${data.matrixVersion.id}:tab`;
@@ -152,6 +158,13 @@ export function MatrixV2Editor({
     window.sessionStorage.setItem(tabStorageKey, next);
   }
 
+  useEffect(()=>{
+    if(!createEmployeeRequest||!data.editable)return;
+    selectTab("workforce");
+    setEmployeeEdit("new");
+    onCreateEmployeeOpened?.();
+  },[createEmployeeRequest,data.editable,onCreateEmployeeOpened]);
+
   async function reloadInPlace() {
     const scrollTop = window.scrollY;
     await reload();
@@ -165,6 +178,18 @@ export function MatrixV2Editor({
       p_schedule_month:publicationReadiness.scheduleMonth??`${month}-01`,
     });
     if(!result.error&&result.data)setPublicationReadiness(result.data as MatrixV2PublicationReadiness);
+  }
+
+  function openPublicationBlocker(blocker:MatrixV2PublicationBlocker){
+    const action=configurationBlockerAction(blocker,data,month);
+    selectTab(action.section==="workforce"?"workforce":"structure");
+    if(action.focus?.employeeId)setWorkforceFocusEmployeeId(action.focus.employeeId);
+    const align=()=>{
+      const target=document.getElementById(action.focus?.targetId??`configuration-step-${action.step}`);
+      target?.scrollIntoView({behavior:"smooth",block:"center"});
+      if(blocker.code==="MISSING_PAY_RATE")target?.querySelector<HTMLInputElement>('input[name="amount"]')?.focus({preventScroll:true});
+    };
+    window.setTimeout(align,80);window.setTimeout(align,450);window.setTimeout(align,900);
   }
 
   useEffect(() => {
@@ -235,7 +260,7 @@ export function MatrixV2Editor({
     const payload=preview.data as {groups?:number;duplicates?:number;blockers?:{message:string}[]};
     if(!payload.groups){notify("Nie znaleziono równoważnych wpisów zmian do scalenia.");return;}
     if(payload.blockers?.length){fail(`Scalanie jest zablokowane: ${payload.blockers.map(item=>item.message).join(" • ")}`);return;}
-    if(!window.confirm(`Scalić ${payload.duplicates??0} powielonych wpisów w ${payload.groups} logicznych zmian? Dni tygodnia zostaną połączone, reguły obsady przepięte, a nadmiarowe wpisy bezpiecznie wyłączone z zachowaniem historii.`))return;
+    if(!window.confirm(`Połączyć ${payload.duplicates??0} powielonych wpisów w ${payload.groups} czytelnych kart zmian?\n\nSystem nie zmieni godzin ani wymaganej obsady. Połączy listy dni tygodnia, przepnie reguły obsady i wyłączy duplikaty wyłącznie w wersji roboczej. Historia pozostanie zachowana.`))return;
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:true});
     setBusy(false);
@@ -547,7 +572,7 @@ export function MatrixV2Editor({
 
     {mixedCurrencyItems.length > 0 && <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Dane finansowe mają różne waluty</strong><small>Stawki, dodatki i budżety muszą używać waluty {settings.currency}. Popraw je przed publikacją Matrixa.</small></span></div>}
 
-    {publicationReadiness&&!publicationReadiness.ready&&<section className="matrix-v2-readiness"><div><AlertTriangle/><span><strong>Publikacja Matrixa jest zablokowana</strong><small>{publicationReadiness.blockers.length} problemów wymaga poprawy. Kliknij problem, aby przejść do właściwej sekcji.</small></span></div>{publicationReadiness.blockers.map(blocker=><button key={`${blocker.code}:${blocker.employeeId??blocker.shiftTemplateId??blocker.employeeNo??blocker.shiftCode}`} onClick={()=>{if(blocker.employeeId){selectTab("workforce");setWorkforceFocusEmployeeId(blocker.employeeId);}else{selectTab("structure");}}}><span><b>{blocker.employeeName??blocker.shiftName??"Konfiguracja Matrixa"}</b><small>{[blocker.employeeNo,blocker.shiftCode,blocker.message].filter(Boolean).join(" • ")}</small></span><ChevronRight/></button>)}</section>}
+    {publicationReadiness&&!publicationReadiness.ready&&<section className="matrix-v2-readiness"><div><AlertTriangle/><span><strong>Publikacja Matrixa jest zablokowana</strong><small>{publicationReadiness.blockers.length} problemów wymaga poprawy. Każdy przycisk prowadzi bezpośrednio do konkretnego pola.</small></span></div>{publicationReadiness.blockers.map(blocker=>{const action=configurationBlockerAction(blocker,data,month);return <button key={`${blocker.code}:${blocker.employeeId??blocker.shiftTemplateId??blocker.employeeNo??blocker.shiftCode}`} onClick={()=>openPublicationBlocker(blocker)}><span><b>{action.title}</b><small>{[blocker.employeeNo,blocker.shiftCode,action.message].filter(Boolean).join(" • ")}</small><em>{action.actionLabel}</em></span><ChevronRight/></button>;})}</section>}
 
     <div className="matrix-v2-summary">
       <span><Users/><small>Aktywni pracownicy</small><strong>{data.workforceCounts?.active ?? data.employees.filter(employee=>employee.active).length}</strong></span>
@@ -641,7 +666,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
   const equivalentGroups=[...data.shiftTemplates.filter(shift=>shift.active).reduce((groups,shift)=>{const key=equivalentShiftKey({locationId:shift.location_id,name:shift.name,startsAt:shift.starts_at,endsAt:shift.ends_at,endsNextDay:shift.ends_next_day});groups.set(key,[...(groups.get(key)??[]),shift]);return groups;},new Map<string,MatrixV2Shift[]>()).values()].filter(group=>group.length>1);
   return <div className="matrix-v2-tab-content">
     {periodMismatches.length>0&&<details className="matrix-v2-technical-repair"><summary><AlertTriangle/> System wykrył {periodMismatches.length} niespójnych danych zmian</summary><p>To pole techniczne jest wyliczane automatycznie z godziny rozpoczęcia i nie wymaga decyzji biznesowej.</p><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Napraw dane zmian":"Utwórz wersję roboczą i napraw"}</button></details>}
-    {equivalentGroups.length>0&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>{equivalentGroups.length} zmian jest rozbitych na osobne wpisy dni</strong><small>Wpisy z tą samą nazwą, lokalem i godzinami mogą być jedną logiczną zmianą ze wspólną listą dni.</small></span>{editable&&<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Scal bezpiecznie</button>}</div>}
+    {equivalentGroups.length>0&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Wykryto {equivalentGroups.length} grup powtarzających się zmian</strong><small>To nie jest błąd i nie blokuje grafiku. Jeśli wpisy oznaczają tę samą zmianę, system może połączyć ich dni w jedną kartę bez zmiany godzin ani obsady.</small></span>{editable&&<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Połącz powtarzające się zmiany</button>}</div>}
     <div className="matrix-v2-structure-overview">
       <RoleDutyOverview data={data} editable={editable} edit={edit}/>
       <EntityPanel title="Lokale" description="Miejsca, w których powstaje grafik" items={data.locations} editable={editable} add={() => edit({kind: "LOCATION"})} edit={item => edit({kind: "LOCATION", item})}/>
@@ -689,9 +714,10 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
 function expectedShiftPeriodFromStart(value:string):"MORNING"|"MIDDLE"|"EVENING"|null{const match=/^(\d{2}):/.exec(value);if(!match)return null;const hour=Number(match[1]);return hour<12?"MORNING":hour<17?"MIDDLE":"EVENING";}
 
 function RoleDutyOverview({data,editable,edit}:{data:MatrixV2Workspace;editable:boolean;edit:(value:EditTarget)=>void}){
-  return <section id="configuration-step-roles" className="matrix-v2-card matrix-v2-role-duty-overview"><SectionHead title="Role i ich obowiązki" description="W jednym miejscu widzisz zespół oraz wszystkie kompetencje dozwolone dla tej roli." editable={editable} add={()=>edit({kind:"ROLE"})}/><div className="matrix-v2-role-duty-grid">{data.roles.map(role=>{
+  return <section id="configuration-step-roles" className="matrix-v2-card matrix-v2-role-duty-overview"><SectionHead title="Role i opcjonalne obowiązki" description="Najpierw zdefiniuj role. Obowiązek przypisz tylko wtedy, gdy dana rola ma dodatkową kompetencję potrzebną w obsadzie." editable={editable} add={()=>edit({kind:"ROLE"})}/><div className="matrix-v2-role-duty-grid">{data.roles.map(role=>{
     const links=data.roleDuties.filter(link=>link.role_id===role.id);
-    return <article key={role.id}><header><span><i style={{background:role.color??"#7257d8"}}/><div><h4>{role.name}</h4><small>{links.filter(link=>link.active).length} aktywnych obowiązków</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>{assignmentModeLabel[link.assignment_mode]}</small></button>)}{!links.length&&<small>Brak przypisanych obowiązków.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Przypisz obowiązek</button>}</article>;
+    const activeLinks=links.filter(link=>link.active);
+    return <article key={role.id}><header><span><i style={{background:role.color??"#7257d8"}}/><div><h4>{role.name}</h4><small>{activeLinks.length?`${activeLinks.length} ${activeLinks.length===1?"opcjonalny obowiązek":"opcjonalne obowiązki"}`:"Bez dodatkowych obowiązków — poprawna konfiguracja"}</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>{assignmentModeLabel[link.assignment_mode]}</small></button>)}{!links.length&&<small>Ta rola nie wymaga dodatkowego obowiązku.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Dodaj opcjonalny obowiązek</button>}</article>;
   })}</div><div className="matrix-v2-duty-dictionary"><span><strong>Słownik obowiązków</strong><small>Edytuj nazwę lub dodaj kompetencję, a potem przypisz ją do właściwych ról.</small></span><div>{data.duties.map(duty=><button key={duty.id} disabled={!editable} onClick={()=>editable&&edit({kind:"DUTY",item:duty})}>{duty.name}</button>)}{editable&&<button onClick={()=>edit({kind:"DUTY"})}><Plus/> Nowy obowiązek</button>}</div></div></section>;
 }
 
@@ -772,16 +798,8 @@ function WorkforceTab({
     .sort((a,b)=>a.startsAt.localeCompare(b.startsAt));
   const rates = (data.employeePayRates ?? []).filter(item=>item.employee_id===employee?.id)
     .sort((a,b)=>b.valid_from.localeCompare(a.valid_from));
-  const employeeMatches=employeeQuery.trim()?employees.filter(item=>{
-    const roleNames=(data.employeeRoles??[]).filter(link=>link.employee_id===item.id&&link.active)
-      .map(link=>data.roles.find(role=>role.id===link.role_id)?.name??"");
-    const locationNames=(data.employeeLocations??[]).filter(link=>link.employee_id===item.id&&link.active)
-      .map(link=>data.locations.find(location=>location.id===link.location_id)?.name??"");
-    const dutyNames=(data.employeeDuties??[]).filter(link=>link.employee_id===item.id&&link.active)
-      .map(link=>data.duties.find(duty=>duty.id===link.duty_id)?.name??"");
-    const haystack=`${item.firstName} ${item.lastName} ${item.employeeNo} ${item.email??""} ${roleNames.join(" ")} ${locationNames.join(" ")} ${dutyNames.join(" ")}`.toLocaleLowerCase("pl-PL");
-    return haystack.includes(employeeQuery.trim().toLocaleLowerCase("pl-PL"));
-  }).slice(0,12):[];
+  const employeeMatches=employeeQuery.trim()?employees.filter(item=>employeeMatchesWorkforceQuery(data,item,employeeQuery)).slice(0,12):[];
+  const profileReadiness=employee?workforceProfileReadiness(data,employee,month):null;
 
   useEffect(()=>{
     if (!employeeId && employees[0]) setEmployeeId(employees[0].id);
@@ -802,6 +820,22 @@ function WorkforceTab({
     }));
   }
 
+  function openRateForm(){
+    if(!employee)return;
+    window.requestAnimationFrame(()=>window.requestAnimationFrame(()=>{
+      document.getElementById(`matrix-v2-rate-form-${employee.id}`)?.scrollIntoView({behavior:"smooth",block:"center"});
+      document.querySelector<HTMLInputElement>(`#matrix-v2-rate-form-${employee.id} input[name="amount"]`)?.focus();
+    }));
+  }
+
+  function repairProfileCheck(key:WorkforceProfileCheckKey){
+    if(!employee)return;
+    if(key==="profile")editProfile(employee);
+    if(key==="role")edit({kind:"EMPLOYEE_ROLE",item:{employee_id:employee.id}});
+    if(key==="location")edit({kind:"EMPLOYEE_LOCATION",item:{employee_id:employee.id}});
+    if(key==="rate")openRateForm();
+  }
+
   if (!employee) return <div className="matrix-v2-tab-content"><section className="matrix-v2-card"><SectionHead title="Pracownicy" description="Dodaj rzeczywistych pracowników, a następnie przypisz im dynamiczne role i lokale." editable={editable} add={()=>editProfile("new")}/><p className="matrix-v2-empty">Brak pracowników do skonfigurowania.</p></section></div>;
 
   return <div id="configuration-step-employees" className="matrix-v2-tab-content matrix-v2-workforce">
@@ -817,6 +851,11 @@ function WorkforceTab({
       {flexibleContractor&&<p className="matrix-v2-form-hint"><strong>Silnik nie używa wartości ewidencyjnych jako twardych limitów.</strong> Przydziela według dostępności, roli, lokalu, kompetencji, braku nakładania zmian i twardych niedostępności.</p>}
       {employee.archiveReason&&<p className="matrix-v2-form-hint">Powód archiwizacji: {employee.archiveReason}</p>}
       {editable&&<div className="workforce-profile-actions"><button className="secondary-button" onClick={()=>editProfile(employee)}><Edit3/> Edytuj dane</button>{employee.active?<button className="danger-button" disabled={busy} onClick={()=>void setArchived(employee,true)}><Archive/> Archiwizuj</button>:<button className="secondary-button" disabled={busy} onClick={()=>void setArchived(employee,false)}><RefreshCw/> Przywróć</button>}</div>}
+      {profileReadiness&&<div className={`workforce-profile-readiness ${profileReadiness.complete?"complete":"incomplete"}`}>
+        <header><span><ShieldCheck/><div><strong>{profileReadiness.complete?"Profil gotowy do planowania":"Dokończ profil pracownika"}</strong><small>{profileReadiness.completed} z {profileReadiness.total} wymaganych obszarów gotowych</small></div></span><em>{Math.round(profileReadiness.completed/profileReadiness.total*100)}%</em></header>
+        <div>{profileReadiness.checks.map(check=><button type="button" key={check.key} className={check.complete?"complete":""} disabled={!editable||check.complete} onClick={()=>repairProfileCheck(check.key)}><span>{check.complete?<Check/>:<AlertTriangle/>}<span><b>{check.label}</b><small>{check.detail}</small></span></span><em>{check.complete?"Gotowe":check.key==="rate"?"Uzupełnij stawkę":"Uzupełnij"}</em></button>)}</div>
+        <p><Check/> Dodatkowe obowiązki i kompetencje są opcjonalne — przypisz je tylko wtedy, gdy dana rola lub pracownik rzeczywiście ich potrzebuje.</p>
+      </div>}
     </section>
 
     <div className="matrix-v2-entity-grid workforce-links">
@@ -1295,6 +1334,11 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     setBusy(true);setLocalError("");setPreview(null);
     try{
       const parsed=await readMatrixWorkbook(file);
+      if(!parsed.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
+      const activeImported=parsed.employees.filter(employee=>employee.active!==false).length;
+      if(mode==="REPLACE"&&activeImported!==EXPECTED_ACTIVE_EMPLOYEES){
+        throw new Error(`Tryb „Zastąp aktywną bazę” wymaga obecnie dokładnie ${EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników. Plik zawiera ${activeImported}. Wybierz „Aktualizuj i dodaj” dla częściowej zmiany albo popraw kompletny plik.`);
+      }
       const result=await supabase.rpc("matrix_v2_import_preview_uat_v5",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
       setPayload(parsed);setPreview(result.data as MatrixImportPreview);
@@ -1317,6 +1361,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     <div className="drawer-head"><div><p className="eyebrow">MATRIX • IMPORT ZBIORCZY</p><h2>Import z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
       <p className="matrix-v2-form-hint">Import modyfikuje tylko wersję roboczą {data.matrixVersion.name}. Najpierw wykonujemy walidację; przy zapisie jeden błędny wiersz cofa całą operację.</p>
+      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez wymyślonych wartości</strong><small>Puste pola nie są uzupełniane na podstawie nazw ani kodów. Brak wymaganej pory zmiany, scenariusza, operacji lub rodzaju przypisania zatrzyma import i wskaże wiersz do poprawy.</small></span></div>
       <button className="secondary-button full" type="button" onClick={()=>void downloadMatrixTemplate(data)}><Download/> Pobierz bieżącą bazę Matrixa do Excel</button>
       <fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{setMode("UPDATE");setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{setMode("REPLACE");setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
@@ -1325,6 +1370,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       {preview&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
         <p>{preview.summary.total} wierszy: {preview.summary.employees} pracowników, {preview.summary.employeeDuties??0} kompetencji pracowników, {preview.summary.shifts} zmian, {preview.summary.staffingRules} reguł obsady i {preview.summary.roleDuties} obowiązków ról.</p>
+        <p className="matrix-v2-form-hint">Źródło: {payload?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"szablon GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
         <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{preview.summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{preview.summary.employeesToCreate??0}</b></span><span className={mode==="REPLACE"&&Number(preview.summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{preview.summary.employeesToArchive??0}</b></span></div>
         {mode==="REPLACE"&&Boolean(preview.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({preview.employeesToArchive?.length})</summary><ul>{preview.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
         {[...preview.errors,...preview.warnings].map((issue,index)=><div className={`solver-v2-notice ${preview.errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
