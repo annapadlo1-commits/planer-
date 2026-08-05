@@ -275,7 +275,16 @@ export function MatrixV2Editor({
       if(preview.error){fail(matrixV2ErrorMessage(preview.error.message));return false;}
       const impact=preview.data as {roleDuties?:number;employeeDuties?:number;staffingRules?:number;payRules?:number};
       const total=Number(impact.roleDuties??0)+Number(impact.employeeDuties??0)+Number(impact.staffingRules??0)+Number(impact.payRules??0);
-      if(total>0&&!window.confirm(`Ten obowiązek ma ${total} aktywnych zależności:\n• role: ${impact.roleDuties??0}\n• pracownicy: ${impact.employeeDuties??0}\n• reguły obsady: ${impact.staffingRules??0}\n• dodatki płacowe: ${impact.payRules??0}\n\nWyłączenie nie usunie historii, ale zablokuje publikację do czasu uporządkowania zależności. Kontynuować?`))return false;
+      const reason=window.prompt(`Archiwizacja obejmie obowiązek i wszystkie jego aktywne zależności:\n• role: ${impact.roleDuties??0}\n• pracownicy: ${impact.employeeDuties??0}\n• reguły obsady: ${impact.staffingRules??0}\n• dodatki płacowe: ${impact.payRules??0}\n\nHistoria pozostanie w audycie. Podaj powód archiwizacji${total?` (${total} zależności)`:""}:`);
+      if(reason===null)return false;
+      if(reason.trim().length<5){fail("Powód archiwizacji musi mieć co najmniej 5 znaków.");return false;}
+      setBusy(true);
+      const archived=await supabase.rpc("matrix_v2_duty_archive_uat_v2",{p_duty_id:id,p_reason:reason.trim()});
+      setBusy(false);
+      if(archived.error){fail(matrixV2ErrorMessage(archived.error.message));return false;}
+      notify("Obowiązek i jego zależności zostały bezpiecznie zarchiwizowane.");
+      await reloadInPlace();
+      return true;
     }
     setBusy(true);
     const shiftTemplateIds=Array.isArray(payload.shiftTemplateIds)
