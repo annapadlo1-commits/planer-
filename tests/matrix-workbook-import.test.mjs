@@ -94,18 +94,16 @@ test("Apps Script employee identifiers are matched by email instead of appended 
   assert.equal(parsed.employees[0].active,true);
 });
 
-test("shift period is inferred only from explicit RANO/SRODEK/WIECZOR codes",async()=>{
+test("shift period is never inferred from a name or code",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Zmiany:[
       {Kod:"RANO_1",Nazwa:"Poranna",Pora:"",Od:"10:00",Do:"17:00",Dni:"1",Aktywna:"TAK"},
-      {Kod:"SRODEK_1",Nazwa:"Środkowa",Pora:"",Od:"15:00",Do:"23:00",Dni:"1",Aktywna:"TAK"},
-      {Kod:"WIECZOR_1",Nazwa:"Wieczorna",Pora:"",Od:"17:00",Do:"01:00",Dni:"1",Aktywna:"TAK"},
-      {Kod:"SPECJALNA_1",Nazwa:"Specjalna",Pora:"",Od:"12:00",Do:"18:00",Dni:"1",Aktywna:"TAK"},
+      {Kod:"SPECJALNA_1",Nazwa:"Specjalna",Pora:"EVENING",Od:"12:00",Do:"18:00",Dni:"1",Aktywna:"TAK"},
     ],
   }));
 
   assert.deepEqual(parsed.shifts.map(shift=>shift.shiftPeriod),[
-    "MORNING","MIDDLE","EVENING","",
+    "","EVENING",
   ]);
 });
 
@@ -116,11 +114,11 @@ test("Apps Script Sunday code ND and duty column aliases are preserved",async()=
       "ROLA_GŁÓWNA*":"BARMAN","LOKALIZACJA_BAZOWA*":"KRUCZA","KRUCZA_STANDARD":"TAK",
       "TYP_UMOWY*":"ZLECENIE","ROTACYJNY":"TAK",
     }],
-    FUNKCJE_DODATKOWE:[{KOD:"EVENT_ROTACYJNY",ROLA_WYMAGANA:"BARMAN",AKTYWNA:"TAK"}],
+    FUNKCJE_DODATKOWE:[{KOD:"EVENT_ROTACYJNY",ROLA_WYMAGANA:"BARMAN",TYP_PRZYDZIAŁU:"OPCJONALNY",AKTYWNA:"TAK"}],
     DEFINICJE_ZMIAN:[
-      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"PT",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
-      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"SOB",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
-      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"ND",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
+      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"PT",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",PORA:"EVENING",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
+      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"SOB",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",PORA:"EVENING",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
+      {LOKALIZACJA_ID:"KRUCZA",GRUPA_DNI:"PT-ND",DZIEŃ_TYGODNIA:"ND",ZMIANA_ID:"WIECZÓR",NAZWA:"Wieczorna",PORA:"EVENING",START:"17:00",KONIEC:"01:00",KONIEC_DZIEŃ_PLUS:"1",AKTYWNA:"TAK"},
     ],
   }));
 
@@ -144,4 +142,22 @@ test("duty dictionary marks complete employee coverage, including unchecked duti
 
   assert.deepEqual(parsed.employees[0].dutyCodes,["BAR","ZAMKNIECIE"]);
   assert.deepEqual(parsed.employeeDuties.map(duty=>duty.dutyCode),["BAR"]);
+});
+
+test("a partial employee row does not overwrite preferences that are absent from the file",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Pracownicy:[{"Imię":"Anna","Nazwisko":"Nowak","E-mail":"anna@example.test","Kod roli":"BARMAN","Kody lokali":"KRUCZA","Rodzaj umowy":"ZLECENIE"}],
+  }));
+  assert.equal("preferenceMonth" in parsed.employees[0],false);
+  assert.equal("shiftPeriodPreferences" in parsed.employees[0],false);
+});
+
+test("staffing and role-duty semantics stay empty when the workbook does not state them",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Obsada:[{"Kod zmiany":"S1","Kod roli":"BARMAN","Liczba osób":"2"}],
+    "Role-Obowiązki":[{"Kod roli":"BARMAN","Kod obowiązku":"ZAMKNIECIE"}],
+  }));
+  assert.equal(parsed.staffingRules[0].scenarioCode,"");
+  assert.equal(parsed.staffingRules[0].operation,"");
+  assert.equal(parsed.roleDuties[0].assignmentMode,"");
 });
