@@ -181,6 +181,8 @@ export type MatrixV2PublicationBlocker = {
   employeeId?: string;
   employeeNo?: string;
   employeeName?: string;
+  requiredFrom?: string;
+  requiredTo?: string;
   shiftTemplateId?: string;
   shiftCode?: string;
   shiftName?: string;
