@@ -16,6 +16,7 @@
 .persona-pill{display:flex;align-items:center;gap:7px;margin:0 7px 13px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;color:#d9cfe0;background:rgba(255,255,255,.05);font-size:9px;font-weight:800;letter-spacing:.08em}
 .product-topbar-copy{min-width:190px}.product-topbar-copy>small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
 .product-shell .topbar .primary-button:disabled{opacity:.45;filter:grayscale(.35);box-shadow:none;cursor:not-allowed}
+[id^="configuration-step-"]{scroll-margin-top:108px}
 .product-section-tabs{display:flex;align-items:center;gap:6px;margin:0 0 16px;padding:5px;border:1px solid var(--border);border-radius:13px;background:#ece8e2;width:max-content;max-width:100%;overflow:auto}
 .product-section-tabs button{height:36px;border:0;border-radius:9px;padding:0 13px;background:transparent;color:var(--muted);cursor:pointer;font-size:11px;font-weight:750;white-space:nowrap}
 .product-section-tabs button.active{background:#fff;color:var(--violet);box-shadow:0 3px 11px rgba(42,27,49,.08)}
