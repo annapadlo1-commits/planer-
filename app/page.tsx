@@ -183,12 +183,14 @@ export default function GrafikPro() {
   },[setActive]);
   const openEmployeeProfile=useCallback((employeeId:string)=>{
     window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"employee",employeeId}));
-    setMatrixCreateEmployeeRequest(0);setMatrixFocusEmployeeId(employeeId);setConfigurationTab("workforce");setConfigurationStep("employees");setActive("matrix");
-  },[setActive]);
+    setMatrixCreateEmployeeRequest(0);setMatrixFocusEmployeeId(employeeId);setConfigurationTab("workforce");setConfigurationStep("employees");setActiveState("matrix");
+    router.push(`${pathForSection("settings")}?employee=${encodeURIComponent(employeeId)}`);
+  },[router]);
   const openNewEmployeeProfile=useCallback(()=>{
     window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"new"}));
-    setMatrixFocusEmployeeId(null);setConfigurationTab("workforce");setConfigurationStep("employees");setMatrixCreateEmployeeRequest(current=>current+1);setActive("matrix");
-  },[setActive]);
+    setMatrixFocusEmployeeId(null);setConfigurationTab("workforce");setConfigurationStep("employees");setMatrixCreateEmployeeRequest(current=>current+1);setActiveState("matrix");
+    router.push(`${pathForSection("settings")}?employee=new`);
+  },[router]);
   const markNewEmployeeProfileOpened=useCallback(()=>setMatrixCreateEmployeeRequest(0),[]);
   const monthOptions=useMemo(()=>Array.from({length:48},(_,index)=>{
     const [year,number]=selectedMonth.split("-").map(Number);
