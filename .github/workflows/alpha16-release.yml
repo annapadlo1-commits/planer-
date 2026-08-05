@@ -25,6 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run test:matrix-import
+      - run: npm run test:uat006
       - run: node --test supabase/functions/solver-gateway/contract.test.mjs
       - run: npm run build
 
