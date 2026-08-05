@@ -161,8 +161,19 @@ export function MatrixV2Editor({
   }
 
   useEffect(()=>{
-    if(!createEmployeeRequest||!data.editable)return;
+    let persisted:{kind?:string;employeeId?:string}|null=null;
+    try{
+      const raw=window.sessionStorage.getItem("grafik-pro:matrix-v2:employee-request");
+      if(raw)persisted=JSON.parse(raw) as {kind?:string;employeeId?:string};
+    }catch{persisted=null;}
+    if(!createEmployeeRequest&&!persisted)return;
+    if(!data.editable)return;
+    window.sessionStorage.removeItem("grafik-pro:matrix-v2:employee-request");
     selectTab("workforce");
+    if(persisted?.kind==="employee"&&persisted.employeeId){
+      setWorkforceFocusEmployeeId(persisted.employeeId);
+      return;
+    }
     setEmployeeEdit("new");
     onCreateEmployeeOpened?.();
   },[createEmployeeRequest,data.editable,onCreateEmployeeOpened]);
