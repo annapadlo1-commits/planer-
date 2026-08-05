@@ -194,13 +194,18 @@ export function MatrixV2Editor({
   useEffect(()=>{if(initialTab)selectTab(initialTab);},[initialTab]);
   useEffect(()=>{
     let persisted:{kind?:string;employeeId?:string}|null=null;
+    const requestedEmployee=new URLSearchParams(window.location.search).get("employee");
+    if(requestedEmployee)persisted=requestedEmployee==="new"
+      ? {kind:"new"}
+      : {kind:"employee",employeeId:requestedEmployee};
     try{
       const raw=window.sessionStorage.getItem("grafik-pro:matrix-v2:employee-request");
-      if(raw)persisted=JSON.parse(raw) as {kind?:string;employeeId?:string};
+      if(!persisted&&raw)persisted=JSON.parse(raw) as {kind?:string;employeeId?:string};
     }catch{persisted=null;}
     if(!createEmployeeRequest&&!persisted)return;
     if(!data.editable)return;
     window.sessionStorage.removeItem("grafik-pro:matrix-v2:employee-request");
+    if(requestedEmployee)window.history.replaceState(window.history.state,"",window.location.pathname);
     selectTab("workforce");
     if(persisted?.kind==="employee"&&persisted.employeeId){
       setWorkforceFocusEmployeeId(persisted.employeeId);
