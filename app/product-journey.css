@@ -6,10 +6,10 @@
 .product-shell .product-sidebar .brand strong,.product-shell .product-sidebar .brand small{display:block}
 .product-shell .product-sidebar .brand small{margin-top:2px;color:#c8bbd0;font-size:9px;font-weight:600;letter-spacing:.06em}
 .product-shell .product-sidebar nav{gap:7px}
-.product-shell .product-sidebar nav button{border:0;background:transparent;color:#e7dfeb;cursor:pointer;display:grid;grid-template-columns:34px 1fr;column-gap:10px;width:100%;padding:11px 12px;border-radius:12px;text-align:left;transition:160ms ease-out}
-.product-shell .product-sidebar nav button>svg{grid-row:1/3;align-self:center;width:18px;height:18px}
-.product-shell .product-sidebar nav button span{font-size:12px;font-weight:800}
-.product-shell .product-sidebar nav button small{margin-top:2px;color:#aa9cb4;font-size:9px;line-height:1.35}
+.product-shell .product-sidebar nav button{flex:0 0 auto;min-height:58px;border:0;background:transparent;color:#e7dfeb;cursor:pointer;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;align-content:center;column-gap:10px;width:100%;padding:9px 12px;border-radius:12px;text-align:left;transition:160ms ease-out}
+.product-shell .product-sidebar nav button>svg{grid-column:1;grid-row:1/3;align-self:center;width:18px;height:18px}
+.product-shell .product-sidebar nav button span{grid-column:2;font-size:12px;font-weight:800}
+.product-shell .product-sidebar nav button small{grid-column:2;margin-top:2px;color:#aa9cb4;font-size:9px;line-height:1.35}
 .product-shell .product-sidebar nav button:hover{color:#fff;background:rgba(255,255,255,.07);transform:translateX(2px)}
 .product-shell .product-sidebar nav button.active{color:#fff;background:linear-gradient(90deg,rgba(116,87,232,.42),rgba(255,255,255,.08));box-shadow:inset 3px 0 #9b82ff}
 .product-shell .product-sidebar nav button.active small{color:#d8cde0}
