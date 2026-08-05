@@ -1,4 +1,5 @@
 import type {
+  MatrixV2PublicationBlocker,
   MatrixV2PublicationReadiness,
   MatrixV2Workspace,
 } from "@/lib/matrix-v2";
@@ -34,6 +35,20 @@ export type ConfigurationJourney = {
   ready: boolean;
   next: ConfigurationStep | null;
   blockers: MatrixV2PublicationReadiness["blockers"];
+};
+
+export type SetupFocus = {
+  employeeId?: string;
+  targetId?: string;
+};
+
+export type ConfigurationBlockerAction = {
+  section: SetupSection;
+  step: SetupStepKey;
+  focus?: SetupFocus;
+  title: string;
+  message: string;
+  actionLabel: string;
 };
 
 const MANAGEMENT_ROLES = new Set(["OWNER", "ADMIN", "HR_FINANCE", "ROLE_MANAGER", "LOCATION_MANAGER", "VERIFIER"]);
@@ -80,6 +95,73 @@ function rateCoversMonth(rate: MatrixV2Workspace["employeePayRates"][number], mo
   return rate.active && rate.valid_from <= monthEnd && (!rate.valid_to || rate.valid_to >= monthStart);
 }
 
+function displayIsoDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}.${month}.${year}` : value;
+}
+
+export function configurationBlockerAction(
+  blocker: MatrixV2PublicationBlocker,
+  data: MatrixV2Workspace,
+  month: string,
+): ConfigurationBlockerAction {
+  const title = blocker.employeeName ?? blocker.shiftName ?? "Konfiguracja firmy";
+  if (blocker.employeeId && blocker.code === "MISSING_PAY_RATE") {
+    const employee = data.employees.find(item => item.id === blocker.employeeId);
+    const [year, monthNumber] = month.split("-").map(Number);
+    const monthStart = `${month}-01`;
+    const monthEnd = `${month}-${String(new Date(year, monthNumber, 0).getDate()).padStart(2, "0")}`;
+    const requiredFrom = blocker.requiredFrom ?? (employee?.employmentStart && employee.employmentStart > monthStart ? employee.employmentStart : monthStart);
+    const requiredTo = blocker.requiredTo ?? (employee?.employmentEnd && employee.employmentEnd < monthEnd ? employee.employmentEnd : monthEnd);
+    return {
+      section: "workforce",
+      step: "employees",
+      focus: { employeeId: blocker.employeeId, targetId: `matrix-v2-rate-${blocker.employeeId}` },
+      title,
+      message: `Dodaj aktywną stawkę obejmującą cały wymagany okres: ${displayIsoDate(requiredFrom)}–${displayIsoDate(requiredTo)}. Pole „Do” może zostać puste, jeśli stawka obowiązuje dalej.`,
+      actionLabel: "Uzupełnij stawkę",
+    };
+  }
+  if (blocker.employeeId && blocker.code === "MISSING_ROLE") {
+    return {
+      section: "workforce",
+      step: "employees",
+      focus: { employeeId: blocker.employeeId, targetId: "configuration-step-employees" },
+      title,
+      message: "Przypisz pracownikowi co najmniej jedną aktywną rolę. Dodatkowe obowiązki nadal są opcjonalne.",
+      actionLabel: "Przypisz rolę",
+    };
+  }
+  if (blocker.employeeId && blocker.code === "MISSING_STANDARD_LOCATION") {
+    return {
+      section: "workforce",
+      step: "employees",
+      focus: { employeeId: blocker.employeeId, targetId: "configuration-step-employees" },
+      title,
+      message: "Wskaż co najmniej jeden zwykły lokal pracy dla tego pracownika.",
+      actionLabel: "Przypisz lokal",
+    };
+  }
+  if (blocker.employeeId) {
+    return {
+      section: "workforce",
+      step: "employees",
+      focus: { employeeId: blocker.employeeId, targetId: "configuration-step-employees" },
+      title,
+      message: blocker.message,
+      actionLabel: "Otwórz profil",
+    };
+  }
+  return {
+    section: "structure",
+    step: "shifts",
+    focus: blocker.shiftTemplateId ? { targetId: "configuration-step-shifts" } : undefined,
+    title,
+    message: blocker.message,
+    actionLabel: blocker.shiftTemplateId ? "Otwórz zmianę" : "Otwórz konfigurację",
+  };
+}
+
 function withSequentialState(steps: Omit<ConfigurationStep, "state">[]): ConfigurationStep[] {
   let foundCurrent = false;
   return steps.map(step => {
@@ -108,7 +190,6 @@ export function configurationJourney(
     rule.active && rule.scenario_id === defaultScenario?.id && rule.operation === "SET" && Number(rule.count_value) >= 1,
   );
   const coveredShifts = new Set(baseRules.map(rule => rule.shift_template_id));
-  const linkedRoles = new Set(data.roleDuties.filter(item => item.active).map(item => item.role_id));
   const validSettings = Boolean(
     data.matrixVersion.settings?.timezone &&
     /^[A-Z]{3}$/.test(String(data.matrixVersion.settings?.currency ?? "")),
@@ -125,7 +206,7 @@ export function configurationJourney(
   );
   const baseComplete = [
     validSettings && activeLocations.length > 0,
-    activeRoles.length > 0 && activeDuties.length > 0 && activeRoles.every(role => linkedRoles.has(role.id)),
+    activeRoles.length > 0,
     activeShifts.length > 0 && activeShifts.every(shift => coveredShifts.has(shift.id)),
     activeEmployees.length > 0 && completeEmployees.length === activeEmployees.length,
     defaultScenarios.length === 1 && linkedStrategies.length > 0,
@@ -138,9 +219,9 @@ export function configurationJourney(
       detail: `${activeLocations.length} ${activeLocations.length === 1 ? "aktywny lokal" : "aktywnych lokali"}`,
     },
     {
-      key: "roles", label: "Role i kompetencje", section: "structure", complete: baseComplete[1],
-      description: "Połącz każdą rolę z właściwymi obowiązkami.",
-      detail: `${activeRoles.length} ról • ${activeDuties.length} kompetencji`,
+      key: "roles", label: "Role i opcjonalne obowiązki", section: "structure", complete: baseComplete[1],
+      description: "Dodaj role. Obowiązek przypisz tylko tam, gdzie jest rzeczywiście potrzebny.",
+      detail: `${activeRoles.length} ról • ${activeDuties.length} opcjonalnych obowiązków`,
     },
     {
       key: "shifts", label: "Zmiany i obsada", section: "structure", complete: baseComplete[2],
