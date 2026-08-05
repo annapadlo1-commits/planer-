@@ -10,6 +10,7 @@ import "./role-composite.css";
 import "./matrix-v2.css";
 import "./alpha16.css";
 import "./standby-manager.css";
+import "./product-journey.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",
