@@ -26,6 +26,9 @@ export function supabaseProjectRef() {
 }
 
 export function applicationEnvironmentLabel() {
+  const projectRef = supabaseProjectRef();
+  if (projectRef === "nhthrtpkfpmufmrmdyjg") return "UAT";
+  if (projectRef === "bdybebzvzapihjdauehg") return "PRODUKCJA";
   const configured = process.env.NEXT_PUBLIC_APP_ENV?.trim();
   if (configured) return configured.toLocaleUpperCase("pl-PL");
   return process.env.NODE_ENV === "production" ? "UAT/PRODUKCJA — SPRAWDŹ PROJEKT" : "LOKALNE";
