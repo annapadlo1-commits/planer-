@@ -26,6 +26,10 @@ const workloadDistributionIntervalFixUrl = new URL(
   "../supabase/migrations/20260806221500_b4_workload_distribution_interval_fix.sql",
   import.meta.url,
 );
+const solverSemanticsMigrationUrl = new URL(
+  "../supabase/migrations/20260806230000_b4_solver_semantics_standby_and_diagnostics.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -34,6 +38,19 @@ test("B4 migration restores every server contract required by the UI", async () 
   assert.match(sql, /optimizer_variant_workspace_uat_v2/);
   assert.match(sql, /optimizer_published_schedule_alpha16/);
   assert.match(sql, /jsonb_build_object\('engine','ORTOOLS_V2'\)/);
+});
+
+test("explicit nominal and maximum hours survive every contract type", async () => {
+  const [model,sql,workspace] = await Promise.all([
+    readFile(new URL("../solver/src/grafik_solver/models.py",import.meta.url),"utf8"),
+    readFile(solverSemanticsMigrationUrl,"utf8"),
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.doesNotMatch(model,/is_flexible_contractor[\s\S]{0,600}nominal_monthly_minutes = None/);
+  assert.match(sql,/'nominalMonthlyMinutes',coalesce\(profile\.nominal_monthly_minutes,0\)/);
+  assert.match(sql,/'maximumMonthlyMinutes',coalesce\(profile\.maximum_monthly_minutes,0\)/);
+  assert.match(workspace,/Powyżej twardego limitu/);
+  assert.match(workspace,/ABOVE_MAXIMUM/);
 });
 
 test("B4 full company restore is a single authenticated transaction with a dry run", async () => {
@@ -248,7 +265,7 @@ test("schedule review is a fullscreen weekly workspace without collapsed day lis
   assert.doesNotMatch(workspace,/className="solver-workspace-calendar"/);
   assert.match(workspace,/solver-week-duties/);
   assert.match(css,/\.drawer\.solver-drawer\{inset:0!important;width:100vw!important/);
-  assert.match(css,/grid-template-columns:190px repeat\(7,minmax\(150px,1fr\)\)/);
+  assert.match(css,/grid-template-columns:minmax\(128px,1\.15fr\) repeat\(7,minmax\(0,1fr\)\)/);
 });
 
 test("role cards hide engine jargon and optional operational tools stay collapsed", async () => {
