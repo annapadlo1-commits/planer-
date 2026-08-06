@@ -76,7 +76,7 @@ const LEGACY_ROLE_LABELS: Record<string,string> = {
   KELNER:"Kelner",BARMAN:"Barman",PIZZABAR:"Pizzabar",PREP:"Prep",POMOC:"Pomoc"
 };
 const planStatusLabels:Record<string,string>={DRAFT:"Wersja robocza",GENERATING:"Generowanie",READY:"Gotowy do weryfikacji",PUBLISHED:"Opublikowany",STALE:"Nieaktualny",ARCHIVED:"Archiwalny",FAILED:"Błąd"};
-const scenarioLabels:Record<string,string>={BASE:"Bazowy",EVENT:"Eventowy",SAVINGS:"Oszczędny",MERGED:"Scalony z grafików ról"};
+const scenarioLabels:Record<string,string>={BASE:"Bazowy",EVENT:"Wydarzenie specjalne",SAVINGS:"Oszczędny",MERGED:"Scalony z grafików ról"};
 const modeLabels:Record<string,string>={BALANCED:"Zrównoważony",MIN_COST:"Minimalny koszt",PREFERENCES:"Preferencje",ROLE_PLANS:"Grafiki ról"};
 const issueLabels:Record<string,string>={SHORTAGE:"Brak obsady",CAPABILITY_MISSING:"Brak wymaganej funkcji",REST_VIOLATION:"Naruszenie odpoczynku",OVERLAP:"Nakładające się zmiany",MONTHLY_LIMIT:"Przekroczony limit miesięczny",WEEKLY_LIMIT:"Przekroczony limit tygodniowy"};
 function issueMessage(i:Issue,roleLabels:Record<string,string>){if(i.issue_type==="SHORTAGE")return `Brakuje ${Math.max((i.required_count||0)-(i.assigned_count||0),0)} os. dla roli ${roleLabels[i.role||""]||i.role||""}.`;if(i.issue_type==="CAPABILITY_MISSING")return `Brakuje wymaganej funkcji: ${i.capability||"nieokreślona"}.`;return i.message;}
@@ -219,7 +219,10 @@ export default function GrafikPro() {
     const requestedMonth=selectedMonthDate;
     if(loadMonthRef.current!==requestedMonth)return;
     const token=++loadTokenRef.current;
-    setLoading(true);setError("");setSolverConfiguration(null);setSolverConfigurationError("");
+    // Keep the last confirmed configuration while data refreshes. Clearing it here
+    // made a window-focus refresh look like an engine change and closed every open
+    // schedule drawer/modal, forcing the user to find their place again.
+    setLoading(true);setError("");setSolverConfigurationError("");
     const solverConfigurationResult=await loadSolverConfiguration(supabase,requestedMonth)
       .then(configuration=>({configuration,error:null as Error|null}))
       .catch(cause=>({configuration:null,error:cause instanceof Error?cause:new Error(String(cause))}));
@@ -254,7 +257,7 @@ export default function GrafikPro() {
     const errors:string[]=[];
     setManagerStandby(standbyResult.rows);
     setSwapAnnouncements(((swapBoardResult.data as ShiftSwapBoardContext|null)?.requests??[]).filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)));
-    if(standbyResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać stand-by: ${standbyResult.error.message}`);
+    if(standbyResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać rezerwy bezpieczeństwa: ${standbyResult.error.message}`);
     if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać ogłoszeń zamiany: ${swapBoardResult.error.message}`);
     if(solverConfigurationResult.error){
       const message=solverErrorMessage(solverConfigurationResult.error.message);
@@ -282,8 +285,6 @@ export default function GrafikPro() {
         errors.push(`Nie udało się pobrać obowiązującego grafiku OR-Tools: ${activeWorkspaceResult.error.message}`);
       }else if(canReadCompanyWorkspace&&activeWorkspaceResult.workspace){
         errors.push("Odczyt obowiązującego grafiku nie potwierdził aktywnego workspace OR-Tools.");
-      }else if(canReadCompanyWorkspace){
-        errors.push("Odczyt obowiązującego grafiku OR-Tools nie zwrócił wymaganego kontraktu.");
       }
     }else if(currentSolverConfiguration?.engine==="ALPHA15"||currentSolverConfiguration?.engine==="SHADOW"){
       setOperationalWorkspace(null);
@@ -301,7 +302,7 @@ export default function GrafikPro() {
     if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
     else{
       setWorkforceCalendar({events:[]});
-      if(calendarResult.error)errors.push(`Nie udało się pobrać eventów i HOT DAY: ${calendarResult.error.message}`);
+      if(calendarResult.error)errors.push(`Nie udało się pobrać wydarzeń i limitów nieobecności: ${calendarResult.error.message}`);
     }
     if(!matrixV2Result.error&&matrixV2Result.data&&(matrixV2Result.data as MatrixV2Workspace).matrixVersion?.schema_version>=2){
       try{
@@ -335,7 +336,16 @@ export default function GrafikPro() {
     setPlanScope({type:"COMPANY",role:null});
     setPlanForm(current=>({...current,name:`Plan operacyjny ${selectedMonth}`}));
   },[selectedMonth]);
-  useEffect(()=>{setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",role:null});},[solverConfiguration?.engine]);
+  const previousSolverEngineRef=useRef<string|null>(null);
+  useEffect(()=>{
+    const nextEngine=solverConfiguration?.engine;
+    if(!nextEngine)return;
+    const previousEngine=previousSolverEngineRef.current;
+    previousSolverEngineRef.current=nextEngine;
+    if(previousEngine&&previousEngine!==nextEngine){
+      setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",role:null});
+    }
+  },[solverConfiguration?.engine]);
   useEffect(()=>{
     if(role!=="ALL"&&!roleOptions.some(option=>option.value===role))setRole("ALL");
   },[role,roleOptions]);
@@ -352,7 +362,7 @@ export default function GrafikPro() {
     if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
     if(!solverConfiguration.solverVersion?.trim()){setError("Generator roli jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
     const dynamicRole=solverConfiguration.roles.find(item=>item.id===requestedRole.id||item.code===requestedRole.code);
-    if(!dynamicRole){setError("Ta rola nie jest dostępna w aktywnej wersji Matrixa. Odśwież konfigurację i spróbuj ponownie.");return;}
+    if(!dynamicRole){setError("Ta rola nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
     setPlanScope({type:"ROLE",role:dynamicRole});
     setPlanForm(current=>({...current,name:`Grafik ${dynamicRole.name} • ${selectedMonth}`}));
     setModal("plan");
@@ -426,7 +436,7 @@ export default function GrafikPro() {
             <button className="kpi-card" onClick={()=>setActive("grafik")}><span className="kpi-icon violet"><Users/></span><span><small>Obsada</small><strong>{data.plan?`${coverage}%`:"—"}</strong><em>{data.plan?`${data.assignments.length} przydziałów`:"Brak planu"}</em></span></button>
             <button className="kpi-card" onClick={()=>setActive("alerty")}><span className="kpi-icon coral"><AlertTriangle/></span><span><small>Otwarte alerty</small><strong>{data.issues.length}</strong><em>{data.issues.filter(i=>i.severity==="CRITICAL").length} krytycznych</em></span></button>
             <button className="kpi-card" onClick={()=>setActive("budzet")}><span className="kpi-icon teal"><CircleDollarSign/></span><span><small>Koszt / budżet</small><strong>{data.plan&&budget?`${Math.round(cost/budget*100)}%`:"—"}</strong><em>{formatMoney(cost,activeCurrency)}</em></span></button>
-            {isOrtools?<button className="kpi-card" onClick={()=>openSetupStep("strategies","variants")}><span className="kpi-icon orange"><Boxes/></span><span><small>Warianty biznesowe</small><strong>{solverConfiguration?.scenarios.length||0}</strong><em>w aktywnej konfiguracji</em></span></button>:<button className="kpi-card" onClick={()=>setActive("kalendarz")}><span className="kpi-icon orange"><CalendarDays/></span><span><small>Eventy</small><strong>{data.events.length}</strong><em>{data.events.filter(e=>e.status==="NEEDS_VERIFICATION").length} do weryfikacji</em></span></button>}
+            {isOrtools?<button className="kpi-card" onClick={()=>openSetupStep("strategies","variants")}><span className="kpi-icon orange"><Boxes/></span><span><small>Warianty biznesowe</small><strong>{solverConfiguration?.scenarios.length||0}</strong><em>w aktywnej konfiguracji</em></span></button>:<button className="kpi-card" onClick={()=>setActive("kalendarz")}><span className="kpi-icon orange"><CalendarDays/></span><span><small>Wydarzenia</small><strong>{data.events.length}</strong><em>{data.events.filter(e=>e.status==="NEEDS_VERIFICATION").length} do weryfikacji</em></span></button>}
           </section>
           {!data.plan?<section className="empty-engine"><WandSparkles size={36}/><h2>{matrixV2?"Dokończ konfigurację albo utwórz pierwszy plan":"Baza jest gotowa do pierwszego rzeczywistego planu"}</h2><p>Generator sprawdzi role, lokalizacje, kompetencje, limity i {isOrtools?"warianty biznesowe":"eventy"}. Jeśli czegoś brakuje, prowadzona konfiguracja wskaże dokładne miejsce naprawy.</p><button className="primary-button" onClick={openCompanyGenerator}>Generuj plan</button></section>:
           <section className="live-overview">
@@ -435,7 +445,7 @@ export default function GrafikPro() {
             <div className="quick-actions"><button onClick={()=>setActive("grafik")}>Otwórz grafik <ChevronRight/></button><button onClick={()=>setActive("kadra")}>Pracownicy i archiwum <ChevronRight/></button><button onClick={()=>setActive("alerty")}>Rozwiąż alerty <ChevronRight/></button></div>
           </section>}
         </>}
-        {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} notify={notify} fail={setError} onPublished={async()=>{await load();setActive("grafik");}}/>}
+        {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} activeConfigurationVersion={complete?.activeMatrix?.version} draftConfigurationVersion={complete?.draftMatrix?.version} notify={notify} fail={setError} onPublished={async()=>{await load();setActive("grafik");}}/>}
         {active==="generator"&&solverConfiguration?.engine==="ALPHA15"&&<section className="empty-engine"><AlertTriangle/><h2>Nowy generator czeka na kontrolowane przełączenie</h2><p>Interfejs Alpha 15 nie jest już rozwijany. Uruchamianie nowych wariantów zostanie odblokowane po wdrożeniu workera OR-Tools, sekretu gatewaya i zmianie flagi silnika.</p></section>}
         {active==="grafik"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
         {active==="grafik"&&isOrtools&&!operationalWorkspace&&<section className="empty-engine"><CalendarDays/><h2>Brak opublikowanego grafiku operacyjnego</h2><p>W Generatorze wybierz gotowy wariant, przejrzyj analizę i opublikuj go jako osobną wersję operacyjną.</p><button className="primary-button" onClick={()=>setActive("generator")}>Otwórz Generator i warianty</button></section>}
@@ -480,6 +490,8 @@ export default function GrafikPro() {
           scopeRoleId={planScope.type==="ROLE"?planScope.role.id:null}
           scopeLabel={planScope.type==="ROLE"?`Grafik roli: ${planScope.role.name}`:"Grafik całej firmy"}
           matrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom}
+          activeConfigurationVersion={complete?.activeMatrix?.version}
+          draftConfigurationVersion={complete?.draftMatrix?.version}
           allowStart={solverConfiguration.engine==="ORTOOLS_V2"||solverConfiguration.engine==="SHADOW"}
           onNameChange={value=>setPlanForm(current=>({...current,name:value}))}
           onScenarioChange={value=>setPlanForm(current=>({...current,scenario:value}))}
@@ -516,7 +528,7 @@ function WorkforceCatalog({data,onEdit,onAdd}:{data:MatrixV2Workspace;onEdit:(em
   return <section className="workforce-catalog"><header><div><p className="eyebrow">ZESPÓŁ • JEDNO ŹRÓDŁO DANYCH</p><h2>Pracownicy</h2><p>W jednym profilu edytujesz dane, umowę, role, lokale, kompetencje, limity, dostępność i stawki.</p></div><div className="workforce-catalog-actions"><span className="matrix-v2-version">WERSJA ROBOCZA v{data.matrixVersion.version}</span>{data.editable&&<button className="primary-button" onClick={onAdd}><Plus/> Dodaj pracownika</button>}</div></header><label className="workforce-catalog-search"><Users/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Połącz kryteria: imię, numer, rola, lokal lub obowiązek"/></label><div className="workforce-catalog-list">{rows.map(employee=>{const flexible=["ZLECENIE","B2B"].includes(employee.contractType??"")&&employee.workTimePolicy!=="CUSTOM";return <article className={employee.active?"":"archived"} key={employee.id}><span className="avatar violet">{`${employee.firstName[0]??""}${employee.lastName[0]??""}`}</span><span><small>{employee.employeeNo}</small><strong>{employee.firstName} {employee.lastName}</strong></span><span><small>Rola</small><b>{roleName(employee.id)}</b></span><span><small>Zwykłe lokale</small><b>{locationNames(employee.id)}</b></span><span><small>{flexible?"Uzgodniony pułap (informacyjny)":"Twardy limit miesięczny"}</small><b>{Math.round(employee.maximumMonthlyMinutes/60)} godz.{flexible?" • nie blokuje silnika":""}</b></span><button className="secondary-button" onClick={()=>onEdit(employee.id)}><Edit3/> Otwórz profil</button></article>})}{!rows.length&&<p className="solver-workspace-empty">Nie znaleziono pracowników.</p>}</div></section>;
 }
 function MatrixDestination({section,open}:{section:string;open:()=>void}){
-  return <section className="empty-engine"><Boxes size={36}/><h2>Matrix jest jedynym miejscem edycji</h2><p>Przejdź do Matrixa, aby zmienić {section}. Dzięki temu generator, grafik operacyjny, portal i katalog pracowników zawsze czytają te same dane.</p><button className="primary-button" onClick={open}>Otwórz Matrix organizacji</button></section>;
+  return <section className="empty-engine"><Boxes size={36}/><h2>Konfiguracja firmy jest jedynym miejscem edycji</h2><p>Przejdź do konfiguracji firmy, aby zmienić {section}. Dzięki temu generator, grafik operacyjny, portal i katalog pracowników zawsze czytają te same dane.</p><button className="primary-button" onClick={open}>Otwórz konfigurację firmy</button></section>;
 }
 function Filters({location,role,day,setLocation,setRole,setDay,roleOptions,locationOptions}:{location:string;role:string;day:string;setLocation:(x:string)=>void;setRole:(x:string)=>void;setDay:(x:string)=>void;roleOptions:FilterOption[];locationOptions:FilterOption[]}) {
   return <div className="live-filters"><Filter size={16}/><select value={location} onChange={e=>setLocation(e.target.value)}><option value="ALL">Wszystkie lokale</option>{locationOptions.map(item=><option value={item.value} key={item.value}>{item.label}</option>)}</select><select value={role} onChange={e=>setRole(e.target.value)}><option value="ALL">Wszystkie role</option>{roleOptions.map(item=><option value={item.value} key={item.value}>{item.label}</option>)}</select><input type="date" value={day==="ALL"?"":day} onChange={e=>setDay(e.target.value||"ALL")}/><button onClick={()=>{setLocation("ALL");setRole("ALL");setDay("ALL");}}>Wyczyść</button></div>;
@@ -529,7 +541,7 @@ function ScheduleView({data,assignments,location,role,day,setLocation,setRole,se
 }
 function MonthView({month,data,events,standby,swaps,timezone,onDay}:{month:string;data:Workspace;events:WorkforceCalendarEvent[];standby:SolverManagerStandby[];swaps:ShiftSwapAnnouncement[];timezone:string;onDay:(d:string)=>void}) {
   const first=new Date(`${month}-01T12:00:00Z`);const offset=(first.getUTCDay()+6)%7;const count=daysInMonth(month);const cells=Array.from({length:offset+count},(_,i)=>i<offset?0:i-offset+1);
-  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>{monthLabel(month,timezone)}</h2></div></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`${month}-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);const dayEvents=events.filter(event=>event.date===date);const dayStandby=standby.filter(item=>item.date===date&&item.status!=="DECLINED");const daySwaps=swaps.filter(item=>item.date===date);return <button key={date} className={`month-day ${dayEvents.some(event=>event.kind==="HOT_DAY")?"has-hot-day":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>onDay(date)}><span className="day-number">{n}</span>{daySwaps.length>0&&<span className="manager-calendar-swap"><ArrowLeftRight/><b>ZAMIANA</b>{daySwaps.length} aktywna</span>}{dayEvents.map(event=><span key={event.id} className={`manager-calendar-event ${event.kind.toLowerCase()}`}><b>{event.kind==="HOT_DAY"?"HOT DAY":"EVENT"}</b>{event.title}</span>)}{dayStandby.length>0&&<span className="manager-calendar-standby"><b>STAND-BY • {dayStandby.length}</b>{dayStandby.slice(0,2).map(item=><small key={item.id}>T{item.tier} • {item.employeeName} • {item.roleName}{item.status==="ACTIVATED"?" • aktywowany":""}</small>)}{dayStandby.length>2&&<small>+{dayStandby.length-2} kolejnych</small>}</span>}<div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div><small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
+  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">KALENDARZ MENADŻERSKI</p><h2>{monthLabel(month,timezone)}</h2></div></div><div className="real-month"><div className="month-weekdays">{["Pon","Wt","Śr","Czw","Pt","Sob","Niedz"].map(x=><span key={x}>{x}</span>)}</div><div className="month-grid">{cells.map((n,i)=>{if(!n)return <span key={i}/>;const date=`${month}-${String(n).padStart(2,"0")}`;const ass=data.assignments.filter(a=>a.date===date);const dayEvents=events.filter(event=>event.date===date);const dayStandby=standby.filter(item=>item.date===date&&item.status!=="DECLINED");const daySwaps=swaps.filter(item=>item.date===date);return <button key={date} className={`month-day ${dayEvents.some(event=>event.kind==="HOT_DAY")?"has-hot-day":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>onDay(date)}><span className="day-number">{n}</span>{daySwaps.length>0&&<span className="manager-calendar-swap"><ArrowLeftRight/><b>ZAMIANA</b>{daySwaps.length} aktywna</span>}{dayEvents.map(event=><span key={event.id} className={`manager-calendar-event ${event.kind.toLowerCase()}`}><b>{event.kind==="HOT_DAY"?"DZIEŃ SPECJALNY":"WYDARZENIE"}</b>{event.title}</span>)}{dayStandby.length>0&&<span className="manager-calendar-standby"><b>REZERWA • {dayStandby.length}</b>{dayStandby.slice(0,2).map(item=><small key={item.id}>R{item.tier} • {item.employeeName} • {item.roleName}{item.status==="ACTIVATED"?" • aktywowana":""}</small>)}{dayStandby.length>2&&<small>+{dayStandby.length-2} kolejnych</small>}</span>}<div className="mini-people">{ass.slice(0,4).map(a=><span className="avatar violet" key={a.id}>{a.name.split(" ").map(x=>x[0]).join("")}</span>)}{ass.length>4&&<b>+{ass.length-4}</b>}</div><small>{ass.length} przydziałów</small></button>;})}</div></div></section>;
 }
 function EmployeeView({employees,onSelect}:{employees:{id:string;no:string;name:string;role:string;minutes:number;nominal:number;cost:number;shifts:number}[];selected:string;onSelect:(x:string)=>void}) {
   return <section className="live-module"><div className="section-head"><div><p className="eyebrow">OBCIĄŻENIE I SPRAWIEDLIWOŚĆ</p><h2>Widok per pracownik</h2></div><button className="secondary-button" onClick={()=>downloadCsv("pracownicy.csv",[["ID","Pracownik","Rola","Godziny","Nominał","Wykorzystanie","Zmiany","Koszt"],...employees.map(e=>[e.no,e.name,e.role,Math.round(e.minutes/60),Math.round(e.nominal/60),Math.round(e.minutes/Math.max(e.nominal,1)*100)+"%",e.shifts,Math.round(e.cost)])])}><Download/> CSV</button></div><div className="employee-table"><div className="table-head"><span>Pracownik</span><span>Rola</span><span>Godziny</span><span>Nominał</span><span>Wykorzystanie</span></div>{employees.map(e=>{const pct=Math.round(e.minutes/Math.max(e.nominal,1)*100);return <button key={e.id} onClick={()=>onSelect(e.id)}><span><strong>{e.name}</strong><small>{e.no} • {e.shifts} zmian</small></span><span>{LEGACY_ROLE_LABELS[e.role]??e.role}</span><strong>{Math.round(e.minutes/60)} h</strong><span>{Math.round(e.nominal/60)} h</span><span className={`load ${pct>110?"over":pct<70?"under":""}`}><i style={{width:`${Math.min(pct,130)}%`}}/>{pct}%</span></button>;})}</div></section>;
@@ -540,5 +552,5 @@ function IssuesView({issues,shifts,roleLabels,onOpen}:{issues:Issue[];shifts:Shi
 function BudgetView({cost,budget,assignments,currency,dynamic}:{cost:number;budget:number;assignments:Assignment[];currency:string;dynamic:boolean}) {
   const byRole=[...new Map(assignments.map(a=>[a.role_id??a.role,{id:a.role_id??a.role,name:a.role_name??a.role}])).values()].map(item=>({role:item,cost:assignments.filter(a=>(a.role_id??a.role)===item.id).reduce((n,a)=>n+Number(a.cost),0)}));
   const percentage=budget?Math.round(cost/budget*100):0;
-  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">FINANSE PLANU</p><h2>{formatMoney(cost,currency)} / {budget?formatMoney(budget,currency):"brak budżetu"}</h2></div></div><div className="budget-hero"><strong>{budget?`${percentage}%`:"—"}</strong><div className="progress"><i style={{width:`${Math.min(percentage,100)}%`}}/></div><small>{budget?`Pozostało ${formatMoney(budget-cost,currency)}`:"Matrix nie zwrócił budżetu dla tego wariantu"}</small></div>{!dynamic&&<div className="role-costs">{byRole.map(x=><div key={x.role.id}><span>{LEGACY_ROLE_LABELS[x.role.name]??x.role.name}</span><strong>{formatMoney(x.cost,currency)}</strong><i style={{width:`${cost?x.cost/cost*100:0}%`}}/></div>)}</div>}</section>;
+  return <section className="live-module"><div className="section-head"><div><p className="eyebrow">FINANSE PLANU</p><h2>{formatMoney(cost,currency)} / {budget?formatMoney(budget,currency):"brak budżetu"}</h2></div></div><div className="budget-hero"><strong>{budget?`${percentage}%`:"—"}</strong><div className="progress"><i style={{width:`${Math.min(percentage,100)}%`}}/></div><small>{budget?`Pozostało ${formatMoney(budget-cost,currency)}`:"Konfiguracja firmy nie zawiera budżetu dla tego wariantu"}</small></div>{!dynamic&&<div className="role-costs">{byRole.map(x=><div key={x.role.id}><span>{LEGACY_ROLE_LABELS[x.role.name]??x.role.name}</span><strong>{formatMoney(x.cost,currency)}</strong><i style={{width:`${cost?x.cost/cost*100:0}%`}}/></div>)}</div>}</section>;
 }
