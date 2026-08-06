@@ -116,6 +116,9 @@ test("new solver balances contract utilization instead of raw minutes", async ()
   assert.match(source, /LOAD_SPREAD_MINUTES": "LOAD_UTILIZATION_SPREAD_BPS/);
   assert.match(source, /add_division_equality/);
   assert.match(source, /LOAD_UTILIZATION_TARGET_COUNT/);
+  assert.match(source, /fairnessIncumbentGuard/);
+  assert.match(source, /fairness_first/);
+  assert.match(source, /artifacts\.metrics\[metric_name\] <= bound/);
   assert.doesNotMatch(source, /len\(eligible_employee_ids\) - standby_tiers/);
 });
 
@@ -310,4 +313,18 @@ test("publishing a leader copy selects that copy before role publication", async
   assert.match(handler,/selectSolverVariant\(supabase, run\.id, leaderVariant\.id\)/);
   assert.ok(handler.indexOf("selectSolverVariant")<handler.indexOf("publishRoleVariant"));
   assert.match(client,/SELECTED_VALID_ROLE_VARIANT_REQUIRED/);
+});
+
+test("solver honors Matrix strategy budgets and fair-distribution tier order", async () => {
+  const [engine,sql]=await Promise.all([
+    readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260806233000_b4_fair_distribution_priority.sql",import.meta.url),"utf8"),
+  ]);
+  assert.doesNotMatch(engine,/MAX_RELAXED_STRATEGY_SECONDS/);
+  assert.match(engine,/configured_strategy_budget =/);
+  assert.match(engine,/strategy\.time_limit_seconds/);
+  assert.match(engine,/remaining_strategy_budget \/ max\(1, remaining_strategy_count\)/);
+  assert.match(sql,/when 'LOAD_SPREAD_MINUTES' then 3/);
+  assert.match(sql,/when 'NOMINAL_DEVIATION_MINUTES' then 4/);
+  assert.match(sql,/version\.status = 'DRAFT'/);
 });
