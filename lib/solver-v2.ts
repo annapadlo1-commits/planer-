@@ -137,6 +137,7 @@ export type SolverWorkspaceAssignment = {
 };
 
 export type SolverWorkspaceShift = {
+  id: string;
   slotGroupKey: string;
   date: string;
   startsAt: string;
@@ -240,18 +241,19 @@ export type SolverLeaderAssignmentContext = {
   slotKey: string;
   currentEmployeeId: string | null;
   role: { id: string; name: string };
+  duty: { id: string; name: string } | null;
   shift: {
     id: string; date: string; startsAt: string; endsAt: string;
     locationId: string; locationName: string; shiftName: string;
   };
-  candidates: { employeeId: string; employeeNo: string; employeeName: string; current: boolean }[];
+  candidates: { employeeId: string; employeeNo: string; employeeName: string; current: boolean; roleName?: string; locationName?: string; dutyName?: string | null }[];
 };
 
 export type SolverManagerStandby = {
   id: string;
   date: string;
   tier: 1 | 2;
-  status: "PLANNED" | "ACTIVATED" | "DECLINED";
+  status: "PREVIEW" | "PLANNED" | "ACTIVATED" | "DECLINED";
   roleId: string;
   roleName: string;
   employeeId: string;
@@ -280,6 +282,27 @@ export async function getManagerStandbyMonth(
       employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
       employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
       activatedShiftId: row.activatedShiftId ? String(row.activatedShiftId) : null,
+    };
+  });
+}
+
+export async function getVariantStandbyPreview(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverManagerStandby[]> {
+  const value = await rpc(client, "optimizer_variant_standby_preview_uat_v1", {
+    p_variant_id: variantId,
+  });
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    const row = record(item);
+    return {
+      id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
+      status: "PREVIEW" as const,
+      roleId: String(row.roleId), roleName: String(row.roleName),
+      employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
+      employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
+      activatedShiftId: null,
     };
   });
 }
@@ -347,6 +370,16 @@ export type SolverVariantIssueDiagnostics = {
     hasDeclaredWindow: boolean;
     coversShift: boolean;
     reasons: string[];
+    blockingDetails?: Array<{
+      code: string;
+      label: string;
+      startsAt?: string | null;
+      endsAt?: string | null;
+      shiftName?: string | null;
+      locationName?: string | null;
+      note?: string | null;
+      createdAt?: string | null;
+    }>;
   }[];
 };
 
@@ -684,6 +717,7 @@ function normalizeWorkspaceShift(value: unknown): SolverWorkspaceShift {
   const location = record(source.location);
   const assignments = Array.isArray(source.assignments) ? source.assignments : [];
   return {
+    id: String(valueOf(source, "id", "id", "")),
     slotGroupKey: String(valueOf(source, "slotGroupKey", "slot_group_key", "")),
     date: String(valueOf(source, "date", "date", "")),
     startsAt: String(valueOf(source, "startsAt", "starts_at", "")),
@@ -1306,6 +1340,15 @@ export async function getVariantIssueDiagnostics(
       hasDeclaredWindow:Boolean(candidate.hasDeclaredWindow),
       coversShift:Boolean(candidate.coversShift),
       reasons:Array.isArray(candidate.reasons)?candidate.reasons.map(String):[],
+      blockingDetails:Array.isArray(candidate.blockingDetails)?candidate.blockingDetails.map(value=>{
+        const detail=record(value);
+        return {
+          code:String(detail.code??"UNKNOWN"),label:String(detail.label??"Szczegół blokady"),
+          startsAt:detail.startsAt?String(detail.startsAt):null,endsAt:detail.endsAt?String(detail.endsAt):null,
+          shiftName:detail.shiftName?String(detail.shiftName):null,locationName:detail.locationName?String(detail.locationName):null,
+          note:detail.note?String(detail.note):null,createdAt:detail.createdAt?String(detail.createdAt):null,
+        };
+      }):[],
     };
   }):[];
   return {
@@ -1771,7 +1814,7 @@ export async function getLeaderAssignmentContext(
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
   }));
-  const role = record(payload.role), shift = record(payload.shift);
+  const role = record(payload.role), shift = record(payload.shift), duty = payload.duty ? record(payload.duty) : null;
   return {
     variantId: String(payload.variantId ?? input.variantId),
     assignmentId: payload.assignmentId ? String(payload.assignmentId) : null,
@@ -1779,6 +1822,7 @@ export async function getLeaderAssignmentContext(
     slotKey: String(payload.slotKey ?? ""),
     currentEmployeeId: payload.currentEmployeeId ? String(payload.currentEmployeeId) : null,
     role: { id: String(role.id ?? ""), name: String(role.name ?? "Rola") },
+    duty: duty ? { id: String(duty.id ?? ""), name: String(duty.name ?? "Obowiązek") } : null,
     shift: {
       id: String(shift.id ?? ""), date: String(shift.date ?? ""),
       startsAt: String(shift.startsAt ?? ""), endsAt: String(shift.endsAt ?? ""),
@@ -1792,6 +1836,9 @@ export async function getLeaderAssignmentContext(
         employeeNo: String(candidate.employeeNo ?? ""),
         employeeName: String(candidate.employeeName ?? ""),
         current: Boolean(candidate.current),
+        roleName: candidate.roleName ? String(candidate.roleName) : undefined,
+        locationName: candidate.locationName ? String(candidate.locationName) : undefined,
+        dutyName: candidate.dutyName ? String(candidate.dutyName) : null,
       };
     }) : [],
   };

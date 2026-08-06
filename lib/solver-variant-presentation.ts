@@ -13,6 +13,8 @@ const HIDDEN_METRICS = new Set([
   "HOME_LOCATION_VIOLATIONS",
   "NOMINAL_TARGET_EMPLOYEE_COUNT",
   "LOAD_UTILIZATION_TARGET_COUNT",
+  "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT",
+  "LOAD_UTILIZATION_FALLBACK_COUNT",
 ]);
 
 const METRICS: Record<string, { label: string; explanation: string; unit?: "MINUTES" }> = {
@@ -36,8 +38,8 @@ const METRICS: Record<string, { label: string; explanation: string; unit?: "MINU
     unit: "MINUTES",
   },
   LOAD_UTILIZATION_SPREAD_BPS: {
-    label: "Różnica wykorzystania wymiaru pracy",
-    explanation: "Różnica procentowa między najbardziej i najmniej obciążoną osobą, liczona względem jej miesięcznego wymiaru lub limitu. Mniej oznacza równiejszy podział.",
+    label: "Różnica obciążenia zespołu",
+    explanation: "Różnica procentowa między najbardziej i najmniej obciążoną osobą. Dla osób z wymiarem jest liczona względem wymiaru, a dla umów elastycznych względem wspólnej bazy sprawiedliwego podziału. Mniej oznacza równiejszy podział.",
   },
   WEEKEND_SPREAD: {
     label: "Różnica liczby weekendów",
@@ -73,6 +75,7 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
     if (!definition) return [];
     const nominalTargetCount = finiteNumber(metrics.NOMINAL_TARGET_EMPLOYEE_COUNT) ?? 0;
     const utilizationTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_TARGET_COUNT) ?? 0;
+    const fallbackTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_FALLBACK_COUNT) ?? 0;
     const value = code === "NOMINAL_DEVIATION_MINUTES" && nominalTargetCount === 0
       ? "Brak wymiarów"
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
@@ -86,7 +89,9 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
       ? "Nie ustawiono miesięcznego wymiaru żadnej osoby, więc zero nie oznacza idealnego dopasowania. Uzupełnij wymiary w danych pracowników i wygeneruj grafik ponownie."
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
         ? "Do porównania potrzeba co najmniej dwóch osób z miesięcznym wymiarem lub limitem czasu pracy."
-        : definition.explanation;
+        : code === "LOAD_UTILIZATION_SPREAD_BPS" && fallbackTargetCount > 0
+          ? `${definition.explanation} ${fallbackTargetCount.toLocaleString("pl-PL")} osób bez twardego wymiaru uczestniczy w porównaniu przez wspólną bazę sprawiedliwego podziału.`
+          : definition.explanation;
     return [{ code, label: definition.label, explanation, value }];
   });
 }
