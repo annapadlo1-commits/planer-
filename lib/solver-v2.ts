@@ -1662,8 +1662,8 @@ export async function getVariantWorkspace(
 function normalizeLeaderVariant(value: unknown): SolverLeaderVariant | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const source = record(value);
-  const id = String(source.id ?? "");
-  const sourceVariantId = String(source.sourceVariantId ?? "");
+  const id = String(source.id ?? source.variantId ?? "");
+  const sourceVariantId = String(source.sourceVariantId ?? source.source_variant_id ?? "");
   if (!id || !sourceVariantId) return null;
   return {
     id,
