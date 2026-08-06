@@ -897,7 +897,7 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(len(variant.unfilled_slot_ids), 0)
 
     def _flexible_single_employee_sequence_snapshot(
-        self, locked_slot_ids: list[str]
+        self, locked_slot_ids: list[str], maximum_shifts_per_day: int = 1
     ) -> Snapshot:
         raw = load_raw()
         raw.pop("slots")
@@ -913,10 +913,7 @@ class SolverTests(unittest.TestCase):
             {
                 "contractCode": "ZLECENIE",
                 "workTimePolicy": "CONTRACT_DEFAULT",
-                # This old field used to leak a Matrix template count into the
-                # workforce model.  A deliberately high value must not permit
-                # more than one primary shift per day.
-                "maximumShiftsPerDay": 7,
+                "maximumShiftsPerDay": maximum_shifts_per_day,
                 "minimumRestMinutes": 0,
             }
         )
@@ -928,7 +925,7 @@ class SolverTests(unittest.TestCase):
         ]
         return Snapshot.from_dict(raw)
 
-    def test_matrix_template_count_never_allows_two_employee_shifts_per_day(
+    def test_daily_limit_one_rejects_two_employee_shifts_per_day(
         self,
     ) -> None:
         snapshot = self._flexible_single_employee_sequence_snapshot(
@@ -945,6 +942,27 @@ class SolverTests(unittest.TestCase):
         )
         with self.assertRaises(OptimizationError):
             self.engine.solve(snapshot)
+
+    def test_daily_limit_two_allows_two_non_overlapping_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ],
+            maximum_shifts_per_day=2,
+        )
+        variant = self.engine.solve(snapshot)[0]
+        self.assertEqual(len(variant.assignments), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
 
     def test_last_shift_cannot_be_followed_by_first_shift_next_day(self) -> None:
         snapshot = self._flexible_single_employee_sequence_snapshot(
