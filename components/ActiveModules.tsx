@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import * as XLSX from "xlsx";
 
 import {
@@ -25,6 +26,11 @@ import {
   type SolverRole,
 } from "@/lib/solver-v2";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
+function roleCardStyle(value:string):CSSProperties{
+  const hue=[...value].reduce((sum,character)=>sum+character.charCodeAt(0),0)%360;
+  return {"--role-color":`hsl(${hue} 62% 47%)`,"--role-soft":`hsl(${hue} 72% 95%)`} as CSSProperties;
+}
 
 export type AdminEmployee = {
   id: string;
@@ -428,7 +434,6 @@ export function ActiveModules({
       ? `${reviewCount} dni z limitem nieobecności przekazano liderowi do weryfikacji.`
       : "Zapisano wybrany zakres dostępności.");
     await loadPortal();
-    await reload();
     return true;
   }
 
@@ -573,11 +578,10 @@ export function ActiveModules({
     />
     <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Grafiki ról korzystają wyłącznie z opublikowanej konfiguracji firmy{solverMatrixEffectiveFrom?` obowiązującej od ${solverMatrixEffectiveFrom}`:""}</strong><small>Zmiany zapisane tylko w wersji roboczej nie są jeszcze widoczne dla generatora.</small></span></div>
     {operationalContext && <OperationalCalendarPanel context={operationalContext} month={month} busy={busy} save={saveOperationalEvent} review={reviewAvailability} />}
-    <div className="role-plan-cards">{solverRoles.map((role) => <article key={role.id}>
-      <i style={{ background: "#7257d8" }} />
-      <div><small>GRAFIK ROLI</small><h3>{role.name}</h3><p>Scenariusze, warianty i analiza OR-Tools.</p></div>
-      <span className="workflow-status empty">{solverEngine === "SHADOW" ? "Test bez publikacji" : "Warianty dynamiczne"}</span>
-      <strong>OR-Tools</strong>
+    <div className="role-plan-cards compact">{solverRoles.map((role) => <article key={role.id} style={roleCardStyle(role.id)}>
+      <i />
+      <div><small>GRAFIK ROLI</small><h3>{role.name}</h3></div>
+      {solverEngine === "SHADOW"&&<span className="workflow-status empty">Test bez publikacji</span>}
       <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
     </article>)}</div>
     {solverEngine === "SHADOW" && <div className="solver-v2-notice warning"><ShieldCheck />Tryb SHADOW pozwala wygenerować i porównać trzy warianty każdej roli. Publikacja zespołu i wspólnego grafiku pozostaje zablokowana do kontrolowanego przełączenia.</div>}
@@ -695,16 +699,19 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   };
   return <section className="operational-calendar-panel">
     <div className="matrix-demand-head"><div><h3>Kalendarz operacyjny i alerty dostępności</h3><p>Wydarzenie zwiększa wymaganą obsadę w konkretnym dniu i na wskazanych zmianach. Limit nieobecności kieruje nadmiarowe zgłoszenia do lidera.</p></div><span>{context.events.length} zdarzeń</span></div>
-    {context.canManage && <form className="operational-event-form" onSubmit={event => void submit(event)}>
+    {context.canManage && <details className="operational-additional-tools">
+      <summary><span><Plus/><strong>Narzędzia dodatkowe</strong><small>Dodaj wydarzenie, zwiększoną obsadę albo limit nieobecności tylko wtedy, gdy jest potrzebny.</small></span></summary>
+      <form className="operational-event-form" onSubmit={event => void submit(event)}>
       <div className="segmented-choice"><button type="button" className={kind === "EVENT" ? "active" : ""} onClick={() => setKind("EVENT")}><Megaphone /> Wydarzenie + obsada</button><button type="button" className={kind === "HOT_DAY" ? "active" : ""} onClick={() => setKind("HOT_DAY")}><Flame /> Limit nieobecności</button></div>
       <div className="form-row"><label>Data<input type="date" min={`${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={date} onChange={event => setDate(event.target.value)} required /></label><label>Nazwa<input value={title} maxLength={160} onChange={event => setTitle(event.target.value)} placeholder={kind === "EVENT" ? "np. Koncert — większy ruch" : "np. Długi weekend"} required /></label></div>
       <label>Opis (opcjonalnie)<textarea value={description} maxLength={500} onChange={event => setDescription(event.target.value)} /></label>
       <fieldset className="operational-card-picker"><legend>Rola</legend>{roles.map(role => <button type="button" key={role.id} className={roleId === role.id ? "active" : ""} onClick={() => setRoleId(role.id)}>{role.name}</button>)}</fieldset>
       {kind === "EVENT" ? <><fieldset className="operational-card-picker"><legend>Lokal</legend>{locations.map(location => <button type="button" key={location.id} className={locationId === location.id ? "active" : ""} onClick={() => setLocationId(location.id)}>{location.name}</button>)}</fieldset><fieldset className="operational-shift-picker"><legend>Zmiany objęte dodatkową obsadą</legend>{visibleTemplates.map(template => <label key={template.id}><input type="checkbox" checked={selectedTemplates.includes(template.id)} onChange={() => setSelectedTemplates(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])} /><span><b>{template.name}</b><small>{String(template.startsAt).slice(0, 5)}–{String(template.endsAt).slice(0, 5)}</small></span></label>)}</fieldset><label className="compact-number">Dodatkowe osoby na każdej zaznaczonej zmianie<input type="number" min={1} max={500} value={count} onChange={event => setCount(Number(event.target.value))} /></label></> : <label className="compact-number">Ile twardych niedostępności roli można przyjąć automatycznie?<input type="number" min={0} max={500} value={limit} onChange={event => setLimit(Number(event.target.value))} /><small>Kolejne zgłoszenie będzie oczekiwać na decyzję lidera.</small></label>}
       <button className="primary-button" disabled={busy || (kind === "EVENT" && !selectedTemplates.length)}><Save /> Zapisz i zostań tutaj</button>
-    </form>}
+      </form>
+    </details>}
     <div className="operational-event-list">{context.events.map(event => <article key={event.id} className={event.kind.toLowerCase()}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><small>{event.date} • {event.kind === "HOT_DAY" ? "Limit nieobecności" : event.locationName || "Wydarzenie"}</small><h4>{event.title}</h4><p>{event.kind === "EVENT" ? event.demands?.map(demand => `+${demand.additionalCount} ${demand.roleName} • ${demand.shiftName}`).join("; ") : event.hotLimits?.map(item => `${item.roleName}: automatycznie do ${item.maximumHardUnavailable}`).join("; ")}</p></span></article>)}</div>
-    {context.canManage && Boolean(context.availabilitySummary?.length) && <section className="availability-daily-summary"><h4><CalendarDays /> Dostępność zespołów dzień po dniu</h4><div>{context.availabilitySummary?.map(item=><details key={`${item.date}:${item.roleId}`}><summary><b>{item.date} • {item.roleName}</b><span><em>{item.hardCount} twardych</em><em>{item.availableCount??"—"}/{item.totalCount??"—"} dostępnych</em><em>{item.progressPercent??0}% zgłoszeń</em>{item.pendingCount>0&&<em>{item.pendingCount} oczekuje</em>}</span></summary><p>{item.hardEmployees.length?`Twardo niedostępni: ${item.hardEmployees.join(", ")}. `:""}{item.softEmployees.length?`Wolą nie pracować: ${item.softEmployees.join(", ")}. `:""}{item.pendingEmployees.length?`Do decyzji: ${item.pendingEmployees.join(", ")}.`:""}</p>{item.lastUpdatedAt&&<small>Ostatnia aktualizacja: {new Intl.DateTimeFormat("pl-PL",{dateStyle:"short",timeStyle:"short"}).format(new Date(item.lastUpdatedAt))}</small>}</details>)}</div></section>}
+    {context.canManage && Boolean(context.availabilitySummary?.length) && <details className="availability-daily-summary technical-details"><summary><span><CalendarDays /><strong>Techniczne zestawienie dostępności dzień po dniu</strong><small>Otwórz, gdy analizujesz limity lub pojedyncze zgłoszenia.</small></span></summary><div>{context.availabilitySummary?.map(item=><details key={`${item.date}:${item.roleId}`}><summary><b>{item.date} • {item.roleName}</b><span><em>{item.hardCount} twardych</em><em>{item.availableCount??"—"}/{item.totalCount??"—"} dostępnych</em><em>{item.progressPercent??0}% zgłoszeń</em>{item.pendingCount>0&&<em>{item.pendingCount} oczekuje</em>}</span></summary><p>{item.hardEmployees.length?`Twardo niedostępni: ${item.hardEmployees.join(", ")}. `:""}{item.softEmployees.length?`Wolą nie pracować: ${item.softEmployees.join(", ")}. `:""}{item.pendingEmployees.length?`Do decyzji: ${item.pendingEmployees.join(", ")}.`:""}</p>{item.lastUpdatedAt&&<small>Ostatnia aktualizacja: {new Intl.DateTimeFormat("pl-PL",{dateStyle:"short",timeStyle:"short"}).format(new Date(item.lastUpdatedAt))}</small>}</details>)}</div></details>}
     {context.canManage && context.pendingReviews.length > 0 && <section className="availability-review-list"><h4><Flame /> Wnioski o nieobecność wymagające decyzji</h4>{context.pendingReviews.map(item => <article key={item.id}><span><b>{item.employeeName} • {item.employeeNo}</b><small>{item.date} • {item.roleName}{item.note ? ` • ${item.note}` : ""}</small></span><div><button className="primary-button" disabled={busy} onClick={() => void review(item.id, "APPROVE")}>Akceptuj</button><button className="secondary-button" disabled={busy} onClick={() => void review(item.id, "REJECT")}>Odrzuć</button></div></article>)}</section>}
   </section>;
 }
@@ -727,9 +734,14 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
-  useEffect(() => { setSelected(null); }, [employee?.id]);
+  const [selectedDay,setSelectedDay]=useState<string|null>(null);
+  const [daySearch,setDaySearch]=useState("");
+  const employeeDayRef=useRef<HTMLElement|null>(null);
+  useEffect(() => { setSelected(null);setSelectedDay(null);setDaySearch(""); }, [employee?.id]);
+  useEffect(()=>{if(selectedDay)window.setTimeout(()=>employeeDayRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);},[selectedDay]);
   const grouped = new Map<string, PortalAssignment[]>();
   portal.assignments.forEach((assignment) => grouped.set(assignment.date, [...(grouped.get(assignment.date) || []), assignment]));
+  const selectedDayAssignments=selectedDay?grouped.get(selectedDay)||[]:[];
   const standbyByDay = new Map<string, SolverEmployeeStandby[]>();
   portal.standby.forEach((entry) => standbyByDay.set(entry.date, [...(standbyByDay.get(entry.date) || []), entry]));
   const eventsByDay = new Map<string, WorkforceCalendarEvent[]>();
@@ -770,12 +782,23 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
     {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Moja dostępność i preferencje godzinowe</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Wskaż konkretne daty i godziny, kiedy możesz albo wolisz nie pracować.</p></section>}</div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
-    <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Kliknij zmianę, aby zobaczyć szczegóły lub ogłosić zamianę. Wydarzenia i limity nieobecności są oznaczone na właściwych datach.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
+    <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Wybierz dzień, aby od razu zobaczyć swoje zmiany i osoby pracujące razem z Tobą.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const events = eventsByDay.get(date) || [];
     const swapAnnouncements=swapAnnouncementsByDay.get(date)||[];
-    return <section className={`${!day ? "blank" : ""} ${events.some(event => event.kind === "HOT_DAY") ? "has-hot-day" : ""} ${swapAnnouncements.length?"has-swap-announcement":""}`} key={index}>{day && <><strong>{day}</strong>{swapAnnouncements.length>0&&<div className="portal-calendar-swap"><ArrowLeftRight/><span><b>Aktywna zamiana</b><small>{swapAnnouncements.length} {swapAnnouncements.length===1?"ogłoszenie":"ogłoszenia"}</small></span></div>}{events.map(event => <div key={event.id} className={`portal-calendar-event ${event.kind.toLowerCase()}`}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><b>{event.title}</b><small>{event.kind === "HOT_DAY" ? "Ograniczona niedostępność" : event.locationName || "Wydarzenie"}</small></span></div>)}{(grouped.get(date) || []).map((assignment) => <button key={assignment.id} onClick={() => setSelected(assignment)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}{(standbyByDay.get(date) || []).map((entry) => <div key={entry.id} className={`portal-standby tier-${entry.tier} ${entry.status.toLowerCase()}`}><b>Rezerwa {entry.tier}</b><small>{entry.roleName}{entry.status === "ACTIVATED" ? " • aktywowana" : " • gotowość dzienna"}</small></div>)}</>}</section>;
-  })}</div></section></>}
+    const assignments=grouped.get(date)||[];
+    return <section className={`${!day ? "blank" : ""} ${events.some(event => event.kind === "HOT_DAY") ? "has-hot-day" : ""} ${swapAnnouncements.length?"has-swap-announcement":""} ${selectedDay===date?"selected":""}`} key={index}>{day && <><button type="button" className="employee-day-open" onClick={()=>setSelectedDay(date)}><strong>{day}</strong><small>{assignments.length?`${assignments.length} ${assignments.length===1?"zmiana":"zmiany"}`:"Wolne"}</small></button>{swapAnnouncements.length>0&&<div className="portal-calendar-swap"><ArrowLeftRight/><span><b>Aktywna zamiana</b><small>{swapAnnouncements.length} {swapAnnouncements.length===1?"ogłoszenie":"ogłoszenia"}</small></span></div>}{events.map(event => <div key={event.id} className={`portal-calendar-event ${event.kind.toLowerCase()}`}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><b>{event.title}</b><small>{event.kind === "HOT_DAY" ? "Ograniczona niedostępność" : event.locationName || "Wydarzenie"}</small></span></div>)}{assignments.map((assignment) => <button key={assignment.id} onClick={() => setSelectedDay(date)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}{(standbyByDay.get(date) || []).map((entry) => <div key={entry.id} className={`portal-standby tier-${entry.tier} ${entry.status.toLowerCase()}`}><b>Rezerwa {entry.tier}</b><small>{entry.roleName}{entry.status === "ACTIVATED" ? " • aktywowana" : " • gotowość dzienna"}</small></div>)}</>}</section>;
+  })}</div></section>
+    {selectedDay&&<section className="employee-day-workspace" ref={employeeDayRef}>
+      <header><span><small>WYBRANY DZIEŃ</small><h3>{selectedDay}</h3><p>Twoje zmiany i osoby pracujące razem z Tobą.</p></span><button className="icon-button" aria-label="Zamknij widok dnia" onClick={()=>setSelectedDay(null)}><X/></button></header>
+      <label className="day-workspace-search">Filtruj osoby<input value={daySearch} onChange={event=>setDaySearch(event.target.value)} placeholder="Imię, rola, lokal lub nazwa zmiany"/></label>
+      <div className="employee-day-shifts">{selectedDayAssignments.map(assignment=>{
+        const query=daySearch.trim().toLocaleLowerCase("pl-PL");
+        const coworkers=(assignment.coworkers||[]).filter(coworker=>!query||`${coworker.name} ${roleNames[coworker.role]??coworker.role} ${assignment.location} ${portalShiftLabel(assignment)}`.toLocaleLowerCase("pl-PL").includes(query));
+        return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</small></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role)} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
+      })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany.</p>}</div>
+    </section>}
+    </>}
     {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
     {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} />}
@@ -795,6 +818,10 @@ function ShiftSwapBoardPanel({ board, busy, decideAsEmployee, decideAsLeader }: 
 
 function CompanyScheduleCalendar({ calendar, month, timezone, events }: { calendar: CompanyCalendar; month: string; timezone: string; events: WorkforceCalendarEvent[] }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [query,setQuery]=useState("");
+  const [roleFilter,setRoleFilter]=useState("");
+  const [locationFilter,setLocationFilter]=useState("");
+  const detailRef=useRef<HTMLElement|null>(null);
   const [year, monthNumber] = month.split("-").map(Number);
   const offset = (new Date(Date.UTC(year, monthNumber - 1, 1, 12)).getUTCDay() + 6) % 7;
   const dayCount = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
@@ -803,11 +830,23 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events }: { calend
   calendar.assignments.forEach(assignment => byDate.set(assignment.date, [...(byDate.get(assignment.date) || []), assignment]));
   const eventDates = new Set(events.map(event => event.date));
   const selected = selectedDate ? byDate.get(selectedDate) || [] : [];
-  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik firmy — do odczytu</h3><p>Każdy pracownik widzi, kto pracuje. Dni z ogłoszeniem, wydarzeniem lub limitem nieobecności są oznaczone.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
+  const roleOptions=[...new Map(calendar.assignments.map(item=>[item.roleId,{id:item.roleId,name:item.roleName}])).values()].sort((a,b)=>a.name.localeCompare(b.name,"pl-PL"));
+  const locationOptions=[...new Map(calendar.assignments.map(item=>[item.locationId,{id:item.locationId,name:item.locationName}])).values()].sort((a,b)=>a.name.localeCompare(b.name,"pl-PL"));
+  const filtered=selected.filter(item=>{
+    const normalized=query.trim().toLocaleLowerCase("pl-PL");
+    return (!normalized||`${item.employeeName} ${item.employeeNo} ${item.roleName} ${item.locationName} ${item.shiftName}`.toLocaleLowerCase("pl-PL").includes(normalized))
+      &&(!roleFilter||item.roleId===roleFilter)&&(!locationFilter||item.locationId===locationFilter);
+  });
+  const groups=[...filtered.reduce((result,item)=>{
+    const key=`${item.locationId}:${item.startsAt}:${item.endsAt}:${item.shiftName}`;
+    result.set(key,[...(result.get(key)||[]),item]);return result;
+  },new Map<string,CompanyCalendarAssignment[]>()).values()];
+  useEffect(()=>{if(selectedDate)window.setTimeout(()=>detailRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);},[selectedDate]);
+  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik firmy</h3><p>Wybierz dzień, a potem filtruj po osobie, roli lub lokalu. Widok służy także do znalezienia osoby do zamiany.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const assignments = byDate.get(date) || [];
     return <button type="button" key={index} className={`${!day ? "blank" : ""} ${eventDates.has(date) ? "has-event" : ""} ${selectedDate === date ? "selected" : ""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day && <><b>{day}</b><strong>{assignments.length} os.</strong>{assignments.some(assignment => assignment.isSwap) && <small>Zamiana</small>}{eventDates.has(date) && <Megaphone />}</>}</button>;
-  })}</div>{selectedDate && <div className="company-day-detail"><div><h4>{selectedDate}</h4><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></div>{selected.map(assignment => <article key={assignment.id}><span><b>{time(assignment.startsAt, timezone)}–{time(assignment.endsAt, timezone)}</b><small>{assignment.shiftName} • {assignment.locationName}</small></span><span><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap ? " • zamiana" : ""}</small></span></article>)}</div>}</section>;
+  })}</div>{selectedDate && <section className="company-day-workspace" ref={detailRef}><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId)} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
 }
 
 function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { workspace: PortalShiftPreferences; month: string; close: () => void; save: (preferences: Record<ShiftPeriod, ShiftPreferenceLevel>) => Promise<boolean>; busy: boolean }) {
