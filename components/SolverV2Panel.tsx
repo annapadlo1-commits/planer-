@@ -624,6 +624,11 @@ export function SolverV2Panel({
     setBusy(true);
     setMessage("");
     try {
+      if (leaderVariant && selectedVariant.id === leaderVariant.id) {
+        await selectSolverVariant(supabase, run.id, leaderVariant.id);
+        setVariants(current => current.map(variant => ({ ...variant, selected: false })));
+        setLeaderVariant(current => current ? { ...current, status: "SELECTED" } : current);
+      }
       const publication = await publishRoleVariant(supabase, {
         runId: run.id,
         variantId: selectedVariant.id,
