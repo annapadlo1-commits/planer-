@@ -102,7 +102,7 @@ begin
       v_errors:=v_errors||jsonb_build_array(jsonb_build_object('sheet','Finanse pracowników','row',v_source_row,'code','INVALID_BASE_RATE','message','Podaj nieujemną stawkę godzinową z dokładnością do dwóch miejsc po przecinku.'));
     end if;
     if v_row_currency<>v_currency then
-      v_errors:=v_errors||jsonb_build_array(jsonb_build_object('sheet','Finanse pracowników','row',v_source_row,'code','INVALID_CURRENCY','message',format('Waluta musi być zgodna z konfiguracją firmy: %s.',v_currency))));
+      v_errors:=v_errors||jsonb_build_array(jsonb_build_object('sheet','Finanse pracowników','row',v_source_row,'code','INVALID_CURRENCY','message',format('Waluta musi być zgodna z konfiguracją firmy: %s.',v_currency)));
     end if;
     if v_contract_type not in ('UMOWA_O_PRACE','ZLECENIE','CZESC_ETATU','B2B','INNE') then
       v_errors:=v_errors||jsonb_build_array(jsonb_build_object('sheet','Finanse pracowników','row',v_source_row,'code','INVALID_CONTRACT_TYPE','message','Wybierz rodzaj umowy z arkusza „Słowniki”.'));
