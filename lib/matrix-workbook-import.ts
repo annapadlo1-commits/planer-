@@ -1,6 +1,21 @@
 export type MatrixWorkbookPayload = {
+  settings: Record<string, unknown>;
+  roles: Record<string, unknown>[];
+  locations: Record<string, unknown>[];
+  duties: Record<string, unknown>[];
+  scenarios: Record<string, unknown>[];
+  strategies: Record<string, unknown>[];
+  strategyObjectives: Record<string, unknown>[];
+  scenarioStrategies: Record<string, unknown>[];
+  payRules: Record<string, unknown>[];
+  scenarioPayRuleOverrides: Record<string, unknown>[];
+  scenarioBudgets: Record<string, unknown>[];
   employees: Record<string, unknown>[];
   employeeDuties: Record<string, unknown>[];
+  employeeRoles: Record<string, unknown>[];
+  employeeLocationsDetailed: Record<string, unknown>[];
+  employeeCapabilities: Record<string, unknown>[];
+  timeConstraints: Record<string, unknown>[];
   shifts: Record<string, unknown>[];
   staffingRules: Record<string, unknown>[];
   roleDuties: Record<string, unknown>[];
@@ -26,6 +41,30 @@ function importList(value:string){return value.split(/[;,|]/).map(item=>item.tri
 function importDays(value:string){
   const labels:Record<string,number>={pon:1,wt:2,sr:3,śr:3,czw:4,pt:5,sob:6,nd:7,nie:7,niedz:7};
   return importList(value).map(item=>Number(item)||labels[item.toLocaleLowerCase("pl-PL")]).filter(day=>Number.isInteger(day)&&day>=1&&day<=7);
+}
+
+function importJson(value:string){
+  if(!value)return {};
+  try{return JSON.parse(value) as Record<string,unknown>;}
+  catch{return {_invalidJson:value};}
+}
+
+function importMoneyMinor(value:string){
+  if(!value)return "";
+  const normalized=value.replace(/\s/g,"").replace(",",".");
+  return /^-?\d+(?:\.\d{1,2})?$/.test(normalized)?String(Math.round(Number(normalized)*100)):value;
+}
+
+function importPercentBasisPoints(value:string){
+  if(!value)return "";
+  const normalized=value.replace("%","").replace(",",".").trim();
+  return /^-?\d+(?:\.\d+)?$/.test(normalized)?String(Math.round(Number(normalized)*100)):value;
+}
+
+function importMultiplierBasisPoints(value:string){
+  if(!value)return "";
+  const normalized=value.replace(",",".").trim();
+  return /^-?\d+(?:\.\d+)?$/.test(normalized)?String(Math.round(Number(normalized)*10000)):value;
 }
 
 function automaticShiftPeriod(startsAt:string){
@@ -68,6 +107,81 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     }
     return trimmed;
   };
+
+  const settingsRow=rows(["Firma","Ustawienia firmy","Company"])[0]??{};
+  const settings={
+    currency:importCell(settingsRow,"Waluta","currency").toUpperCase(),
+    timezone:importCell(settingsRow,"Strefa czasowa","timezone"),
+    minimumRestMinutes:importCell(settingsRow,"Minimalny odpoczynek (min)","minimumRestMinutes"),
+    maximumShiftsPerDay:importCell(settingsRow,"Maks. zmian dziennie","maximumShiftsPerDay"),
+    missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
+    requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
+  };
+  const namedRows=(sheetNames:string[])=>rows(sheetNames).map(row=>({
+    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
+    description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+  }));
+  const roles=namedRows(["Role","Roles"]);
+  const locations=rows(["Lokale","Locations"]).map(row=>({
+    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
+    timezone:importCell(row,"Strefa czasowa","timezone"),sortOrder:importCell(row,"Kolejność","sortOrder"),
+    active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+  }));
+  const duties=namedRows(["Obowiązki","Obowiazki","Duties"]);
+  const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
+    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
+    description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
+    parentScenarioCode:importCell(row,"Kod nadrzędnego","parentScenarioCode").toUpperCase(),
+    isDefault:importBoolean(importCell(row,"Domyślny","isDefault")),validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),
+    validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),settingsOverrides:importJson(importCell(row,"Ustawienia JSON","settingsOverrides")),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywny","Aktywna","active"),true),
+  }));
+  const strategies=rows(["Strategie","Strategies"]).map(row=>({
+    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),description:importCell(row,"Opis","description"),
+    solverCode:importCell(row,"Kod silnika","solverCode"),solverOptions:importJson(importCell(row,"Opcje silnika JSON","solverOptions")),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active"),true),
+  }));
+  const strategyObjectives=rows(["Kryteria strategii","Strategy Objectives"]).map(row=>({
+    strategyCode:importCell(row,"Kod strategii","strategyCode").toUpperCase(),tier:importCell(row,"Poziom","tier"),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),metricCode:importCell(row,"Miara","metricCode").toUpperCase(),
+    direction:importCell(row,"Kierunek","direction").toUpperCase(),weight:importCell(row,"Waga","weight"),
+    tolerance:importCell(row,"Tolerancja","tolerance"),parameters:importJson(importCell(row,"Parametry JSON","parameters")),
+    active:importBoolean(importCell(row,"Aktywne","Aktywna","active"),true),
+  }));
+  const scenarioStrategies=rows(["Warianty scenariuszy","Scenario Strategies"]).map(row=>({
+    scenarioCode:importCell(row,"Kod scenariusza","scenarioCode").toUpperCase(),strategyCode:importCell(row,"Kod strategii","strategyCode").toUpperCase(),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),objectiveOverrides:importJson(importCell(row,"Nadpisania celów JSON","objectiveOverrides")),
+    solverOverrides:importJson(importCell(row,"Nadpisania silnika JSON","solverOverrides")),active:importBoolean(importCell(row,"Aktywne","Aktywna","active"),true),
+  }));
+  const payRules=rows(["Zasady płacowe","Zasady placowe","Pay Rules"]).map(row=>({
+    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),description:importCell(row,"Opis","description"),
+    calculationMethod:importCell(row,"Sposób obliczania","calculationMethod").toUpperCase(),amountMinor:importMoneyMinor(importCell(row,"Kwota","amount")),
+    rateMinorPerHour:importMoneyMinor(importCell(row,"Kwota za godzinę","ratePerHour")),percentBasisPoints:importPercentBasisPoints(importCell(row,"Procent","percent")),
+    multiplierBasisPoints:importMultiplierBasisPoints(importCell(row,"Mnożnik","multiplier")),thresholdMinutes:importCell(row,"Próg minut","thresholdMinutes"),
+    currency:importCell(row,"Waluta","currency").toUpperCase(),priority:importCell(row,"Priorytet","priority"),stackingGroup:importCell(row,"Grupa łączenia","stackingGroup"),
+    stackingMode:importCell(row,"Sposób łączenia","stackingMode").toUpperCase(),days:importDays(importCell(row,"Dni","days")),
+    localStart:importCell(row,"Od","localStart"),localEnd:importCell(row,"Do","localEnd"),endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay")),
+    validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
+    conditionExpression:importJson(importCell(row,"Warunek JSON","conditionExpression")),formulaExpression:importJson(importCell(row,"Formuła JSON","formulaExpression")),
+    roleCodes:importList(importCell(row,"Kody ról","roleCodes")),dutyCodes:importList(importCell(row,"Kody obowiązków","dutyCodes")),
+    locationCodes:importList(importCell(row,"Kody lokali","locationCodes")),shiftCodes:importList(importCell(row,"Kody zmian","shiftCodes")),
+    sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active"),true),
+  }));
+  const scenarioPayRuleOverrides=rows(["Dodatki scenariuszy","Scenario Pay Rules"]).map(row=>({
+    scenarioCode:importCell(row,"Kod scenariusza","scenarioCode").toUpperCase(),payRuleCode:importCell(row,"Kod zasady","payRuleCode").toUpperCase(),
+    enabled:importBoolean(importCell(row,"Włączona","enabled"),true),amountMinor:importMoneyMinor(importCell(row,"Kwota","amount")),
+    rateMinorPerHour:importMoneyMinor(importCell(row,"Kwota za godzinę","ratePerHour")),percentBasisPoints:importPercentBasisPoints(importCell(row,"Procent","percent")),
+    multiplierBasisPoints:importMultiplierBasisPoints(importCell(row,"Mnożnik","multiplier")),formulaExpression:importJson(importCell(row,"Formuła JSON","formulaExpression")),
+  }));
+  const scenarioBudgets=rows(["Budżety scenariuszy","Budzety scenariuszy","Scenario Budgets"]).map(row=>({
+    scenarioCode:importCell(row,"Kod scenariusza","scenarioCode").toUpperCase(),budgetMonth:normalizeDate(importCell(row,"Miesiąc","budgetMonth")),
+    locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),
+    dutyCode:importCell(row,"Kod obowiązku","dutyCode").toUpperCase(),operation:importCell(row,"Operacja","operation").toUpperCase(),
+    amountMinor:importMoneyMinor(importCell(row,"Budżet","amount")),multiplierBasisPoints:importMultiplierBasisPoints(importCell(row,"Mnożnik","multiplier")),
+    currency:importCell(row,"Waluta","currency").toUpperCase(),hardLimit:importBoolean(importCell(row,"Twardy limit","hardLimit")),
+    warningPercent:importCell(row,"Próg ostrzeżenia (%)","warningPercent"),
+  }));
 
   const employeeRows=rows(["Pracownicy","Employees","BAZA_PRACOWNIKÓW"]);
   const functionRows=rows(["FUNKCJE_DODATKOWE"]);
@@ -178,6 +292,32 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     shiftPeriod:importCell(row,"Pora","shiftPeriod").toUpperCase(),active:importBoolean(importCell(row,"Aktywne","active"),true),
   }));
 
-  return {employees,employeeDuties,shifts:groupedShifts,staffingRules,roleDuties,
+  const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>({
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),
+    isPrimary:importBoolean(importCell(row,"Podstawowa","isPrimary")),canLead:importBoolean(importCell(row,"Może zatwierdzać","canLead")),
+    validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
+    active:importBoolean(importCell(row,"Aktywna","active"),true),
+  }));
+  const employeeLocationsDetailed=rows(["Lokale pracowników","Lokale pracownikow","Employee Locations"]).map(row=>({
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),
+    standardAllowed:importBoolean(importCell(row,"Zwykła praca","standardAllowed")),overtimeAllowed:importBoolean(importCell(row,"Dodatkowa praca","overtimeAllowed")),
+    homeLocation:importBoolean(importCell(row,"Lokal bazowy","homeLocation")),validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),
+    validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),active:importBoolean(importCell(row,"Aktywna","active"),true),
+  }));
+  const employeeCapabilities=rows(["Kompetencje pracowników","Kompetencje pracownikow","Employee Capabilities"]).map(row=>({
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),dutyCode:importCell(row,"Kod obowiązku","dutyCode").toUpperCase(),
+    roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),
+    validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
+    active:importBoolean(importCell(row,"Aktywna","active"),true),
+  }));
+  const timeConstraints=rows(["Dostępność","Dostepnosc","Availability"]).map(row=>({
+    constraintId:importCell(row,"ID wpisu","constraintId"),employeeNo:importCell(row,"Numer pracownika","employeeNo"),
+    kind:importCell(row,"Rodzaj","kind").toUpperCase(),startsAt:importCell(row,"Od","startsAt"),endsAt:importCell(row,"Do","endsAt"),
+    note:importCell(row,"Notatka","note"),active:importBoolean(importCell(row,"Aktywny","Aktywna","active"),true),
+  }));
+
+  return {settings,roles,locations,duties,scenarios,strategies,strategyObjectives,scenarioStrategies,
+    payRules,scenarioPayRuleOverrides,scenarioBudgets,employees,employeeDuties,employeeRoles,
+    employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules,roleDuties,
     _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
 }

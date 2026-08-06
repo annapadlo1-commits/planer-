@@ -74,6 +74,7 @@ export type MatrixV2StaffingRule = {
 };
 export type MatrixV2Strategy = MatrixV2NamedItem & {
   solver_code: string;
+  solver_options?: Record<string, unknown>;
 };
 export type MatrixV2Objective = {
   id: string;
@@ -103,6 +104,7 @@ export type MatrixV2PayRule = MatrixV2NamedItem & {
   percent_basis_points?: number | null;
   multiplier_basis_points?: number | null;
   formula_expression?: Record<string, unknown> | null;
+  condition_expression?: Record<string, unknown> | null;
   threshold_minutes?: number | null;
   currency: string;
   priority: number;
