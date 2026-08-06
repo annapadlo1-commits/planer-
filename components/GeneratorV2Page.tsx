@@ -11,6 +11,7 @@ import {
 
 type Props={
   configuration:SolverConfiguration;userId:string;month:string;timezone:string;
+  activeConfigurationVersion?:number|null;draftConfigurationVersion?:number|null;
   notify:(message:string)=>void;fail:(message:string)=>void;onPublished:()=>Promise<void>;
 };
 
@@ -23,7 +24,7 @@ function money(value:number|null|undefined,currency:string){
   return new Intl.NumberFormat("pl-PL",{style:"currency",currency,maximumFractionDigits:0}).format(value/100);
 }
 
-export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail,onPublished}:Props){
+export function GeneratorV2Page({configuration,userId,month,timezone,activeConfigurationVersion,draftConfigurationVersion,notify,fail,onPublished}:Props){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const defaultScenario=configuration.scenarios.find(item=>item.isDefault)??configuration.scenarios[0];
   const [scenarioCode,setScenarioCode]=useState(defaultScenario?.code??"");
@@ -60,18 +61,19 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
 
   return <section className="generator-v2-page">
     <header className="generator-v2-hero">
-      <div><p className="eyebrow">GENERATOR I WARIANTY • OR-TOOLS</p><h2>Scenariusze, analizy i wybór wariantu</h2><p>Generowanie tworzy osobne warianty robocze. Dopiero świadomy wybór i publikacja tworzą grafik operacyjny.</p></div>
+      <div><p className="eyebrow">GENERATOR I WARIANTY • OR-TOOLS</p><h2>Profil miesiąca, porównanie i wybór grafiku</h2><p>Najpierw wybierasz warunki dla całego okresu, potem porównujesz warianty kosztu, preferencji i równego podziału. Publikacja następuje dopiero po świadomym wyborze.</p></div>
       <button className="secondary-button" disabled={loading} onClick={()=>void loadCatalog()}><RefreshCw className={loading?"spin":""}/> Odśwież historię</button>
     </header>
 
     <div className="generator-v2-flow">
-      <span className="active"><b>1</b> Scenariusz</span><ChevronRight/><span><b>2</b> Warianty</span><ChevronRight/><span><b>3</b> Analiza i wybór</span><ChevronRight/><span><b>4</b> Publikacja</span>
+      <span className="active"><b>1</b> Profil miesiąca</span><ChevronRight/><span><b>2</b> Warianty</span><ChevronRight/><span><b>3</b> Analiza i wybór</span><ChevronRight/><span><b>4</b> Publikacja</span>
     </div>
 
     {configuration.engine==="SHADOW"&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Tryb testowy</strong><small>Możesz generować i porównywać wyniki, ale publikacja pozostaje zablokowana.</small></span></div>}
 
     <section className="generator-v2-scenarios">
-      <div className="section-head"><div><p className="eyebrow">ZAŁOŻENIA WEJŚCIOWE</p><h3>Wybierz scenariusz Matrixa</h3></div><button className="primary-button" onClick={startNewGeneration}><Plus/> Nowe generowanie</button></div>
+      <div className="section-head"><div><p className="eyebrow">ZAŁOŻENIA WEJŚCIOWE</p><h3>Wybierz profil zapotrzebowania</h3></div><button className="primary-button" onClick={startNewGeneration}><Plus/> Nowe generowanie</button></div>
+      <div className="solver-v2-notice"><CalendarDays/><span><strong>Profil działa na cały generowany miesiąc</strong><small>Pojedynczego eventu nie ustawiaj jako profilu miesiąca. Dodaj go w kalendarzu operacyjnym dla konkretnej daty, lokalu, zmiany i roli — silnik doliczy tę obsadę do wspólnego grafiku.</small></span></div>
       <div>{configuration.scenarios.map(scenario=><button className={scenario.code===scenarioCode?"selected":""} key={scenario.id??scenario.code} onClick={()=>{setScenarioCode(scenario.code);setSelectedRunId(null);setSkipRecovery(true);}}><span><Sparkles/><strong>{scenario.name}</strong>{scenario.isDefault&&<em>DOMYŚLNY</em>}</span><p>{scenario.description||"Scenariusz bez dodatkowego opisu."}</p><small>{scenario.strategyCount} {scenario.strategyCount===1?"strategia":"strategie/warianty"}</small></button>)}</div>
     </section>
 
@@ -101,6 +103,8 @@ export function GeneratorV2Page({configuration,userId,month,timezone,notify,fail
         scopeRoleId={null}
         scopeLabel="Grafik całej firmy"
         matrixEffectiveFrom={configuration.matrixEffectiveFrom}
+        activeConfigurationVersion={activeConfigurationVersion}
+        draftConfigurationVersion={draftConfigurationVersion}
         allowStart={Boolean(configuration.solverVersion)}
         initialRunId={selectedRunId}
         skipRecovery={skipRecovery}

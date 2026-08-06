@@ -344,7 +344,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       </button>
     </div>
 
-    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Scalanie dotyczy opublikowanego Matrixa{matrixEffectiveFrom?` od ${matrixEffectiveFrom}`:""}</strong><small>Robocze zmiany pracowników i ról nie są uwzględniane, dopóki Matrix nie przejdzie walidacji i publikacji.</small></span></div>
+    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Scalanie dotyczy opublikowanej konfiguracji firmy{matrixEffectiveFrom?` obowiązującej od ${matrixEffectiveFrom}`:""}</strong><small>Robocze zmiany pracowników i ról nie są uwzględniane, dopóki konfiguracja nie przejdzie kontroli i publikacji.</small></span></div>
 
     {authority?.conflict&&<section className="publication-authority-conflict">
       <AlertTriangle/>
@@ -385,7 +385,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       </select>
     </label>
 
-    {!availableScenarios.length && <div className="solver-v2-notice warning"><AlertTriangle/>Aktywny Matrix nie ma scenariusza dostępnego do scalenia.</div>}
+    {!availableScenarios.length && <div className="solver-v2-notice warning"><AlertTriangle/>Opublikowana konfiguracja firmy nie ma profilu zapotrzebowania dostępnego do scalenia.</div>}
     {loading && <div className="role-composite-loading"><RefreshCw className="spin"/> Sprawdzam opublikowane grafiki wszystkich ról…</div>}
 
     {candidates && !loading && <>

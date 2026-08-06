@@ -4,6 +4,7 @@ import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Sq
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { presentSolverVariantMetrics } from "@/lib/solver-variant-presentation";
 import {
   createIdempotencyKey,
   forgetPublishedSchedule,
@@ -56,6 +57,8 @@ type Props = {
   scopeRoleId?: string | null;
   scopeLabel: string;
   matrixEffectiveFrom?: string|null;
+  activeConfigurationVersion?: number|null;
+  draftConfigurationVersion?: number|null;
   allowStart?: boolean;
   onNameChange: (value: string) => void;
   onScenarioChange: (value: string) => void;
@@ -75,7 +78,9 @@ function money(value: number | null | undefined, currency: string) {
 }
 
 function solutionLabel(value: string) {
-  return value === "OPTIMAL" ? "Potwierdzone optimum" : "Poprawne rozwiązanie";
+  return value === "OPTIMAL"
+    ? "Silnik matematycznie potwierdził, że dla tych priorytetów nie istnieje lepszy wynik"
+    : "Najlepszy wynik znaleziony w dostępnym czasie — bez matematycznego potwierdzenia optimum";
 }
 
 function variantCountLabel(value: number) {
@@ -135,6 +140,8 @@ export function SolverV2Panel({
   scopeRoleId,
   scopeLabel,
   matrixEffectiveFrom,
+  activeConfigurationVersion,
+  draftConfigurationVersion,
   allowStart = true,
   onNameChange,
   onScenarioChange,
@@ -164,6 +171,7 @@ export function SolverV2Panel({
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
@@ -420,6 +428,7 @@ export function SolverV2Panel({
   async function inspectVariant(variant: SolverVariant) {
     if (!supabase) return;
     setBusy(true);
+    setInspectingVariantId(variant.id);
     setMessage("");
     try {
       setInspectedWorkspace(await getVariantWorkspace(supabase, variant.id));
@@ -427,6 +436,7 @@ export function SolverV2Panel({
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
       setBusy(false);
+      setInspectingVariantId(null);
     }
   }
 
@@ -606,13 +616,14 @@ export function SolverV2Panel({
     <div className="solver-v2-heading">
       <span className="solver-v2-icon"><Sparkles/></span>
       <span>
-        <strong>{engine === "SHADOW" ? "Nieprodukcyjny test nowego silnika" : "Optymalizacja całego Matrixa"}</strong>
-        <small>{scopeLabel} • liczba wariantów wynika z aktywnych strategii Matrixa</small>
+        <strong>{engine === "SHADOW" ? "Nieprodukcyjny test nowego silnika" : "Optymalizacja całej konfiguracji firmy"}</strong>
+        <small>{scopeLabel} • warianty pokazują różne priorytety biznesowe</small>
       </span>
       {engine === "SHADOW" && <em>TRYB CIENIA</em>}
     </div>
 
-    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Źródło danych: opublikowany Matrix{matrixEffectiveFrom?` obowiązujący od ${matrixEffectiveFrom}`:""}</strong><small>Wersja robocza nie trafia do silnika. Nowa rola, pracownik, stawka lub reguła zostanie użyta dopiero po poprawnej publikacji Matrixa dla tego miesiąca.</small></span></div>
+    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Źródło danych: opublikowana konfiguracja firmy{matrixEffectiveFrom?` obowiązująca od ${matrixEffectiveFrom}`:""}</strong><small>Zmiany robocze nie trafiają do silnika. Nowa rola, pracownik, stawka lub reguła zostanie użyta dopiero po opublikowaniu konfiguracji właściwej dla tego miesiąca.</small></span></div>
+    {draftConfigurationVersion&&activeConfigurationVersion&&draftConfigurationVersion>activeConfigurationVersion&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Masz nowszą wersję roboczą: v{draftConfigurationVersion}; generator nadal używa opublikowanej v{activeConfigurationVersion}</strong><small>Elementy dodane tylko w wersji roboczej — na przykład zmiana „Runner Help” — nie pojawią się w wyniku. Przed nowym generowaniem przejdź do konfiguracji firmy, usuń wskazane blokady i opublikuj wersję roboczą.</small></span></div>}
 
     {recovering && <div className="solver-v2-notice"><RefreshCw className="spin"/>Odzyskuję rozpoczęte wcześniej generowanie…</div>}
     {!run && !recovering && !allowStart && <div className="solver-v2-notice"><Sparkles/>Uruchamianie nowego silnika jest wyłączone w bieżącej konfiguracji.</div>}
@@ -620,7 +631,7 @@ export function SolverV2Panel({
       <label>Nazwa
         <input value={name} onChange={event => onNameChange(event.target.value)}/>
       </label>
-      <label>Scenariusz Matrixa
+      <label>Profil zapotrzebowania
         <select value={scenarioCode} onChange={event => onScenarioChange(event.target.value)}>
           {scenarios.map(scenario => <option value={scenario.code} key={scenario.id ?? scenario.code}>
             {scenario.name}{scenario.strategyCount ? ` • ${variantCountLabel(scenario.strategyCount)}` : ""}
@@ -628,8 +639,8 @@ export function SolverV2Panel({
         </select>
       </label>
       {selectedScenario?.description && <p>{selectedScenario.description}</p>}
-      {!selectedScenario?.id && <div className="solver-v2-notice warning"><AlertTriangle/>Nowy Matrix nie jest jeszcze gotowy. Użyj dotychczasowego silnika.</div>}
-      {selectedScenario?.id && selectedScenario.strategyCount===0 && <div className="solver-v2-notice warning"><AlertTriangle/>Ten scenariusz nie ma jeszcze aktywnej strategii. Dodaj co najmniej jedną w Matrixie.</div>}
+      {!selectedScenario?.id && <div className="solver-v2-notice warning"><AlertTriangle/>Konfiguracja firmy nie jest jeszcze gotowa do generowania.</div>}
+      {selectedScenario?.id && selectedScenario.strategyCount===0 && <div className="solver-v2-notice warning"><AlertTriangle/>Ten profil zapotrzebowania nie ma jeszcze wariantu biznesowego. Dodaj co najmniej jeden w konfiguracji firmy.</div>}
       <button className="primary-button full" disabled={busy || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount===0 || !name.trim()} onClick={() => void start()}>
         {busy ? <><RefreshCw className="spin"/> Uruchamiam…</> : <><Sparkles/> Generuj wszystkie aktywne warianty</>}
       </button>
@@ -653,7 +664,7 @@ export function SolverV2Panel({
       {run.failureMessage && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
       {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
       {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>„Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
-      {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej wersji Matrixa.</small></span></div>}
+      {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej konfiguracji firmy.</small></span></div>}
       {pollWarning && <div className="solver-v2-poll-warning">{pollWarning}</div>}
       <div className="solver-v2-actions">
         {active && <button className="secondary-button" disabled={busy || run.status === "CANCEL_REQUESTED"} onClick={() => void cancel()}><Square/> Zatrzymaj bezpiecznie</button>}
@@ -665,14 +676,15 @@ export function SolverV2Panel({
 
     {variants.length > 0 && <div className="solver-v2-results">
       <div className="solver-v2-results-head">
-        <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy został policzony osobno według strategii zapisanej w Matrixie.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
+        <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy wariant stosuje inny zestaw priorytetów: koszt, preferencje i równy podział pracy.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>
+      {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. W ustawieniach firmy możesz włączyć „Czekaj na matematycznie najlepszy wynik”; wtedy niepotwierdzony wariant nie zostanie uznany za gotowy.</small></span></div>}
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
         {variants.map(variant => <article className={`${variant.recommended ? "recommended" : ""} ${variant.selected ? "selected" : ""}`} key={variant.id}>
           <div className="solver-v2-card-head">
             <span><small>STRATEGIA</small><h3>{variant.strategy.name}</h3></span>
-            {variant.recommended && <em>REKOMENDOWANY</em>}
+            {variant.recommended && <em>{variant.solverStatus==="OPTIMAL"?"REKOMENDOWANY":"NAJLEPSZY ZNALEZIONY"}</em>}
             {variant.selected && <em className="chosen"><Check/> WYBRANY</em>}
           </div>
           {variant.strategy.description && <p>{variant.strategy.description}</p>}
@@ -684,7 +696,7 @@ export function SolverV2Panel({
           </div>
           <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
           <dl className="solver-v2-analysis">
-            {Object.entries(variant.metrics).filter(([metric])=>metric!=="UNFILLED"&&metric!=="TOTAL_COST").map(([metric,value])=><div key={metric}><dt>{({PREFERENCE_VIOLATIONS:"Niespełnione preferencje",NOMINAL_DEVIATION_MINUTES:"Odchylenie od nominału (min)",OVERTIME_MINUTES:"Nadgodziny (min)",LOAD_SPREAD_MINUTES:"Rozpiętość obciążenia (min)",WEEKEND_SPREAD:"Różnica weekendów",BASELINE_CHANGES:"Zmiany wobec bazowego"} as Record<string,string>)[metric]??metric}</dt><dd>{String(value??"—")}</dd></div>)}
+            {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code} title={metric.explanation}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
             {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
           </dl>
           <div className={`solver-v2-validation ${variant.unfilledCount>0||variant.hardViolations>0?"warning":""}`}>
@@ -692,7 +704,7 @@ export function SolverV2Panel({
           </div>
           {variant.equivalentToVariantId && <small className="solver-v2-equivalent">Ten wariant ma taki sam skład jak inny wynik.</small>}
           {!variant.equivalentToVariantId && (aggregateVariantCounts.get(aggregateVariantFingerprint(variant)) ?? 0) > 1 && <small className="solver-v2-equivalent">Te same wskaźniki zbiorcze, ale inny skład pracowników. Otwórz szczegóły, aby porównać przydziały.</small>}
-          <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}><Search/> Pokaż grafik i rozkład braków</button>
+          <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}>{inspectingVariantId===variant.id?<RefreshCw className="spin"/>:<Search/>} {inspectingVariantId===variant.id?"Otwieram szczegóły…":"Pokaż grafik i przyczyny braków"}</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
             : <button className="primary-button full" disabled={busy || run?.status!=="READY" || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
@@ -702,7 +714,7 @@ export function SolverV2Panel({
       </div>
     </div>}
 
-    {previewWorkspace && !inspectedWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/></div>}
+    {previewWorkspace && !inspectedWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"}/></div>}
 
     {inspectedWorkspace && <>
       <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>

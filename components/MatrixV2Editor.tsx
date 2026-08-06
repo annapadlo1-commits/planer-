@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { configurationBlockerAction } from "@/lib/product-journey";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
+import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, equivalentShiftKey, parseTime24 } from "@/lib/uat006-workflows";
 import {
@@ -225,7 +226,7 @@ export function MatrixV2Editor({
 
   async function resetUatDraftWorkforce(){
     if(!supabase||!uatReset?.enabled)return;
-    const confirmation=window.prompt(`Ta operacja usunie ${uatReset.employees} profili wyłącznie z roboczego Matrixa v${uatReset.draftVersion}. Aktywny Matrix, grafiki, stawki i historia pozostaną zachowane.\n\nAby kontynuować, wpisz dokładnie: ${uatReset.confirmation}`);
+    const confirmation=window.prompt(`Ta operacja usunie ${uatReset.employees} profili wyłącznie z roboczej konfiguracji v${uatReset.draftVersion}. Opublikowana konfiguracja, grafiki, stawki i historia pozostaną zachowane.\n\nAby kontynuować, wpisz dokładnie: ${uatReset.confirmation}`);
     if(confirmation!==uatReset.confirmation){if(confirmation!==null)fail("Reset anulowany: tekst potwierdzenia nie jest zgodny.");return;}
     if(!window.confirm("Ostatnie potwierdzenie: wyczyścić pracowników, role, lokale i kompetencje z wersji roboczej UAT?"))return;
     setBusy(true);
@@ -240,13 +241,13 @@ export function MatrixV2Editor({
 
   async function createDraft() {
     if (!supabase) return;
-    const name = window.prompt("Nazwa nowej wersji roboczej:", `Matrix v${data.matrixVersion.version + 1}`);
+    const name = window.prompt("Nazwa nowej wersji roboczej:", `Konfiguracja firmy v${data.matrixVersion.version + 1}`);
     if (!name?.trim()) return;
     setBusy(true);
     const result = await supabase.rpc("matrix_v2_create_draft", { p_name: name.trim() });
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
-    notify("Utworzono bezpieczną wersję roboczą Matrixa.");
+    notify("Utworzono bezpieczną wersję roboczą konfiguracji firmy.");
     await reloadInPlace();
   }
 
@@ -257,7 +258,7 @@ export function MatrixV2Editor({
       return shift.active&&expected!==null&&shift.shift_period!==expected;
     });
     if(!mismatches.length){notify("Klasyfikacja pór zmian jest już spójna.");return;}
-    if(!window.confirm(`Poprawić automatyczną klasyfikację ${mismatches.length} zmian według godziny rozpoczęcia? Zmiany trafią do wersji roboczej; opublikowany Matrix i istniejące grafiki pozostaną bez zmian.`))return;
+    if(!window.confirm(`Poprawić techniczną klasyfikację ${mismatches.length} zmian według godziny rozpoczęcia? Zmiany trafią do wersji roboczej; opublikowana konfiguracja i istniejące grafiki pozostaną bez zmian.`))return;
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_normalize_shift_periods_uat_v2");
     setBusy(false);
@@ -292,7 +293,7 @@ export function MatrixV2Editor({
       timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit",day:"2-digit",
     }).format(new Date());
     const effective = window.prompt(
-      `Od kiedy ta wersja ma obowiązywać?\n\nGrafik nadal zostanie policzony dla ${month}; ta data określa tylko moment aktywacji konfiguracji Matrixa.`,
+      `Od kiedy ta wersja ma obowiązywać?\n\nGrafik nadal zostanie policzony dla ${month}; ta data określa tylko moment aktywacji konfiguracji firmy.`,
       todayInMatrixTimezone,
     );
     if (!effective) return;
@@ -305,12 +306,12 @@ export function MatrixV2Editor({
     if(readiness.error){setBusy(false);fail(matrixV2ErrorMessage(readiness.error.message));return;}
     const preflight=readiness.data as MatrixV2PublicationReadiness;
     setPublicationReadiness(preflight);
-    if(!preflight.ready){setBusy(false);fail(`Nie można opublikować Matrixa: ${preflight.blockers.length} blokad. Szczegóły są widoczne nad zakładkami.`);return;}
-    if (!window.confirm("Kontrola gotowości nie wykryła blokad. Opublikować tę wersję Matrixa? Poprzednia wersja pozostanie w historii, a nowe grafiki użyją nowej konfiguracji.")){setBusy(false);return;}
+    if(!preflight.ready){setBusy(false);fail(`Nie można opublikować konfiguracji firmy: ${preflight.blockers.length} blokad. Szczegóły są widoczne nad zakładkami.`);return;}
+    if (!window.confirm("Kontrola gotowości nie wykryła blokad. Opublikować tę wersję konfiguracji firmy? Poprzednia wersja pozostanie w historii, a nowe grafiki użyją nowych danych.")){setBusy(false);return;}
     const result = await supabase.rpc("matrix_v2_publish_draft", { p_effective_from: effective });
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
-    notify("Nowa wersja Matrixa została opublikowana.");
+    notify("Nowa konfiguracja firmy została opublikowana.");
     await reloadInPlace();
   }
 
@@ -368,7 +369,7 @@ export function MatrixV2Editor({
       const currency = formText(form, "currency").toUpperCase();
       const timezone = formText(form, "timezone");
       if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Waluta musi mieć trzyliterowy kod, np. PLN, EUR lub USD.");
-      if (!timezone) throw new Error("Podaj strefę czasową Matrixa.");
+      if (!timezone) throw new Error("Podaj strefę czasową firmy.");
       const minimumRestMinutes = requiredNumber(formText(form, "minimumRestMinutes"));
       // Compatibility field for the published Matrix v2 schema.  Employee
       // assignment capacity is an invariant of one and is not configurable;
@@ -384,7 +385,7 @@ export function MatrixV2Editor({
         requireOptimal: checked(form, "requireOptimal"),
       });
     } catch (error) {
-      fail(error instanceof Error ? error.message : "Sprawdź ustawienia Matrixa.");
+      fail(error instanceof Error ? error.message : "Sprawdź ustawienia firmy.");
     }
   }
 
@@ -399,7 +400,7 @@ export function MatrixV2Editor({
       end=matrixLocalDateTimeToIso(input.endsAt,settings.timezone);
       if(new Date(end)<=new Date(start))throw new Error("INVALID_RANGE");
     }catch{
-      fail("Podaj prawidłowy przedział dostępności w strefie czasowej Matrixa."); return false;
+      fail("Podaj prawidłowy przedział dostępności w strefie czasowej firmy."); return false;
     }
     setBusy(true);
     const result = await supabase.rpc("employee_time_constraint_save_v2", {
@@ -509,7 +510,7 @@ export function MatrixV2Editor({
     if (archive) {
       reason = window.prompt(`Powód archiwizacji: ${employee.firstName} ${employee.lastName}`, "") ?? null;
       if (reason === null) return false;
-    } else if (!window.confirm(`Przywrócić pracownika ${employee.firstName} ${employee.lastName} do bieżącej wersji Matrixa?`)) return false;
+    } else if (!window.confirm(`Przywrócić pracownika ${employee.firstName} ${employee.lastName} do bieżącej konfiguracji firmy?`)) return false;
     setBusy(true);
     const result = await supabase.rpc("matrix_v2_employee_archive_v2", {
       p_employee_id: employee.id, p_reason: reason, p_archive: archive,
@@ -532,7 +533,7 @@ export function MatrixV2Editor({
     if (!supabase || !input.scenarioId || input.visibleCount < 1) return false;
     const direction = input.delta > 0 ? "zwiększyć" : "zmniejszyć";
     if (!window.confirm(
-      `Czy ${direction} wymaganą obsadę o ${Math.abs(input.delta)} dla ${input.visibleCount} widocznych aktywnych reguł?\n\nZmiana zostanie zapisana zbiorczo i atomowo w wersji roboczej Matrixa.`,
+      `Czy ${direction} wymaganą obsadę o ${Math.abs(input.delta)} dla ${input.visibleCount} widocznych aktywnych reguł?\n\nZmiana zostanie zapisana zbiorczo i atomowo w roboczej konfiguracji firmy.`,
     )) return false;
     setBusy(true);
     const result = await supabase.rpc("matrix_v2_staffing_bulk_adjust_uat_v2", {
@@ -582,14 +583,14 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={() => void publishDraft()}><Check/> Opublikuj Matrix</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={() => void publishDraft()}><Check/> Opublikuj konfigurację</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
 
-    {mixedCurrencyItems.length > 0 && <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Dane finansowe mają różne waluty</strong><small>Stawki, dodatki i budżety muszą używać waluty {settings.currency}. Popraw je przed publikacją Matrixa.</small></span></div>}
+    {mixedCurrencyItems.length > 0 && <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Dane finansowe mają różne waluty</strong><small>Stawki, dodatki i budżety muszą używać waluty {settings.currency}. Popraw je przed publikacją konfiguracji.</small></span></div>}
 
-    {publicationReadiness&&!publicationReadiness.ready&&<section className="matrix-v2-readiness"><div><AlertTriangle/><span><strong>Publikacja Matrixa jest zablokowana</strong><small>{publicationReadiness.blockers.length} problemów wymaga poprawy. Każdy przycisk prowadzi bezpośrednio do konkretnego pola.</small></span></div>{publicationReadiness.blockers.map(blocker=>{const action=configurationBlockerAction(blocker,data,month);return <button key={`${blocker.code}:${blocker.employeeId??blocker.shiftTemplateId??blocker.employeeNo??blocker.shiftCode}`} onClick={()=>openPublicationBlocker(blocker)}><span><b>{action.title}</b><small>{[blocker.employeeNo,blocker.shiftCode,action.message].filter(Boolean).join(" • ")}</small><em>{action.actionLabel}</em></span><ChevronRight/></button>;})}</section>}
+    {publicationReadiness&&!publicationReadiness.ready&&<section className="matrix-v2-readiness"><div><AlertTriangle/><span><strong>Publikacja konfiguracji firmy jest zablokowana</strong><small>{publicationReadiness.blockers.length} problemów wymaga poprawy. Każdy przycisk prowadzi bezpośrednio do konkretnego pola.</small></span></div>{publicationReadiness.blockers.map(blocker=>{const action=configurationBlockerAction(blocker,data,month);return <button key={`${blocker.code}:${blocker.employeeId??blocker.shiftTemplateId??blocker.employeeNo??blocker.shiftCode}`} onClick={()=>openPublicationBlocker(blocker)}><span><b>{action.title}</b><small>{[blocker.employeeNo,blocker.shiftCode,action.message].filter(Boolean).join(" • ")}</small><em>{action.actionLabel}</em></span><ChevronRight/></button>;})}</section>}
 
     <div className="matrix-v2-summary">
       <span><Users/><small>Aktywni pracownicy</small><strong>{data.workforceCounts?.active ?? data.employees.filter(employee=>employee.active).length}</strong></span>
@@ -660,7 +661,7 @@ function MatrixSettingsCard({
         <label>Domyślny odpoczynek dla umów pracowniczych (minuty)<input name="minimumRestMinutes" type="number" min="0" step="15" required disabled={!editable} defaultValue={settings.minimumRestMinutes}/></label>
         <p className="matrix-v2-form-hint">Możesz utworzyć dowolną liczbę szablonów zmian. Niezależnie od ich liczby jedna osoba może otrzymać najwyżej jedną zasadniczą zmianę dziennie.</p>
         <label className="check-label"><input name="missingAvailabilityMeansAvailable" type="checkbox" disabled={!editable} defaultChecked={settings.missingAvailabilityMeansAvailable}/> Dla umów pracowniczych brak deklaracji oznacza dostępność</label>
-        <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Czekaj na matematycznie najlepszy wynik</label>
+        <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Czekaj na matematycznie najlepszy wynik<small>Gdy opcja jest wyłączona, system zwróci najlepszy znaleziony wariant w limicie czasu i wyraźnie oznaczy brak dowodu optimum. Gdy jest włączona, nie uzna wariantu za gotowy bez matematycznego potwierdzenia.</small></label>
       </details>
       {editable && <button className="primary-button" disabled={busy}><Save/> {busy ? "Zapisuję…" : "Zapisz ustawienia"}</button>}
     </form>
@@ -782,10 +783,6 @@ function dateTimeLabel(value: string, timezone: string) {
   }).format(new Date(value));
 }
 
-function shiftPeriodLabel(value?: string | null){
-  return value==="MORNING"?"poranna":value==="EVENING"?"wieczorna":"środek";
-}
-
 function WorkforceTab({
   data,month,editable,busy,edit,editProfile,setArchived,saveTime,revokeTime,saveRate,focusEmployeeId,financeOnboardingEmployeeId,dismissFinanceOnboarding,
 }: {
@@ -904,7 +901,7 @@ function WorkforceTab({
 
     {data.financeVisible&&<section className="matrix-v2-card" id={`matrix-v2-rate-${employee.id}`}>
       <div className="matrix-v2-section-head"><div><h3>Chroniona historia stawki</h3><p>Solver używa stawki obowiązującej w miesiącu grafiku; starsze okresy pozostają odtwarzalne.</p></div><ShieldCheck/></div>
-      {financeOnboardingEmployeeId===employee.id&&<div className="matrix-v2-finance-onboarding"><span><strong>Krok 2 z 2 • uzupełnij stawkę nowego pracownika</strong><small>Bez aktywnej stawki nie opublikujesz Matrixa dla miesiąca, w którym ta osoba pracuje.</small></span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{if(window.confirm("Pominąć stawkę na razie? Publikacja Matrixa pozostanie zablokowana do czasu jej uzupełnienia."))void dismissFinanceOnboarding(employee.id);}}>Pomiń świadomie</button></div>}
+      {financeOnboardingEmployeeId===employee.id&&<div className="matrix-v2-finance-onboarding"><span><strong>Krok 2 z 2 • uzupełnij stawkę nowego pracownika</strong><small>Bez aktywnej stawki nie opublikujesz konfiguracji dla miesiąca, w którym ta osoba pracuje.</small></span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{if(window.confirm("Pominąć stawkę na razie? Publikacja konfiguracji pozostanie zablokowana do czasu jej uzupełnienia."))void dismissFinanceOnboarding(employee.id);}}>Pomiń świadomie</button></div>}
       <div className="matrix-v2-time-list">
         {rates.map(item=><article key={item.id}><CircleDollarSign/><span><strong>{money(item.base_rate_minor, currency)}</strong><small>{item.valid_from>localToday(timezone)?"Zaplanowana od":"Od"} {item.valid_from}{item.valid_to?` do ${item.valid_to}`:" • bez daty końcowej"}{item.contract_type?` • ${contractTypeLabel(item.contract_type)}`:""}{item.active?"":" • nieaktywna"}</small></span><button className="secondary-button" onClick={()=>beginRateEdit(item)}><Edit3/> Edytuj</button></article>)}
         {!rates.length&&<p className="matrix-v2-empty">Nie zapisano jeszcze stawki v2.</p>}
@@ -1020,7 +1017,7 @@ function businessObjectiveLabel(code:string) {
     PREFERENCE_VIOLATIONS:"Uwzględnij preferencje pracowników",
     NOMINAL_DEVIATION_MINUTES:"Zbliż liczbę godzin do indywidualnych ustaleń",
     OVERTIME_MINUTES:"Ogranicz nadgodziny tam, gdzie mają zastosowanie",
-    LOAD_SPREAD_MINUTES:"Rozdziel godziny możliwie równo",
+    LOAD_SPREAD_MINUTES:"Wyrównaj wykorzystanie indywidualnych wymiarów pracy",
     WEEKEND_SPREAD:"Rozdziel pracę weekendową możliwie równo",
     BASELINE_CHANGES:"Ogranicz zmiany wobec grafiku bazowego",
   } as Record<string,string>)[code]??objectiveName(code);
@@ -1107,7 +1104,7 @@ function FinanceTab({data, editable, edit}: {data: MatrixV2Workspace; editable: 
   return <div className="matrix-v2-tab-content">
     <div className="matrix-v2-finance-banner"><ShieldCheck/><span><strong>Dane finansowe są chronione</strong><small>Ta zakładka jest widoczna wyłącznie dla właściciela, administratora oraz uprawnionej sekcji HR/finanse. Stawki pracowników nie są tutaj wyświetlane.</small></span></div>
     <section className="matrix-v2-card">
-      <SectionHead title="Dodatki płacowe" description="Sposób naliczania i zakres dodatku są konfigurowane w Matrixie, bez zmian kodu." editable={editable} add={() => edit({kind: "PAY_RULE"})}/>
+      <SectionHead title="Dodatki płacowe" description="Sposób naliczania i zakres dodatku ustawiasz tutaj, bez zmian kodu." editable={editable} add={() => edit({kind: "PAY_RULE"})}/>
       <div className="matrix-v2-pay-grid">
         {data.payRules.map(rule => <article key={rule.id} className={!rule.active ? "inactive" : ""}>
           <div><CircleDollarSign/><span><h4>{rule.name}</h4><small>{payMethodLabel[rule.calculation_method] || "Reguła płacowa"}</small></span>{editable && <button onClick={() => edit({kind: "PAY_RULE", item: rule})}><Edit3/></button>}</div>
@@ -1225,8 +1222,8 @@ function MatrixHistoryDrawer({currentVersionId,close,fail}:{currentVersionId:str
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-history-drawer top">
     <div className="drawer-head"><div><p className="eyebrow">MATRIX • PEŁNA HISTORIA</p><h2>Wersje i dziennik zmian</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
-      <div className="matrix-history-intro"><HistoryIcon/><span><strong>Poprzednie wersje nie są nadpisywane</strong><small>Możesz otworzyć podsumowanie wersji tylko do odczytu, porównać dwie wersje oraz sprawdzić kto i kiedy zmieniał Matrix.</small></span></div>
-      <nav className="matrix-history-tabs"><button className={view==="versions"?"active":""} onClick={()=>setView("versions")}>Wersje Matrixa</button><button className={view==="audit"?"active":""} onClick={()=>setView("audit")}>Audit trail</button></nav>
+      <div className="matrix-history-intro"><HistoryIcon/><span><strong>Poprzednie wersje nie są nadpisywane</strong><small>Możesz otworzyć podsumowanie tylko do odczytu, porównać dwie wersje oraz sprawdzić kto i kiedy zmieniał konfigurację firmy.</small></span></div>
+      <nav className="matrix-history-tabs"><button className={view==="versions"?"active":""} onClick={()=>setView("versions")}>Wersje konfiguracji</button><button className={view==="audit"?"active":""} onClick={()=>setView("audit")}>Historia zmian</button></nav>
       {loading&&<p className="matrix-v2-empty">Wczytuję historię…</p>}
       {!loading&&view==="versions"&&<>
         <div className="matrix-history-compare-help"><span><strong>Porównanie wersji</strong><small>Zaznacz dokładnie dwie wersje. Porównanie pokaże, które sekcje i liczby elementów się zmieniły.</small></span><b>{compareIds.length}/2</b></div>
@@ -1251,11 +1248,11 @@ function matrixVersionStatusLabel(status:MatrixRevisionVersion["status"]){return
 function matrixVersionCountLabel(key:string){return ({employees:"Pracownicy",roles:"Role",locations:"Lokale",duties:"Obowiązki",shifts:"Zmiany",staffingRules:"Reguły obsady",scenarios:"Scenariusze",strategies:"Warianty"} as Record<string,string>)[key]??key;}
 function auditActionLabel(action:string){return ({UPSERT:"Zapisano zmianę",PUBLISH:"Opublikowano",ARCHIVE:"Zarchiwizowano",RESTORE:"Przywrócono",APPLY:"Zaimportowano",BULK_ADJUST_STAFFING:"Zmieniono zbiorczo",BULK_SAVE_STAFFING:"Dodano zbiorczo",SET_DAYS:"Zmieniono dostępność"} as Record<string,string>)[action]??"Zmieniono";}
 function auditEntrySubject(entry:MatrixAuditEntry){
-  if(entry.action==="PUBLISH")return "Publikacja Matrixa";
+  if(entry.action==="PUBLISH")return "Publikacja konfiguracji firmy";
   const data=asRecord(entry.newData?.data??entry.newData);
   const named=String(data.name??data.employeeNo??data.code??"").trim();
   const type=entry.entityType.replace(/^matrix_v2_/,"").replaceAll("_"," ");
-  return named||({staffing_rule:"Reguła wymaganej obsady",employee:"Dane pracownika",shift:"Zmiana",role:"Rola",location:"Lokal",duty:"Obowiązek",scenario:"Scenariusz",strategy:"Wariant biznesowy"} as Record<string,string>)[type]||"Zmiana w Matrixie";
+  return named||({staffing_rule:"Reguła wymaganej obsady",employee:"Dane pracownika",shift:"Zmiana",role:"Rola",location:"Lokal",duty:"Obowiązek",scenario:"Scenariusz",strategy:"Wariant biznesowy"} as Record<string,string>)[type]||"Zmiana konfiguracji firmy";
 }
 function AuditPayload({title,data}:{title:string;data?:Record<string,unknown>|null}){
   const source=asRecord(data?.data??data);
@@ -1270,6 +1267,14 @@ type MatrixImportIssue={sheet:string;row:number;code:string;message:string};
 type MatrixImportArchive={employeeId:string;employeeNo:string;employeeName:string;email?:string|null;reason:"NOT_IN_FILE"|"DUPLICATE_IDENTITY"};
 type MatrixImportPreview={valid:boolean;errors:MatrixImportIssue[];warnings:MatrixImportIssue[];employeesToArchive?:MatrixImportArchive[];summary:{employees:number;employeeDuties?:number;shifts:number;staffingRules:number;roleDuties:number;total:number;employeesToUpdate?:number;employeesToCreate?:number;employeesToArchive?:number}};
 type MatrixImportMode="UPDATE"|"REPLACE";
+type MatrixImportScope="FINANCE"|"CONFIGURATION";
+type FinanceImportPreview={
+  valid:boolean;
+  errors:MatrixImportIssue[];
+  warnings:MatrixImportIssue[];
+  normalizedRows?:Array<{sourceRow:number;employeeNo:string;employeeName:string;action:"CREATE"|"UPDATE"|"DEACTIVATE"|"UNCHANGED"}>;
+  summary:{rows:number;employees:number;create:number;update:number;deactivate:number;unchanged:number};
+};
 
 async function downloadMatrixTemplate(data:MatrixV2Workspace){
   const XLSX=await import("xlsx");
@@ -1282,19 +1287,18 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     XLSX.utils.book_append_sheet(workbook,sheet,name);
   };
   const instructions=XLSX.utils.aoa_to_sheet([
-    ["MATRIX ALPHA 16 — import zbiorczy","Zasada"],
+    ["GRAFIK PRO — import konfiguracji firmy","Zasada"],
     ["Nowy pracownik","Pozostaw Numer pracownika pusty. System nada kolejny wolny numer GP-### automatycznie."],
     ["Aktualizacja pracownika","Podaj istniejący numer lub e-mail. Nieistniejący numer zostanie odrzucony w podglądzie."],
     ["Kody","Kody ról, lokali, obowiązków i scenariuszy skopiuj z arkusza Słowniki."],
     ["Listy","Kody lokali oraz dni rozdzielaj przecinkiem; dni: 1=poniedziałek, 7=niedziela."],
     ["Kompetencje pracownika","Każdy aktywny obowiązek ma osobną kolumnę w arkuszu Pracownicy. Wpisz TAK tylko przy osobach, które mogą go wykonywać."],
     ["Lokale pracownika","Kolumny <KOD>_STANDARD i <KOD>_NADGODZINY są niezależne. Lokal bazowy musi być również dozwolony standardowo."],
-    ["Ograniczenia pracownika","Tylko rano, Tylko popołudnie i Bez weekendów trafiają do profilu używanego przez silnik. Nie zaznaczaj jednocześnie obu pór."],
-    ["Zawartość pliku","Arkusze zawierają aktualną wersję roboczą Matrixa. Zachowaj Numer pracownika lub e-mail, aby aktualizować właściwą osobę."],
+    ["Dostępność pracownika","Dokładne godziny dostępności i niedostępności ustawiaj w kalendarzu pracownika. Plik nie używa ogólnych pór dnia."],
+    ["Zawartość pliku","Arkusze zawierają aktualną wersję roboczą konfiguracji firmy. Zachowaj Numer pracownika lub e-mail, aby aktualizować właściwą osobę."],
     ["Tryb aktualizacji","Zmienia i dodaje wyłącznie osoby obecne w pliku; pozostałych nie dotyka."],
-    ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia i audit trail pozostają zachowane."],
-    ["Pory","MORNING, MIDDLE albo EVENING."],
-    ["Preferencje","INHERIT, PREFERRED, NEUTRAL, AVOIDED albo BLOCKED. Matrix pracodawcy ma pierwszeństwo."],
+    ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
+    ["Godziny zmian","Podaj dokładne godziny Od i Do. Techniczna klasyfikacja czasu jest obliczana automatycznie i nie jest polem użytkownika."],
     ["Bezpieczeństwo","Najpierw użyj Podglądu. Zapis wszystkich arkuszy odbywa się atomowo w jednej transakcji."],
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
@@ -1311,45 +1315,101 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
       &&item.valid_from<=exportRateDate&&(!item.valid_to||item.valid_to>=exportRateDate))
       .sort((a,b)=>b.valid_from.localeCompare(a.valid_from))[0];
     const duties=new Set((data.employeeDuties??[]).filter(item=>item.employee_id===employee.id&&item.active).map(item=>data.duties.find(duty=>duty.id===item.duty_id)?.code).filter(Boolean));
-    const preferences=employee.shiftPeriodPreferences??{};
     const locationGrantCells=activeLocations.flatMap(location=>{
       const grant=employeeLocationGrants.find(item=>item.location_id===location.id);
       return [grant?.standard_allowed?"TAK":"NIE",grant?.overtime_allowed?"TAK":"NIE"];
     });
-    return [employee.employeeNo,employee.active?"TAK":"NIE",employee.firstName,employee.lastName,employee.email??"",role?.code??"",locationCodes.join(", "),baseLocationCode,...locationGrantCells,employee.employmentStart??"",employee.employmentEnd??"",Number(employee.nominalMonthlyMinutes??0)/60,Number(employee.maximumMonthlyMinutes??0)/60,Number(employee.maximumWeeklyMinutes??0)/60,employee.maximumConsecutiveDays,employee.minimumRestMinutes===null||employee.minimumRestMinutes===undefined?"":employee.minimumRestMinutes/60,employee.onlyMorning?"TAK":"NIE",employee.onlyEvening?"TAK":"NIE",employee.noWeekends?"TAK":"NIE",activeRate?activeRate.base_rate_minor/100:"",employee.contractType??activeRate?.contract_type??"INNE",employee.workTimePolicy??"CONTRACT_DEFAULT",data.month?`${String(data.month).slice(0,7)}-01`:"",preferences.MORNING??"INHERIT",preferences.MIDDLE??"INHERIT",preferences.EVENING??"INHERIT",...activeDutyCodes.map(code=>duties.has(code)?"TAK":"")];
+    return [employee.employeeNo,employee.active?"TAK":"NIE",employee.firstName,employee.lastName,employee.email??"",role?.code??"",locationCodes.join(", "),baseLocationCode,...locationGrantCells,employee.employmentStart??"",employee.employmentEnd??"",Number(employee.nominalMonthlyMinutes??0)/60,Number(employee.maximumMonthlyMinutes??0)/60,Number(employee.maximumWeeklyMinutes??0)/60,employee.maximumConsecutiveDays,employee.minimumRestMinutes===null||employee.minimumRestMinutes===undefined?"":employee.minimumRestMinutes/60,employee.noWeekends?"TAK":"NIE",activeRate?activeRate.base_rate_minor/100:"",employee.contractType??activeRate?.contract_type??"INNE",employee.workTimePolicy??"CONTRACT_DEFAULT",...activeDutyCodes.map(code=>duties.has(code)?"TAK":"")];
   });
   const locationGrantHeaders=activeLocations.flatMap(location=>[`${location.code}_STANDARD`,`${location.code}_NADGODZINY`]);
-  add("Pracownicy",["Numer pracownika","Aktywny","Imię","Nazwisko","E-mail","Kod roli","Kody lokali","Lokal bazowy",...locationGrantHeaders,"Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Tylko rano","Tylko popołudnie","Bez weekendów","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy","Miesiąc preferencji","Preferencja rano","Preferencja środek","Preferencja wieczór",...activeDutyCodes],employeeRows);
-  add("Zmiany",["Kod","Nazwa","Kod lokalu","Pora","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",shift.shift_period,time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.sort_order,shift.active?"TAK":"NIE"]));
+  add("Pracownicy",["Numer pracownika","Aktywny","Imię","Nazwisko","E-mail","Kod roli","Kody lokali","Lokal bazowy",...locationGrantHeaders,"Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Bez weekendów","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy",...activeDutyCodes],employeeRows);
+  add("Zmiany",["Kod","Nazwa","Kod lokalu","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.sort_order,shift.active?"TAK":"NIE"]));
   add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Aktywna"],data.staffingRules.map(rule=>{
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
     return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
   }));
-  add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Obowiązek zmianowy","Pora","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.shift_obligation?"TAK":"NIE",link.shift_period??"",link.active?"TAK":"NIE"]));
+  add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.active?"TAK":"NIE"]));
   const dictionaries=[
     ["TYP","KOD","NAZWA"],
     ...data.roles.filter(item=>item.active).map(item=>["ROLA",item.code,item.name]),
     ...data.locations.filter(item=>item.active).map(item=>["LOKAL",item.code,item.name]),
     ...data.duties.filter(item=>item.active).map(item=>["OBOWIĄZEK",item.code,item.name]),
     ...data.scenarios.filter(item=>item.active).map(item=>["SCENARIUSZ",item.code,item.name]),
-    ["PORA","MORNING","Rano"],["PORA","MIDDLE","Środek"],["PORA","EVENING","Wieczór"],
     ["OPERACJA OBSADY","SET","Ustaw liczbę"],["OPERACJA OBSADY","ADD","Dodaj liczbę"],["OPERACJA OBSADY","REMOVE","Usuń regułę"],
   ];
   const dictionarySheet=XLSX.utils.aoa_to_sheet(dictionaries);
   dictionarySheet["!autofilter"]={ref:`A1:C${dictionaries.length}`};
   dictionarySheet["!cols"]=[{wch:24},{wch:30},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"Słowniki");
-  XLSX.writeFile(workbook,`matrix-alpha16-biezaca-baza-v${data.matrixVersion.version}.xlsx`);
+  XLSX.writeFile(workbook,`grafik-pro-konfiguracja-firmy-v${data.matrixVersion.version}.xlsx`);
+}
+
+async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
+  const XLSX=await import("xlsx");
+  const workbook=XLSX.utils.book_new();
+  const instructions=XLSX.utils.aoa_to_sheet([
+    ["GRAFIK PRO — zbiorcza aktualizacja stawek","Zasada"],
+    ["Co można zrobić","W jednym pliku dodasz nowe okresy stawek, poprawisz istniejące i wyłączysz błędne wpisy dla całego zespołu."],
+    ["Tożsamość pracownika","Nie zmieniaj kolumny Numer pracownika. Imię, nazwisko i daty zatrudnienia są tylko informacją pomocniczą."],
+    ["Nowa stawka","Dodaj nowy wiersz, pozostaw ID stawki puste i podaj Numer pracownika, okres, kwotę, walutę oraz rodzaj umowy."],
+    ["Zmiana istniejącej stawki","Zachowaj ID stawki i popraw wybrane dane w tym samym wierszu."],
+    ["Wyłączenie wpisu","Zachowaj ID stawki i wpisz NIE w kolumnie Aktywna. Wpis nie jest usuwany — pozostaje w historii."],
+    ["Okresy","Aktywne okresy jednej osoby nie mogą się nakładać. Puste Obowiązuje do oznacza stawkę bez daty końcowej."],
+    ["Kwota","Wpisz kwotę godzinową w złotych, np. 32,50. System zapisuje ją z dokładnością do grosza."],
+    ["Bezpieczeństwo","Najpierw zobaczysz podgląd zmian. Cały plik zapisuje się atomowo: jeden błąd zatrzyma wszystkie wiersze."],
+  ]);
+  instructions["!cols"]=[{wch:34},{wch:108}];
+  XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
+
+  const headers=["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Rodzaj umowy","Aktywna"];
+  const draftStart=String(data.matrixVersion.effective_from??data.month??new Date().toISOString()).slice(0,10);
+  const rows=data.employees.filter(employee=>employee.active).flatMap(employee=>{
+    const rates=(data.employeePayRates??[]).filter(rate=>rate.employee_id===employee.id&&rate.active)
+      .sort((left,right)=>left.valid_from.localeCompare(right.valid_from));
+    const employeeName=`${employee.firstName} ${employee.lastName}`.trim();
+    if(!rates.length)return [["",employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",employee.employmentStart&&employee.employmentStart>draftStart?employee.employmentStart:draftStart,"","",data.matrixVersion.settings?.currency??"PLN",employee.contractType??"INNE","TAK"]];
+    return rates.map(rate=>[rate.id,employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",rate.valid_from,rate.valid_to??"",rate.base_rate_minor/100,rate.currency,rate.contract_type??employee.contractType??"INNE",rate.active?"TAK":"NIE"]);
+  });
+  const sheet=XLSX.utils.aoa_to_sheet([headers,...rows]);
+  sheet["!autofilter"]={ref:`A1:K${Math.max(1,rows.length+1)}`};
+  sheet["!freeze"]={xSplit:0,ySplit:1};
+  sheet["!cols"]=[{wch:38},{wch:20},{wch:28},{wch:17},{wch:17},{wch:17},{wch:17},{wch:22},{wch:12},{wch:28},{wch:12}];
+  XLSX.utils.book_append_sheet(workbook,sheet,"Finanse pracowników");
+  const dictionaries=XLSX.utils.aoa_to_sheet([
+    ["POLE","WARTOŚĆ","OPIS"],
+    ["Rodzaj umowy","UMOWA_O_PRACE","Umowa o pracę"],
+    ["Rodzaj umowy","CZESC_ETATU","Umowa o pracę — część etatu"],
+    ["Rodzaj umowy","ZLECENIE","Umowa zlecenie"],
+    ["Rodzaj umowy","B2B","Współpraca B2B"],
+    ["Rodzaj umowy","INNE","Inna forma współpracy"],
+    ["Aktywna","TAK","Wpis obowiązuje"],
+    ["Aktywna","NIE","Wyłącz wpis bez usuwania historii"],
+  ]);
+  dictionaries["!cols"]=[{wch:24},{wch:24},{wch:48}];
+  XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
+  XLSX.writeFile(workbook,`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`);
 }
 
 function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:MatrixV2Workspace;busy:boolean;setBusy:(value:boolean)=>void;close:()=>void;reload:()=>Promise<void>;notify:(message:string)=>void;fail:(message:string)=>void}){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
-  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(null),[preview,setPreview]=useState<MatrixImportPreview|null>(null),[localError,setLocalError]=useState("");
+  const [scope,setScope]=useState<MatrixImportScope>("FINANCE");
+  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|null>(null),[localError,setLocalError]=useState("");
   const [mode,setMode]=useState<MatrixImportMode>("UPDATE");
+  function resetImport(nextScope=scope){
+    setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
+  }
   async function inspect(){
     if(!file||!supabase)return;
     setBusy(true);setLocalError("");setPreview(null);
     try{
+      if(scope==="FINANCE"){
+        const parsed=await readWorkforceFinanceWorkbook(file);
+        if(!parsed.payRates.length)throw new Error("Arkusz „Finanse pracowników” nie zawiera żadnej stawki do sprawdzenia.");
+        const result=await supabase.rpc("matrix_v2_finance_import_preview_uat_v1",{p_payload:parsed});
+        if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
+        setPayload(parsed);setPreview(result.data as FinanceImportPreview);
+        return;
+      }
       const parsed=await readMatrixWorkbook(file);
       if(!parsed.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
       const activeImported=parsed.employees.filter(employee=>employee.active!==false).length;
@@ -1364,37 +1424,63 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   }
   async function applyImport(){
     if(!payload||!preview?.valid||!supabase)return;
-    const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${preview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
-    if(!window.confirm(`Zapisać atomowo ${preview.summary.total} wierszy w wersji roboczej Matrixa?${impact}`))return;
+    if(scope==="FINANCE"){
+      const financePreview=preview as FinanceImportPreview;
+      const changeCount=financePreview.summary.create+financePreview.summary.update+financePreview.summary.deactivate;
+      if(!window.confirm(`Zapisać atomowo ${changeCount} zmian stawek dla ${financePreview.summary.employees} pracowników? W razie błędu żaden wiersz nie zostanie zmieniony.`))return;
+      setBusy(true);
+      const result=await supabase.rpc("matrix_v2_finance_import_apply_uat_v1",{p_payload:payload});
+      setBusy(false);
+      if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+      notify(`Finanse zespołu zaktualizowane: ${changeCount} zmian, ${financePreview.summary.unchanged} wpisów bez zmian.`);
+      close();await reload();return;
+    }
+    const configurationPreview=preview as MatrixImportPreview;
+    const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${configurationPreview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
+    if(!window.confirm(`Zapisać atomowo ${configurationPreview.summary.total} wierszy w wersji roboczej konfiguracji?${impact}`))return;
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_import_apply_uat_v5",{p_payload:payload,p_mode:mode});
     setBusy(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);
-    notify(`Import zakończony: zapisano ${Number((result.data as {appliedRows?:number})?.appliedRows??preview.summary.total)} wierszy${archived?`, zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
+    notify(`Import zakończony: zapisano ${Number((result.data as {appliedRows?:number})?.appliedRows??configurationPreview.summary.total)} wierszy${archived?`, zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
     close();await reload();
   }
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
-    <div className="drawer-head"><div><p className="eyebrow">MATRIX • IMPORT ZBIORCZY</p><h2>Import z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
+    <div className="drawer-head"><div><p className="eyebrow">KONFIGURACJA • IMPORT ZBIORCZY</p><h2>Aktualizacja z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
-      <p className="matrix-v2-form-hint">Import modyfikuje tylko wersję roboczą {data.matrixVersion.name}. Najpierw wykonujemy walidację; przy zapisie jeden błędny wiersz cofa całą operację.</p>
-      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez wymyślonych wartości</strong><small>Puste pola nie są uzupełniane na podstawie nazw ani kodów. Brak wymaganej pory zmiany, scenariusza, operacji lub rodzaju przypisania zatrzyma import i wskaże wiersz do poprawy.</small></span></div>
-      <button className="secondary-button full" type="button" onClick={()=>void downloadMatrixTemplate(data)}><Download/> Pobierz bieżącą bazę Matrixa do Excel</button>
-      <fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{setMode("UPDATE");setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{setMode("REPLACE");setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>
+      <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>Stawki całego zespołu</strong><small>Dodaj lub zmień okresy i kwoty bez otwierania profili po kolei.</small></button><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Pełna konfiguracja firmy</strong><small>Pracownicy, kompetencje, zmiany i wymagana obsada.</small></button></fieldset>
+      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":`Import modyfikuje tylko wersję roboczą ${data.matrixVersion.name}. Najpierw wykonujemy walidację; przy zapisie jeden błędny wiersz cofa całą operację.`}</p>
+      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":"Puste pola nie są uzupełniane na podstawie nazw ani kodów. Brak dokładnych godzin zmiany, scenariusza, operacji lub rodzaju przypisania zatrzyma import i wskaże wiersz do poprawy."}</small></span></div>
+      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data))}><Download/> {scope==="FINANCE"?"Pobierz plik stawek całego zespołu":"Pobierz bieżącą konfigurację firmy"}</button>
+      {scope==="CONFIGURATION"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{setMode("UPDATE");setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{setMode("REPLACE");setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>}
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
       {localError&&<div className="solver-v2-notice warning"><AlertTriangle/>{localError}</div>}
-      {preview&&<section className="matrix-import-preview">
+      {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
+      {preview&&scope==="CONFIGURATION"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
-        <p>{preview.summary.total} wierszy: {preview.summary.employees} pracowników, {preview.summary.employeeDuties??0} kompetencji pracowników, {preview.summary.shifts} zmian, {preview.summary.staffingRules} reguł obsady i {preview.summary.roleDuties} obowiązków ról.</p>
+        <p>{(preview as MatrixImportPreview).summary.total} wierszy: {(preview as MatrixImportPreview).summary.employees} pracowników, {(preview as MatrixImportPreview).summary.employeeDuties??0} kompetencji pracowników, {(preview as MatrixImportPreview).summary.shifts} zmian, {(preview as MatrixImportPreview).summary.staffingRules} reguł obsady i {(preview as MatrixImportPreview).summary.roleDuties} obowiązków ról.</p>
         <p className="matrix-v2-form-hint">Źródło: {payload?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"szablon GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
-        <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{preview.summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{preview.summary.employeesToCreate??0}</b></span><span className={mode==="REPLACE"&&Number(preview.summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{preview.summary.employeesToArchive??0}</b></span></div>
-        {mode==="REPLACE"&&Boolean(preview.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({preview.employeesToArchive?.length})</summary><ul>{preview.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
-        {[...preview.errors,...preview.warnings].map((issue,index)=><div className={`solver-v2-notice ${preview.errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
-        {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> Zapisz cały import w Matrixie</button>}
+        <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as MatrixImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as MatrixImportPreview).summary.employeesToCreate??0}</b></span><span className={mode==="REPLACE"&&Number((preview as MatrixImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as MatrixImportPreview).summary.employeesToArchive??0}</b></span></div>
+        {mode==="REPLACE"&&Boolean((preview as MatrixImportPreview).employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as MatrixImportPreview).employeesToArchive?.length})</summary><ul>{(preview as MatrixImportPreview).employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
+        {[...(preview as MatrixImportPreview).errors,...(preview as MatrixImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as MatrixImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
+        {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> Zapisz całą konfigurację</button>}
       </section>}
     </div>
   </aside></>;
+}
+
+function FinanceImportPreviewCard({preview,busy,apply}:{preview:FinanceImportPreview;busy:boolean;apply:()=>void}){
+  const changes=preview.summary.create+preview.summary.update+preview.summary.deactivate;
+  return <section className="matrix-import-preview">
+    <h3>{preview.valid?"Stawki gotowe do zapisu":"Plik wymaga poprawy"}</h3>
+    <p>{preview.summary.rows} wierszy dla {preview.summary.employees} pracowników. System zapisze tylko rzeczywiste zmiany.</p>
+    <div className="matrix-import-impact"><span><small>Nowe okresy</small><b>{preview.summary.create}</b></span><span><small>Zmieniane</small><b>{preview.summary.update}</b></span><span className={preview.summary.deactivate?"warning":""}><small>Wyłączane</small><b>{preview.summary.deactivate}</b></span><span><small>Bez zmian</small><b>{preview.summary.unchanged}</b></span></div>
+    {Boolean(preview.normalizedRows?.length)&&<details className="matrix-import-archive-list"><summary>Sprawdź listę zmian ({changes})</summary><ul>{preview.normalizedRows?.filter(row=>row.action!=="UNCHANGED").map(row=><li key={`${row.sourceRow}:${row.employeeNo}`}><span><b>{row.employeeName}</b><small>{row.employeeNo} • wiersz {row.sourceRow}</small></span><em>{row.action==="CREATE"?"nowa stawka":row.action==="UPDATE"?"zmiana":"wyłączenie"}</em></li>)}</ul></details>}
+    {[...preview.errors,...preview.warnings].map((issue,index)=><div className={`solver-v2-notice ${preview.errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
+    {preview.valid&&<button className="primary-button full" disabled={busy||changes===0} onClick={apply}><Save/> {changes?`Zapisz ${changes} zmian stawek`:"Brak zmian do zapisania"}</button>}
+  </section>;
 }
 
 function EmployeeProfileDrawer({employee,data,month,busy,close,save}:{employee:MatrixV2Employee|null;data:MatrixV2Workspace;month:string;busy:boolean;close:()=>void;save:(employeeId:string|null,payload:Record<string,unknown>)=>Promise<boolean>}) {
@@ -1443,9 +1529,9 @@ function EmployeeProfileDrawer({employee,data,month,busy,close,save}:{employee:M
     }
   }
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
-    <div className="drawer-head"><div><p className="eyebrow">PRACOWNIK • WERSJA ROBOCZA MATRIXA</p><h2>{employee?`Edytuj: ${employee.firstName} ${employee.lastName}`:"Dodaj pracownika"}</h2></div><button className="icon-button" onClick={close}><X/></button></div>
+    <div className="drawer-head"><div><p className="eyebrow">PRACOWNIK • WERSJA ROBOCZA KONFIGURACJI</p><h2>{employee?`Edytuj: ${employee.firstName} ${employee.lastName}`:"Dodaj pracownika"}</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <form className="drawer-content" onSubmit={event=>{event.preventDefault();void submit(event.currentTarget);}}>
-      <p className="matrix-v2-form-hint">Zmiana nie modyfikuje opublikowanych grafików. Nowe dane zaczną obowiązywać dopiero po publikacji tej wersji Matrixa.</p>
+      <p className="matrix-v2-form-hint">Zmiana nie modyfikuje opublikowanych grafików. Nowe dane zaczną obowiązywać dopiero po publikacji tej wersji konfiguracji.</p>
       <label>Numer pracownika<input readOnly value={employee?.employeeNo??"Zostanie nadany automatycznie"}/><small>System wybiera pierwszy wolny numer GP-### podczas zapisu.</small></label>
       <div className="form-row"><label>Imię<input name="firstName" required maxLength={120} defaultValue={employee?.firstName??""}/></label><label>Nazwisko<input name="lastName" required maxLength={160} defaultValue={employee?.lastName??""}/></label></div>
       <label>E-mail<input name="email" type="email" defaultValue={employee?.email??""}/></label>
@@ -1460,7 +1546,7 @@ function EmployeeProfileDrawer({employee,data,month,busy,close,save}:{employee:M
       {!employmentContract&&<p className="matrix-v2-form-hint">Poniższe wartości służą do raportowania i kosztów. Nie są automatycznie traktowane jako kodeksowe blokady zleceniobiorcy lub B2B.</p>}
       <div className="form-row"><label>{employmentContract?"Nominał miesięczny":"Planowana liczba godzin"} (godz.)<input name="nominalHours" type="number" min="0" max="744" step="0.25" required defaultValue={minutesAsHours(employee?.nominalMonthlyMinutes,employmentContract?10080:0)}/></label><label>{employmentContract?"Limit miesięczny":"Pułap uzgodniony"} (godz.)<input name="maximumMonthlyHours" type="number" min="0" max="744" step="0.25" required defaultValue={minutesAsHours(employee?.maximumMonthlyMinutes,employmentContract?12600:0)}/></label></div>
       {enforceIndividualLimits?<><div className="form-row"><label>Limit tygodniowy (godz.)<input name="maximumWeeklyHours" type="number" min="0" max="168" step="0.25" required defaultValue={minutesAsHours(employee?.maximumWeeklyMinutes,employmentContract?2400:0)}/></label><label>Maks. kolejnych dni<input name="maximumConsecutiveDays" type="number" min="1" max="31" required defaultValue={employee?.maximumConsecutiveDays??(employmentContract?6:31)}/></label></div><label>Minimalny odpoczynek (godz.)<input name="minimumRestHours" type="number" min="0" max="48" step="0.25" defaultValue={employee?.minimumRestMinutes===null||employee?.minimumRestMinutes===undefined?"":minutesAsHours(employee.minimumRestMinutes,employmentContract?660:0)}/><small>{employmentContract?"Puste pole oznacza użycie domyślnej reguły dla umów pracowniczych.":"Ta wartość stanie się twardą regułą tylko dlatego, że zaznaczono indywidualne limity."}</small></label></>:<><input type="hidden" name="maximumWeeklyHours" value="0"/><input type="hidden" name="maximumConsecutiveDays" value="31"/><input type="hidden" name="minimumRestHours" value="0"/></>}
-      <fieldset><legend>Nadrzędne preferencje pracodawcy • {month}</legend><p className="matrix-v2-form-hint">Wartość inna niż „Dziedzicz” ma pierwszeństwo przed preferencją ustawioną przez pracownika w portalu.</p>{([['MORNING','Rano'],['MIDDLE','Środek'],['EVENING','Wieczór']] as const).map(([period,label])=><label key={period}>{label}<select name={`preference${period[0]}${period.slice(1).toLocaleLowerCase()}`} defaultValue={employee?.shiftPeriodPreferences?.[period]??"INHERIT"}><option value="INHERIT">Dziedzicz od pracownika</option><option value="PREFERRED">Preferowana</option><option value="NEUTRAL">Neutralna</option><option value="AVOIDED">Unikać</option><option value="BLOCKED">Zablokowana</option></select></label>)}</fieldset>
+      <div className="solver-v2-notice"><CalendarDays/><span><strong>Preferencje dotyczą konkretnych dat i godzin</strong><small>Pracownik wskazuje je bezpośrednio w kalendarzu dostępności.</small></span></div>
       <fieldset><legend>Ograniczenia pracodawcy</legend><label className="check-label"><input name="noWeekends" type="checkbox" defaultChecked={employee?.noWeekends??false}/> Zakaz pracy w weekendy</label></fieldset>
       <button className="primary-button full" disabled={busy||!roles.length||!locations.length}><Save/> {busy?"Zapisuję…":employee?"Zapisz dane pracownika":"Dodaj pracownika"}</button>
     </form>
@@ -1487,7 +1573,7 @@ function MatrixV2Drawer({target, data, month, busy, close, save}: {target: EditT
   }
 
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
-    <div className="drawer-head"><div><p className="eyebrow">WERSJA ROBOCZA MATRIXA</p><h2>{title}</h2></div><button className="icon-button" onClick={close}><X/></button></div>
+    <div className="drawer-head"><div><p className="eyebrow">WERSJA ROBOCZA KONFIGURACJI FIRMY</p><h2>{title}</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <form className="drawer-content" onSubmit={event => {event.preventDefault(); void submit(event.currentTarget);}}>
       <DrawerFields kind={target.kind} item={item} data={data} month={month} operation={operation} setOperation={setOperation} payMethod={payMethod} setPayMethod={setPayMethod} scenarioStrategyId={scenarioStrategyId} setScenarioStrategyId={setScenarioStrategyId}/>
       {localError && <div className="solver-v2-notice warning"><AlertTriangle/>{localError}</div>}
@@ -1517,7 +1603,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
   if (kind === "SHIFT") return <>
     <label>Lokal<select name="locationId" required defaultValue={String(item?.location_id ?? "")}>{data.locations.filter(x=>x.active).map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label>
     <NameAndCode item={item}/>
-    <div className="matrix-v2-form-hint"><strong>To jest niezależna zmiana.</strong> Klasyfikacja rano/środek/wieczór zostanie wyliczona automatycznie z godziny rozpoczęcia wyłącznie na potrzeby preferencji.</div>
+    <div className="matrix-v2-form-hint"><strong>To jest niezależna zmiana.</strong> System wykorzysta dokładną godzinę rozpoczęcia bez proszenia użytkownika o dodatkową kategorię.</div>
     <div className="form-row"><label>Od (24 h)<input name="startsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="10:00" defaultValue={time(String(item?.starts_at ?? "10:00"))}/><small>Wpisz godzinę i minuty, np. 10:30.</small></label><label>Do (24 h)<input name="endsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="18:00" defaultValue={time(String(item?.ends_at ?? "18:00"))}/><small>Wpisz godzinę i minuty, np. 18:45.</small></label></div>
     <label className="check-label"><input name="endsNextDay" type="checkbox" defaultChecked={Boolean(item?.ends_next_day)}/> Kończy się następnego dnia</label>
     <DaySelector selected={(item?.day_mask as number[] | undefined) ?? WEEKDAYS.map(day=>day.value)}/>
@@ -1629,7 +1715,7 @@ function ScenarioSettingsOverrideFields({item}:{item?:Record<string,unknown>}) {
   const overrides=asRecord(item?.settings_overrides);
   return <fieldset className="matrix-v2-override-group">
     <legend>Nadpisania reguł dla tego scenariusza</legend>
-    <p className="matrix-v2-form-hint">Puste pole lub „Dziedzicz” zachowuje wartość Matrixa bazowego albo scenariusza nadrzędnego.</p>
+    <p className="matrix-v2-form-hint">Puste pole lub „Dziedzicz” zachowuje wartość konfiguracji bazowej albo profilu nadrzędnego.</p>
     <label>Minimalny odpoczynek (min)<input name="scenarioMinimumRestMinutes" type="number" min="0" step="1" defaultValue={optionalInput(overrides.minimumRestMinutes)}/></label>
     <div className="form-row">
       <label>Brak dostępności<select name="scenarioMissingAvailability" defaultValue={booleanOverrideInput(overrides.missingAvailabilityMeansAvailable)}><option value="">Dziedzicz</option><option value="true">Traktuj jako dostępność</option><option value="false">Traktuj jako niedostępność</option></select></label>
@@ -1649,7 +1735,7 @@ function ScenarioStrategyOverrideFields({item,data,strategyId}:{item?:Record<str
   return <details className="matrix-v2-advanced-settings"><summary>Zaawansowane parametry obliczeń — zwykle nie zmieniaj</summary>
     <fieldset className="matrix-v2-override-group">
       <legend>Parametry obliczeń tego wariantu</legend>
-      <p className="matrix-v2-form-hint">Puste pola dziedziczą ustawienia strategii. Zakres jest walidowany przed publikacją Matrixa.</p>
+      <p className="matrix-v2-form-hint">Puste pola dziedziczą ustawienia strategii. Zakres jest sprawdzany przed publikacją konfiguracji.</p>
       <div className="form-row">
         <label>Limit czasu (sek.)<input name="strategyMaxTimeSeconds" type="number" min="1" max="86400" step="1" defaultValue={optionalInput(solverOverrides.maxTimeSeconds)}/></label>
         <label>Ziarno losowe<input name="strategyRandomSeed" type="number" min="0" max="2147483647" step="1" defaultValue={optionalInput(solverOverrides.randomSeed)}/></label>
@@ -1712,7 +1798,7 @@ function ShiftTemplateMultiPicker({data,initialLocationId,initialSelectedIds=[]}
       const allSelected=shifts.every(shift=>selected.includes(shift.id));
       return <details key={location.id} open={location.id===initialLocationId||locations.length<=2}>
         <summary><span><MapPin/><b>{location.name}</b><small>{shifts.filter(shift=>selected.includes(shift.id)).length} z {shifts.length} wybranych</small></span></summary>
-        <div className="matrix-v2-shift-picker-list"><label className="select-location"><input type="checkbox" checked={allSelected} onChange={event=>toggleLocation(shifts.map(shift=>shift.id),event.target.checked)}/><span><b>Wszystkie zmiany w tym lokalu</b><small>Zaznacz lub odznacz cały lokal jednym kliknięciem.</small></span></label>{shifts.map(shift=><label key={shift.id}><input type="checkbox" name="shiftTemplateIds" value={shift.id} checked={selected.includes(shift.id)} onChange={event=>toggle(shift.id,event.target.checked)}/><span><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""} • {shiftPeriodLabel(shift.shift_period)}</small></span></label>)}</div>
+        <div className="matrix-v2-shift-picker-list"><label className="select-location"><input type="checkbox" checked={allSelected} onChange={event=>toggleLocation(shifts.map(shift=>shift.id),event.target.checked)}/><span><b>Wszystkie zmiany w tym lokalu</b><small>Zaznacz lub odznacz cały lokal jednym kliknięciem.</small></span></label>{shifts.map(shift=><label key={shift.id}><input type="checkbox" name="shiftTemplateIds" value={shift.id} checked={selected.includes(shift.id)} onChange={event=>toggle(shift.id,event.target.checked)}/><span><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span></label>)}</div>
       </details>;
     })}</div>
   </fieldset>;
@@ -1740,7 +1826,7 @@ function OperationSelector({operation,setOperation,currency,item,staffing=false,
 }
 function PayValueFields({method,item,currency}:{method:string;item?:Record<string,unknown>;currency:string}) { if(method==="FIXED_PER_SHIFT")return <label>Kwota za zmianę ({currency})<input name="amount" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.amount_minor)}/></label>;if(method==="PER_HOUR")return <label>Kwota za godzinę ({currency})<input name="hourly" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.rate_minor_per_hour)}/></label>;if(method==="PERCENT_BASE")return <label>Procent stawki podstawowej<input name="percent" type="number" min="0" step="0.01" required defaultValue={basisPercentToInput(item?.percent_basis_points)}/></label>;if(method==="MULTIPLIER")return <label>Mnożnik stawki<input name="multiplier" type="number" min="0" step="0.01" required defaultValue={basisMultiplierToInput(item?.multiplier_basis_points)}/></label>;return <div className="form-row"><label>Próg (minuty)<input name="thresholdMinutes" type="number" min="0" required defaultValue={Number(item?.threshold_minutes ?? 0)}/></label><label>Dodatek za godzinę po progu ({currency})<input name="hourly" type="number" min="0" step="0.01" required defaultValue={minorToInput(item?.rate_minor_per_hour)}/></label></div>; }
 
-function drawerTitle(kind:MatrixV2SaveKind,editing:boolean){const labels:Record<MatrixV2SaveKind,string>={MATRIX_SETTINGS:"ustawienia Matrixa",ROLE:"rolę",LOCATION:"lokal",DUTY:"obowiązek",SHIFT:"szablon zmiany",ROLE_DUTY:"powiązanie roli i obowiązku",EMPLOYEE_ROLE:"rolę pracownika",EMPLOYEE_LOCATION:"lokal pracownika",EMPLOYEE_DUTY:"kompetencję pracownika",SCENARIO:"scenariusz",STAFFING_RULE:"regułę obsady",STRATEGY:"strategię wariantu",OBJECTIVE:"kryterium strategii",SCENARIO_STRATEGY:"wariant scenariusza",PAY_RULE:"dodatek płacowy",SCENARIO_PAY_RULE:"modyfikację dodatku",SCENARIO_BUDGET:"budżet scenariusza"};return `${editing?"Edytuj":"Dodaj"} ${labels[kind]}`;}
+function drawerTitle(kind:MatrixV2SaveKind,editing:boolean){const labels:Record<MatrixV2SaveKind,string>={MATRIX_SETTINGS:"ustawienia firmy",ROLE:"rolę",LOCATION:"lokal",DUTY:"obowiązek",SHIFT:"szablon zmiany",ROLE_DUTY:"powiązanie roli i obowiązku",EMPLOYEE_ROLE:"rolę pracownika",EMPLOYEE_LOCATION:"lokal pracownika",EMPLOYEE_DUTY:"kompetencję pracownika",SCENARIO:"profil zapotrzebowania",STAFFING_RULE:"regułę obsady",STRATEGY:"strategię wariantu",OBJECTIVE:"kryterium strategii",SCENARIO_STRATEGY:"wariant profilu",PAY_RULE:"dodatek płacowy",SCENARIO_PAY_RULE:"modyfikację dodatku",SCENARIO_BUDGET:"budżet profilu"};return `${editing?"Edytuj":"Dodaj"} ${labels[kind]}`;}
 function formText(form:HTMLFormElement,name:string){return String(new FormData(form).get(name)??"").trim();}
 function checked(form:HTMLFormElement,name:string){return new FormData(form).has(name);}
 function optionalNumber(value:string,multiplier=1){if(value==="")return null;const number=Number(value);if(!Number.isFinite(number))throw new Error("Wpisz prawidłową wartość liczbową.");return Math.round(number*multiplier);}
