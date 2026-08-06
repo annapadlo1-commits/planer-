@@ -1486,10 +1486,14 @@ class SolverTests(unittest.TestCase):
             len(slots) - selected,
         )
 
-    def test_relaxed_coverage_stage_has_a_bounded_uat_budget(self) -> None:
+    def test_relaxed_coverage_stage_uses_matrix_derived_uat_budget(self) -> None:
         snapshot = replace(
             self.snapshot,
             settings=replace(self.snapshot.settings, require_optimal=False),
+            strategies=tuple(
+                replace(strategy, time_limit_seconds=120)
+                for strategy in self.snapshot.strategies
+            ),
         )
         engine = CpSatScheduleEngine(
             max_total_seconds=900,
@@ -1506,7 +1510,7 @@ class SolverTests(unittest.TestCase):
         with patch.object(engine, "_solve_model", side_effect=observe_limit):
             engine.solve(snapshot)
 
-        self.assertEqual(observed_limit, [30.0])
+        self.assertEqual(observed_limit, [120.0])
 
     def test_relaxed_identical_strategies_receive_distinct_tied_rosters(
         self,
