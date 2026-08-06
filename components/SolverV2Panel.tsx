@@ -1,17 +1,20 @@
 "use client";
 
-import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Search, Sparkles, Square, Upload, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, RefreshCw, Search, Sparkles, Square, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { presentSolverVariantMetrics } from "@/lib/solver-variant-presentation";
 import {
   createIdempotencyKey,
+  createLeaderVariant,
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
   getPublicationReadiness,
   getPublicationAuthorityStatus,
+  getLeaderVariantForRun,
+  getLeaderVariantWorkspace,
   getSelectedVariantWorkspace,
   getVariantWorkspace,
   getSolverStatus,
@@ -36,6 +39,7 @@ import {
   type RunStorageContext,
   type SolverEngine,
   type SolverRun,
+  type SolverLeaderVariant,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -170,6 +174,7 @@ export function SolverV2Panel({
   const [message, setMessage] = useState("");
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
@@ -181,7 +186,18 @@ export function SolverV2Panel({
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
-  const selectedVariant = variants.find(variant => variant.selected) ?? null;
+  const generatedSelectedVariant = variants.find(variant => variant.selected)
+    ?? (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
+    ?? null;
+  const selectedVariant = generatedSelectedVariant && leaderVariant ? {
+    ...generatedSelectedVariant,
+    id:leaderVariant.id,
+    name:leaderVariant.name,
+    status:leaderVariant.status,
+    assignmentCount:leaderVariant.assignmentCount||selectedWorkspace?.variants[0]?.assignmentCount||generatedSelectedVariant.assignmentCount,
+    unfilledCount:leaderVariant.unfilledCount||selectedWorkspace?.variants[0]?.unfilledCount||0,
+    selected:true,
+  } : generatedSelectedVariant;
   const selectedIsPublished = Boolean(
     selectedVariant
     && publishedWorkspace?.context.status === "PUBLISHED"
@@ -234,8 +250,16 @@ export function SolverV2Panel({
       }
     }
     setVariants(loadedVariants);
-    if (engine !== "SHADOW" && loadedVariants.some(variant => variant.selected)) {
-      await loadSelectedWorkspace(runId);
+    if(engine!=="SHADOW"){
+      const leader=await getLeaderVariantForRun(supabase,runId);
+      setLeaderVariant(leader);
+      if(leader){
+        const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+        setSelectedWorkspace(workspace);
+        setPublicationName(workspace.context.name||leader.name);
+      }else if(loadedVariants.some(variant => variant.selected)){
+        await loadSelectedWorkspace(runId);
+      }
     }
   }, [supabase, engine, loadSelectedWorkspace, month, scopeRoleId, scopeType]);
 
@@ -301,6 +325,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setLeaderVariant(null);
     setInspectedWorkspace(null);
     setPublishedWorkspace(null);
     setMessage("");
@@ -424,6 +449,7 @@ export function SolverV2Panel({
     setMessage("");
     try {
       await selectSolverVariant(supabase, run.id, variant.id);
+      setLeaderVariant(null);
       setVariants(current => current.map(item => ({ ...item, selected: item.id === variant.id })));
       await loadSelectedWorkspace(run.id);
       setMessage(scopeType === "ROLE"
@@ -435,6 +461,38 @@ export function SolverV2Panel({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createLeaderCopy(){
+    if(!supabase||!run||!generatedSelectedVariant)return;
+    setBusy(true);setMessage("");
+    try{
+      const leader=await createLeaderVariant(supabase,{
+        runId:run.id,sourceVariantId:generatedSelectedVariant.id,
+        name:`Wersja lidera • ${scopeLabel} • ${month.slice(0,7)}`,
+      });
+      const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+      const summary=workspace.variants[0];
+      setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??generatedSelectedVariant.assignmentCount,
+        unfilledCount:summary?.unfilledCount??generatedSelectedVariant.unfilledCount});
+      setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||leader.name);
+      setMessage("Utworzono niezależną wersję lidera. Trzy warianty matematyczne pozostały bez zmian; możesz teraz poprawić obsadę i opublikować własną wersję.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function reloadLeaderWorkspace(){
+    if(!supabase||!leaderVariant)return;
+    setBusy(true);
+    try{
+      const workspace=await getLeaderVariantWorkspace(supabase,leaderVariant.id);
+      const summary=workspace.variants[0];
+      setSelectedWorkspace(workspace);
+      setLeaderVariant(current=>current?{...current,revision:workspace.context.revision??current.revision,
+        assignmentCount:summary?.assignmentCount??current.assignmentCount,
+        unfilledCount:summary?.unfilledCount??current.unfilledCount,lastEditedAt:workspace.context.lastEditedAt}:current);
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
   }
 
   async function inspectVariant(variant: SolverVariant) {
@@ -541,6 +599,7 @@ export function SolverV2Panel({
       setVariants(current => current.map(variant => variant.id === selectedVariant.id
         ? { ...variant, status: "PUBLISHED" }
         : variant));
+      setLeaderVariant(current=>current&&current.id===selectedVariant.id?{...current,status:"PUBLISHED"}:current);
       try {
         const workspace = await getPublishedSchedule(supabase, publication.scheduleId);
         setPublishedWorkspace(workspace);
@@ -601,6 +660,7 @@ export function SolverV2Panel({
       setVariants(current => current.map(variant => variant.id === selectedVariant.id
         ? { ...variant, status: "PUBLISHED" }
         : variant));
+      setLeaderVariant(current=>current&&current.id===selectedVariant.id?{...current,status:"PUBLISHED"}:current);
       await onVariantSelected?.({ ...selectedVariant, status: "PUBLISHED" });
       setMessage(publication.reused
         ? "Ten grafik zespołu był już opublikowany. Nie wysłano podwójnych powiadomień."
@@ -619,6 +679,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setLeaderVariant(null);
     setInspectedWorkspace(null);
     setPublicationReadiness(null);
     setMessage("");
@@ -646,11 +707,12 @@ export function SolverV2Panel({
       <label>Profil zapotrzebowania
         <select value={scenarioCode} onChange={event => onScenarioChange(event.target.value)}>
           {scenarios.map(scenario => <option value={scenario.code} key={scenario.id ?? scenario.code}>
-            {scenario.name}{scenario.strategyCount ? ` • ${variantCountLabel(scenario.strategyCount)}` : ""}
+            {scenario.name}{scenario.profileMode==="PERIOD"&&scenario.validFrom?` • od ${scenario.validFrom}${scenario.validTo?` do ${scenario.validTo}`:""}`:""}{scenario.strategyCount ? ` • ${variantCountLabel(scenario.strategyCount)}` : ""}
           </option>)}
         </select>
       </label>
       {selectedScenario?.description && <p>{selectedScenario.description}</p>}
+      <div className="solver-v2-notice"><CalendarDays/><span><strong>Wydarzenia i zwiększona obsada dotyczą konkretnych dni</strong><small>Profil obejmuje bazę miesiąca albo jawny okres sezonowy. Koncert, wysoki ruch w weekend lub wyjątkową zmianę dodaj w Kalendarzu operacyjnym — system doliczy obsadę tylko we wskazanych datach, lokalach, rolach i zmianach.</small></span></div>
       {!selectedScenario?.id && <div className="solver-v2-notice warning"><AlertTriangle/>Konfiguracja firmy nie jest jeszcze gotowa do generowania.</div>}
       {selectedScenario?.id && selectedScenario.strategyCount===0 && <div className="solver-v2-notice warning"><AlertTriangle/>Ten profil zapotrzebowania nie ma jeszcze wariantu biznesowego. Dodaj co najmniej jeden w konfiguracji firmy.</div>}
       <button className="primary-button full" disabled={busy || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount===0 || !name.trim()} onClick={() => void start()}>
@@ -693,11 +755,11 @@ export function SolverV2Panel({
       {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. W ustawieniach firmy możesz włączyć „Czekaj na matematycznie najlepszy wynik”; wtedy niepotwierdzony wariant nie zostanie uznany za gotowy.</small></span></div>}
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
-        {variants.map(variant => <article className={`${variant.recommended ? "recommended" : ""} ${variant.selected ? "selected" : ""}`} key={variant.id}>
+        {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
           <div className="solver-v2-card-head">
             <span><small>STRATEGIA</small><h3>{variant.strategy.name}</h3></span>
             {variant.recommended && <em>{variant.solverStatus==="OPTIMAL"?"REKOMENDOWANY":"NAJLEPSZY ZNALEZIONY"}</em>}
-            {variant.selected && <em className="chosen"><Check/> WYBRANY</em>}
+            {chosenAsSource && <em className="chosen"><Check/> {leaderVariant?"BAZA WERSJI LIDERA":"WYBRANY"}</em>}
           </div>
           {variant.strategy.description && <p>{variant.strategy.description}</p>}
           <div className="solver-v2-metrics">
@@ -719,14 +781,22 @@ export function SolverV2Panel({
           <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}>{inspectingVariantId===variant.id?<RefreshCw className="spin"/>:<Search/>} {inspectingVariantId===variant.id?"Otwieram szczegóły…":"Pokaż grafik i przyczyny braków"}</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
-            : <button className="primary-button full" disabled={busy || run?.status!=="READY" || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
-              {variant.selected ? <><Check/> Wybrano ten wariant</> : "Wybierz ten wariant"}
+            : <button className="primary-button full" disabled={busy || run?.status!=="READY" || chosenAsSource || variant.hardViolations > 0} onClick={() => void choose(variant)}>
+              {chosenAsSource ? <><Check/> {leaderVariant?"Użyty jako baza":"Wybrano ten wariant"}</> : "Wybierz jako bazę"}
             </button>}
-        </article>)}
+        </article>})}
       </div>
     </div>}
 
-    {previewWorkspace && !inspectedWorkspace && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"}/></div>}
+    {engine==="ORTOOLS_V2"&&generatedSelectedVariant&&!leaderVariant&&<section className="solver-leader-flow">
+      <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
+    </section>}
+    {leaderVariant&&selectedWorkspace&&<section className="solver-leader-workspace">
+      <header><span><Edit3/><div><small>KROK 3 • WERSJA LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
+      <SolverV2Workspace workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
+    </section>}
+
+    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"}/></div>}
 
     {inspectedWorkspace && <>
       <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>
