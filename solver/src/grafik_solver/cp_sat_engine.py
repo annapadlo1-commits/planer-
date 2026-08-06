@@ -98,7 +98,6 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # A relaxed UAT run accepts a feasible coverage incumbent, so it must not spend
 # the entire shared worker budget trying to prove the monthly minimum.  The
 # remaining time is more valuable for materializing and validating strategies.
-MAX_RELAXED_COVERAGE_SECONDS = 30.0
 MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 15.0
 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
 MAX_RELAXED_DIVERSITY_SECONDS = 6.0
@@ -467,9 +466,27 @@ class CpSatScheduleEngine:
         common.model.minimize(common.metrics["UNFILLED"])
         common_time_limit = self._remaining_seconds(global_deadline, "GLOBAL:UNFILLED")
         if not snapshot.settings.require_optimal:
+            # Coverage is the first and most important business objective.  Its
+            # relaxed budget must scale with the Matrix configuration instead
+            # of being silently truncated by a hard-coded worker constant.  A
+            # fair share of the remaining global budget still protects the
+            # later strategy variants from starvation.
+            remaining_planning_units = max(1, len(snapshot.strategies) + 1)
+            fair_coverage_share = common_time_limit / remaining_planning_units
+            configured_strategy_limits = [
+                float(strategy.time_limit_seconds)
+                for strategy in snapshot.strategies
+                if strategy.time_limit_seconds is not None
+            ]
+            configured_coverage_ceiling = (
+                max(configured_strategy_limits)
+                if configured_strategy_limits
+                else fair_coverage_share
+            )
             common_time_limit = min(
                 common_time_limit,
-                MAX_RELAXED_COVERAGE_SECONDS,
+                fair_coverage_share,
+                configured_coverage_ceiling,
             )
         common_solver, common_status = self._solve_model(
             common.model,
@@ -593,9 +610,18 @@ class CpSatScheduleEngine:
                 if strategy.time_limit_seconds is not None
                 else fair_strategy_share
             )
+            # In normal planning mode every variant receives a fair slice so an
+            # early strategy cannot starve the comparison.  Audit mode has a
+            # different contract: every completed strategy must be proven
+            # optimal, therefore it may consume the remaining global budget and
+            # the run fails explicitly if the proof cannot be completed.
             strategy_budget = min(
                 float(configured_strategy_budget),
-                fair_strategy_share,
+                (
+                    remaining_strategy_budget
+                    if snapshot.settings.require_optimal
+                    else fair_strategy_share
+                ),
             )
             strategy_deadline = min(
                 global_deadline,
