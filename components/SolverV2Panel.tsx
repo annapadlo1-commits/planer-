@@ -726,7 +726,7 @@ export function SolverV2Panel({
       <div className="solver-v2-results-head">
         <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy wariant stosuje inny zestaw priorytetów: koszt, preferencje i równy podział pracy.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>
-      {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. W ustawieniach firmy możesz włączyć „Czekaj na matematycznie najlepszy wynik”; wtedy niepotwierdzony wariant nie zostanie uznany za gotowy.</small></span></div>}
+      {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. To normalny wynik planowania. Oddzielny „Tryb audytowy” może wymagać formalnego dowodu, lecz przy dużym grafiku potrafi zakończyć przebieg bez zapisu poprawnego wariantu.</small></span></div>}
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
         {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
@@ -770,7 +770,7 @@ export function SolverV2Panel({
       <SolverV2Workspace workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
     </section>}
 
-    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"}/></div>}
+    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}
 
     {inspectedWorkspace && <>
       <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>
@@ -779,7 +779,7 @@ export function SolverV2Panel({
           <div><p className="eyebrow">WARIANT • PODGLĄD GRAFIKU</p><h2>{inspectedWorkspace.context.name}</h2><small>Pełny skład, obsada według dni oraz rozkład braków.</small></div>
           <button className="icon-button" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}><X/></button>
         </div>
-        <div className="drawer-content"><SolverV2Workspace workspace={inspectedWorkspace} timezone={timezone} published={false}/></div>
+        <div className="drawer-content"><SolverV2Workspace workspace={inspectedWorkspace} timezone={timezone} published={false} notify={setMessage} fail={setMessage}/></div>
       </aside>
     </>}
 
