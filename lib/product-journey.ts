@@ -63,7 +63,7 @@ export const managementNavigation: ProductNavigationItem[] = [
 ];
 
 export const employeeNavigation: ProductNavigationItem[] = [
-  { key: "my-schedule", label: "Mój grafik", description: "Moje zmiany i stand-by" },
+  { key: "my-schedule", label: "Mój grafik", description: "Moje zmiany i rezerwa" },
   { key: "company-schedule", label: "Grafik firmy", description: "Kto pracuje w danym dniu" },
   { key: "availability", label: "Dostępność", description: "Kiedy mogę pracować" },
   { key: "swaps", label: "Zamiany", description: "Prośby i ogłoszenia o zamianie" },

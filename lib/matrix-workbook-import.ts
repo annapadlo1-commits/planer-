@@ -28,6 +28,13 @@ function importDays(value:string){
   return importList(value).map(item=>Number(item)||labels[item.toLocaleLowerCase("pl-PL")]).filter(day=>Number.isInteger(day)&&day>=1&&day<=7);
 }
 
+function automaticShiftPeriod(startsAt:string){
+  const match=/^(\d{1,2}):/.exec(startsAt);
+  if(!match)return "";
+  const hour=Number(match[1]);
+  return hour<12?"MORNING":hour<17?"MIDDLE":"EVENING";
+}
+
 export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayload>{
   const XLSX=await import("xlsx");
   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
@@ -133,9 +140,12 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const group=importCell(row,"GRUPA_DNI");
     const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:baseCode;
     const day=importCell(row,"DZIEŃ_TYGODNIA");
+    const startsAt=importCell(row,"Od","startsAt","START");
     return {
       code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
-      shiftPeriod:importCell(row,"Pora","shiftPeriod","PORA").toUpperCase(),startsAt:importCell(row,"Od","startsAt","START"),endsAt:importCell(row,"Do","endsAt","KONIEC"),
+      // Pora jest wyłącznie techniczną wartością pochodną. Użytkownik podaje
+      // dokładne godziny, a import nigdy nie ufa ręcznemu MORNING/MIDDLE/EVENING.
+      shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:importCell(row,"Do","endsAt","KONIEC"),
       endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni","days")),
       sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };

@@ -253,6 +253,11 @@ export type SolverVariantIssueDiagnostics = {
     blocked: number;
     reasons: { code: string; count: number }[];
   };
+  decisionContext: {
+    code: string;
+    standbyTiers: number;
+    message: string;
+  } | null;
   candidates: {
     employeeId: string;
     employeeNo: string;
@@ -1175,6 +1180,7 @@ export async function getVariantIssueDiagnostics(
     p_issue_id: Number(issueId),
   }));
   const shift = record(payload.shift), summary = record(payload.summary);
+  const decisionContext = payload.decisionContext ? record(payload.decisionContext) : null;
   const reasons = Array.isArray(summary.reasons) ? summary.reasons.map(value => {
     const reason = record(value);
     return { code: String(reason.code ?? "UNKNOWN"), count: numberOf(reason, "count", "count") };
@@ -1209,6 +1215,11 @@ export async function getVariantIssueDiagnostics(
       blocked: numberOf(summary, "blocked", "blocked"),
       reasons,
     },
+    decisionContext: decisionContext ? {
+      code: String(decisionContext.code ?? ""),
+      standbyTiers: numberOf(decisionContext, "standbyTiers", "standby_tiers"),
+      message: String(decisionContext.message ?? ""),
+    } : null,
     candidates,
   };
 }
@@ -1870,7 +1881,7 @@ const STATUS_LABELS: Record<string, string> = {
   CANCEL_REQUESTED: "Zatrzymywanie",
   CANCELLED: "Generowanie zatrzymane",
   FAILED: "Generowanie nie powiodło się",
-  STALE_INPUT: "Matrix zmienił się w trakcie obliczeń",
+  STALE_INPUT: "Konfiguracja firmy zmieniła się w trakcie obliczeń",
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -1878,8 +1889,8 @@ const PHASE_LABELS: Record<string, string> = {
   RETRY_QUEUED: "Oczekiwanie na automatyczne ponowienie",
   CLAIMED: "Worker odebrał zadanie",
   STARTING: "Uruchamianie workera",
-  LOADING: "Wczytywanie danych Matrixa",
-  SNAPSHOT: "Zapisywanie konfiguracji Matrixa",
+  LOADING: "Wczytywanie konfiguracji firmy",
+  SNAPSHOT: "Zapisywanie konfiguracji użytej do obliczeń",
   MODEL: "Budowanie modelu grafiku",
   SOLVING: "Szukanie najlepszego rozwiązania",
   VALIDATING: "Sprawdzanie wyniku",
@@ -1906,7 +1917,7 @@ export function solverPhaseLabel(phase: string) {
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
   if (normalized.includes("RUN_VARIANTS_INCOMPLETE")) return "Końcowa kontrola wykryła, że nie zapisano wyniku dla każdej strategii. Przebieg nie zostanie opublikowany; szczegółowa przyczyna pozostaje w historii próby.";
-  if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Matrix wymaga matematycznego optimum, a co najmniej jeden wariant jest poprawny, lecz nie ma dowodu optimum w dostępnym czasie. Zmień świadomie ustawienie zaawansowane albo zwiększ limit czasu i uruchom ponownie.";
+  if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Konfiguracja wymaga matematycznego dowodu optimum, a co najmniej jeden wariant jest poprawny, lecz silnik nie potwierdził optimum w dostępnym czasie. Zwiększ limit czasu albo świadomie dopuść najlepsze znalezione rozwiązanie i uruchom ponownie.";
   if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
   if (normalized.includes("SOLVER_CONFIGURATION_MISSING") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_MISSING")) return "Nie ustawiono aktywnego silnika grafiku.";
   if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji silnika. Odśwież stronę i spróbuj ponownie.";
@@ -1916,17 +1927,17 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("RUN_SOLVER_VERSION_MISMATCH") || normalized.includes("RUN_REFERENCE_MISMATCH")) return "Zapisany przebieg pochodzi z innej wersji generatora. Uruchom nowe generowanie na aktualnej wersji.";
   if (normalized.includes("SOLVER_DISABLED")) return "Generator grafiku jest obecnie wyłączony.";
   if (normalized.includes("ORTOOLS_REQUEST_DISABLED") || normalized.includes("ORTOOLS_SELECTION_DISABLED") || normalized.includes("ORTOOLS_PUBLICATION_DISABLED")) return "Nowy silnik nie jest aktywny dla tej operacji. Alpha 15 i tryb cienia pozostają bezpiecznie odseparowane.";
-  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Wersja Matrixa właściwa dla wybranego miesiąca nie została poprawnie opublikowana.";
-  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej wersji Matrixa właściwej dla wybranego miesiąca.";
-  if (normalized.includes("SOLVER_TIMEZONE_MISSING") || normalized.includes("SOLVER_TIMEZONE_INVALID")) return "W aktywnym Matrixie brakuje prawidłowej strefy czasowej.";
-  if (normalized.includes("INVALID_SOLVER_CURRENCY")) return "W aktywnym Matrixie brakuje prawidłowej waluty rozliczeniowej.";
-  if (normalized.includes("SOLVER_MATRIX_SETTINGS_INVALID")) return "Aktywny Matrix nie ma kompletnych reguł bezpieczeństwa generatora.";
-  if (normalized.includes("SOLVER_DEFAULT_SCENARIO_INVALID")) return "Aktywny Matrix musi mieć dokładnie jeden scenariusz domyślny.";
-  if (normalized.includes("SOLVER_SCENARIOS_MISSING")) return "Aktywny Matrix nie zawiera scenariuszy generowania.";
-  if (normalized.includes("SOLVER_STRATEGIES_MISSING")) return "Aktywny Matrix nie zawiera strategii wariantów.";
+  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Konfiguracja firmy właściwa dla wybranego miesiąca nie została poprawnie opublikowana.";
+  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej konfiguracji firmy właściwej dla wybranego miesiąca.";
+  if (normalized.includes("SOLVER_TIMEZONE_MISSING") || normalized.includes("SOLVER_TIMEZONE_INVALID")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej strefy czasowej.";
+  if (normalized.includes("INVALID_SOLVER_CURRENCY")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej waluty rozliczeniowej.";
+  if (normalized.includes("SOLVER_MATRIX_SETTINGS_INVALID")) return "Opublikowana konfiguracja firmy nie ma kompletnych reguł bezpieczeństwa generatora.";
+  if (normalized.includes("SOLVER_DEFAULT_SCENARIO_INVALID")) return "Konfiguracja firmy musi mieć dokładnie jeden domyślny profil zapotrzebowania.";
+  if (normalized.includes("SOLVER_SCENARIOS_MISSING")) return "Konfiguracja firmy nie zawiera profili zapotrzebowania.";
+  if (normalized.includes("SOLVER_STRATEGIES_MISSING")) return "Konfiguracja firmy nie zawiera wariantów biznesowych.";
   if (normalized.includes("SOLVER_SCENARIO_STRATEGIES_MISSING")) return "Każdy aktywny scenariusz musi mieć co najmniej jedną aktywną strategię.";
-  if (normalized.includes("SOLVER_ROLES_MISSING")) return "Aktywny Matrix nie zawiera ról pracowników.";
-  if (normalized.includes("SOLVER_LOCATIONS_MISSING")) return "Aktywny Matrix nie zawiera lokali.";
+  if (normalized.includes("SOLVER_ROLES_MISSING")) return "Opublikowana konfiguracja firmy nie zawiera ról pracowników.";
+  if (normalized.includes("SOLVER_LOCATIONS_MISSING")) return "Opublikowana konfiguracja firmy nie zawiera lokali.";
   if (normalized.includes("VARIANT_STRATEGY_MISSING") || normalized.includes("VARIANT_STRATEGY_INVALID") || normalized.includes("ROLE_COMPOSITE_STRATEGY")) return "Odpowiedź generatora nie zawiera prawidłowej strategii wariantu. Odśwież dane przed kontynuacją.";
   if (normalized.includes("COMPANY_PUBLICATION_FORBIDDEN")) return "Tylko właściciel lub administrator może opublikować grafik całej firmy.";
   if (normalized.includes("WARNING_REASON_REQUIRED")) return "Publikacja z brakami obsady wymaga podania powodu decyzji.";
@@ -1935,6 +1946,8 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("SELECTED_COMPANY_VARIANT_REQUIRED")) return "Przed publikacją wybierz poprawny wariant grafiku całej firmy.";
   if (normalized.includes("COMPANY_RUN_NOT_READY")) return "Ten grafik nie jest jeszcze gotowy do publikacji.";
   if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
+  if (normalized.includes("STANDBY_REVALIDATION_FAILED")) return "Nie można aktywować tej osoby z rezerwy, ponieważ od publikacji zmieniła się jej dostępność albo aktywacja naruszyłaby twardą regułę. Odśwież rezerwę i wybierz inną osobę.";
+  if (normalized.includes("STANDBY_TIER_1_MUST_BE_USED_OR_DECLINED_FIRST")) return "Najpierw użyj albo odrzuć pierwszą osobę rezerwową. Druga rezerwa jest uruchamiana dopiero w kolejnym kroku.";
   if (normalized.includes("SOFT_OVERRIDE_REASON_REQUIRED")) return "Awaryjne naruszenie miękkiej reguły wymaga potwierdzenia i podania powodu.";
   if (normalized.includes("SLOT_ALREADY_FILLED")) return "To brakujące miejsce zostało już obsadzone. Odśwież grafik operacyjny.";
   if (normalized.includes("CANDIDATE_NOT_FOUND")) return "Wybrany pracownik nie jest już kandydatem do tej zmiany. Odśwież listę.";
@@ -1955,8 +1968,8 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("RUN_NOT_FOUND")) return "Nie znaleziono tego przebiegu lub nie masz do niego dostępu.";
   if (normalized.includes("RUN_ID_MISSING")) return "Generator nie zwrócił identyfikatora przebiegu.";
   if (normalized.includes("RUN_ID_INVALID")) return "Generator zwrócił nieprawidłowy identyfikator przebiegu.";
-  if (normalized.includes("SCENARIO")) return "Wybrany scenariusz nie jest już aktywny. Odśwież Matrix i wybierz ponownie.";
-  if (normalized.includes("STALE")) return "Matrix zmienił się w trakcie obliczeń. Uruchom nowy wariant na aktualnej wersji.";
+  if (normalized.includes("SCENARIO")) return "Wybrany profil zapotrzebowania nie jest już aktywny. Odśwież konfigurację firmy i wybierz ponownie.";
+  if (normalized.includes("STALE")) return "Konfiguracja firmy zmieniła się w trakcie obliczeń. Uruchom nowy wariant na aktualnych danych.";
   if (normalized.includes("CONFLICT") || normalized.includes("LEASE")) return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
   return "Nie udało się połączyć z generatorem. Spróbujemy ponownie przy następnym odświeżeniu.";
 }
