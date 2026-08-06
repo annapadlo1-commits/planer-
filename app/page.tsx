@@ -515,7 +515,7 @@ export default function GrafikPro() {
         </>}
       </div>}
     </section>
-    {modal&&<><button className="drawer-scrim" onClick={closeModal}/><aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
+    {modal&&<>{modal!=="plan"&&<button className="drawer-scrim" onClick={closeModal}/>}<aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
       <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">
         {!solverConfiguration&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, dopóki konfiguracja nie zostanie poprawnie odczytana.</div>}
