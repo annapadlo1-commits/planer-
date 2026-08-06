@@ -136,3 +136,16 @@ test("daily employee shift limit has one configurable source across UI, solver a
   assert.match(invariantSql, /count\(distinct item_key\)>v_maximum_shifts_per_day/);
   assert.match(diagnosticSql, /count\(distinct assignment\.shift_id\)/);
 });
+
+test("solver failure copy distinguishes an incomplete optimum proof from a worker conflict", async () => {
+  const [panel, solverClient] = await Promise.all([
+    readFile(new URL("../components/SolverV2Panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(solverClient, /OPTIMIZATION_INCOMPLETE/);
+  assert.match(solverClient, /STATUS=FEASIBLE/);
+  assert.match(solverClient, /RUN_ALREADY_CLAIMED/);
+  assert.doesNotMatch(solverClient, /normalized\.includes\("CONFLICT"\)/);
+  assert.match(panel, /run\.failureMessage && run\.status!=="FAILED"/);
+  assert.match(panel, /run\.failureMessage\?solverErrorMessage\(run\.failureMessage\)/);
+});
