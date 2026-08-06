@@ -340,7 +340,7 @@ class _FakeClock:
 
 
 class SnapshotTests(unittest.TestCase):
-    def test_zlecenie_inherits_default_availability_without_etat_limits(self) -> None:
+    def test_zlecenie_respects_explicit_employee_limits(self) -> None:
         raw = load_raw()
         raw["settings"]["missingAvailabilityMeansAvailable"] = True
         employee_raw = raw["employees"][0]
@@ -360,11 +360,11 @@ class SnapshotTests(unittest.TestCase):
         snapshot = Snapshot.from_dict(raw)
         employee = snapshot.employees[0]
 
-        self.assertIsNone(employee.nominal_monthly_minutes)
-        self.assertIsNone(employee.maximum_monthly_minutes)
-        self.assertIsNone(employee.maximum_weekly_minutes)
-        self.assertIsNone(employee.maximum_consecutive_days)
-        self.assertEqual(employee.minimum_rest_minutes, 0)
+        self.assertEqual(employee.nominal_monthly_minutes, 9600)
+        self.assertEqual(employee.maximum_monthly_minutes, 9600)
+        self.assertEqual(employee.maximum_weekly_minutes, 2400)
+        self.assertEqual(employee.maximum_consecutive_days, 5)
+        self.assertEqual(employee.minimum_rest_minutes, 660)
         self.assertIsNone(employee.missing_availability_means_available)
 
         slot = next(
@@ -867,12 +867,31 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(report.unfilled_count, 0)
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
-            # The B2B employee has no CUSTOM work-time policy, so the solver
-            # intentionally excludes that flexible contractor from a metric
-            # that requires an individual nominal or maximum monthly basis.
-            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 2)
+            # Explicit employer inputs are authoritative regardless of the
+            # contract label.
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 3
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 0)
             self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
             self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
+
+    def test_targetless_employee_still_participates_in_fairness(self) -> None:
+        raw = load_raw()
+        bob = next(employee for employee in raw["employees"] if employee["id"] == "employee-bob")
+        bob.pop("nominalMonthlyMinutes", None)
+        bob.pop("maximumMonthlyMinutes", None)
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)
+        for variant in variants:
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 2
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 1)
 
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()
