@@ -69,6 +69,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(workspace, /Uzupełnij w wersji lidera/);
   assert.match(workspace, /Usuń przydział/);
   assert.match(workspace, /Powód zmiany/);
+  assert.doesNotMatch(workspace, /window\.confirm/, "operacyjne uzupełnianie i edycja kopii nie mogą blokować karty natywnym oknem");
   assert.match(page, /grafik-pro:open-role-generator/);
   assert.match(editor, /import-draft/);
   assert.match(editor, /import-open/);
