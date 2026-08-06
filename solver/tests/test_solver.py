@@ -867,8 +867,11 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(report.unfilled_count, 0)
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
+            self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
 
-    def test_daily_standby_reserve_keeps_two_role_members_off_duty(self) -> None:
+    def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()
         raw["settings"]["standbyTiersPerRoleDay"] = 2
         snapshot = Snapshot.from_dict(raw)
@@ -885,7 +888,7 @@ class SolverTests(unittest.TestCase):
             self.assertTrue(
                 all(len(employees) <= 1 for employees in assigned_by_day.values())
             )
-            self.assertEqual(len(variant.unfilled_slot_ids), 2)
+            self.assertEqual(len(variant.unfilled_slot_ids), 0)
 
     def _flexible_single_employee_sequence_snapshot(
         self, locked_slot_ids: list[str]
