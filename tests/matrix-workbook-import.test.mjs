@@ -59,6 +59,23 @@ test("standard Matrix workbook keeps employee HR and finance fields",async()=>{
   assert.equal(parsed.employeeDuties[0].dutyCode,"ZAMKNIECIE");
 });
 
+test("detailed capability rows win over convenience columns during a full round trip",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Pracownicy:[{
+      "Numer pracownika":"GP-101","Imię":"Aleksandra","Nazwisko":"Dąbrowska",
+      "Kod roli":"KELNER","Kody lokali":"KRUCZA","Rodzaj umowy":"ZLECENIE","RUNNER":"TAK",
+    }],
+    "Kompetencje pracowników":[{
+      "Numer pracownika":"GP-101","Kod obowiązku":"RUNNER","Kod roli":"","Kod lokalu":"","Aktywna":"TAK",
+    }],
+    Słowniki:[{TYP:"OBOWIĄZEK",KOD:"RUNNER",NAZWA:"Runner"}],
+  }));
+
+  assert.equal(parsed.employeeCapabilities.length,1);
+  assert.equal(parsed.employeeCapabilities[0].roleCode,"");
+  assert.equal(parsed.employeeDuties.length,0,"globalna kompetencja z arkusza szczegółowego nie może dostać drugiego wpisu ograniczonego do roli");
+});
+
 test("Apps Script employee identifiers are matched by email instead of appended as GP duplicates",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     BAZA_PRACOWNIKÓW:[{

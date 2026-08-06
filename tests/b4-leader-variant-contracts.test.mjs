@@ -76,4 +76,11 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.doesNotMatch(editor, /window\.prompt\("Nazwa nowej wersji roboczej:/, "utworzenie roboczej kopii nie może blokować karty natywnym oknem");
   assert.doesNotMatch(editor, /window\.confirm\(`Odtworzyć atomowo pełną bazę firmy:/, "pełny import ma być zatwierdzany w aplikacji, nie w natywnym oknie");
   assert.doesNotMatch(editor, /window\.confirm\(`Zapisać atomowo \$\{changeCount\}/, "import stawek ma być zatwierdzany w aplikacji, nie w natywnym oknie");
+  assert.match(editor, /Wybierz datę obowiązywania/);
+  assert.match(editor, /Sprawdź gotowość/);
+  assert.match(editor, /Potwierdź publikację/);
+  assert.doesNotMatch(editor, /window\.prompt\(\s*`Od kiedy ta wersja ma obowiązywać\?/,
+    "publikacja ma prowadzić użytkownika w panelu aplikacji, nie przez natywne pytanie o datę");
+  assert.doesNotMatch(editor, /window\.confirm\("Kontrola gotowości nie wykryła blokad\./,
+    "końcowe potwierdzenie publikacji ma pozostać w panelu aplikacji");
 });
