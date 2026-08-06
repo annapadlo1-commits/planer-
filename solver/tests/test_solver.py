@@ -867,7 +867,10 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(report.unfilled_count, 0)
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
-            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            # The B2B employee has no CUSTOM work-time policy, so the solver
+            # intentionally excludes that flexible contractor from a metric
+            # that requires an individual nominal or maximum monthly basis.
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 2)
             self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
             self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
 
@@ -881,12 +884,15 @@ class SolverTests(unittest.TestCase):
         ).solve(snapshot)
         slots = {slot.id: slot for slot in generate_slots(snapshot)}
         for variant in variants:
-            assigned_by_day: dict[str, set[str]] = {}
+            assignments_by_employee_day: dict[tuple[str, str], int] = {}
             for assignment in variant.assignments:
                 day = slots[assignment.slot_id].date.isoformat()
-                assigned_by_day.setdefault(day, set()).add(assignment.employee_id)
+                key = (assignment.employee_id, day)
+                assignments_by_employee_day[key] = (
+                    assignments_by_employee_day.get(key, 0) + 1
+                )
             self.assertTrue(
-                all(len(employees) <= 1 for employees in assigned_by_day.values())
+                all(count <= 1 for count in assignments_by_employee_day.values())
             )
             self.assertEqual(len(variant.unfilled_slot_ids), 0)
 
