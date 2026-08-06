@@ -61,12 +61,15 @@ test("new solver balances contract utilization instead of raw minutes", async ()
 });
 
 test("B4 user interface does not expose retired Matrix and English event labels", async () => {
-  const [generator, modules, app] = await Promise.all([
+  const [generator, panel, editor, modules, app, solverClient] = await Promise.all([
     readFile(new URL("../components/SolverV2Workspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/MatrixV2Editor.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/ActiveModules.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8"),
   ]);
-  const visibleSource = `${generator}\n${modules}\n${app}`;
+  const visibleSource = `${generator}\n${panel}\n${editor}\n${modules}\n${app}`;
   for (const retiredLabel of [
     "Optymalizacja całego Matrixa",
     "Źródło danych: opublikowany Matrix",
@@ -74,7 +77,12 @@ test("B4 user interface does not expose retired Matrix and English event labels"
     "> HOT DAY<",
     "> Event<",
     "Eventy i HOT DAY",
+    "MATRIX ORGANIZACJI",
   ]) assert.doesNotMatch(visibleSource, new RegExp(retiredLabel));
   assert.match(visibleSource, /Wydarzenie \+ obsada/);
   assert.match(visibleSource, /Limit nieobecności/);
+  assert.match(editor, /KONFIGURACJA FIRMY • MODEL DYNAMICZNY/);
+  assert.match(solverClient, /Nieobsadzone miejsce w wymaganej obsadzie/);
+  assert.match(app, /grafik-pro:selected-month/);
+  assert.match(panel, /rolePublication\.variantId/);
 });
