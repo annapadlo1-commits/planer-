@@ -893,6 +893,121 @@ class SolverTests(unittest.TestCase):
             )
             self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 1)
 
+    def test_fairness_first_strategy_cannot_regress_prior_verified_incumbent(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        fairness_terms = [
+            {
+                "tier": 1,
+                "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                "weight": 2,
+                "direction": "MIN",
+            },
+            {
+                "tier": 1,
+                "metric": "NOMINAL_DEVIATION_MINUTES",
+                "weight": 1,
+                "direction": "MIN",
+            },
+        ]
+        raw["strategies"] = [
+            {
+                "id": "strategy-fair-baseline",
+                "code": "FAIR_BASELINE",
+                "label": "Fair baseline",
+                "sortOrder": 0,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": fairness_terms,
+            },
+            {
+                "id": "strategy-fair-business",
+                "code": "FAIR_BUSINESS",
+                "label": "Fair business",
+                "sortOrder": 1,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": [
+                    *fairness_terms,
+                    {
+                        "tier": 2,
+                        "metric": "TOTAL_COST",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            },
+        ]
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))
+        by_strategy = {variant.strategy_id: variant for variant in variants}
+        baseline = by_strategy["strategy-fair-baseline"]
+        fair = by_strategy["strategy-fair-business"]
+        self.assertLessEqual(
+            fair.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+            baseline.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+        )
+        self.assertLessEqual(
+            fair.metrics["NOMINAL_DEVIATION_MINUTES"],
+            baseline.metrics["NOMINAL_DEVIATION_MINUTES"],
+        )
+        self.assertEqual(
+            fair.stage_objectives[0]["fairnessIncumbentGuard"],
+            {
+                "LOAD_UTILIZATION_SPREAD_BPS": baseline.metrics[
+                    "LOAD_UTILIZATION_SPREAD_BPS"
+                ],
+                "NOMINAL_DEVIATION_MINUTES": baseline.metrics[
+                    "NOMINAL_DEVIATION_MINUTES"
+                ],
+            },
+        )
+
+    def test_verified_zero_tier_does_not_consume_later_fairness_budget(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                "id": "strategy-zero-then-fair",
+                "code": "ZERO_THEN_FAIR",
+                "label": "Zero then fair",
+                "sortOrder": 0,
+                "timeLimitSeconds": 20,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "PREFERENCE_VIOLATIONS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                    {
+                        "tier": 2,
+                        "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            }
+        ]
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))[0]
+        zero_stage = next(
+            stage
+            for stage in variant.stage_objectives
+            if stage.get("name") == "TIER_1"
+        )
+        self.assertEqual(zero_stage["value"], 0)
+        self.assertEqual(zero_stage["status"], "OPTIMAL")
+        self.assertTrue(zero_stage["verifiedZeroIncumbent"])
+        self.assertTrue(
+            any(
+                stage.get("name") == "TIER_2"
+                for stage in variant.stage_objectives
+            )
+        )
+
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()
         raw["settings"]["standbyTiersPerRoleDay"] = 2
