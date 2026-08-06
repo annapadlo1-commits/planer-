@@ -324,6 +324,8 @@ test("solver honors Matrix strategy budgets and fair-distribution tier order", a
   assert.match(engine,/configured_strategy_budget =/);
   assert.match(engine,/strategy\.time_limit_seconds/);
   assert.match(engine,/remaining_strategy_budget \/ max\(1, remaining_strategy_count\)/);
+  assert.match(engine,/incumbent_zero_tier =/);
+  assert.match(engine,/"verifiedZeroIncumbent": True/);
   assert.match(sql,/when 'LOAD_SPREAD_MINUTES' then 3/);
   assert.match(sql,/when 'NOMINAL_DEVIATION_MINUTES' then 4/);
   assert.match(sql,/version\.status = 'DRAFT'/);
