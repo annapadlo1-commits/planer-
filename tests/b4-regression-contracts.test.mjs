@@ -85,4 +85,7 @@ test("B4 user interface does not expose retired Matrix and English event labels"
   assert.match(solverClient, /Nieobsadzone miejsce w wymaganej obsadzie/);
   assert.match(app, /grafik-pro:selected-month/);
   assert.match(panel, /rolePublication\.variantId/);
+  assert.match(app, /\["scalanie","2\. Scal i porównaj grafik firmy"\]/);
+  assert.match(app, /ETAP 2 Z 3 • SCALANIE FIRMY/);
+  assert.doesNotMatch(modules, /<RoleCompositePanel/);
 });
