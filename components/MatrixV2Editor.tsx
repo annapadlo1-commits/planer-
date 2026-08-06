@@ -115,7 +115,7 @@ function scenarioHasActiveStrategy(
 }
 
 export function MatrixV2Editor({
-  month, data, reload, notify, fail, focusEmployeeId, initialTab, createEmployeeRequest, onCreateEmployeeOpened,
+  month, data, reload, notify, fail, focusEmployeeId, initialTab, createEmployeeRequest, onCreateEmployeeOpened, onOpenOperationalCalendar,
 }: {
   month: string;
   data: MatrixV2Workspace;
@@ -126,9 +126,11 @@ export function MatrixV2Editor({
   initialTab?: MatrixTab;
   createEmployeeRequest?: number;
   onCreateEmployeeOpened?: () => void;
+  onOpenOperationalCalendar?:()=>void;
 }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const tabStorageKey = `grafik-pro:matrix-v2:${data.matrixVersion.id}:tab`;
+  const importOpenStorageKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-open`;
   const [tab, setTab] = useState<MatrixTab>(() => {
     if (initialTab) return initialTab;
     if (typeof window === "undefined") return "structure";
@@ -146,10 +148,13 @@ export function MatrixV2Editor({
   const [workforceFocusEmployeeId,setWorkforceFocusEmployeeId]=useState<string|null>(focusEmployeeId??null);
   const [financeOnboardingEmployeeId,setFinanceOnboardingEmployeeId]=useState<string|null>(null);
   const [publicationReadiness,setPublicationReadiness]=useState<MatrixV2PublicationReadiness|null>(null);
-  const [importOpen,setImportOpen]=useState(false);
+  const [importOpen,setImportOpen]=useState(()=>typeof window!=="undefined"&&window.sessionStorage.getItem(importOpenStorageKey)==="true");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
   const settings = matrixV2Settings(data.matrixVersion);
+  useEffect(()=>{
+    window.sessionStorage.setItem(importOpenStorageKey,importOpen?"true":"false");
+  },[importOpen,importOpenStorageKey]);
   const mixedCurrencyItems = data.financeVisible ? [
     ...(data.payRules ?? []),
     ...(data.scenarioBudgets ?? []),
@@ -611,7 +616,7 @@ export function MatrixV2Editor({
 
     {!data.editable && <div className="matrix-v2-readonly"><ShieldCheck/><span><strong>Oglądasz opublikowaną konfigurację</strong><small>Utwórz wersję roboczą, aby bezpiecznie wprowadzić zmiany bez wpływu na istniejące grafiki.</small></span></div>}
 
-    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount}/>}
+    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount} onOpenOperationalCalendar={onOpenOperationalCalendar}/>}
     {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding}/>}
     {tab === "strategies" && <StrategiesTab data={data} editable={data.editable} edit={setEdit} unlinkedScenarios={unlinkedScenarios} incompleteStrategies={incompleteStrategies}/>}
     {tab === "finance" && data.financeVisible && <FinanceTab data={data} editable={data.editable} edit={setEdit}/>}
@@ -668,7 +673,7 @@ function MatrixSettingsCard({
   </section>;
 }
 
-function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts,bulkAdjust,defaultScenarioCount}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>;bulkAdjust:(input:{scenarioId:string;locationId:string|null;shiftPeriod:string|null;roleId:string|null;delta:number;visibleCount:number})=>Promise<boolean>;defaultScenarioCount:number}) {
+function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts,bulkAdjust,defaultScenarioCount,onOpenOperationalCalendar}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>;bulkAdjust:(input:{scenarioId:string;locationId:string|null;shiftPeriod:string|null;roleId:string|null;delta:number;visibleCount:number})=>Promise<boolean>;defaultScenarioCount:number;onOpenOperationalCalendar?:()=>void}) {
   const [locationId,setLocationId]=useState("");
   const [query,setQuery]=useState("");
   const normalizedQuery=query.trim().toLocaleLowerCase("pl-PL");
@@ -724,7 +729,8 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
         {!shifts.length&&!visibleLocations.length&&<p className="matrix-v2-empty">Brak zmian pasujących do filtrów.</p>}
       </div>
     </section>
-    {data.scenarios.filter(scenario=>scenario.active).length>1&&<details className="matrix-v2-company-settings"><summary><Target/> Zaawansowane scenariusze obsady</summary><p>Scenariusz bazowy edytujesz bezpośrednio na kartach zmian. Tutaj ustawiasz wyłącznie różnice wariantów alternatywnych.</p><StaffingTab embedded data={data} editable={editable} busy={busy} edit={edit} bulkAdjust={bulkAdjust} defaultScenarioCount={defaultScenarioCount}/></details>}
+    <section className="matrix-demand-profile-guide"><Target/><div><small>DWA POZIOMY ZAPOTRZEBOWANIA</small><h3>Okres sezonowy albo wyjątek w konkretnym dniu</h3><p>Profil okresowy zmienia bazową obsadę przez wskazany zakres dat, np. całe wakacje. Koncert, weekend z wysokim ruchem lub jednorazowa akcja nie jest osobnym grafikiem — dodajesz ją w kalendarzu do konkretnych dni, lokali, ról i zmian. Dzięki temu grafiki wszystkich ról nadal można scalić.</p></div>{onOpenOperationalCalendar&&<button className="primary-button" onClick={onOpenOperationalCalendar}><CalendarDays/> Dodaj wyjątek dzienny</button>}</section>
+    {data.scenarios.filter(scenario=>scenario.active).length>1&&<details className="matrix-v2-company-settings"><summary><Target/> Profile obsady na dłuższy okres</summary><p>Profil bazowy edytujesz na kartach zmian. Profil dodatkowy pojawi się w generatorze dopiero po ustawieniu dat obowiązywania; po tym okresie system automatycznie wróci do bazy.</p><StaffingTab embedded data={data} editable={editable} busy={busy} edit={edit} bulkAdjust={bulkAdjust} defaultScenarioCount={defaultScenarioCount}/></details>}
     <details id="configuration-step-company" className="matrix-v2-company-settings"><summary><Settings/> Ustawienia firmy i zaawansowane zabezpieczenia silnika</summary><MatrixSettingsCard settings={settings} editable={editable} busy={busy} save={saveSettings}/></details>
   </div>;
 }
@@ -954,11 +960,11 @@ function StaffingTab({data, editable, busy, edit, bulkAdjust, defaultScenarioCou
   return <div className={`matrix-v2-tab-content${embedded?" matrix-v2-unified-staffing":""}`}>
     {defaultScenarioCount !== 1 && <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Wymagany jest jeden scenariusz domyślny</strong><small>Publikacja będzie zablokowana, dopóki nie wybierzesz dokładnie jednego aktywnego scenariusza domyślnego.</small></span></div>}
     <section className="matrix-v2-card">
-      <SectionHead title="Scenariusze operacyjne" description="Scenariusz może dziedziczyć bazową konfigurację i zmieniać tylko wybrane wartości." editable={editable} add={() => edit({kind: "SCENARIO"})}/>
+      <SectionHead title="Profile zapotrzebowania" description="Jeden profil bazowy obowiązuje zawsze. Dodatkowy profil musi mieć zakres dat, np. sezon letni; wyjątki pojedynczych dni dodajesz w kalendarzu operacyjnym." editable={editable} add={() => edit({kind: "SCENARIO"})}/>
       <div className="matrix-v2-scenario-grid">
         {data.scenarios.map(scenario => <article key={scenario.id} className={!scenario.active ? "inactive" : ""}>
           <i style={{background: scenario.color ?? "#7457e8"}}/>
-          <span><small>{scenario.is_default ? "DOMYŚLNY" : scenario.parent_scenario_id ? `DZIEDZICZY: ${itemName(data.scenarios, scenario.parent_scenario_id)}` : "NIEZALEŻNY"}</small><h4>{scenario.name}</h4><p>{scenario.description || "Bez dodatkowego opisu"}{Object.keys(scenario.settings_overrides ?? {}).length ? ` • ${Object.keys(scenario.settings_overrides ?? {}).length} nadpis. reguł` : ""}</p></span>
+          <span><small>{scenario.is_default ? "BAZA — OBOWIĄZUJE ZAWSZE" : scenario.valid_from||scenario.valid_to ? `OKRES: ${scenario.valid_from??"początek"} – ${scenario.valid_to??"bez końca"}` : "BRAK OKRESU — NIEWIDOCZNY W GENERATORZE"}</small><h4>{scenario.name}</h4><p>{scenario.description || "Bez dodatkowego opisu"}{scenario.parent_scenario_id?` • dziedziczy po ${itemName(data.scenarios,scenario.parent_scenario_id)}`:""}{Object.keys(scenario.settings_overrides ?? {}).length ? ` • ${Object.keys(scenario.settings_overrides ?? {}).length} zmienione reguły` : ""}</p></span>
           {editable && <button onClick={() => edit({kind: "SCENARIO", item: scenario})}><Edit3/> Edytuj</button>}
         </article>)}
       </div>
@@ -1462,12 +1468,30 @@ async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
   XLSX.writeFile(workbook,`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`);
 }
 
+function readStoredMatrixImport(matrixVersionId:string){
+  if(typeof window==="undefined")return null;
+  try{
+    const raw=window.sessionStorage.getItem(`grafik-pro:matrix-v2:${matrixVersionId}:import-draft`);
+    if(!raw)return null;
+    const parsed=JSON.parse(raw) as {scope?:MatrixImportScope;mode?:MatrixImportMode;payload?:Record<string,unknown>;preview?:MatrixImportPreview|FinanceImportPreview|FullImportPreview};
+    if(!parsed.payload||!parsed.preview)return null;
+    return parsed;
+  }catch{return null;}
+}
+
 function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:MatrixV2Workspace;busy:boolean;setBusy:(value:boolean)=>void;close:()=>void;reload:()=>Promise<void>;notify:(message:string)=>void;fail:(message:string)=>void}){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
-  const [scope,setScope]=useState<MatrixImportScope>("CONFIGURATION");
-  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(null),[localError,setLocalError]=useState("");
-  const [mode,setMode]=useState<MatrixImportMode>("UPDATE");
+  const importDraftKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-draft`;
+  const restored=useMemo(()=>readStoredMatrixImport(data.matrixVersion.id),[data.matrixVersion.id]);
+  const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"CONFIGURATION");
+  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
+  const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
+  useEffect(()=>{
+    if(payload&&preview)window.sessionStorage.setItem(importDraftKey,JSON.stringify({scope,mode,payload,preview}));
+  },[importDraftKey,mode,payload,preview,scope]);
+  function clearPersistedImport(){window.sessionStorage.removeItem(importDraftKey);}
   function resetImport(nextScope=scope){
+    clearPersistedImport();
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
   }
   async function inspect(){
@@ -1510,7 +1534,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       setBusy(false);
       if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
       notify(`Finanse zespołu zaktualizowane: ${changeCount} zmian, ${financePreview.summary.unchanged} wpisów bez zmian.`);
-      close();await reload();return;
+       clearPersistedImport();close();await reload();return;
     }
     const configurationPreview=preview as FullImportPreview;
     const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${configurationPreview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
@@ -1521,7 +1545,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);
     notify(`Pełna baza firmy została odtworzona atomowo: ${configurationPreview.summary.employees} pracowników, ${configurationPreview.summary.financeRows} okresów stawek i wszystkie reguły konfiguracji${archived?`; zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
-    close();await reload();
+    clearPersistedImport();close();await reload();
   }
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
     <div className="drawer-head"><div><p className="eyebrow">KONFIGURACJA • IMPORT ZBIORCZY</p><h2>Aktualizacja z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
@@ -1530,8 +1554,9 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
       <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
       <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data))}><Download/> {scope==="FINANCE"?"Pobierz plik stawek całego zespołu":"Pobierz pełną bazę firmy"}</button>
-      {scope==="CONFIGURATION"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{setMode("UPDATE");setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{setMode("REPLACE");setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>}
-      <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
+      {scope==="CONFIGURATION"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>}
+      {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
+      <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
       {localError&&<div className="solver-v2-notice warning"><AlertTriangle/>{localError}</div>}
       {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
@@ -1725,7 +1750,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <NameAndCode item={item}/><label>Opis<textarea name="description" defaultValue={String(item?.description ?? "")}/></label>
     <label>Dziedziczy po<select name="parentScenarioId" defaultValue={String(item?.parent_scenario_id ?? "")}><option value="">Nie dziedziczy</option>{data.scenarios.filter(x=>x.active&&x.id!==item?.id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? "#7457e8")}/></label>
-    <div className="form-row"><label>Obowiązuje od<input name="validFrom" type="date" defaultValue={String(item?.valid_from ?? "")}/></label><label>Obowiązuje do<input name="validTo" type="date" defaultValue={String(item?.valid_to ?? "")}/></label></div>
+    <div className="form-row"><label>Obowiązuje od<input name="validFrom" type="date" defaultValue={String(item?.valid_from ?? "")}/></label><label>Obowiązuje do<input name="validTo" type="date" defaultValue={String(item?.valid_to ?? "")}/></label></div><small>Profil inny niż bazowy wymaga obu dat. Jednodniowe wydarzenia i weekendy ustawiaj w Kalendarzu operacyjnym, nie jako osobny profil miesiąca.</small>
     <ScenarioSettingsOverrideFields item={item}/>
     <label className="check-label"><input name="isDefault" type="checkbox" defaultChecked={Boolean(item?.is_default)}/> Scenariusz domyślny</label><CommonState item={item}/>
   </>;
@@ -1989,7 +2014,7 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
   if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary:checked(form,"isPrimary"),canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");if(!checked(form,"standardAllowed")&&!checked(form,"overtimeAllowed"))throw new Error("Wybierz zwykły limit lub dopuszczenie nadgodzin.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:checked(form,"standardAllowed"),overtimeAllowed:checked(form,"overtimeAllowed"),homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_DUTY"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),dutyId:formText(form,"dutyId"),roleId:formText(form,"roleId")||null,locationId:formText(form,"locationId")||null,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
-  if(kind==="SCENARIO"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data zakończenia scenariusza nie może być wcześniejsza od daty rozpoczęcia.");return{...common(),description:formText(form,"description"),parentScenarioId:formText(form,"parentScenarioId")||null,color:formText(form,"color"),isDefault:checked(form,"isDefault"),validFrom:validFrom||null,validTo:validTo||null,settingsOverrides:scenarioSettingsOverridesFromForm(form)};}
+  if(kind==="SCENARIO"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isDefault=checked(form,"isDefault");if(!isDefault&&(!validFrom||!validTo))throw new Error("Profil okresowy wymaga daty początku i końca. Jednodniowy wyjątek dodaj w Kalendarzu operacyjnym.");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data zakończenia profilu nie może być wcześniejsza od daty rozpoczęcia.");return{...common(),description:formText(form,"description"),parentScenarioId:formText(form,"parentScenarioId")||null,color:formText(form,"color"),isDefault,validFrom:validFrom||null,validTo:validTo||null,settingsOverrides:scenarioSettingsOverridesFromForm(form)};}
   if(kind==="STAFFING_RULE"){
     const shiftTemplateIds=item?.id?[]:data.getAll("shiftTemplateIds").map(String).filter(Boolean);
     if(!item?.id&&!shiftTemplateIds.length)throw new Error("Wybierz co najmniej jedną zmianę objętą wymaganiem.");
