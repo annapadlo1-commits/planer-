@@ -221,11 +221,23 @@ export function SolverV2Panel({
   const loadVariants = useCallback(async (runId: string) => {
     if (!supabase) return;
     const result = await getSolverVariants(supabase, runId);
-    setVariants(result.variants);
-    if (engine !== "SHADOW" && result.variants.some(variant => variant.selected)) {
+    let loadedVariants=result.variants;
+    if(engine==="ORTOOLS_V2"&&scopeType==="ROLE"&&scopeRoleId){
+      try{
+        const authority=await getPublicationAuthorityStatus(supabase,month);
+        const rolePublication=authority.roles.find(item=>item.roleId===scopeRoleId);
+        if(rolePublication)loadedVariants=loadedVariants.map(variant=>variant.id===rolePublication.variantId
+          ? {...variant,status:"PUBLISHED"}
+          : variant);
+      }catch{
+        // Publication status is an enhancement to recovered runs; the run remains usable if it cannot be read.
+      }
+    }
+    setVariants(loadedVariants);
+    if (engine !== "SHADOW" && loadedVariants.some(variant => variant.selected)) {
       await loadSelectedWorkspace(runId);
     }
-  }, [supabase, engine, loadSelectedWorkspace]);
+  }, [supabase, engine, loadSelectedWorkspace, month, scopeRoleId, scopeType]);
 
   const refreshStatus = useCallback(async (runId: string, silent = false): Promise<StatusRefreshOutcome> => {
     if (!supabase) return "RETRY";

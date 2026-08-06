@@ -573,8 +573,8 @@ export function MatrixV2Editor({
   return <section className="matrix-v2-shell">
     <header className="matrix-v2-header">
       <div>
-        <p className="eyebrow">MATRIX ORGANIZACJI • MODEL DYNAMICZNY</p>
-        <h2>{data.matrixVersion.name}</h2>
+        <p className="eyebrow">KONFIGURACJA FIRMY • MODEL DYNAMICZNY</p>
+        <h2>Konfiguracja firmy • wersja {data.matrixVersion.version}</h2>
         <p>Role, obowiązki, scenariusze, koszty i sposoby optymalizacji są częścią wersjonowanej konfiguracji firmy.</p>
       </div>
       <div className="matrix-v2-header-actions">
