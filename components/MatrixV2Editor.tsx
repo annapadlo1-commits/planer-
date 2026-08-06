@@ -50,6 +50,7 @@ type MatrixAuditEntry={
 type MatrixHistoryPayload={versions:MatrixRevisionVersion[];audit:MatrixAuditEntry[]};
 type MatrixVersionComparison={settingsChanged:boolean;sections:{key:string;label:string;leftCount:number;rightCount:number;changed:boolean}[]};
 type UatResetPreview={enabled:boolean;draftMatrixVersionId?:string|null;draftVersion?:number|null;confirmation:string;employees:number;roleAssignments:number;locationAssignments:number;dutyAssignments:number;preserves:string[]};
+type PublicationDialogState={effectiveFrom:string;step:"date"|"confirm"};
 
 const assignmentModeLabel: Record<string, string> = {
   REQUIRED: "Wymagany", OPTIONAL: "Opcjonalny", EXTRA: "Dodatkowy",
@@ -148,6 +149,7 @@ export function MatrixV2Editor({
   const [workforceFocusEmployeeId,setWorkforceFocusEmployeeId]=useState<string|null>(focusEmployeeId??null);
   const [financeOnboardingEmployeeId,setFinanceOnboardingEmployeeId]=useState<string|null>(null);
   const [publicationReadiness,setPublicationReadiness]=useState<MatrixV2PublicationReadiness|null>(null);
+  const [publicationDialog,setPublicationDialog]=useState<PublicationDialogState|null>(null);
   const [importOpen,setImportOpen]=useState(()=>typeof window!=="undefined"&&window.sessionStorage.getItem(importOpenStorageKey)==="true");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
@@ -291,16 +293,14 @@ export function MatrixV2Editor({
     await reloadInPlace();
   }
 
-  async function publishDraft() {
+  function beginPublication(){
+    setPublicationReadiness(null);
+    setPublicationDialog({effectiveFrom:localToday(settings.timezone),step:"date"});
+  }
+
+  async function checkPublicationReadiness() {
     if (!supabase) return;
-    const todayInMatrixTimezone=new Intl.DateTimeFormat("en-CA",{
-      timeZone:"Europe/Warsaw",year:"numeric",month:"2-digit",day:"2-digit",
-    }).format(new Date());
-    const effective = window.prompt(
-      `Od kiedy ta wersja ma obowiązywać?\n\nGrafik nadal zostanie policzony dla ${month}; ta data określa tylko moment aktywacji konfiguracji firmy.`,
-      todayInMatrixTimezone,
-    );
-    if (!effective) return;
+    const effective=publicationDialog?.effectiveFrom.trim()??"";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effective)) { fail("Podaj datę w formacie RRRR-MM-DD."); return; }
     setBusy(true);
     const readiness=await supabase.rpc("matrix_v2_publication_readiness_uat_v2",{
@@ -310,11 +310,23 @@ export function MatrixV2Editor({
     if(readiness.error){setBusy(false);fail(matrixV2ErrorMessage(readiness.error.message));return;}
     const preflight=readiness.data as MatrixV2PublicationReadiness;
     setPublicationReadiness(preflight);
-    if(!preflight.ready){setBusy(false);fail(`Nie można opublikować konfiguracji firmy: ${preflight.blockers.length} blokad. Szczegóły są widoczne nad zakładkami.`);return;}
-    if (!window.confirm("Kontrola gotowości nie wykryła blokad. Opublikować tę wersję konfiguracji firmy? Poprzednia wersja pozostanie w historii, a nowe grafiki użyją nowych danych.")){setBusy(false);return;}
+    setBusy(false);
+    if(!preflight.ready){
+      setPublicationDialog(null);
+      fail(`Nie można opublikować konfiguracji firmy: ${preflight.blockers.length} blokad. Szczegóły są widoczne nad zakładkami.`);
+      return;
+    }
+    setPublicationDialog({effectiveFrom:effective,step:"confirm"});
+  }
+
+  async function publishDraft() {
+    if(!supabase||!publicationDialog)return;
+    const effective=publicationDialog.effectiveFrom;
+    setBusy(true);
     const result = await supabase.rpc("matrix_v2_publish_draft", { p_effective_from: effective });
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
+    setPublicationDialog(null);
     notify("Nowa konfiguracja firmy została opublikowana.");
     await reloadInPlace();
   }
@@ -587,7 +599,7 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={() => void publishDraft()}><Check/> Opublikuj konfigurację</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
@@ -627,9 +639,26 @@ export function MatrixV2Editor({
         return ok;
       }}/>
     )}
-    {employeeEdit && <EmployeeProfileDrawer employee={employeeEdit==="new"?null:employeeEdit} data={data} month={month} busy={busy} close={()=>setEmployeeEdit(null)} save={saveEmployeeProfile}/>}
-    {importOpen&&<MatrixExcelImport data={data} busy={busy} setBusy={setBusy} close={()=>setImportOpen(false)} reload={reload} notify={notify} fail={fail}/>}
-    {historyOpen&&<MatrixHistoryDrawer currentVersionId={data.matrixVersion.id} close={()=>setHistoryOpen(false)} fail={fail}/>}
+    {employeeEdit && <EmployeeProfileDrawer employee={employeeEdit==="new"?null:employeeEdit} data={data} month={month} busy={busy} close={()=>setEmployeeEdit(null)} save={saveEmployeeProfile}/>} 
+    {importOpen&&<MatrixExcelImport data={data} busy={busy} setBusy={setBusy} close={()=>setImportOpen(false)} reload={reload} notify={notify} fail={fail}/>} 
+    {historyOpen&&<MatrixHistoryDrawer currentVersionId={data.matrixVersion.id} close={()=>setHistoryOpen(false)} fail={fail}/>} 
+    {publicationDialog&&<><button className="drawer-scrim top" aria-label="Zamknij publikację" onClick={()=>{if(!busy)setPublicationDialog(null);}}/><aside className="drawer top" aria-label="Publikacja konfiguracji firmy">
+      <div className="drawer-head"><div><p className="eyebrow">PUBLIKACJA KONFIGURACJI</p><h2>{publicationDialog.step==="date"?"Wybierz datę obowiązywania":"Potwierdź publikację"}</h2><span>Wersja v{data.matrixVersion.version} • grafik {month}</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij publikację" onClick={()=>setPublicationDialog(null)}><X/></button></div>
+      <div className="drawer-content">
+        {publicationDialog.step==="date"?<>
+          <label>Od kiedy konfiguracja ma obowiązywać?
+            <input type="date" value={publicationDialog.effectiveFrom} onChange={event=>setPublicationDialog({...publicationDialog,effectiveFrom:event.target.value})}/>
+            <small>Ta data określa moment aktywacji konfiguracji firmy. Grafik nadal zostanie policzony dla {month}.</small>
+          </label>
+          <div className="impact-box"><ShieldCheck/><span><strong>Najpierw sprawdzimy gotowość</strong><small>Serwer zweryfikuje stawki, obsadę i wszystkie blokery. Nic nie zostanie opublikowane bez kolejnego, wyraźnego potwierdzenia.</small></span></div>
+          <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setPublicationDialog(null)}>Anuluj</button><button className="primary-button" disabled={busy||!publicationDialog.effectiveFrom} onClick={()=>void checkPublicationReadiness()}><ShieldCheck/> Sprawdź gotowość</button></div>
+        </>:<>
+          <div className="detail-status"><Check/><span><strong>Kontrola gotowości zakończona pomyślnie</strong><small>Brak blokerów. Po publikacji v{data.matrixVersion.version} stanie się aktywną konfiguracją, a poprzednia wersja pozostanie w historii.</small></span></div>
+          <dl className="matrix-version-readonly"><div><dt>Data obowiązywania</dt><dd>{publicationDialog.effectiveFrom}</dd></div><div><dt>Miesiąc grafiku</dt><dd>{month}</dd></div><div><dt>Aktywni pracownicy</dt><dd>{data.workforceCounts?.active??data.employees.filter(employee=>employee.active).length}</dd></div></dl>
+          <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setPublicationDialog({...publicationDialog,step:"date"})}>Wróć</button><button className="primary-button" disabled={busy} onClick={()=>void publishDraft()}><Check/> Opublikuj wersję v{data.matrixVersion.version}</button></div>
+        </>}
+      </div>
+    </aside></>}
   </section>;
 }
 
