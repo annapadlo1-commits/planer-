@@ -1275,6 +1275,25 @@ type FinanceImportPreview={
   normalizedRows?:Array<{sourceRow:number;employeeNo:string;employeeName:string;action:"CREATE"|"UPDATE"|"DEACTIVATE"|"UNCHANGED"}>;
   summary:{rows:number;employees:number;create:number;update:number;deactivate:number;unchanged:number};
 };
+type FullImportPreview={
+  valid:boolean;
+  errors:MatrixImportIssue[];
+  warnings:MatrixImportIssue[];
+  configuration:MatrixImportPreview;
+  finance:FinanceImportPreview;
+  summary:MatrixImportPreview["summary"]&{
+    financeRows:number;
+    financeEmployees:number;
+    financeChanges:number;
+    roles:number;
+    locations:number;
+    duties:number;
+    scenarios:number;
+    strategies:number;
+    payRules:number;
+    timeConstraints:number;
+  };
+};
 
 async function downloadMatrixTemplate(data:MatrixV2Workspace){
   const XLSX=await import("xlsx");
@@ -1294,7 +1313,7 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     ["Listy","Kody lokali oraz dni rozdzielaj przecinkiem; dni: 1=poniedziałek, 7=niedziela."],
     ["Kompetencje pracownika","Każdy aktywny obowiązek ma osobną kolumnę w arkuszu Pracownicy. Wpisz TAK tylko przy osobach, które mogą go wykonywać."],
     ["Lokale pracownika","Kolumny <KOD>_STANDARD i <KOD>_NADGODZINY są niezależne. Lokal bazowy musi być również dozwolony standardowo."],
-    ["Dostępność pracownika","Dokładne godziny dostępności i niedostępności ustawiaj w kalendarzu pracownika. Plik nie używa ogólnych pór dnia."],
+    ["Dostępność pracownika","W arkuszu Dostępność wpisuj dokładne daty i godziny dostępności, niedostępności, urlopów i chorobowego. Plik nie używa ogólnych pór dnia."],
     ["Zawartość pliku","Arkusze zawierają aktualną wersję roboczą konfiguracji firmy. Zachowaj Numer pracownika lub e-mail, aby aktualizować właściwą osobę."],
     ["Tryb aktualizacji","Zmienia i dodaje wyłącznie osoby obecne w pliku; pozostałych nie dotyka."],
     ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
@@ -1303,6 +1322,26 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
+  const json=(value:unknown)=>JSON.stringify(value??{});
+  const settings=matrixV2Settings(data.matrixVersion);
+  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian dziennie","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
+    [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
+  ]);
+  add("Role",["Kod","Nazwa","Kolor","Kolejność","Aktywna"],data.roles.map(item=>[item.code,item.name,item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
+  add("Lokale",["Kod","Nazwa","Strefa czasowa","Kolejność","Aktywna"],data.locations.map(item=>[item.code,item.name,item.timezone,item.sort_order,item.active?"TAK":"NIE"]));
+  add("Obowiązki",["Kod","Nazwa","Opis","Kolor","Kolejność","Aktywna"],data.duties.map(item=>[item.code,item.name,item.description??"",item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
+  add("Scenariusze",["Kod","Nazwa","Opis","Kolor","Kod nadrzędnego","Domyślny","Obowiązuje od","Obowiązuje do","Ustawienia JSON","Kolejność","Aktywny"],data.scenarios.map(item=>[
+    item.code,item.name,item.description??"",item.color??"",data.scenarios.find(parent=>parent.id===item.parent_scenario_id)?.code??"",item.is_default?"TAK":"NIE",item.valid_from??"",item.valid_to??"",json(item.settings_overrides),item.sort_order,item.active?"TAK":"NIE",
+  ]));
+  add("Strategie",["Kod","Nazwa","Opis","Kod silnika","Opcje silnika JSON","Kolejność","Aktywna"],data.strategies.map(item=>[
+    item.code,item.name,item.description??"",item.solver_code,json(item.solver_options),item.sort_order,item.active?"TAK":"NIE",
+  ]));
+  add("Kryteria strategii",["Kod strategii","Poziom","Kolejność","Miara","Kierunek","Waga","Tolerancja","Parametry JSON","Aktywne"],data.strategyObjectives.map(item=>[
+    data.strategies.find(strategy=>strategy.id===item.strategy_id)?.code??"",item.tier,item.sort_order,item.metric_code,item.direction,item.weight,item.tolerance,json(item.parameters),item.active?"TAK":"NIE",
+  ]));
+  add("Warianty scenariuszy",["Kod scenariusza","Kod strategii","Kolejność","Nadpisania celów JSON","Nadpisania silnika JSON","Aktywne"],data.scenarioStrategies.map(item=>[
+    data.scenarios.find(scenario=>scenario.id===item.scenario_id)?.code??"",data.strategies.find(strategy=>strategy.id===item.strategy_id)?.code??"",item.sort_order,json(item.objective_overrides),json(item.solver_overrides),item.active?"TAK":"NIE",
+  ]));
   const activeDutyCodes=data.duties.filter(item=>item.active).map(item=>item.code);
   const activeLocations=data.locations.filter(item=>item.active);
   const exportRateDate=String(data.month??data.matrixVersion.effective_from??new Date().toISOString()).slice(0,10);
@@ -1329,6 +1368,35 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
   }));
   add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.active?"TAK":"NIE"]));
+  add("Role pracowników",["Numer pracownika","Kod roli","Podstawowa","Może zatwierdzać","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeRoles.map(link=>[
+    data.employees.find(item=>item.id===link.employee_id)?.employeeNo??"",data.roles.find(item=>item.id===link.role_id)?.code??"",link.is_primary?"TAK":"NIE",link.can_lead?"TAK":"NIE",link.valid_from??"",link.valid_to??"",link.active?"TAK":"NIE",
+  ]));
+  add("Lokale pracowników",["Numer pracownika","Kod lokalu","Zwykła praca","Dodatkowa praca","Lokal bazowy","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeLocations.map(link=>[
+    data.employees.find(item=>item.id===link.employee_id)?.employeeNo??"",data.locations.find(item=>item.id===link.location_id)?.code??"",link.standard_allowed?"TAK":"NIE",link.overtime_allowed?"TAK":"NIE",link.home_location?"TAK":"NIE",link.valid_from??"",link.valid_to??"",link.active?"TAK":"NIE",
+  ]));
+  add("Kompetencje pracowników",["Numer pracownika","Kod obowiązku","Kod roli","Kod lokalu","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeDuties.map(link=>[
+    data.employees.find(item=>item.id===link.employee_id)?.employeeNo??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",data.roles.find(item=>item.id===link.role_id)?.code??"",data.locations.find(item=>item.id===link.location_id)?.code??"",link.valid_from??"",link.valid_to??"",link.active?"TAK":"NIE",
+  ]));
+  add("Dostępność",["ID wpisu","Numer pracownika","Rodzaj","Od","Do","Notatka","Aktywny"],data.timeConstraints.map(item=>[
+    item.id,data.employees.find(employee=>employee.id===item.employeeId)?.employeeNo??"",item.kind,item.startsAt,item.endsAt,item.note??"",item.status==="ACTIVE"?"TAK":"NIE",
+  ]));
+  add("Zasady płacowe",["Kod","Nazwa","Opis","Sposób obliczania","Kwota","Kwota za godzinę","Procent","Mnożnik","Próg minut","Waluta","Priorytet","Grupa łączenia","Sposób łączenia","Dni","Od","Do","Następny dzień","Obowiązuje od","Obowiązuje do","Warunek JSON","Formuła JSON","Kody ról","Kody obowiązków","Kody lokali","Kody zmian","Kolejność","Aktywna"],data.payRules.map(rule=>[
+    rule.code,rule.name,rule.description??"",rule.calculation_method,rule.amount_minor===null||rule.amount_minor===undefined?"":rule.amount_minor/100,rule.rate_minor_per_hour===null||rule.rate_minor_per_hour===undefined?"":rule.rate_minor_per_hour/100,rule.percent_basis_points===null||rule.percent_basis_points===undefined?"":rule.percent_basis_points/100,rule.multiplier_basis_points===null||rule.multiplier_basis_points===undefined?"":rule.multiplier_basis_points/10000,rule.threshold_minutes??"",rule.currency,rule.priority,rule.stacking_group??"",rule.stacking_mode,rule.day_mask.join(","),rule.local_start??"",rule.local_end??"",rule.ends_next_day?"TAK":"NIE",rule.valid_from??"",rule.valid_to??"",json(rule.condition_expression),json(rule.formula_expression),data.payRuleRoles.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.roles.find(item=>item.id===scope.role_id)?.code).filter(Boolean).join(", "),data.payRuleDuties.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.duties.find(item=>item.id===scope.duty_id)?.code).filter(Boolean).join(", "),data.payRuleLocations.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.locations.find(item=>item.id===scope.location_id)?.code).filter(Boolean).join(", "),data.payRuleShifts.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.shiftTemplates.find(item=>item.id===scope.shift_template_id)?.code).filter(Boolean).join(", "),rule.sort_order,rule.active?"TAK":"NIE",
+  ]));
+  add("Dodatki scenariuszy",["Kod scenariusza","Kod zasady","Włączona","Kwota","Kwota za godzinę","Procent","Mnożnik","Formuła JSON"],data.scenarioPayRuleOverrides.map(item=>[
+    data.scenarios.find(scenario=>scenario.id===item.scenario_id)?.code??"",data.payRules.find(rule=>rule.id===item.pay_rule_id)?.code??"",item.enabled?"TAK":"NIE",item.amount_minor===null||item.amount_minor===undefined?"":item.amount_minor/100,item.rate_minor_per_hour===null||item.rate_minor_per_hour===undefined?"":item.rate_minor_per_hour/100,item.percent_basis_points===null||item.percent_basis_points===undefined?"":item.percent_basis_points/100,item.multiplier_basis_points===null||item.multiplier_basis_points===undefined?"":item.multiplier_basis_points/10000,json(item.formula_expression),
+  ]));
+  add("Budżety scenariuszy",["Kod scenariusza","Miesiąc","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Budżet","Mnożnik","Waluta","Twardy limit","Próg ostrzeżenia (%)"],data.scenarioBudgets.map(item=>[
+    data.scenarios.find(scenario=>scenario.id===item.scenario_id)?.code??"",item.budget_month??"",data.locations.find(location=>location.id===item.location_id)?.code??"",data.roles.find(role=>role.id===item.role_id)?.code??"",data.duties.find(duty=>duty.id===item.duty_id)?.code??"",item.operation,item.amount_minor===null||item.amount_minor===undefined?"":item.amount_minor/100,item.multiplier_basis_points===null||item.multiplier_basis_points===undefined?"":item.multiplier_basis_points/10000,item.currency,item.hard_limit?"TAK":"NIE",item.warning_percent??"",
+  ]));
+  const financeHeaders=["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Rodzaj umowy","Aktywna"];
+  const financeRows=data.employees.filter(employee=>employee.active).flatMap(employee=>{
+    const rates=(data.employeePayRates??[]).filter(rate=>rate.employee_id===employee.id).sort((left,right)=>left.valid_from.localeCompare(right.valid_from));
+    const employeeName=`${employee.firstName} ${employee.lastName}`.trim();
+    if(!rates.length)return [["",employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",employee.employmentStart&&employee.employmentStart>exportRateDate?employee.employmentStart:exportRateDate,"","",settings.currency,employee.contractType??"INNE","TAK"]];
+    return rates.map(rate=>[rate.id,employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",rate.valid_from,rate.valid_to??"",rate.base_rate_minor/100,rate.currency,rate.contract_type??employee.contractType??"INNE",rate.active?"TAK":"NIE"]);
+  });
+  add("Finanse pracowników",financeHeaders,financeRows);
   const dictionaries=[
     ["TYP","KOD","NAZWA"],
     ...data.roles.filter(item=>item.active).map(item=>["ROLA",item.code,item.name]),
@@ -1341,7 +1409,7 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
   dictionarySheet["!autofilter"]={ref:`A1:C${dictionaries.length}`};
   dictionarySheet["!cols"]=[{wch:24},{wch:30},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"Słowniki");
-  XLSX.writeFile(workbook,`grafik-pro-konfiguracja-firmy-v${data.matrixVersion.version}.xlsx`);
+  XLSX.writeFile(workbook,`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
 }
 
 async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
@@ -1392,8 +1460,8 @@ async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
 
 function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:MatrixV2Workspace;busy:boolean;setBusy:(value:boolean)=>void;close:()=>void;reload:()=>Promise<void>;notify:(message:string)=>void;fail:(message:string)=>void}){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
-  const [scope,setScope]=useState<MatrixImportScope>("FINANCE");
-  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|null>(null),[localError,setLocalError]=useState("");
+  const [scope,setScope]=useState<MatrixImportScope>("CONFIGURATION");
+  const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(null),[localError,setLocalError]=useState("");
   const [mode,setMode]=useState<MatrixImportMode>("UPDATE");
   function resetImport(nextScope=scope){
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
@@ -1410,15 +1478,20 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
         setPayload(parsed);setPreview(result.data as FinanceImportPreview);
         return;
       }
-      const parsed=await readMatrixWorkbook(file);
-      if(!parsed.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
-      const activeImported=parsed.employees.filter(employee=>employee.active!==false).length;
+      const [configuration,finance]=await Promise.all([readMatrixWorkbook(file),readWorkforceFinanceWorkbook(file)]);
+      if(!configuration.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
+      if(!configuration.roles.length||!configuration.locations.length||!configuration.duties.length||!configuration.scenarios.length||!configuration.strategies.length){
+        throw new Error("Pełna baza firmy wymaga arkuszy: Role, Lokale, Obowiązki, Scenariusze i Strategie. Pobierz świeży pełny plik z aplikacji.");
+      }
+      if(!finance.payRates.length)throw new Error("Pełna baza firmy nie zawiera arkusza „Finanse pracowników” albo żadnej stawki. Import został zatrzymany.");
+      const activeImported=configuration.employees.filter(employee=>employee.active!==false).length;
       if(mode==="REPLACE"&&activeImported!==EXPECTED_ACTIVE_EMPLOYEES){
         throw new Error(`Tryb „Zastąp aktywną bazę” wymaga obecnie dokładnie ${EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników. Plik zawiera ${activeImported}. Wybierz „Aktualizuj i dodaj” dla częściowej zmiany albo popraw kompletny plik.`);
       }
-      const result=await supabase.rpc("matrix_v2_import_preview_uat_v5",{p_payload:parsed,p_mode:mode});
+      const parsed={configuration,finance};
+      const result=await supabase.rpc("matrix_v2_full_import_preview_uat_v1",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
-      setPayload(parsed);setPreview(result.data as MatrixImportPreview);
+      setPayload(parsed);setPreview(result.data as FullImportPreview);
     }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
     finally{setBusy(false);}
   }
@@ -1435,24 +1508,24 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       notify(`Finanse zespołu zaktualizowane: ${changeCount} zmian, ${financePreview.summary.unchanged} wpisów bez zmian.`);
       close();await reload();return;
     }
-    const configurationPreview=preview as MatrixImportPreview;
+    const configurationPreview=preview as FullImportPreview;
     const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${configurationPreview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
-    if(!window.confirm(`Zapisać atomowo ${configurationPreview.summary.total} wierszy w wersji roboczej konfiguracji?${impact}`))return;
+    if(!window.confirm(`Odtworzyć atomowo pełną bazę firmy: ${configurationPreview.summary.total} wierszy konfiguracji i ${configurationPreview.summary.financeRows} okresów stawek?${impact} Jeśli którykolwiek element będzie błędny, cały zapis zostanie cofnięty.`))return;
     setBusy(true);
-    const result=await supabase.rpc("matrix_v2_import_apply_uat_v5",{p_payload:payload,p_mode:mode});
+    const result=await supabase.rpc("matrix_v2_full_import_apply_uat_v1",{p_payload:payload,p_mode:mode});
     setBusy(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);
-    notify(`Import zakończony: zapisano ${Number((result.data as {appliedRows?:number})?.appliedRows??configurationPreview.summary.total)} wierszy${archived?`, zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
+    notify(`Pełna baza firmy została odtworzona atomowo: ${configurationPreview.summary.employees} pracowników, ${configurationPreview.summary.financeRows} okresów stawek i wszystkie reguły konfiguracji${archived?`; zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
     close();await reload();
   }
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
     <div className="drawer-head"><div><p className="eyebrow">KONFIGURACJA • IMPORT ZBIORCZY</p><h2>Aktualizacja z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
-      <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>Stawki całego zespołu</strong><small>Dodaj lub zmień okresy i kwoty bez otwierania profili po kolei.</small></button><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Pełna konfiguracja firmy</strong><small>Pracownicy, kompetencje, zmiany i wymagana obsada.</small></button></fieldset>
-      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":`Import modyfikuje tylko wersję roboczą ${data.matrixVersion.name}. Najpierw wykonujemy walidację; przy zapisie jeden błędny wiersz cofa całą operację.`}</p>
-      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":"Puste pola nie są uzupełniane na podstawie nazw ani kodów. Brak dokładnych godzin zmiany, scenariusza, operacji lub rodzaju przypisania zatrzyma import i wskaże wiersz do poprawy."}</small></span></div>
-      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data))}><Download/> {scope==="FINANCE"?"Pobierz plik stawek całego zespołu":"Pobierz bieżącą konfigurację firmy"}</button>
+      <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Pełna baza firmy</strong><small>Jeden plik: firma, role, lokale, pracownicy, umowy, stawki, dostępność, zmiany, obsada, scenariusze, strategie, dodatki i budżety.</small></button><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>Tylko stawki zespołu</strong><small>Szybka aktualizacja okresów i kwot bez zmiany pozostałej konfiguracji.</small></button></fieldset>
+      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":`To jest pełna kopia danych wejściowych firmy dla wersji roboczej ${data.matrixVersion.name}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
+      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
+      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data))}><Download/> {scope==="FINANCE"?"Pobierz plik stawek całego zespołu":"Pobierz pełną bazę firmy"}</button>
       {scope==="CONFIGURATION"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{setMode("UPDATE");setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{setMode("REPLACE");setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>}
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
@@ -1460,12 +1533,12 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
       {preview&&scope==="CONFIGURATION"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
-        <p>{(preview as MatrixImportPreview).summary.total} wierszy: {(preview as MatrixImportPreview).summary.employees} pracowników, {(preview as MatrixImportPreview).summary.employeeDuties??0} kompetencji pracowników, {(preview as MatrixImportPreview).summary.shifts} zmian, {(preview as MatrixImportPreview).summary.staffingRules} reguł obsady i {(preview as MatrixImportPreview).summary.roleDuties} obowiązków ról.</p>
-        <p className="matrix-v2-form-hint">Źródło: {payload?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"szablon GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
-        <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as MatrixImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as MatrixImportPreview).summary.employeesToCreate??0}</b></span><span className={mode==="REPLACE"&&Number((preview as MatrixImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as MatrixImportPreview).summary.employeesToArchive??0}</b></span></div>
-        {mode==="REPLACE"&&Boolean((preview as MatrixImportPreview).employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as MatrixImportPreview).employeesToArchive?.length})</summary><ul>{(preview as MatrixImportPreview).employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
-        {[...(preview as MatrixImportPreview).errors,...(preview as MatrixImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as MatrixImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
-        {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> Zapisz całą konfigurację</button>}
+        <p>{(preview as FullImportPreview).summary.total} wierszy konfiguracji oraz {(preview as FullImportPreview).summary.financeRows} okresów stawek: {(preview as FullImportPreview).summary.employees} pracowników, {(preview as FullImportPreview).summary.roles} ról, {(preview as FullImportPreview).summary.locations} lokali, {(preview as FullImportPreview).summary.shifts} zmian, {(preview as FullImportPreview).summary.staffingRules} reguł obsady i {(preview as FullImportPreview).summary.timeConstraints} wpisów dostępności.</p>
+        <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"pełny plik GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
+        <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as FullImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as FullImportPreview).summary.employeesToCreate??0}</b></span><span><small>Zmiany stawek</small><b>{(preview as FullImportPreview).summary.financeChanges}</b></span><span className={mode==="REPLACE"&&Number((preview as FullImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as FullImportPreview).summary.employeesToArchive??0}</b></span></div>
+        {mode==="REPLACE"&&Boolean((preview as FullImportPreview).configuration.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as FullImportPreview).configuration.employeesToArchive?.length})</summary><ul>{(preview as FullImportPreview).configuration.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
+        {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
+        {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> Odtwórz pełną bazę firmy</button>}
       </section>}
     </div>
   </aside></>;
