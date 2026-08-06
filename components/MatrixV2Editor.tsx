@@ -371,11 +371,11 @@ export function MatrixV2Editor({
       if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Waluta musi mieć trzyliterowy kod, np. PLN, EUR lub USD.");
       if (!timezone) throw new Error("Podaj strefę czasową firmy.");
       const minimumRestMinutes = requiredNumber(formText(form, "minimumRestMinutes"));
-      // Compatibility field for the published Matrix v2 schema.  Employee
-      // assignment capacity is an invariant of one and is not configurable;
-      // the editor itself does not cap the number of shift templates.
-      const maximumShiftsPerDay = 1;
+      const maximumShiftsPerDay = requiredNumber(formText(form, "maximumShiftsPerDay"));
       if (minimumRestMinutes < 0) throw new Error("Minimalny odpoczynek nie może być ujemny.");
+      if (!Number.isInteger(maximumShiftsPerDay) || maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) {
+        throw new Error("Podaj maksymalną liczbę zmian jednego pracownika na dobę od 1 do 24.");
+      }
       await save("MATRIX_SETTINGS", null, {
         currency,
         timezone,
@@ -659,7 +659,7 @@ function MatrixSettingsCard({
       <details className="matrix-v2-advanced-settings"><summary>Zaawansowane ustawienia silnika</summary>
         <p className="matrix-v2-form-hint">Te wartości są technicznym zabezpieczeniem. Umowa i indywidualne ustalenia pracownika mają pierwszeństwo.</p>
         <label>Domyślny odpoczynek dla umów pracowniczych (minuty)<input name="minimumRestMinutes" type="number" min="0" step="15" required disabled={!editable} defaultValue={settings.minimumRestMinutes}/></label>
-        <p className="matrix-v2-form-hint">Możesz utworzyć dowolną liczbę szablonów zmian. Niezależnie od ich liczby jedna osoba może otrzymać najwyżej jedną zasadniczą zmianę dziennie.</p>
+        <label>Maksymalna liczba zmian jednego pracownika na dobę<input name="maximumShiftsPerDay" type="number" min="1" max="24" step="1" required disabled={!editable} defaultValue={settings.maximumShiftsPerDay}/><small>Silnik stosuje tę wartość przy generowaniu, ręcznym uzupełnianiu i publikacji grafiku. Nadal nie dopuści zmian nakładających się ani naruszających minimalny odpoczynek.</small></label>
         <label className="check-label"><input name="missingAvailabilityMeansAvailable" type="checkbox" disabled={!editable} defaultChecked={settings.missingAvailabilityMeansAvailable}/> Dla umów pracowniczych brak deklaracji oznacza dostępność</label>
         <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Czekaj na matematycznie najlepszy wynik<small>Gdy opcja jest wyłączona, system zwróci najlepszy znaleziony wariant w limicie czasu i wyraźnie oznaczy brak dowodu optimum. Gdy jest włączona, nie uzna wariantu za gotowy bez matematycznego potwierdzenia.</small></label>
       </details>
@@ -1321,13 +1321,14 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     ["Tryb aktualizacji","Zmienia i dodaje wyłącznie osoby obecne w pliku; pozostałych nie dotyka."],
     ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
     ["Godziny zmian","Podaj dokładne godziny Od i Do. Techniczna klasyfikacja czasu jest obliczana automatycznie i nie jest polem użytkownika."],
+    ["Limit zmian na dobę","Pole „Maks. zmian jednego pracownika na dobę” steruje silnikiem. Standardowo wpisz 1. Większa wartość pozwala rozważyć kolejną nienakładającą się zmianę tylko wtedy, gdy zachowany jest minimalny odpoczynek i pozostałe reguły."],
     ["Bezpieczeństwo","Najpierw użyj Podglądu. Zapis wszystkich arkuszy odbywa się atomowo w jednej transakcji."],
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
   const json=(value:unknown)=>JSON.stringify(value??{});
   const settings=matrixV2Settings(data.matrixVersion);
-  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian dziennie","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
+  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian jednego pracownika na dobę","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
     [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
   ]);
   add("Role",["Kod","Nazwa","Kolor","Kolejność","Aktywna"],data.roles.map(item=>[item.code,item.name,item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
