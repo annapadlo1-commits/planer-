@@ -842,6 +842,56 @@ class CpSatScheduleEngine:
                         and "targetValue" not in term["parameters"]
                         for term in tier_terms[tier]
                     )
+                    # Every supported business metric is non-negative. If the
+                    # verified Matrix-compatible incumbent already reaches zero
+                    # for an all-minimization tier, zero is a mathematical lower
+                    # bound and there is nothing left to prove. Freezing it here
+                    # preserves the exact business result and gives later tiers
+                    # (notably workload fairness) their configured solve time.
+                    incumbent_zero_tier = (
+                        feasible_fallback_solver is not None
+                        and all(
+                            term["direction"] == "MIN"
+                            and "targetValue" not in term["parameters"]
+                            for term in tier_terms[tier]
+                        )
+                        and self._normalized_tier_value(
+                            feasible_fallback_solver,
+                            artifacts,
+                            tier_terms[tier],
+                        )
+                        == 0
+                    )
+                    if incumbent_zero_tier:
+                        allowed_degradation = tier_tolerances[tier]
+                        stage_results.append(
+                            {
+                                "tier": tier,
+                                "name": f"TIER_{tier}",
+                                "value": 0,
+                                "status": "OPTIMAL",
+                                "bestBound": 0.0,
+                                "tolerance": allowed_degradation,
+                                "frozenUpperBound": allowed_degradation,
+                                "terms": tier_terms[tier],
+                                "verifiedZeroIncumbent": True,
+                            }
+                        )
+                        artifacts.model.add(expression <= allowed_degradation)
+                        self._emit_progress(
+                            phase=f"TIER_{tier}",
+                            progress=10
+                            + (
+                                80
+                                * (strategy_index * len(ordered_tiers) + tier_index)
+                                // (strategy_count * len(ordered_tiers))
+                            ),
+                            strategyId=strategy.id,
+                            strategyProgress=(90 * tier_index // len(ordered_tiers)),
+                            strategyCount=strategy_count,
+                            completedStrategies=strategy_index,
+                        )
+                        continue
                     if fixed_unfilled_tier:
                         exact_value = sum(
                             (1 if term["direction"] == "MIN" else -1)
