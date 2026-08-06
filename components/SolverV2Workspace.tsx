@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, MapPin, Plus, RefreshCw, ShieldCheck, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarDays, Check, CircleDollarSign, Edit3, MapPin, Plus, RefreshCw, ShieldCheck, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { emergencyAssignV2, getCandidateDiagnostics, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, removeLeaderAssignment, saveLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { emergencyAssignV2, getCandidateDiagnostics, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantWorkloadDistribution, removeLeaderAssignment, saveLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -53,6 +54,72 @@ function timeLabel(value: string, timezone: string) {
   return new Intl.DateTimeFormat("pl-PL", {
     hour: "2-digit", minute: "2-digit", timeZone: timezone,
   }).format(date);
+}
+
+function workloadHours(minutes:number){
+  const hours=minutes/60;
+  return `${new Intl.NumberFormat("pl-PL",{maximumFractionDigits:1}).format(hours)} h`;
+}
+
+function workloadReason(row:SolverWorkloadDistributionRow){
+  if(row.reasonCode==="AVAILABILITY_LIMITED")return `Ograniczenie dostępności: ${row.hardUnavailableDays} dni twardej niedostępności w tym miesiącu.`;
+  if(row.reasonCode==="AVAILABILITY_WINDOW_LIMITED")return `Pracownik podał konkretne okna dostępności w ${row.availableWindowDays} dniach; silnik mógł planować tylko wewnątrz nich.`;
+  if(row.reasonCode==="MAXIMUM_REACHED")return "Osiągnięto miesięczny limit godzin zapisany w konfiguracji pracownika.";
+  if(row.reasonCode==="TARGET_NOT_SET")return "Nie ustawiono miesięcznego wymiaru. Silnik nie miał celu godzinowego, z którym mógł porównać tę osobę.";
+  if(row.reasonCode==="ABOVE_NOMINAL")return "Przydział przekracza miesięczny wymiar. Lider powinien sprawdzić koszt i zgodność z umową przed publikacją.";
+  if(row.reasonCode==="ON_TARGET")return "Przydział jest zgodny z ustawionym miesięcznym wymiarem.";
+  return "Brak indywidualnej twardej blokady dostępności. Różnica wynika z rozdziału solvera, zapotrzebowania zmian i reguł całego zespołu.";
+}
+
+type WorkspaceView="CALENDAR"|"WORKLOAD"|"ISSUES";
+type SchedulePerspective="EMPLOYEES"|"ROLES"|"COVERAGE";
+
+const rolePalette=[
+  {accent:"#6848d8",background:"#f0ebff"},
+  {accent:"#138b7d",background:"#e5f7f3"},
+  {accent:"#d45a54",background:"#fff0ee"},
+  {accent:"#d17b20",background:"#fff4e5"},
+  {accent:"#2879bd",background:"#eaf5ff"},
+  {accent:"#b44785",background:"#fcecf5"},
+];
+const dutyPalette=[
+  {accent:"#756135",background:"#fff7dc"},
+  {accent:"#2f6f69",background:"#e9f7f5"},
+  {accent:"#7a4e88",background:"#f8eefb"},
+  {accent:"#8a5135",background:"#fff0e8"},
+  {accent:"#3f5f8a",background:"#edf3ff"},
+];
+
+function roleStyle(roleId:string):CSSProperties{
+  const index=[...roleId].reduce((sum,character)=>sum+character.charCodeAt(0),0)%rolePalette.length;
+  return {"--role-accent":rolePalette[index].accent,"--role-background":rolePalette[index].background} as CSSProperties;
+}
+
+function dutyStyle(dutyId:string):CSSProperties{
+  const index=[...dutyId].reduce((sum,character)=>sum+character.charCodeAt(0),0)%dutyPalette.length;
+  return {color:dutyPalette[index].accent,backgroundColor:dutyPalette[index].background};
+}
+
+function monthWeeks(value:string){
+  const [year,month]=value.slice(0,7).split("-").map(Number);
+  const first=new Date(Date.UTC(year,month-1,1));
+  const last=new Date(Date.UTC(year,month,0));
+  const firstMonday=new Date(first);
+  firstMonday.setUTCDate(first.getUTCDate()-((first.getUTCDay()+6)%7));
+  const lastSunday=new Date(last);
+  lastSunday.setUTCDate(last.getUTCDate()+(7-((last.getUTCDay()+6)%7)-1));
+  const weeks:string[][]=[];
+  for(const cursor=new Date(firstMonday);cursor<=lastSunday;cursor.setUTCDate(cursor.getUTCDate()+7)){
+    weeks.push(Array.from({length:7},(_,day)=>{
+      const date=new Date(cursor);date.setUTCDate(cursor.getUTCDate()+day);
+      return date.toISOString().slice(0,10);
+    }));
+  }
+  return weeks;
+}
+
+function shortDayLabel(value:string){
+  return new Intl.DateTimeFormat("pl-PL",{weekday:"short",day:"numeric",month:"short",timeZone:"UTC"}).format(new Date(`${value}T12:00:00Z`));
 }
 
 function timestampLabel(value: string | null | undefined, timezone: string) {
@@ -116,6 +183,15 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderEmployeeId,setLeaderEmployeeId]=useState("");
   const [leaderReason,setLeaderReason]=useState("");
   const [leaderBusy,setLeaderBusy]=useState(false);
+  const [workspaceView,setWorkspaceView]=useState<WorkspaceView>("CALENDAR");
+  const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
+  const [workloadRows,setWorkloadRows]=useState<SolverWorkloadDistributionRow[]|null>(null);
+  const [workloadLoading,setWorkloadLoading]=useState(false);
+  const [workloadError,setWorkloadError]=useState("");
+  const [workloadSearch,setWorkloadSearch]=useState("");
+  const [workloadLocation,setWorkloadLocation]=useState("");
+  const [workloadReasonFilter,setWorkloadReasonFilter]=useState("");
+  const [workloadSort,setWorkloadSort]=useState<"HOURS_DESC"|"HOURS_ASC"|"DIFFERENCE">("HOURS_DESC");
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
   useEffect(()=>{
     let active=true;
@@ -131,6 +207,11 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     shiftsByDate.set(shift.date, [...(shiftsByDate.get(shift.date) ?? []), shift]);
   }
   const dates = [...shiftsByDate.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const weeks=monthWeeks(workspace.context.month);
+  const scheduleEntries=workspace.shifts.flatMap(shift=>shift.assignments.map(assignment=>({shift,assignment})));
+  const scheduleEmployees=[...new Map(scheduleEntries.map(entry=>[entry.assignment.employee.id,entry.assignment.employee])).values()].sort((left,right)=>`${left.lastName} ${left.firstName}`.localeCompare(`${right.lastName} ${right.firstName}`,"pl-PL"));
+  const scheduleRoles=[...new Map(scheduleEntries.map(entry=>[entry.assignment.role.id,entry.assignment.role])).values()].sort((left,right)=>left.name.localeCompare(right.name,"pl-PL"));
+  const coverageRows=[...new Map(workspace.shifts.map(shift=>[`${shift.location.id}:${shift.shiftTemplate.id}:${timeLabel(shift.startsAt,shift.location.timezone??timezone)}:${timeLabel(shift.endsAt,shift.location.timezone??timezone)}`,{key:`${shift.location.id}:${shift.shiftTemplate.id}:${timeLabel(shift.startsAt,shift.location.timezone??timezone)}:${timeLabel(shift.endsAt,shift.location.timezone??timezone)}`,locationId:shift.location.id,locationName:shift.location.name,templateId:shift.shiftTemplate.id,shiftName:shift.shiftTemplate.name,start:timeLabel(shift.startsAt,shift.location.timezone??timezone),end:timeLabel(shift.endsAt,shift.location.timezone??timezone)}])).values()];
   const assignmentCount = workspace.variants.reduce((sum, variant) => sum + variant.assignmentCount, 0);
   const unfilledCount = workspace.variants.reduce((sum, variant) => sum + variant.unfilledCount, 0);
   const unfilledIssues=workspace.issues.filter(issue=>issue.code==="UNFILLED_SLOT");
@@ -147,6 +228,28 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const missingByShift=groupMissing(issue=>issue.shift?.shiftTemplate.name??"Brak wskazanej zmiany");
   const publishedAt = timestampLabel(workspace.context.publishedAt, timezone);
   const activeDiagnosticIssue=diagnostics?workspace.issues.find(issue=>issue.id===diagnostics.issue.id)??null:null;
+  const workloadLocations=[...new Map((workloadRows??[]).flatMap(row=>row.locations.map(location=>[location.id,location] as const))).values()].sort((a,b)=>a.name.localeCompare(b.name,"pl-PL"));
+  const filteredWorkload=(workloadRows??[]).filter(row=>{
+    const search=workloadSearch.trim().toLocaleLowerCase("pl-PL");
+    return (!search||`${row.employeeName} ${row.employeeNo} ${row.roleNames.join(" ")}`.toLocaleLowerCase("pl-PL").includes(search))
+      &&(!workloadLocation||row.locations.some(location=>location.id===workloadLocation))
+      &&(!workloadReasonFilter||row.reasonCode===workloadReasonFilter);
+  }).sort((left,right)=>workloadSort==="HOURS_ASC"?left.plannedMinutes-right.plannedMinutes
+    :workloadSort==="DIFFERENCE"?Math.abs(right.differenceMinutes)-Math.abs(left.differenceMinutes)
+    :right.plannedMinutes-left.plannedMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
+  const workloadMinutes=filteredWorkload.map(row=>row.plannedMinutes).sort((a,b)=>a-b);
+  const workloadMedian=workloadMinutes.length?(workloadMinutes[Math.floor((workloadMinutes.length-1)/2)]+workloadMinutes[Math.ceil((workloadMinutes.length-1)/2)])/2:0;
+
+  async function openWorkload(force=false){
+    setWorkspaceView("WORKLOAD");
+    if(workloadRows&&!force||workloadLoading)return;
+    const variantId=workspace.variants[0]?.id;
+    if(!supabase||!variantId){setWorkloadError("Ten widok nie wskazuje wariantu do analizy.");return;}
+    setWorkloadLoading(true);setWorkloadError("");
+    try{setWorkloadRows(await getVariantWorkloadDistribution(supabase,variantId));}
+    catch(error){setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setWorkloadLoading(false);}
+  }
 
   async function inspectIssue(issueId:string){
     if(!supabase||!workspace.context.scheduleId)return;
@@ -234,7 +337,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         assignmentId:leaderContext.assignmentId,issueId:leaderContext.issueId,
         employeeId:leaderEmployeeId,reason:leaderReason.trim()});
       notify?.("Zmiana przeszła pełną kontrolę reguł i została zapisana wyłącznie w wersji lidera.");
-      setLeaderContext(null);await onLeaderChanged?.();
+      setLeaderContext(null);await onLeaderChanged?.();await openWorkload(true);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
@@ -245,7 +348,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       await removeLeaderAssignment(supabase,{variantId:leaderContext.variantId,
         assignmentId:leaderContext.assignmentId,reason:leaderReason.trim()});
       notify?.("Przydział usunięto z wersji lidera. Miejsce jest widoczne jako brak do uzupełnienia.");
-      setLeaderContext(null);await onLeaderChanged?.();
+      setLeaderContext(null);await onLeaderChanged?.();await openWorkload(true);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
@@ -268,6 +371,13 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <span><CalendarDays/><small>Dni ze zmianami</small><strong>{dates.length}</strong></span>
     </div>
 
+    <nav className="solver-workspace-tabs" aria-label="Widoki grafiku">
+      <button className={workspaceView==="CALENDAR"?"active":""} onClick={()=>setWorkspaceView("CALENDAR")}><CalendarDays/><span><strong>Grafik tygodniowy</strong><small>Cały miesiąc bez rozwijania dni</small></span></button>
+      <button className={workspaceView==="WORKLOAD"?"active":""} onClick={()=>void openWorkload()}><BarChart3/><span><strong>Rozkład pracy</strong><small>Godziny, zmiany i lokale zespołu</small></span></button>
+      <button className={workspaceView==="ISSUES"?"active":""} onClick={()=>setWorkspaceView("ISSUES")}><AlertTriangle/><span><strong>Braki i powody</strong><small>{unfilledCount?`${unfilledCount} miejsc wymaga decyzji`:"Brak nieobsadzonych miejsc"}</small></span></button>
+    </nav>
+
+    {workspaceView==="ISSUES"&&<>
     {unfilledIssues.length>0&&<section className="solver-missing-breakdown">
       <div className="solver-missing-explainer"><AlertTriangle/><span><strong>{unfilledCount} braków to suma nieobsadzonych wymaganych miejsc</strong><small>Każdy brak poniżej wskazuje konkretny dzień, lokal, zmianę i rolę. To nie jest liczba pracowników ani naruszenie twardych reguł.</small></span></div>
       <div className="solver-missing-groups">
@@ -290,6 +400,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
           {workspace.issues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})}/>)}
         </div>}
     </details>
+    </>}
 
     {workspace.finance && <div className="solver-workspace-finance">
       <div><CircleDollarSign/><span><small>Koszt podstawowy</small><strong>{money(workspace.finance.baseCostMinor, workspace.finance.currency)}</strong></span></div>
@@ -298,7 +409,35 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <div><span><small>Budżet scenariusza</small><strong>{money(workspace.finance.budgetMinor, workspace.finance.currency)}</strong></span></div>
     </div>}
 
-    {published && <details className="solver-workspace-standby" open>
+    {workspaceView==="WORKLOAD"&&<section className="solver-workload-content" aria-label="Rozkład pracy zespołu">
+      <header className="solver-workspace-view-head"><span><em>{published?"OPUBLIKOWANY GRAFIK":workspace.context.variantKind==="LEADER_COPY"?"WERSJA LIDERA • JESZCZE NIEOPUBLIKOWANA":"WARIANT • JESZCZE NIEOPUBLIKOWANY"}</em><strong>Rozkład pracy zespołu</strong><small>{workspace.context.variantKind==="LEADER_COPY"?"Aktualny bilans kopii lidera — po każdej zmianie jest liczony ponownie.":"Analiza dokładnie tego wariantu, który wskazuje nagłówek."}</small></span><button className="secondary-button" disabled={workloadLoading} onClick={()=>void openWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz</button></header>
+      {workloadLoading&&<div className="solver-workspace-empty"><RefreshCw className="spin"/> Obliczamy rozkład godzin…</div>}
+      {workloadError&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Nie udało się pobrać rozkładu pracy</strong><small>{workloadError}</small></span></div>}
+      {workloadRows&&<>
+        <div className="solver-workload-summary">
+          <span><small>Osoby w analizie</small><strong>{filteredWorkload.length}</strong></span>
+          <span><small>Najmniej godzin</small><strong>{workloadHours(workloadMinutes[0]??0)}</strong></span>
+          <span><small>Mediana</small><strong>{workloadHours(workloadMedian)}</strong></span>
+          <span><small>Najwięcej godzin</small><strong>{workloadHours(workloadMinutes.at(-1)??0)}</strong></span>
+          <span><small>Różnica min–max</small><strong>{workloadHours((workloadMinutes.at(-1)??0)-(workloadMinutes[0]??0))}</strong></span>
+        </div>
+        <div className="solver-workload-filters">
+          <label>Znajdź pracownika<input value={workloadSearch} onChange={event=>setWorkloadSearch(event.target.value)} placeholder="Imię, nazwisko, numer lub rola"/></label>
+          <label>Lokal<select value={workloadLocation} onChange={event=>setWorkloadLocation(event.target.value)}><option value="">Wszystkie lokale</option>{workloadLocations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+          <label>Wyjaśnienie<select value={workloadReasonFilter} onChange={event=>setWorkloadReasonFilter(event.target.value)}><option value="">Wszystkie przyczyny</option><option value="AVAILABILITY_LIMITED">Ograniczona dostępność</option><option value="AVAILABILITY_WINDOW_LIMITED">Konkretne okna dostępności</option><option value="MAXIMUM_REACHED">Osiągnięty limit</option><option value="TARGET_NOT_SET">Brak wymiaru</option><option value="SOLVER_DISTRIBUTION">Rozdział silnika</option><option value="ABOVE_NOMINAL">Powyżej wymiaru</option><option value="ON_TARGET">Zgodnie z wymiarem</option></select></label>
+          <label>Sortowanie<select value={workloadSort} onChange={event=>setWorkloadSort(event.target.value as typeof workloadSort)}><option value="HOURS_DESC">Najwięcej godzin</option><option value="HOURS_ASC">Najmniej godzin</option><option value="DIFFERENCE">Największa różnica od wymiaru</option></select></label>
+        </div>
+        <div className="solver-workload-list">{filteredWorkload.map(row=><article key={row.employeeId}>
+          <header><span><strong>{row.employeeName}</strong><small>{row.employeeNo} • {row.roleNames.join(", ")||"Rola w analizowanym grafiku"}</small></span><b>{workloadHours(row.plannedMinutes)}</b></header>
+          <div className="solver-workload-kpis"><span><small>Zmiany</small><strong>{row.shiftCount}</strong></span><span><small>Wymiar</small><strong>{row.nominalMonthlyMinutes?workloadHours(row.nominalMonthlyMinutes):"Brak"}</strong></span><span><small>Różnica</small><strong className={row.differenceMinutes>0?"over":row.differenceMinutes<0?"under":""}>{row.nominalMonthlyMinutes?`${row.differenceMinutes>0?"+":""}${workloadHours(row.differenceMinutes)}`:"—"}</strong></span></div>
+          <div className="solver-workload-locations">{row.locations.length?row.locations.map(location=><span key={location.id}><MapPin/>{location.name}: <b>{workloadHours(location.minutes)}</b> • {location.shiftCount} zmian</span>):<span>Brak przydziałów w lokalach</span>}</div>
+          <p className={`reason-${row.reasonCode.toLowerCase()}`}><strong>Dlaczego taki wynik?</strong> {workloadReason(row)}</p>
+        </article>)}</div>
+        {!filteredWorkload.length&&<div className="solver-workspace-empty">Żadna osoba nie spełnia wybranych filtrów.</div>}
+      </>}
+    </section>}
+
+    {workspaceView==="ISSUES"&&published && <details className="solver-workspace-standby" open>
       <summary><span><ShieldCheck/><strong>Rezerwa bezpieczeństwa</strong></span><small>{standby.length} dyżurów gotowości</small></summary>
       <p className="solver-workspace-empty">Pełna obsada ma pierwszeństwo. System dodaje pierwszą i — gdy pozwala na to liczebność zespołu — drugą osobę rezerwową.</p>
       {standbyError ? <p className="solver-workspace-empty">Nie udało się pobrać rezerwy: {standbyError}</p>
@@ -310,42 +449,20 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {standbyAction&&<form className="standby-activation-form" onSubmit={event=>{event.preventDefault();void activateStandby();}}><div><strong>Aktywuj {standbyAction.employeeName} • rezerwa {standbyAction.tier}</strong><small>{standbyAction.date} • {standbyAction.roleName}. Wybierz osobę, której opublikowany przydział ma zostać zastąpiony. System ponownie sprawdzi wszystkie twarde reguły.</small></div><label>Zastępowany przydział<select required value={standbyTargetAssignmentId} onChange={event=>setStandbyTargetAssignmentId(event.target.value)}><option value="">Wybierz przydział</option>{workspace.shifts.filter(shift=>shift.date===standbyAction.date).flatMap(shift=>shift.assignments.filter(assignment=>assignment.role.id===standbyAction.roleId&&assignment.employee.id!==standbyAction.employeeId).map(assignment=><option key={assignment.id} value={assignment.id}>{assignment.employee.firstName} {assignment.employee.lastName} • {shift.shiftTemplate.name} • {timeLabel(shift.startsAt,shift.location.timezone??timezone)}</option>))}</select></label><label>Powód aktywacji<textarea required minLength={3} value={standbyReason} onChange={event=>setStandbyReason(event.target.value)} placeholder="np. potwierdzona nieobecność pracownika"/></label><div><button type="button" className="secondary-button" onClick={()=>setStandbyAction(null)}>Anuluj</button><button className="primary-button" disabled={diagnosticsLoading||!standbyTargetAssignmentId||standbyReason.trim().length<3}>Potwierdź aktywację</button></div></form>}
     </details>}
 
-    <div className="solver-workspace-calendar">
-      <h4>Obsada według dni</h4>
+    {workspaceView==="CALENDAR"&&<section className="solver-weekly-workspace">
+      <header className="solver-workspace-view-head"><span><strong>Grafik tygodniowy</strong><small>Ta sama wersja grafiku w trzech perspektywach. Pierwsza kolumna i daty pozostają widoczne podczas przewijania.</small></span></header>
+      <div className="solver-schedule-perspectives" role="tablist" aria-label="Perspektywa grafiku"><button className={schedulePerspective==="EMPLOYEES"?"active":""} onClick={()=>setSchedulePerspective("EMPLOYEES")}>Pracownicy</button><button className={schedulePerspective==="ROLES"?"active":""} onClick={()=>setSchedulePerspective("ROLES")}>Stanowiska</button><button className={schedulePerspective==="COVERAGE"?"active":""} onClick={()=>setSchedulePerspective("COVERAGE")}>Pokrycie obsady</button></div>
       {dates.length === 0 && <div className="solver-workspace-empty">Ten wariant nie zawiera jeszcze zmian do pokazania.</div>}
-      {dates.map(([date, shifts], dateIndex) => {
-        const people = shifts.reduce((sum, shift) => sum + shift.assignments.length, 0);
-        return <details key={date} open={dateIndex === 0}>
-          <summary>
-            <span><CalendarDays/><strong>{dateLabel(date)}</strong></span>
-            <small>{shifts.length} {shifts.length === 1 ? "zmiana" : "zmian"} • {people} przydziałów</small>
-          </summary>
-          <div className="solver-workspace-shifts">
-            {shifts.map(shift => <article key={`${shift.slotGroupKey}:${shift.location.id}:${shift.shiftTemplate.id}`}>
-              <header>
-                <span><MapPin/><strong>{shift.location.name}</strong></span>
-                <span>{timeLabel(shift.startsAt,shift.location.timezone ?? timezone)}–{timeLabel(shift.endsAt,shift.location.timezone ?? timezone)}</span>
-              </header>
-              <h5>{shift.shiftTemplate.name}</h5>
-              {shift.assignments.length === 0
-                ? <p className="solver-workspace-empty">Brak przydzielonych osób</p>
-                : <div className="solver-workspace-people">
-                  {shift.assignments.map(assignment => <div key={assignment.id}>
-                    <span>
-                      <strong>{[assignment.employee.firstName, assignment.employee.lastName].filter(Boolean).join(" ") || "Pracownik"}</strong>
-                      <small>{assignment.role.name}</small>
-                    </span>
-                    <em>{assignment.duties.length
-                      ? assignment.duties.map(duty => duty.name).join(", ")
-                      : "Bez dodatkowych obowiązków"}</em>
-                    {leaderEditable&&<button className="secondary-button compact" disabled={leaderBusy} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/> Zmień</button>}
-                  </div>)}
-                </div>}
-            </article>)}
-          </div>
-        </details>;
-      })}
-    </div>
+      {weeks.map((week,weekIndex)=><article className="solver-roster-week" key={week[0]}>
+        <header><strong>Tydzień {weekIndex+1}</strong><small>{shortDayLabel(week[0])} – {shortDayLabel(week[6])}</small></header>
+        <div className="solver-roster-scroll">
+          <div className="solver-roster-grid solver-roster-head"><b>{schedulePerspective==="EMPLOYEES"?"Pracownik":schedulePerspective==="ROLES"?"Stanowisko":"Zmiana i lokal"}</b>{week.map(date=><span className={date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""} key={date}>{shortDayLabel(date)}</span>)}</div>
+          {schedulePerspective==="EMPLOYEES"&&scheduleEmployees.map(employee=><div className="solver-roster-grid solver-roster-row" key={employee.id}><header><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.nominalMonthlyMinutes?workloadHours(employee.nominalMonthlyMinutes)+" wymiaru":"Brak wymiaru"}</small></header>{week.map(date=>{const entries=scheduleEntries.filter(entry=>entry.assignment.employee.id===employee.id&&entry.shift.date===date);return <div className={["solver-roster-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{entries.map(({shift,assignment})=><article className="solver-roster-assignment" style={roleStyle(assignment.role.id)} key={assignment.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.location.name} • {assignment.role.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<button aria-label={"Zmień przydział: "+employee.firstName+" "+employee.lastName} disabled={leaderBusy} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button>}</article>)}{!entries.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>)}
+          {schedulePerspective==="ROLES"&&scheduleRoles.map(role=><div className="solver-roster-grid solver-roster-row" key={role.id}><header style={roleStyle(role.id)}><strong>{role.name}</strong><small>Obsada stanowiska</small></header>{week.map(date=>{const entries=scheduleEntries.filter(entry=>entry.assignment.role.id===role.id&&entry.shift.date===date);return <div className={["solver-roster-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{entries.map(({shift,assignment})=><article className="solver-role-assignment" style={roleStyle(role.id)} key={assignment.id}><span><b>{assignment.employee.firstName} {assignment.employee.lastName}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span>{leaderEditable&&<button aria-label="Edytuj przydział" disabled={leaderBusy} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button>}</article>)}{!entries.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>)}
+          {schedulePerspective==="COVERAGE"&&coverageRows.map(coverage=><div className="solver-roster-grid solver-roster-row coverage" key={coverage.key}><header><strong>{coverage.shiftName}</strong><small>{coverage.start}–{coverage.end} • {coverage.locationName}</small></header>{week.map(date=>{const dayShifts=workspace.shifts.filter(shift=>shift.date===date&&shift.location.id===coverage.locationId&&shift.shiftTemplate.id===coverage.templateId&&timeLabel(shift.startsAt,shift.location.timezone??timezone)===coverage.start);const assigned=dayShifts.reduce((sum,shift)=>sum+shift.assignments.length,0);const issues=workspace.issues.filter(issue=>issue.code==="UNFILLED_SLOT"&&issue.shift?.date===date&&issue.shift.location.id===coverage.locationId&&issue.shift.shiftTemplate.id===coverage.templateId);const missing=issues.reduce((sum,issue)=>sum+missingSeats(issue),0);const required=assigned+missing;const percent=required?Math.round(assigned/required*100):0;return <div className={["solver-roster-cell","coverage",missing?"shortage":required?"complete":"",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{required?<><span><b>{assigned}/{required}</b><small>{missing?"Brakuje "+missing:"Pełna obsada"}</small></span><i><b style={{width:String(percent)+"%"}}/></i>{missing>0&&leaderEditable&&<button onClick={()=>void openLeaderEdit({issueId:issues[0].id})}>Uzupełnij</button>}</>:date.slice(0,7)===workspace.context.month.slice(0,7)?<span className="solver-roster-empty">Brak zmiany</span>:null}</div>})}</div>)}
+        </div>
+      </article>)}
+    </section>}
 
     {leaderContext&&<><button className="drawer-scrim top" onClick={()=>setLeaderContext(null)}/><aside className="drawer role-drawer top leader-assignment-drawer">
       <div className="drawer-head"><div><p className="eyebrow">WERSJA LIDERA • EDYCJA PRZED PUBLIKACJĄ</p><h2>{leaderContext.shift.date} • {leaderContext.shift.shiftName}</h2><small>{leaderContext.shift.locationName} • {leaderContext.role.name} • {timeLabel(leaderContext.shift.startsAt,timezone)}–{timeLabel(leaderContext.shift.endsAt,timezone)}</small></div><button className="icon-button" onClick={()=>setLeaderContext(null)}><X/></button></div>
@@ -356,6 +473,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}<button className="primary-button" disabled={leaderBusy||!leaderEmployeeId||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Sprawdź i zapisz</button></div>
       </div>
     </aside></>}
+
 
     {variantDiagnostics&&<><button className="drawer-scrim top" onClick={()=>setVariantDiagnostics(null)}/><aside className="drawer role-drawer top candidate-diagnostics-drawer">
       <div className="drawer-head"><div><p className="eyebrow">WARIANT • WYJAŚNIENIE BRAKU</p><h2>{variantDiagnostics.shift.date} • {timeLabel(variantDiagnostics.shift.startsAt,timezone)}–{timeLabel(variantDiagnostics.shift.endsAt,timezone)}</h2><small>Powody są liczone dla pracowników dostępnych w opublikowanej konfiguracji firmy i aktualnego składu tego wariantu.</small></div><button className="icon-button" onClick={()=>setVariantDiagnostics(null)}><X/></button></div>
