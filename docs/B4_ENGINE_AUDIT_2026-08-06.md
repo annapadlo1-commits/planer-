@@ -13,7 +13,7 @@ Model CP-SAT stawia minimalizację nieobsadzonych miejsc przed celami kosztowymi
 | Obszar | Model CP-SAT | Walidacja wyniku | Operacyjna aktywacja rezerwy | Status po poprawce |
 |---|---|---|---|---|
 | Wymagana obsada | cel globalny `UNFILLED`, rozstrzygany i zamrażany przed strategiami | zgodność liczby przydziałów i wakatów | nie dotyczy | zgodne; rezerwa nie może tworzyć wakatu |
-| Jedna zasadnicza zmiana dziennie | ograniczenie `<= 1`, niezależne od historycznej wartości `maxShiftsPerDay` | ponowna kontrola | osobna blokada drugiej zmiany tego samego dnia oraz kontrola odpoczynku | zgodne; wersja robocza konfiguracji wymaga normalizacji do wartości 1 |
+| Konfigurowalny limit zmian jednego pracownika na dobę | ograniczenie `<= maximumShiftsPerDay` pobrane z opublikowanej konfiguracji firmy | test wartości 1 i 2 | CP-SAT, tryb awaryjny, walidator wariantu i diagnostyka ręcznych przydziałów czytają tę samą wartość; nakładanie i odpoczynek pozostają niezależnymi regułami twardymi | poprawiono po findingu UAT: usunięto stałe `1` |
 | Nakładanie zmian i odpoczynek | uwzględnia zmiany z przebiegu i zewnętrzne/opublikowane | ponowna kontrola sekwencji | ponowna kontrola aktualnego grafiku i aktywnych zastępstw | zgodne w kodzie; wymaga E2E |
 | Rola, lokal i kompetencje | kandydat jest tworzony tylko dla dozwolonego przydziału | ponowna kontrola | ponowna kontrola roli, lokalu i obowiązków docelowego przydziału | zgodne w kodzie; wymaga E2E |
 | Niedostępność, urlop i L4 | blokady zakresów godzinowych | ponowna kontrola | ponowna kontrola w chwili aktywacji | zgodne w kodzie; wymaga E2E |
