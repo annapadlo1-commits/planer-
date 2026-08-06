@@ -437,14 +437,6 @@ export function SolverV2Panel({
 
   async function choose(variant: SolverVariant) {
     if (!supabase || !run) return;
-    const costSummary = variant.totalCostMinor === undefined || variant.totalCostMinor === null
-      ? ""
-      : ` • koszt ${money(variant.totalCostMinor, variant.currency)}`;
-    const confirmation = window.confirm(
-      `Wybrać „${variant.strategy.name}” jako wynik tego generowania?\n\n` +
-      `${variant.assignmentCount} przydziałów • ${variant.unfilledCount} braków${costSummary}`,
-    );
-    if (!confirmation) return;
     setBusy(true);
     setMessage("");
     try {
@@ -562,17 +554,6 @@ export function SolverV2Panel({
       setMessage(solverErrorMessage(errorText(error)));
       return;
     }
-    const costSummary = selectedVariant.totalCostMinor === undefined || selectedVariant.totalCostMinor === null
-      ? ""
-      : ` • koszt ${money(selectedVariant.totalCostMinor, selectedVariant.currency)}`;
-    const confirmation = window.confirm(
-      `Opublikować „${trimmedName}” jako obowiązujący grafik dla wybranego miesiąca?\n\n`
-      + `Wybrano strategię „${selectedVariant.strategy.name}”: ${selectedVariant.assignmentCount} przydziałów • ${selectedVariant.unfilledCount} braków${costSummary}.\n\n`
-      + `${readiness.warnings.unfilledCount>0?`UWAGA: wariant zawiera ${readiness.warnings.unfilledCount} braków obsady.\n\n`:""}`
-      + "Obecnie opublikowany grafik dla tego miesiąca zostanie zarchiwizowany. Przed publikacją system ponownie sprawdzi aktualne dane i wszystkie twarde reguły.",
-    );
-    if (!confirmation){setBusy(false);return;}
-
     const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
     let idempotencyKey = window.localStorage.getItem(attemptKey);
     if (!isValidIdempotencyKey(idempotencyKey)) {
@@ -628,13 +609,6 @@ export function SolverV2Panel({
       setMessage("Nie udało się opublikować grafiku zespołu. Podaj jego nazwę.");
       return;
     }
-    const confirmation = window.confirm(
-      `Opublikować „${trimmedName}” dla zespołu ${scopeLabel}?\n\n`
-      + `${selectedVariant.assignmentCount} przydziałów • ${selectedVariant.unfilledCount} braków.\n\n`
-      + "Pracownicy tego zespołu od razu otrzymają powiadomienie i zobaczą swoje zmiany. Pozostałe zespoły nie muszą być jeszcze gotowe.",
-    );
-    if (!confirmation) return;
-
     const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
     let idempotencyKey = window.localStorage.getItem(attemptKey);
     if (!isValidIdempotencyKey(idempotencyKey)) {
