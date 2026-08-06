@@ -283,3 +283,14 @@ test("employee and company calendars open a filterable day workspace", async () 
   assert.match(css,/\.company-day-filters/);
   assert.match(css,/\.employee-coworker-grid/);
 });
+
+test("publishing a leader copy selects that copy before role publication", async () => {
+  const [panel,client]=await Promise.all([
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  const handler=panel.slice(panel.indexOf("async function publishSelectedRole"),panel.indexOf("function startAnother"));
+  assert.match(handler,/selectSolverVariant\(supabase, run\.id, leaderVariant\.id\)/);
+  assert.ok(handler.indexOf("selectSolverVariant")<handler.indexOf("publishRoleVariant"));
+  assert.match(client,/SELECTED_VALID_ROLE_VARIANT_REQUIRED/);
+});
