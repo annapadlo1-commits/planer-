@@ -67,11 +67,12 @@ METRIC_ALIASES = {
     "HOME_LOCATION": "HOME_LOCATION_VIOLATIONS",
     "NOMINAL_DEVIATION": "NOMINAL_DEVIATION_MINUTES",
     "OVERTIME": "OVERTIME_MINUTES",
-    "LOAD_SPREAD": "LOAD_SPREAD_MINUTES",
+    "LOAD_SPREAD": "LOAD_UTILIZATION_SPREAD_BPS",
+    "LOAD_SPREAD_MINUTES": "LOAD_UTILIZATION_SPREAD_BPS",
     "BASELINE_CHANGES_COUNT": "BASELINE_CHANGES",
     "UNFILLED_SEATS": "UNFILLED",
     "TOTAL_COST_MINOR": "TOTAL_COST",
-    "WORKLOAD_VARIANCE": "LOAD_SPREAD_MINUTES",
+    "WORKLOAD_VARIANCE": "LOAD_UTILIZATION_SPREAD_BPS",
     "WEEKEND_VARIANCE": "WEEKEND_SPREAD",
     "NON_HOME_LOCATION_COUNT": "HOME_LOCATION_VIOLATIONS",
 }
@@ -1976,42 +1977,11 @@ class CpSatScheduleEngine:
                         assigned_week + external_week <= employee.maximum_weekly_minutes
                     )
 
-        # A published role schedule must leave real, eligible people off duty
-        # for daily Tier 1/Tier 2 readiness.  Reserve capacity in the model,
-        # instead of discovering only after publication that everybody was
-        # assigned.  The concrete Tier order remains a deterministic,
-        # auditable publication concern.
-        standby_tiers = snapshot.settings.standby_tiers_per_role_day
-        if standby_tiers:
-            role_day_slots: dict[tuple[str, date], list[Slot]] = defaultdict(list)
-            for slot in slots:
-                role_day_slots[(slot.role_id, slot.date)].append(slot)
-            for (role_id, day), role_slots in role_day_slots.items():
-                representative_slots = list({
-                    slot.occurrence_id: slot for slot in role_slots
-                }.values())
-                eligible_employee_ids = [
-                    employee.id
-                    for employee in snapshot.employees
-                    if employee.role_allowed_on(role_id, day)
-                    and all(
-                        eligibility.evaluate(
-                            employee,
-                            replace(slot, duty_ids=()),
-                        ).allowed
-                        for slot in representative_slots
-                    )
-                ]
-                if len(eligible_employee_ids) < standby_tiers:
-                    model.add(0 >= standby_tiers)
-                    continue
-                model.add(
-                    _sum(
-                        day_work[(employee_id, day)]
-                        for employee_id in eligible_employee_ids
-                    )
-                    <= len(eligible_employee_ids) - standby_tiers
-                )
+        # Stand-by is a post-publication, best-effort operational layer.  It is
+        # intentionally not a hard CP-SAT constraint: a cross-trained person
+        # can be needed by another role, so reserving capacity here could still
+        # create a vacancy elsewhere.  Publication selects available reserve
+        # candidates only after the globally best roster has been chosen.
 
         if aggregate_coverage:
             hinted_assignments = self._add_greedy_coverage_hint(
@@ -2307,12 +2277,44 @@ class CpSatScheduleEngine:
             )
             weekend_vars.append(weekend)
 
-        if total_minutes:
-            max_load = model.new_int_var(0, max_total_bound, "max_load")
-            min_load = model.new_int_var(0, max_total_bound, "min_load")
-            model.add_max_equality(max_load, list(total_minutes.values()))
-            model.add_min_equality(min_load, list(total_minutes.values()))
-            load_spread: Any = max_load - min_load
+        # Raw minutes are not comparable between a full-time employee and a
+        # person with a smaller contractual target.  Balance utilization of an
+        # explicit monthly basis instead: nominal minutes first, then the
+        # individual monthly maximum.  People without either value are not
+        # silently treated as zero-hour workers and the result carries the
+        # target count so the UI can say that the metric lacks input data.
+        utilization_vars: list[Any] = []
+        utilization_bound = 0
+        for employee in snapshot.employees:
+            basis = employee.nominal_monthly_minutes
+            if basis is None or basis <= 0:
+                basis = employee.maximum_monthly_minutes
+            if basis is None or basis <= 0:
+                continue
+            bound = math.ceil(max_total_bound * 1000 / basis)
+            utilization = model.new_int_var(
+                0, bound, f"utilization_bps|{employee.id}"
+            )
+            model.add_division_equality(
+                utilization, total_minutes[employee.id] * 1000, basis
+            )
+            utilization_vars.append(utilization)
+            utilization_bound = max(utilization_bound, bound)
+        if len(utilization_vars) >= 2:
+            max_utilization = model.new_int_var(
+                0, utilization_bound, "max_utilization_bps"
+            )
+            min_utilization = model.new_int_var(
+                0, utilization_bound, "min_utilization_bps"
+            )
+            model.add_max_equality(max_utilization, utilization_vars)
+            model.add_min_equality(min_utilization, utilization_vars)
+            load_utilization_spread: Any = max_utilization - min_utilization
+        else:
+            load_utilization_spread = 0
+            utilization_bound = 0
+
+        if weekend_vars:
             weekend_bound = len(occurrences) + max(
                 (
                     sum(
@@ -2334,7 +2336,6 @@ class CpSatScheduleEngine:
             model.add_min_equality(min_weekend, weekend_vars)
             weekend_spread: Any = max_weekend - min_weekend
         else:
-            load_spread = 0
             weekend_spread = 0
             weekend_bound = 0
 
@@ -2359,8 +2360,10 @@ class CpSatScheduleEngine:
             "PREFERENCE_VIOLATIONS": preference_expression,
             "HOME_LOCATION_VIOLATIONS": home_expression,
             "NOMINAL_DEVIATION_MINUTES": _sum(deviation_vars),
+            "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
-            "LOAD_SPREAD_MINUTES": load_spread,
+            "LOAD_UTILIZATION_SPREAD_BPS": load_utilization_spread,
+            "LOAD_UTILIZATION_TARGET_COUNT": len(utilization_vars),
             "WEEKEND_SPREAD": weekend_spread,
             "BASELINE_CHANGES": _sum(baseline_terms),
         }
@@ -2370,8 +2373,10 @@ class CpSatScheduleEngine:
             "PREFERENCE_VIOLATIONS": 4 * len(slots),
             "HOME_LOCATION_VIOLATIONS": 0,
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,
+            "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
-            "LOAD_SPREAD_MINUTES": max_total_bound,
+            "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
+            "LOAD_UTILIZATION_TARGET_COUNT": len(snapshot.employees),
             "WEEKEND_SPREAD": weekend_bound,
             "BASELINE_CHANGES": len(baseline_terms),
         }
