@@ -151,6 +151,7 @@ export default function GrafikPro() {
   const selectedMonthDate=monthDate(selectedMonth);
   const loadTokenRef=useRef(0),loadMonthRef=useRef(selectedMonthDate);loadMonthRef.current=selectedMonthDate;
   const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:""});
+  const planPanelStorageKey="grafik-pro:open-role-generator";
   const isOrtools=solverConfiguration?.engine==="ORTOOLS_V2";
   const environmentLabel=applicationEnvironmentLabel();
   const projectRef=supabaseProjectRef();
@@ -360,6 +361,17 @@ export default function GrafikPro() {
     }
   },[solverConfiguration?.engine]);
   useEffect(()=>{
+    if(!solverConfiguration||employeeShell)return;
+    try{
+      const raw=window.sessionStorage.getItem(planPanelStorageKey);
+      if(!raw)return;
+      const saved=JSON.parse(raw) as {month?:string;roleId?:string};
+      if(saved.month!==selectedMonth||!saved.roleId)return;
+      const savedRole=solverConfiguration.roles.find(item=>item.id===saved.roleId);
+      if(savedRole){setPlanScope({type:"ROLE",role:savedRole});setModal("plan");}
+    }catch{window.sessionStorage.removeItem(planPanelStorageKey);}
+  },[employeeShell,selectedMonth,solverConfiguration]);
+  useEffect(()=>{
     if(role!=="ALL"&&!roleOptions.some(option=>option.value===role))setRole("ALL");
   },[role,roleOptions]);
   useEffect(()=>{
@@ -378,8 +390,10 @@ export default function GrafikPro() {
     if(!dynamicRole){setError("Ta rola nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
     setPlanScope({type:"ROLE",role:dynamicRole});
     setPlanForm(current=>({...current,name:`Grafik ${dynamicRole.name} • ${selectedMonth}`}));
+    window.sessionStorage.setItem(planPanelStorageKey,JSON.stringify({month:selectedMonth,roleId:dynamicRole.id}));
     setModal("plan");
   };
+  const closeModal=()=>{window.sessionStorage.removeItem(planPanelStorageKey);setModal(null);};
 
   const assignments=useMemo(()=>data.assignments.filter(a=>
     (location==="ALL"||(isOrtools?a.location_id===location:a.location===location))&&
@@ -487,7 +501,7 @@ export default function GrafikPro() {
           </section>
           {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików ról jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverRoles={solverConfiguration.roles} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
         </>}
-        {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened}/></>}
+        {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened} onOpenOperationalCalendar={()=>{setActive("zespoly");window.requestAnimationFrame(()=>document.querySelector(".operational-calendar-panel")?.scrollIntoView({behavior:"smooth",block:"start"}));}}/></>}
         {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Konfiguracja firmy jest niedostępna</h2><p>Odśwież dane albo sprawdź migracje UAT. Aplikacja nie przełączy się po cichu na konkurencyjne źródło danych.</p></section>}
         {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} events={workforceCalendar.events} standby={managerStandby} swaps={swapAnnouncements} timezone={activeTimezone} onDay={(d)=>{setDay(d);setActive("grafik");}}/>}
         {active==="kadra"&&matrixV2&&<WorkforceCatalog data={matrixV2} onEdit={openEmployeeProfile} onAdd={openNewEmployeeProfile}/>}
@@ -501,8 +515,8 @@ export default function GrafikPro() {
         </>}
       </div>}
     </section>
-    {modal&&<><button className="drawer-scrim" onClick={()=>setModal(null)}/><aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
-      <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={()=>setModal(null)}><X/></button></div>
+    {modal&&<><button className="drawer-scrim" onClick={closeModal}/><aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
+      <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">
         {!solverConfiguration&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, dopóki konfiguracja nie zostanie poprawnie odczytana.</div>}
         {solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&solverConfiguration.solverVersion&&<SolverV2Panel
