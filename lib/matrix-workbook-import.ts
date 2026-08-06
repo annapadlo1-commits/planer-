@@ -113,7 +113,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     currency:importCell(settingsRow,"Waluta","currency").toUpperCase(),
     timezone:importCell(settingsRow,"Strefa czasowa","timezone"),
     minimumRestMinutes:importCell(settingsRow,"Minimalny odpoczynek (min)","minimumRestMinutes"),
-    maximumShiftsPerDay:importCell(settingsRow,"Maks. zmian dziennie","maximumShiftsPerDay"),
+    maximumShiftsPerDay:importCell(settingsRow,"Maks. zmian jednego pracownika na dobę","Maks. zmian dziennie","maximumShiftsPerDay"),
     missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
     requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
   };
