@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, Check, CircleDollarSign, MapPin, Plus, RefreshCw, ShieldCheck, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, MapPin, Plus, RefreshCw, ShieldCheck, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { emergencyAssignV2, getCandidateDiagnostics, getManagerStandbyMonth, getVariantIssueDiagnostics, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { emergencyAssignV2, getCandidateDiagnostics, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, removeLeaderAssignment, saveLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -13,6 +13,8 @@ type Props = {
   onOperationalChanged?:()=>void|Promise<void>;
   notify?:(message:string)=>void;
   fail?:(message:string)=>void;
+  leaderEditable?:boolean;
+  onLeaderChanged?:()=>void|Promise<void>;
 };
 
 function money(value: number | null, currency: string) {
@@ -80,7 +82,7 @@ function preferenceLevelLabel(value:string){
   return ({PREFERRED:"preferowana",NEUTRAL:"neutralna",AVOIDED:"unikać",BLOCKED:"zablokowana"} as Record<string,string>)[value]??value;
 }
 
-function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean}){
+function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void}){
   const shift=issue.shift;
   const shiftTimezone=shift?.location.timezone??timezone;
   const required=issue.requiredCount;
@@ -93,10 +95,11 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
     {required!==null&&<div className="solver-issue-staffing"><span>Wymagane <b>{required}</b></span><span>Przypisane <b>{assigned??0}</b></span><span>Brakuje <b>{missing}</b></span></div>}
     {operational&&published&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>inspect(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Dlaczego nikt nie został przypisany?</button>}
     {!operational&&previewAvailable&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>explainPreview(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Co blokowało kandydatów?</button>}
+    {leaderEditable&&issue.code==="UNFILLED_SLOT"&&<button className="primary-button" disabled={busy} onClick={()=>editLeader(issue.id)}><Plus/> Uzupełnij w wersji lidera</button>}
   </article>;
 }
 
-export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail }: Props) {
+export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
   const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
@@ -109,6 +112,10 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [standbyAction,setStandbyAction]=useState<SolverManagerStandby|null>(null);
   const [standbyTargetAssignmentId,setStandbyTargetAssignmentId]=useState("");
   const [standbyReason,setStandbyReason]=useState("");
+  const [leaderContext,setLeaderContext]=useState<SolverLeaderAssignmentContext|null>(null);
+  const [leaderEmployeeId,setLeaderEmployeeId]=useState("");
+  const [leaderReason,setLeaderReason]=useState("");
+  const [leaderBusy,setLeaderBusy]=useState(false);
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
   useEffect(()=>{
     let active=true;
@@ -211,6 +218,41 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     await onOperationalChanged?.();
   }
 
+  async function openLeaderEdit(input:{assignmentId?:string;issueId?:string}){
+    const variantId=workspace.variants[0]?.id;
+    if(!supabase||!leaderEditable||!variantId)return;
+    setLeaderBusy(true);setLeaderContext(null);setLeaderReason("");
+    try{
+      const context=await getLeaderAssignmentContext(supabase,{variantId,...input});
+      setLeaderContext(context);setLeaderEmployeeId(context.currentEmployeeId??"");
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setLeaderBusy(false);}
+  }
+  async function saveLeaderEdit(){
+    if(!supabase||!leaderContext||!leaderEmployeeId||leaderReason.trim().length<3)return;
+    setLeaderBusy(true);
+    try{
+      await saveLeaderAssignment(supabase,{variantId:leaderContext.variantId,
+        assignmentId:leaderContext.assignmentId,issueId:leaderContext.issueId,
+        employeeId:leaderEmployeeId,reason:leaderReason.trim()});
+      notify?.("Zmiana przeszła pełną kontrolę reguł i została zapisana wyłącznie w wersji lidera.");
+      setLeaderContext(null);await onLeaderChanged?.();
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setLeaderBusy(false);}
+  }
+  async function removeLeaderEdit(){
+    if(!supabase||!leaderContext?.assignmentId||leaderReason.trim().length<3)return;
+    if(!window.confirm("Usunąć ten przydział z wersji lidera? Oryginalne trzy warianty pozostaną bez zmian, a miejsce pojawi się jako brak do uzupełnienia."))return;
+    setLeaderBusy(true);
+    try{
+      await removeLeaderAssignment(supabase,{variantId:leaderContext.variantId,
+        assignmentId:leaderContext.assignmentId,reason:leaderReason.trim()});
+      notify?.("Przydział usunięto z wersji lidera. Miejsce jest widoczne jako brak do uzupełnienia.");
+      setLeaderContext(null);await onLeaderChanged?.();
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setLeaderBusy(false);}
+  }
+
   return <section className={`solver-workspace ${published ? "published" : ""}`}>
     <div className="solver-workspace-head">
       <span>
@@ -248,7 +290,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {workspace.issues.length === 0
         ? <p>Nie zgłoszono braków ani uwag do tego wariantu.</p>
         : <div>
-          {workspace.issues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)}/>)}
+          {workspace.issues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})}/>)}
         </div>}
     </details>
 
@@ -299,6 +341,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
                     <em>{assignment.duties.length
                       ? assignment.duties.map(duty => duty.name).join(", ")
                       : "Bez dodatkowych obowiązków"}</em>
+                    {leaderEditable&&<button className="secondary-button compact" disabled={leaderBusy} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/> Zmień</button>}
                   </div>)}
                 </div>}
             </article>)}
@@ -307,12 +350,22 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       })}
     </div>
 
+    {leaderContext&&<><button className="drawer-scrim top" onClick={()=>setLeaderContext(null)}/><aside className="drawer role-drawer top leader-assignment-drawer">
+      <div className="drawer-head"><div><p className="eyebrow">WERSJA LIDERA • EDYCJA PRZED PUBLIKACJĄ</p><h2>{leaderContext.shift.date} • {leaderContext.shift.shiftName}</h2><small>{leaderContext.shift.locationName} • {leaderContext.role.name} • {timeLabel(leaderContext.shift.startsAt,timezone)}–{timeLabel(leaderContext.shift.endsAt,timezone)}</small></div><button className="icon-button" onClick={()=>setLeaderContext(null)}><X/></button></div>
+      <div className="drawer-content">
+        <div className="solver-v2-notice"><ShieldCheck/><span><strong>Oryginalne warianty nie zostaną zmienione</strong><small>Ta korekta dotyczy tylko kopii lidera. Przed zapisem serwer ponownie sprawdzi cały miesiąc, wszystkie twarde reguły oraz koszty.</small></span></div>
+        <label>Pracownik<select required value={leaderEmployeeId} onChange={event=>setLeaderEmployeeId(event.target.value)}><option value="">Wybierz osobę</option>{leaderContext.candidates.map(candidate=><option value={candidate.employeeId} key={candidate.employeeId}>{candidate.employeeName} • {candidate.employeeNo}{candidate.current?" • obecnie":""}</option>)}</select><small>Lista zawiera osoby z właściwą rolą, lokalem i wymaganymi kompetencjami. Ostateczna kontrola obejmuje także dostępność, odpoczynek i limity pracy.</small></label>
+        <label>Powód zmiany<textarea required minLength={3} value={leaderReason} onChange={event=>setLeaderReason(event.target.value)} placeholder="np. uzgodniona zamiana w zespole"/></label>
+        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}<button className="primary-button" disabled={leaderBusy||!leaderEmployeeId||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Sprawdź i zapisz</button></div>
+      </div>
+    </aside></>}
+
     {variantDiagnostics&&<><button className="drawer-scrim top" onClick={()=>setVariantDiagnostics(null)}/><aside className="drawer role-drawer top candidate-diagnostics-drawer">
       <div className="drawer-head"><div><p className="eyebrow">WARIANT • WYJAŚNIENIE BRAKU</p><h2>{variantDiagnostics.shift.date} • {timeLabel(variantDiagnostics.shift.startsAt,timezone)}–{timeLabel(variantDiagnostics.shift.endsAt,timezone)}</h2><small>Powody są liczone dla pracowników dostępnych w opublikowanej konfiguracji firmy i aktualnego składu tego wariantu.</small></div><button className="icon-button" onClick={()=>setVariantDiagnostics(null)}><X/></button></div>
       <div className="drawer-content">
         <div className="candidate-diagnostics-summary"><span><b>{variantDiagnostics.summary.considered}</b><small>sprawdzonych osób</small></span><span><b>{variantDiagnostics.summary.eligible}</b><small>bez blokady</small></span><span><b>{variantDiagnostics.summary.blocked}</b><small>z blokadą</small></span></div>
         {variantDiagnostics.decisionContext&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Dlaczego powstał ten brak</strong><small>{variantDiagnostics.decisionContext.message} Ten błąd poprzedniej wersji silnika został naprawiony: rezerwa nie może już zmniejszać wymaganej obsady.</small></span></div>}
-        {variantDiagnostics.summary.eligible>0&&!variantDiagnostics.decisionContext&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie ma indywidualnej twardej blokady</strong><small>{variantDiagnostics.publishedScheduleId?"To nie gwarantuje, że dopisanie zachowa poprawność całego miesiąca. Przycisk wykona ponowną kontrolę globalną przed zapisem.":"Silnik mógł wykorzystać te osoby w innym miejscu. Ręczna korekta jest dostępna dopiero w opublikowanym grafiku operacyjnym."}</small></span></div>}
+        {variantDiagnostics.summary.eligible>0&&!variantDiagnostics.decisionContext&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie ma indywidualnej twardej blokady</strong><small>{leaderEditable?"Wróć do listy braków i użyj „Uzupełnij w wersji lidera”. System sprawdzi wtedy cały miesiąc przed zapisem.":variantDiagnostics.publishedScheduleId?"To nie gwarantuje, że dopisanie zachowa poprawność całego miesiąca. Przycisk wykona ponowną kontrolę globalną przed zapisem.":"Silnik mógł wykorzystać te osoby w innym miejscu. Utwórz wersję lidera, aby poprawić grafik przed publikacją."}</small></span></div>}
         <div className="variant-reason-list">{variantDiagnostics.summary.reasons.map(reason=><article key={reason.code}><span><strong>{reasonLabel(reason.code)}</strong></span><b>{reason.count} os.</b></article>)}</div>
         {variantDiagnostics.candidates.some(candidate=>candidate.roleMatch)&&<section className="variant-role-candidates"><div><h3>Pracownicy z wymaganą rolą</h3><p>Lista pokazuje indywidualne blokady. Brak blokady nie oznacza jeszcze, że można dopisać osobę bez ponownej kontroli wszystkich reguł miesiąca.</p></div>{variantDiagnostics.candidates.filter(candidate=>candidate.roleMatch).map(candidate=><article key={candidate.employeeId}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo} • {candidate.locationMatch?"lokal pasuje":"lokal nie pasuje"}{candidate.dutyMatch?" • kompetencje pasują":" • brak wymaganej kompetencji"}</small></span>{candidate.reasons.length?<ul>{candidate.reasons.map(reason=><li key={reason}>{reasonLabel(reason)}</li>)}</ul>:<div className="candidate-eligible-actions"><b className="candidate-eligible">Brak indywidualnej blokady</b>{variantDiagnostics.publishedScheduleId&&<button className="primary-button" disabled={variantDiagnosticsLoading} onClick={()=>void assignVariantCandidate(candidate)}>{variantDiagnosticsLoading&&selectedEmployee===candidate.employeeId?<RefreshCw className="spin"/>:<Plus/>} Sprawdź i dopisz do grafiku</button>}</div>}</article>)}</section>}
         {!variantDiagnostics.summary.reasons.length&&<p>Nie znaleziono twardych blokad kandydatów. Ten przypadek wymaga kontroli celów strategii i materiału wejściowego solvera.</p>}
