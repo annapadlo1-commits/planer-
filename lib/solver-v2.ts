@@ -623,13 +623,17 @@ function normalizeWorkspaceIssue(value: unknown): SolverWorkspaceIssue {
   const shift = record(source.shift);
   const shiftLocation = record(shift.location);
   const shiftTemplate = record(shift.shiftTemplate);
+  const code = String(valueOf(source, "code", "issue_code", "UNFILLED"));
+  const rawMessage = String(valueOf(source, "message", "message", "Nieobsadzone miejsce"));
   return {
     id: String(valueOf(source, "id", "id", "")),
     variantId: String(valueOf(source, "variantId", "variant_id", "")),
     slotKey: valueOf<string | null>(source, "slotKey", "slot_key", null),
-    code: String(valueOf(source, "code", "issue_code", "UNFILLED")),
+    code,
     severity: String(valueOf(source, "severity", "severity", "WARNING")),
-    message: String(valueOf(source, "message", "message", "Nieobsadzone miejsce")),
+    message: code === "UNFILLED_SLOT"
+      ? "Nieobsadzone miejsce w wymaganej obsadzie."
+      : rawMessage.replace(/Matrix/gi,"konfiguracja firmy"),
     requiredCount: nullableNumberOf(source, "requiredCount", "required_count"),
     assignedCount: nullableNumberOf(source, "assignedCount", "assigned_count"),
     role: source.role ? normalizeNamedEntity(source.role) : null,
@@ -1920,15 +1924,15 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Konfiguracja wymaga matematycznego dowodu optimum, a co najmniej jeden wariant jest poprawny, lecz silnik nie potwierdził optimum w dostępnym czasie. Zwiększ limit czasu albo świadomie dopuść najlepsze znalezione rozwiązanie i uruchom ponownie.";
   if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
   if (normalized.includes("SOLVER_CONFIGURATION_MISSING") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_MISSING")) return "Nie ustawiono aktywnego silnika grafiku.";
-  if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji silnika. Odśwież stronę i spróbuj ponownie.";
   if (normalized.includes("SOLVER_ENGINE_INVALID") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_INVALID")) return "Konfiguracja silnika zawiera nieobsługiwaną wartość.";
   if (normalized.includes("SOLVER_VERSION_CONFIGURATION_REQUIRED")) return "Konfiguracja nowego silnika nie wskazuje wersji obrazu workera. Generator pozostaje bezpiecznie zablokowany.";
   if (normalized.includes("RUN_REQUEST_ENGINE_MISMATCH") || normalized.includes("SHADOW_RUN_NOT_PUBLISHABLE")) return "Ten przebieg powstał w innym trybie silnika i nie może zostać użyty produkcyjnie. Uruchom nowe generowanie w bieżącym trybie.";
   if (normalized.includes("RUN_SOLVER_VERSION_MISMATCH") || normalized.includes("RUN_REFERENCE_MISMATCH")) return "Zapisany przebieg pochodzi z innej wersji generatora. Uruchom nowe generowanie na aktualnej wersji.";
   if (normalized.includes("SOLVER_DISABLED")) return "Generator grafiku jest obecnie wyłączony.";
   if (normalized.includes("ORTOOLS_REQUEST_DISABLED") || normalized.includes("ORTOOLS_SELECTION_DISABLED") || normalized.includes("ORTOOLS_PUBLICATION_DISABLED")) return "Nowy silnik nie jest aktywny dla tej operacji. Alpha 15 i tryb cienia pozostają bezpiecznie odseparowane.";
-  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Konfiguracja firmy właściwa dla wybranego miesiąca nie została poprawnie opublikowana.";
-  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej konfiguracji firmy właściwej dla wybranego miesiąca.";
+  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Konfiguracja firmy dla wybranego miesiąca nie została opublikowana. Przejdź do Ustawienia → Kontrola gotowości, usuń wskazane blokady i opublikuj wersję roboczą.";
+  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej konfiguracji firmy dla wybranego miesiąca. Przejdź do Ustawienia, wybierz ten miesiąc i dokończ publikację konfiguracji.";
+  if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji dla wybranego miesiąca. Przejdź do Ustawienia → Kontrola gotowości i sprawdź wskazane blokady; jeśli konfiguracja jest opublikowana, odśwież dane.";
   if (normalized.includes("SOLVER_TIMEZONE_MISSING") || normalized.includes("SOLVER_TIMEZONE_INVALID")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej strefy czasowej.";
   if (normalized.includes("INVALID_SOLVER_CURRENCY")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej waluty rozliczeniowej.";
   if (normalized.includes("SOLVER_MATRIX_SETTINGS_INVALID")) return "Opublikowana konfiguracja firmy nie ma kompletnych reguł bezpieczeństwa generatora.";
