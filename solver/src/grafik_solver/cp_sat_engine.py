@@ -1565,10 +1565,13 @@ class CpSatScheduleEngine:
         def can_add(employee: Employee, slot: Slot) -> bool:
             if (employee.id, slot.occurrence_id) in used_occurrences:
                 return False
-            # One employee may work at most one primary shift per calendar day.
-            # The number of shift templates configured in Matrix is a separate
-            # concept and must never relax this invariant.
-            if daily_count[(employee.id, slot.date)] >= 1:
+            # The company configuration is the single source of truth for the
+            # daily assignment capacity.  Overlap and rest remain independent
+            # hard constraints when the configured value is greater than one.
+            if (
+                daily_count[(employee.id, slot.date)]
+                >= employee.maximum_shifts_per_day
+            ):
                 return False
             if (
                 employee.maximum_monthly_minutes is not None
@@ -1906,7 +1909,10 @@ class CpSatScheduleEngine:
                     if slot.date == day and (employee.id, occurrence_id) in work
                 ]
                 fixed_count = external_daily_count.get(day, 0)
-                model.add(_sum(day_occurrences) + fixed_count <= 1)
+                model.add(
+                    _sum(day_occurrences) + fixed_count
+                    <= employee.maximum_shifts_per_day
+                )
                 variable = model.new_bool_var(f"day|{employee.id}|{day.isoformat()}")
                 day_work[(employee.id, day)] = variable
                 if fixed_count:

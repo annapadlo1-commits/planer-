@@ -189,7 +189,10 @@ def validate_variant(
                 (external.end.timestamp() - external.start.timestamp()) // 60
             )
         for day, count in daily_count.items():
-            if snapshot.period_start <= day <= snapshot.period_end and count > 1:
+            if (
+                snapshot.period_start <= day <= snapshot.period_end
+                and count > employee.maximum_shifts_per_day
+            ):
                 errors.append(
                     f"DAILY_SHIFT_LIMIT:{employee_id}:{day.isoformat()}:{count}"
                 )
