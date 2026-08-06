@@ -416,6 +416,27 @@ export function ActiveModules({
   useEffect(() => { void loadOperationalContext(); }, [loadOperationalContext]);
 
   async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
+    let publicationConflicts: Array<{ scheduleName?: string; publishedAt?: string; date?: string; shiftName?: string; locationName?: string }> = [];
+    if (entry.kind === "CANNOT_WORK" && supabase) {
+      const employeeId = uatMasterEmployeeId || portal?.employee?.id;
+      if (employeeId) {
+        const conflictResult = await supabase.rpc("employee_availability_publication_conflicts_uat_v1", {
+          p_employee_id: employeeId,
+          p_dates: entry.dates,
+        });
+        if (conflictResult.error) {
+          fail(`Nie udało się sprawdzić opublikowanego grafiku: ${translateError(conflictResult.error.message)}`);
+          return false;
+        }
+        publicationConflicts = Array.isArray(conflictResult.data) ? conflictResult.data as typeof publicationConflicts : [];
+        if (publicationConflicts.length) {
+          const details = publicationConflicts.slice(0, 5).map(conflict =>
+            `${conflict.date || "dzień"}: ${conflict.shiftName || "zmiana"} • ${conflict.locationName || "lokal"} • grafik „${conflict.scheduleName || "opublikowany"}”${conflict.publishedAt ? ` opublikowany ${new Date(conflict.publishedAt).toLocaleString("pl-PL", { timeZone: timezone })}` : ""}`
+          ).join("\n");
+          if (!window.confirm(`Te dni mają już opublikowane przydziały:\n\n${details}\n\nNiedostępność zostanie zapisana PO publikacji. Nie oznacza to, że silnik ją zignorował; lider musi rozwiązać konflikt. Zapisać?`)) return false;
+        }
+      }
+    }
     const result = await rpc(uatMasterEmployeeId
       ? "uat_master_employee_availability_days_save_v2"
       : "employee_availability_days_save_uat_v3", {
@@ -430,7 +451,9 @@ export function ActiveModules({
     });
     if (!result) return false;
     const reviewCount = Number((result as { pendingReviewDays?: number }).pendingReviewDays || 0);
-    notify(reviewCount > 0
+    notify(publicationConflicts.length > 0
+      ? `Zapisano niedostępność po publikacji. ${publicationConflicts.length} konfliktów z opublikowanym grafikiem wymaga decyzji lidera.`
+      : reviewCount > 0
       ? `${reviewCount} dni z limitem nieobecności przekazano liderowi do weryfikacji.`
       : "Zapisano wybrany zakres dostępności.");
     await loadPortal();
@@ -620,6 +643,7 @@ export function ActiveModules({
       fail={fail}
       busy={busy}
       calendarContext={portal.calendarContext}
+      assignments={portal.assignments}
     />}
     {shiftPreferencesOpen && portal?.shiftPreferences && <ShiftPreferencesDrawer
       workspace={portal.shiftPreferences}
@@ -855,7 +879,7 @@ function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { works
   return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer shift-preferences-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • PREFERENCJE</p><h2>Preferowane godziny • {labelMonth(month)}</h2></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content"><p>To starszy sposób zapisu preferencji. Dokładną dostępność ustaw w kalendarzu godzinowym.</p>{periods.map(([period, label]) => <section className="shift-preference-row" key={period}><span><strong>{label}</strong>{workspace.managerOverrides?.[period] ? <small><ShieldCheck /> Ustawienie pracodawcy: {preferenceLevelLabel(workspace.managerOverrides[period])}</small> : <small>Aktualne ustawienie: {preferenceLevelLabel(workspace.effective?.[period] ?? preferences[period])}</small>}</span><select value={preferences[period]} onChange={(event) => setPreferences((current) => ({ ...current, [period]: event.target.value as ShiftPreferenceLevel }))}><option value="PREFERRED">Preferuję</option><option value="NEUTRAL">Neutralnie</option><option value="AVOIDED">Wolę unikać</option></select></section>)}<button className="primary-button full" disabled={busy} onClick={() => void save(preferences)}><Save /> {busy ? "Zapisuję…" : "Zapisz preferencje"}</button></div></aside></>;
 }
 
-function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext }: {
+function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext, assignments }: {
   workspace: PortalTimeConstraintsWorkspace;
   month: string;
   locations: MatrixItem[];
@@ -864,6 +888,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   fail: (message: string) => void;
   busy: boolean;
   calendarContext?: WorkforceCalendarContext;
+  assignments: PortalAssignment[];
 }) {
   const timezone=workspace.timezone;
   const [year,monthNumber]=month.split("-").map(Number);
@@ -957,7 +982,8 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           const protectedEntry=entries.some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO");
           const events=calendarContext?.events.filter(event=>event.date===date)??[];
           const pending=calendarContext?.pendingReviews.some(review=>review.date===date)??false;
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> Wydarzenie</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
+          const publishedAssignments=assignments.filter(assignment=>assignment.date===date);
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><AlertTriangle/> Opublikowany grafik: {publishedAssignments.map(assignment=>time(assignment.startsAt,assignmentTimezone(assignment,timezone))).join(", ")}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> Wydarzenie</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>

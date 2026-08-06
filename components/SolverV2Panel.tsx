@@ -732,6 +732,7 @@ export function SolverV2Panel({
         <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy wariant stosuje inny zestaw priorytetów: koszt, preferencje i równy podział pracy.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>
       {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. To normalny wynik planowania. Oddzielny „Tryb audytowy” może wymagać formalnego dowodu, lecz przy dużym grafiku potrafi zakończyć przebieg bez zapisu poprawnego wariantu.</small></span></div>}
+      {variants.some(variant=>Number(variant.metrics.LOAD_UTILIZATION_TARGET_COUNT??0)<2)&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Ten zapisany przebieg nie porównywał obciążenia pracowników</strong><small>Wynik powstał w starszej wersji silnika, w której osoby z umowami elastycznymi mogły wypaść z celu równego podziału. Wygeneruj nowe warianty — obecna wersja uwzględnia je przez wspólną bazę sprawiedliwości.</small></span></div>}
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
         {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
@@ -748,10 +749,14 @@ export function SolverV2Panel({
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
           <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
-          <dl className="solver-v2-analysis">
-            {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code} title={metric.explanation}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
-            {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
-          </dl>
+          <details className="solver-v2-technical-metrics">
+            <summary><span>Jak silnik ocenił ten wariant?</span><small>Techniczne wskaźniki i wyjaśnienia</small></summary>
+            <dl className="solver-v2-analysis">
+              {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
+              {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
+            </dl>
+          </details>
+          {variant.strategy.name.toLocaleLowerCase("pl-PL").includes("równ")&&Number(variant.metrics.LOAD_UTILIZATION_SPREAD_BPS??0)>1000&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Podział godzin nadal wymaga decyzji lidera</strong><small>Różnica obciążenia przekracza 100%. Otwórz „Rozkład pracy”, aby sprawdzić dostępność, limity i decyzje solvera dla każdej osoby przed publikacją.</small></span></div>}
           <div className={`solver-v2-validation ${variant.unfilledCount>0||variant.hardViolations>0?"warning":""}`}>
             {variant.unfilledCount>0||variant.hardViolations>0?<AlertTriangle/>:<Check/>}<span><strong>{variant.hardViolations>0?"Wariant zawiera niedozwolone przydziały":variant.unfilledCount>0?`Technicznie poprawny, ale niekompletny: ${variant.unfilledCount} nieobsadzonych miejsc`:"Kompletny grafik bez naruszeń"}</strong><small>{variant.unfilledCount>0?`Silnik nie złamał reguł pracownika — pozostawił wakaty zamiast wykonać niedozwolony przydział. ${solutionLabel(variant.solverStatus)}.`:solutionLabel(variant.solverStatus)}</small></span>
           </div>
