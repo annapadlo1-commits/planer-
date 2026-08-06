@@ -170,7 +170,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       reason=window.prompt(`Awaryjne dopisanie naruszy regułę miękką:\n${candidate.softReasons.map(reasonLabel).join("\n")}\n\nPodaj powód decyzji:`)?.trim()??"";
       if(reason.length<3)return;
     }
-    if(!window.confirm(`Dopisać ${candidate.name} do tego nieobsadzonego miejsca?`))return;
     setDiagnosticsLoading(true);
     try{
       await emergencyAssignV2(supabase,{scheduleId:diagnostics.scheduleId,issueId:diagnostics.issue.id,employeeId:candidate.employeeId,allowSoft:candidate.classification==="WARNING",reason,notify:notifyEmployee});
@@ -195,7 +194,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         reason=window.prompt(`Dopisanie naruszy regułę miękką:\n${current.softReasons.map(reasonLabel).join("\n")}\n\nPodaj powód decyzji:`)?.trim()??"";
         if(reason.length<3)return;
       }
-      if(!window.confirm(`Dopisać ${candidate.employeeName} do grafiku operacyjnego? Wariant źródłowy pozostanie bez zmian w historii.`))return;
       await emergencyAssignV2(supabase,{scheduleId,issueId:variantDiagnostics.issueId,employeeId:candidate.employeeId,allowSoft:current.classification==="WARNING",reason,notify:true});
       notify?.("Pracownik został dopisany do grafiku operacyjnego i powiadomiony. Wariant źródłowy pozostał niezmieniony dla audytu.");
       setVariantDiagnostics(null);await onOperationalChanged?.();
@@ -242,7 +240,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   }
   async function removeLeaderEdit(){
     if(!supabase||!leaderContext?.assignmentId||leaderReason.trim().length<3)return;
-    if(!window.confirm("Usunąć ten przydział z wersji lidera? Oryginalne trzy warianty pozostaną bez zmian, a miejsce pojawi się jako brak do uzupełnienia."))return;
     setLeaderBusy(true);
     try{
       await removeLeaderAssignment(supabase,{variantId:leaderContext.variantId,
