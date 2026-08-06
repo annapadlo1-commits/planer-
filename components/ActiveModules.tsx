@@ -17,14 +17,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
-import { RoleCompositePanel } from "@/components/RoleCompositePanel";
 import {
   getEmployeePublishedSchedule,
   type SolverEmployeePublishedAssignment,
   type SolverEmployeeStandby,
   type SolverEngine,
   type SolverRole,
-  type SolverScenario,
 } from "@/lib/solver-v2";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -209,10 +207,7 @@ export function ActiveModules({
   solverEngine,
   solverVersion,
   solverMatrixEffectiveFrom,
-  solverScenarios = [],
   solverRoles = [],
-  solverUserId,
-  roleCompositeRefreshKey = 0,
   timezone,
   onOpenSolverV2,
   portalSection = "overview",
@@ -226,10 +221,7 @@ export function ActiveModules({
   solverEngine?: SolverEngine;
   solverVersion?: string;
   solverMatrixEffectiveFrom?: string;
-  solverScenarios?: SolverScenario[];
   solverRoles?: SolverRole[];
-  solverUserId?: string;
-  roleCompositeRefreshKey?: number;
   timezone: string;
   currency: string;
   onOpenSolverV2?: (role: SolverRole) => void;
@@ -589,17 +581,6 @@ export function ActiveModules({
       <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
     </article>)}</div>
     {solverEngine === "SHADOW" && <div className="solver-v2-notice warning"><ShieldCheck />Tryb SHADOW pozwala wygenerować i porównać trzy warianty każdej roli. Publikacja zespołu i wspólnego grafiku pozostaje zablokowana do kontrolowanego przełączenia.</div>}
-    {solverEngine === "ORTOOLS_V2" && solverUserId && solverVersion ? <RoleCompositePanel
-      engine={solverEngine}
-      solverVersion={solverVersion}
-      userId={solverUserId}
-      month={selectedMonthDate}
-      timezone={timezone}
-      scenarios={solverScenarios}
-      matrixEffectiveFrom={solverMatrixEffectiveFrom}
-      refreshKey={roleCompositeRefreshKey}
-      onPublished={async () => { notify("Scalony grafik ról został opublikowany"); await reload(); }}
-    /> : solverEngine === "ORTOOLS_V2" ? <div className="solver-v2-notice warning"><AlertTriangle />Brak kompletnej konfiguracji generatora.</div> : null}
   </>;
   return <>
     {uatMaster && <UatMasterPersonaPanel
