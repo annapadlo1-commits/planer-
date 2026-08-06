@@ -14,6 +14,7 @@ import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProje
 import {ActiveModules,type ActiveWorkspace} from "@/components/ActiveModules";
 import {SolverV2Panel} from "@/components/SolverV2Panel";
 import {SolverV2Workspace} from "@/components/SolverV2Workspace";
+import {RoleCompositePanel} from "@/components/RoleCompositePanel";
 import {GeneratorV2Page} from "@/components/GeneratorV2Page";
 import {MatrixV2Editor} from "@/components/MatrixV2Editor";
 import {
@@ -48,7 +49,7 @@ import {
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
-type NavKey = "centrum"|"generator"|"zespoly"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"budzet";
+type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"budzet";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";role:null}|{type:"ROLE";role:SolverRole};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
@@ -86,7 +87,7 @@ const productIcons: Record<ProductSection, LucideIcon> = {
   "my-schedule": CalendarDays, "company-schedule": Users, availability: Clock3, swaps: ArrowLeftRight, messages: Bell, time: Clock3,
 };
 const legacySection: Record<NavKey, ProductSection> = {
-  centrum:"start",kadra:"team",zespoly:"schedule",generator:"schedule",grafik:"schedule",
+  centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
   kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",
   budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
 };
@@ -440,7 +441,7 @@ export default function GrafikPro() {
           {["my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
           {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
-        {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["generator","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
+        {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["scalanie","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
         {primarySection==="operations"&&<ContextTabs items={[["alerty","Alerty"],["kalendarz","Kalendarz"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
         {active==="centrum"&&<>
           {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")}/>} 
@@ -459,6 +460,22 @@ export default function GrafikPro() {
         </>}
         {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} activeConfigurationVersion={complete?.activeMatrix?.version} draftConfigurationVersion={complete?.draftMatrix?.version} notify={notify} fail={setError} onPublished={async()=>{await load();setActive("grafik");}}/>}
         {active==="generator"&&solverConfiguration?.engine==="ALPHA15"&&<section className="empty-engine"><AlertTriangle/><h2>Nowy generator czeka na kontrolowane przełączenie</h2><p>Interfejs Alpha 15 nie jest już rozwijany. Uruchamianie nowych wariantów zostanie odblokowane po wdrożeniu workera OR-Tools, sekretu gatewaya i zmianie flagi silnika.</p></section>}
+        {active==="scalanie"&&<section className="schedule-role-first-intro">
+          <span>ETAP 2 Z 3 • SCALANIE FIRMY</span>
+          <h2>Połącz zatwierdzone grafiki ról</h2>
+          <p>W tym miejscu właściciel sprawdza komplet zespołów, konflikty i koszty, a następnie tworzy jedną wspólną wersję bez ponownego generowania ról.</p>
+        </section>}
+        {active==="scalanie"&&solverConfiguration?.engine==="ORTOOLS_V2"&&user&&solverConfiguration.solverVersion?<RoleCompositePanel
+          engine={solverConfiguration.engine}
+          solverVersion={solverConfiguration.solverVersion}
+          userId={user.id}
+          month={selectedMonthDate}
+          timezone={activeTimezone}
+          scenarios={solverConfiguration.scenarios}
+          matrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined}
+          refreshKey={roleCompositeRefreshKey}
+          onPublished={async()=>{notify("Scalony grafik ról został opublikowany");await load();setActive("grafik");}}
+        />:active==="scalanie"?<section className="empty-engine"><AlertTriangle/><h2>Scalanie jest chwilowo niedostępne</h2><p>Dokończ odczyt opublikowanej konfiguracji firmy, a następnie wróć do tego etapu.</p></section>:null}
         {active==="grafik"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
         {active==="grafik"&&isOrtools&&!operationalWorkspace&&<section className="empty-engine"><CalendarDays/><h2>Brak opublikowanego grafiku operacyjnego</h2><p>W Generatorze wybierz gotowy wariant, przejrzyj analizę i opublikuj go jako osobną wersję operacyjną.</p><button className="primary-button" onClick={()=>setActive("generator")}>Otwórz Generator i warianty</button></section>}
         {active==="grafik"&&!isOrtools&&<ScheduleView data={data} assignments={assignments} location={location} role={role} day={day} setLocation={setLocation} setRole={setRole} setDay={setDay} onShift={(s)=>{setSelectedShift(s);setModal("shift");}} onGenerate={()=>setActive("generator")} roleOptions={roleOptions} locationOptions={locationOptions} dynamic={false} timezone={activeTimezone} currency={activeCurrency}/>}
@@ -468,7 +485,7 @@ export default function GrafikPro() {
             <h2>Najpierw przygotuj i zatwierdź grafik każdej roli</h2>
             <p>Każdy lider przegląda swój grafik roli. Dopiero po akceptacji ról przejdź do etapu 2, aby scalić je w jeden grafik firmy i porównać warianty.</p>
           </section>
-          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików ról jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverScenarios={solverConfiguration.scenarios} solverRoles={solverConfiguration.roles} solverUserId={user?.id} roleCompositeRefreshKey={roleCompositeRefreshKey} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
+          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików ról jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverRoles={solverConfiguration.roles} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
         </>}
         {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened}/></>}
         {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Konfiguracja firmy jest niedostępna</h2><p>Odśwież dane albo sprawdź migracje UAT. Aplikacja nie przełączy się po cichu na konkurencyjne źródło danych.</p></section>}
