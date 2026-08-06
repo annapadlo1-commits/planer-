@@ -63,6 +63,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(panel, /Utwórz wersję lidera/);
   assert.match(panel, /Wybierz jako bazę/);
   assert.match(panel, /Oryginalne trzy warianty powyżej pozostają niezmienione/);
+  assert.equal((panel.match(/window\.confirm/g) ?? []).length, 1, "wybór i publikacja nie mogą otwierać blokujących okien przeglądarki");
   assert.match(workspace, /Uzupełnij w wersji lidera/);
   assert.match(workspace, /Usuń przydział/);
   assert.match(workspace, /Powód zmiany/);
