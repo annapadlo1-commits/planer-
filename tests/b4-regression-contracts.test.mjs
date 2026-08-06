@@ -10,6 +10,10 @@ const fullImportMigrationUrl = new URL(
   "../supabase/migrations/20260806133000_b4_full_company_roundtrip.sql",
   import.meta.url,
 );
+const fullImportWarningFixMigrationUrl = new URL(
+  "../supabase/migrations/20260806150000_b4_full_import_preview_rate_warning_fix.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -29,6 +33,16 @@ test("B4 full company restore is a single authenticated transaction with a dry r
   assert.match(sql,/matrix_v2_import_apply_uat_v5\(v_configuration_without_rates,p_mode\)/);
   assert.match(sql,/matrix_v2_finance_import_apply_uat_v1/);
   assert.match(sql,/has_app_role\('OWNER'\).*has_app_role\('ADMIN'\)/s);
+  assert.match(sql,/revoke all on function public\.matrix_v2_full_import_preview_uat_v1/);
+});
+
+test("B4 full preview accepts dedicated finance rows without false missing-rate warnings", async () => {
+  const sql=await readFile(fullImportWarningFixMigrationUrl,"utf8");
+  assert.match(sql,/warning\.value->>'code'<>'PAY_RATE_MISSING'/);
+  assert.match(sql,/upper\(rate\.value->>'employeeNo'\)=upper\(employee\.value->>'employeeNo'\)/);
+  assert.match(sql,/nullif\(rate\.value->>'baseRate',''\) is not null/);
+  assert.match(sql,/publikację konfiguracji firmy/);
+  assert.match(sql,/set search_path = ''/);
   assert.match(sql,/revoke all on function public\.matrix_v2_full_import_preview_uat_v1/);
 });
 
@@ -98,6 +112,7 @@ test("B4 user interface does not expose retired Matrix and English event labels"
   assert.match(visibleSource, /Wydarzenie \+ obsada/);
   assert.match(visibleSource, /Limit nieobecności/);
   assert.match(editor, /KONFIGURACJA FIRMY • MODEL DYNAMICZNY/);
+  assert.match(editor, /importIssueMessage\(issue\.message\)/);
   assert.match(solverClient, /Nieobsadzone miejsce w wymaganej obsadzie/);
   assert.match(app, /grafik-pro:selected-month/);
   assert.match(panel, /rolePublication\.variantId/);
