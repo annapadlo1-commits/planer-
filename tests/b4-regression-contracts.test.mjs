@@ -316,9 +316,10 @@ test("publishing a leader copy selects that copy before role publication", async
 });
 
 test("solver honors Matrix strategy budgets and fair-distribution tier order", async () => {
-  const [engine,sql]=await Promise.all([
+  const [engine,sql,gateway]=await Promise.all([
     readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260806233000_b4_fair_distribution_priority.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/functions/solver-gateway/contract.ts",import.meta.url),"utf8"),
   ]);
   assert.doesNotMatch(engine,/MAX_RELAXED_STRATEGY_SECONDS/);
   assert.match(engine,/configured_strategy_budget =/);
@@ -329,4 +330,6 @@ test("solver honors Matrix strategy budgets and fair-distribution tier order", a
   assert.match(sql,/when 'LOAD_SPREAD_MINUTES' then 3/);
   assert.match(sql,/when 'NOMINAL_DEVIATION_MINUTES' then 4/);
   assert.match(sql,/version\.status = 'DRAFT'/);
+  assert.match(gateway,/"fairnessIncumbentGuard"/);
+  assert.match(gateway,/"verifiedZeroIncumbent"/);
 });
