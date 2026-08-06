@@ -243,7 +243,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const dutyColumnAliases:Record<string,string[]>={
     EVENT_ROTACYJNY:["ROTACYJNY","EVENT"],
   };
-  const employeeDuties=dutyCodes.length?employeeRows.flatMap((row,index)=>dutyCodes.filter(code=>importBoolean(importCell(row,code,...(dutyColumnAliases[code.toLocaleUpperCase("pl-PL")]??[])))).map(code=>({
+  const inlineEmployeeDuties=dutyCodes.length?employeeRows.flatMap((row,index)=>dutyCodes.filter(code=>importBoolean(importCell(row,code,...(dutyColumnAliases[code.toLocaleUpperCase("pl-PL")]??[])))).map(code=>({
     employeeNo:employees[index].employeeNo,email:employees[index].email,dutyCode:code,roleCode:employees[index].primaryRoleCode,active:true,
   }))):[];
 
@@ -310,6 +310,14 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
     active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
+  // The detailed capability sheet is authoritative whenever it contains the
+  // same employee + duty pair.  The convenience TAK/NIE columns in
+  // "Pracownicy" must not create a second, role-scoped capability during a
+  // round trip of the full company workbook.
+  const employeeDuties=inlineEmployeeDuties.filter(inline=>!employeeCapabilities.some(detailed=>
+    String(detailed.employeeNo??"").toLocaleUpperCase("pl-PL")===String(inline.employeeNo??"").toLocaleUpperCase("pl-PL")
+      &&String(detailed.dutyCode??"").toLocaleUpperCase("pl-PL")===String(inline.dutyCode??"").toLocaleUpperCase("pl-PL")
+  ));
   const timeConstraints=rows(["Dostępność","Dostepnosc","Availability"]).map(row=>({
     constraintId:importCell(row,"ID wpisu","constraintId"),employeeNo:importCell(row,"Numer pracownika","employeeNo"),
     kind:importCell(row,"Rodzaj","kind").toUpperCase(),startsAt:importCell(row,"Od","startsAt"),endsAt:importCell(row,"Do","endsAt"),
