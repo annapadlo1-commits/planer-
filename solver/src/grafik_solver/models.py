@@ -542,12 +542,6 @@ class Employee:
         contract_code = str(
             _pick(raw, "contractCode", "contract_code", default="")
         ).upper()
-        work_time_policy = str(
-            _pick(raw, "workTimePolicy", "work_time_policy", default="")
-        ).upper()
-        is_flexible_contractor = contract_code in {"ZLECENIE", "B2B"} and (
-            work_time_policy != "CUSTOM"
-        )
         return cls(
             id=str(_pick(raw, "id")),
             role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
@@ -576,13 +570,13 @@ class Employee:
                 _pick(raw, "employmentEnd", "employment_end", default=None),
                 "employmentEnd",
             ),
-            nominal_monthly_minutes=None if is_flexible_contractor else optional_int(
+            nominal_monthly_minutes=optional_int(
                 "nominalMonthlyMinutes", "nominal_monthly_minutes"
             ),
-            maximum_monthly_minutes=None if is_flexible_contractor else optional_int(
+            maximum_monthly_minutes=optional_int(
                 "maximumMonthlyMinutes", "maximum_monthly_minutes"
             ),
-            maximum_weekly_minutes=None if is_flexible_contractor else optional_int(
+            maximum_weekly_minutes=optional_int(
                 "maximumWeeklyMinutes", "maximum_weekly_minutes"
             ),
             maximum_shifts_per_day=_integer(
@@ -590,10 +584,10 @@ class Employee:
                 "maximumShiftsPerDay",
                 1,
             ),
-            maximum_consecutive_days=None if is_flexible_contractor else optional_int(
+            maximum_consecutive_days=optional_int(
                 "maximumConsecutiveDays", "maximum_consecutive_days"
             ),
-            minimum_rest_minutes=0 if is_flexible_contractor else optional_int(
+            minimum_rest_minutes=optional_int(
                 "minimumRestMinutes", "minimum_rest_minutes"
             ),
             no_weekends=bool(_pick(raw, "noWeekends", "no_weekends", default=False)),

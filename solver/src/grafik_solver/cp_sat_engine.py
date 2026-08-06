@@ -2286,17 +2286,32 @@ class CpSatScheduleEngine:
         # Raw minutes are not comparable between a full-time employee and a
         # person with a smaller contractual target.  Balance utilization of an
         # explicit monthly basis instead: nominal minutes first, then the
-        # individual monthly maximum.  People without either value are not
-        # silently treated as zero-hour workers and the result carries the
-        # target count so the UI can say that the metric lacks input data.
+        # individual monthly maximum.  Flexible contractors intentionally do
+        # not receive a hard monthly limit, but they must still participate in
+        # the fairness objective.  For them use one shared, derived fair-share
+        # basis.  Because the same basis is used for every targetless employee,
+        # minimizing utilization spread is equivalent to balancing their raw
+        # minutes without inventing a contractual maximum.
         utilization_vars: list[Any] = []
         utilization_bound = 0
+        explicit_utilization_count = 0
+        fallback_utilization_count = 0
+        fallback_basis = max(
+            1,
+            math.ceil(
+                sum(slot.duration_minutes for slot in slots)
+                / max(1, len(snapshot.employees))
+            ),
+        )
         for employee in snapshot.employees:
             basis = employee.nominal_monthly_minutes
             if basis is None or basis <= 0:
                 basis = employee.maximum_monthly_minutes
             if basis is None or basis <= 0:
-                continue
+                basis = fallback_basis
+                fallback_utilization_count += 1
+            else:
+                explicit_utilization_count += 1
             bound = math.ceil(max_total_bound * 1000 / basis)
             utilization = model.new_int_var(
                 0, bound, f"utilization_bps|{employee.id}"
@@ -2370,6 +2385,8 @@ class CpSatScheduleEngine:
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "LOAD_UTILIZATION_SPREAD_BPS": load_utilization_spread,
             "LOAD_UTILIZATION_TARGET_COUNT": len(utilization_vars),
+            "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT": explicit_utilization_count,
+            "LOAD_UTILIZATION_FALLBACK_COUNT": fallback_utilization_count,
             "WEEKEND_SPREAD": weekend_spread,
             "BASELINE_CHANGES": _sum(baseline_terms),
         }
@@ -2383,6 +2400,8 @@ class CpSatScheduleEngine:
             "OVERTIME_MINUTES": overtime_bound_total,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
             "LOAD_UTILIZATION_TARGET_COUNT": len(snapshot.employees),
+            "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT": len(snapshot.employees),
+            "LOAD_UTILIZATION_FALLBACK_COUNT": len(snapshot.employees),
             "WEEKEND_SPREAD": weekend_bound,
             "BASELINE_CHANGES": len(baseline_terms),
         }
