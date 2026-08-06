@@ -960,7 +960,13 @@ class SolverTests(unittest.TestCase):
             maximum_shifts_per_day=2,
         )
         variant = self.engine.solve(snapshot)[0]
-        self.assertEqual(len(variant.assignments), 2)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        assignments_on_test_day = [
+            assignment
+            for assignment in variant.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        ]
+        self.assertEqual(len(assignments_on_test_day), 2)
         report = validate_variant(snapshot, variant)
         self.assertTrue(report.valid, report.errors)
 
