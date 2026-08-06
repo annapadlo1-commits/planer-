@@ -112,10 +112,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       await loadLiveData(data.session?.user || null);
       setLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user || null);
-      if (session?.user) void loadLiveData(session.user);
-      else {
+      if (session?.user && (event === "SIGNED_IN" || event === "USER_UPDATED")) void loadLiveData(session.user);
+      else if (!session?.user) {
         setAccess(null);
         setSummary(null);
       }
