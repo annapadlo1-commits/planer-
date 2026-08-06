@@ -246,10 +246,9 @@ export function MatrixV2Editor({
 
   async function createDraft() {
     if (!supabase) return;
-    const name = window.prompt("Nazwa nowej wersji roboczej:", `Konfiguracja firmy v${data.matrixVersion.version + 1}`);
-    if (!name?.trim()) return;
+    const name = `Konfiguracja firmy v${data.matrixVersion.version + 1}`;
     setBusy(true);
-    const result = await supabase.rpc("matrix_v2_create_draft", { p_name: name.trim() });
+    const result = await supabase.rpc("matrix_v2_create_draft", { p_name: name });
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
     notify("Utworzono bezpieczną wersję roboczą konfiguracji firmy.");
@@ -1528,7 +1527,6 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     if(scope==="FINANCE"){
       const financePreview=preview as FinanceImportPreview;
       const changeCount=financePreview.summary.create+financePreview.summary.update+financePreview.summary.deactivate;
-      if(!window.confirm(`Zapisać atomowo ${changeCount} zmian stawek dla ${financePreview.summary.employees} pracowników? W razie błędu żaden wiersz nie zostanie zmieniony.`))return;
       setBusy(true);
       const result=await supabase.rpc("matrix_v2_finance_import_apply_uat_v1",{p_payload:payload});
       setBusy(false);
@@ -1537,8 +1535,6 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
        clearPersistedImport();close();await reload();return;
     }
     const configurationPreview=preview as FullImportPreview;
-    const impact=mode==="REPLACE"?` Zostanie zarchiwizowanych ${configurationPreview.summary.employeesToArchive??0} aktywnych pracowników nieobecnych w pliku.`:" Pozostali pracownicy nie zostaną zmienieni.";
-    if(!window.confirm(`Odtworzyć atomowo pełną bazę firmy: ${configurationPreview.summary.total} wierszy konfiguracji i ${configurationPreview.summary.financeRows} okresów stawek?${impact} Jeśli którykolwiek element będzie błędny, cały zapis zostanie cofnięty.`))return;
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_full_import_apply_uat_v1",{p_payload:payload,p_mode:mode});
     setBusy(false);
