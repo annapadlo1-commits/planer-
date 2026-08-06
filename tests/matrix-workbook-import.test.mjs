@@ -161,3 +161,37 @@ test("staffing and role-duty semantics stay empty when the workbook does not sta
   assert.equal(parsed.staffingRules[0].operation,"");
   assert.equal(parsed.roleDuties[0].assignmentMode,"");
 });
+
+test("one company workbook parses every business input required for a clean restore",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Firma:[{"Waluta":"PLN","Strefa czasowa":"Europe/Warsaw","Minimalny odpoczynek (min)":"660","Maks. zmian dziennie":"1","Brak dostępności oznacza dostępność":"NIE","Wymagaj wyniku optymalnego":"TAK"}],
+    Role:[{Kod:"KELNER",Nazwa:"Kelner",Kolor:"#7257d8",Kolejność:"1",Aktywna:"TAK"}],
+    Lokale:[{Kod:"KRUCZA",Nazwa:"Krucza","Strefa czasowa":"Europe/Warsaw",Kolejność:"1",Aktywna:"TAK"}],
+    Obowiązki:[{Kod:"RUNNER",Nazwa:"Runner",Opis:"Wsparcie",Kolor:"#4a8d78",Kolejność:"1",Aktywna:"TAK"}],
+    Scenariusze:[{Kod:"BAZOWY",Nazwa:"Bazowy",Domyślny:"TAK","Ustawienia JSON":"{}",Aktywny:"TAK"}],
+    Strategie:[{Kod:"BALANCED",Nazwa:"Zbalansowany","Kod silnika":"CP_SAT","Opcje silnika JSON":"{}",Aktywna:"TAK"}],
+    "Kryteria strategii":[{"Kod strategii":"BALANCED",Poziom:"1",Miara:"UNFILLED",Kierunek:"MINIMIZE",Waga:"1",Tolerancja:"0","Parametry JSON":"{}",Aktywne:"TAK"}],
+    "Warianty scenariuszy":[{"Kod scenariusza":"BAZOWY","Kod strategii":"BALANCED",Kolejność:"1","Nadpisania celów JSON":"{}","Nadpisania silnika JSON":"{}",Aktywne:"TAK"}],
+    "Zasady płacowe":[{Kod:"NOC",Nazwa:"Dodatek nocny","Sposób obliczania":"FIXED_PER_HOUR","Kwota za godzinę":"5,50",Waluta:"PLN","Sposób łączenia":"STACK",Dni:"1,2,3,4,5,6,7","Kody ról":"KELNER",Aktywna:"TAK"}],
+    "Dodatki scenariuszy":[{"Kod scenariusza":"BAZOWY","Kod zasady":"NOC",Włączona:"TAK"}],
+    "Budżety scenariuszy":[{"Kod scenariusza":"BAZOWY",Miesiąc:"2026-09-01",Operacja:"SET",Budżet:"10000",Waluta:"PLN","Twardy limit":"NIE","Próg ostrzeżenia (%)":"90"}],
+    Pracownicy:[{"Numer pracownika":"GP-001",Imię:"Anna",Nazwisko:"Nowak","Kod roli":"KELNER","Kody lokali":"KRUCZA","Rodzaj umowy":"ZLECENIE"}],
+    "Role pracowników":[{"Numer pracownika":"GP-001","Kod roli":"KELNER",Podstawowa:"TAK","Może zatwierdzać":"TAK",Aktywna:"TAK"}],
+    "Lokale pracowników":[{"Numer pracownika":"GP-001","Kod lokalu":"KRUCZA","Zwykła praca":"TAK","Dodatkowa praca":"NIE","Lokal bazowy":"TAK",Aktywna:"TAK"}],
+    "Kompetencje pracowników":[{"Numer pracownika":"GP-001","Kod obowiązku":"RUNNER","Kod roli":"KELNER",Aktywna:"TAK"}],
+    Dostępność:[{"ID wpisu":"","Numer pracownika":"GP-001",Rodzaj:"AVAILABLE_WINDOW",Od:"2026-09-01T08:00:00+02:00",Do:"2026-09-01T18:00:00+02:00",Aktywny:"TAK"}],
+  }));
+
+  assert.equal(parsed.settings.currency,"PLN");
+  assert.equal(parsed.roles[0].code,"KELNER");
+  assert.equal(parsed.locations[0].timezone,"Europe/Warsaw");
+  assert.equal(parsed.scenarios[0].isDefault,true);
+  assert.equal(parsed.strategyObjectives[0].metricCode,"UNFILLED");
+  assert.equal(parsed.payRules[0].rateMinorPerHour,"550");
+  assert.deepEqual(parsed.payRules[0].roleCodes,["KELNER"]);
+  assert.equal(parsed.scenarioBudgets[0].amountMinor,"1000000");
+  assert.equal(parsed.employeeRoles[0].canLead,true);
+  assert.equal(parsed.employeeLocationsDetailed[0].homeLocation,true);
+  assert.equal(parsed.employeeCapabilities[0].dutyCode,"RUNNER");
+  assert.equal(parsed.timeConstraints[0].kind,"AVAILABLE_WINDOW");
+});

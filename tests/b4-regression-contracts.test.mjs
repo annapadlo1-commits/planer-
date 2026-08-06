@@ -6,6 +6,10 @@ const migrationUrl = new URL(
   "../supabase/migrations/20260806100000_uat_finance_import_and_variant_preview.sql",
   import.meta.url,
 );
+const fullImportMigrationUrl = new URL(
+  "../supabase/migrations/20260806133000_b4_full_company_roundtrip.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -14,6 +18,18 @@ test("B4 migration restores every server contract required by the UI", async () 
   assert.match(sql, /optimizer_variant_workspace_uat_v2/);
   assert.match(sql, /optimizer_published_schedule_alpha16/);
   assert.match(sql, /jsonb_build_object\('engine','ORTOOLS_V2'\)/);
+});
+
+test("B4 full company restore is a single authenticated transaction with a dry run", async () => {
+  const sql=await readFile(fullImportMigrationUrl,"utf8");
+  assert.match(sql,/matrix_v2_full_import_preview_uat_v1/);
+  assert.match(sql,/matrix_v2_full_import_apply_uat_v1/);
+  assert.match(sql,/FULL_IMPORT_DRY_RUN_COMPLETE/);
+  assert.match(sql,/matrix_v2_full_import_phase_uat_v1\(v_configuration,'PRE'\)/);
+  assert.match(sql,/matrix_v2_import_apply_uat_v5\(v_configuration_without_rates,p_mode\)/);
+  assert.match(sql,/matrix_v2_finance_import_apply_uat_v1/);
+  assert.match(sql,/has_app_role\('OWNER'\).*has_app_role\('ADMIN'\)/s);
+  assert.match(sql,/revoke all on function public\.matrix_v2_full_import_preview_uat_v1/);
 });
 
 test("standby exhaustion cannot block a required schedule publication", async () => {
