@@ -175,6 +175,53 @@ export type SolverWorkspace = {
   finance: SolverWorkspaceFinance | null;
 };
 
+export type SolverWorkloadDistributionRow = {
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  roleNames: string[];
+  plannedMinutes: number;
+  shiftCount: number;
+  nominalMonthlyMinutes: number;
+  maximumMonthlyMinutes: number;
+  differenceMinutes: number;
+  hardUnavailableDays: number;
+  availableWindowDays: number;
+  reasonCode: "AVAILABILITY_LIMITED" | "AVAILABILITY_WINDOW_LIMITED" | "MAXIMUM_REACHED" | "TARGET_NOT_SET" | "SOLVER_DISTRIBUTION" | "ABOVE_NOMINAL" | "ON_TARGET" | string;
+  locations: { id: string; name: string; minutes: number; shiftCount: number }[];
+};
+
+export async function getVariantWorkloadDistribution(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkloadDistributionRow[]> {
+  const payload=record(await rpc(client,"optimizer_variant_workload_distribution_uat_v1",{
+    p_variant_id:variantId,
+  }));
+  if(!Array.isArray(payload.employees))return [];
+  return payload.employees.map(value=>{
+    const row=record(value);
+    return {
+      employeeId:String(row.employeeId??""),
+      employeeNo:String(row.employeeNo??""),
+      employeeName:String(row.employeeName??""),
+      roleNames:Array.isArray(row.roleNames)?row.roleNames.map(String):[],
+      plannedMinutes:numberOf(row,"plannedMinutes","planned_minutes"),
+      shiftCount:numberOf(row,"shiftCount","shift_count"),
+      nominalMonthlyMinutes:numberOf(row,"nominalMonthlyMinutes","nominal_monthly_minutes"),
+      maximumMonthlyMinutes:numberOf(row,"maximumMonthlyMinutes","maximum_monthly_minutes"),
+      differenceMinutes:numberOf(row,"differenceMinutes","difference_minutes"),
+      hardUnavailableDays:numberOf(row,"hardUnavailableDays","hard_unavailable_days"),
+      availableWindowDays:numberOf(row,"availableWindowDays","available_window_days"),
+      reasonCode:String(row.reasonCode??"SOLVER_DISTRIBUTION"),
+      locations:Array.isArray(row.locations)?row.locations.map(value=>{
+        const location=record(value);
+        return {id:String(location.id??""),name:String(location.name??""),minutes:numberOf(location,"minutes","minutes"),shiftCount:numberOf(location,"shiftCount","shift_count")};
+      }):[],
+    };
+  });
+}
+
 export type SolverLeaderVariant = {
   id: string;
   sourceVariantId: string;
@@ -2098,10 +2145,11 @@ export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
   if (normalized.includes("OPTIMIZATION_INCOMPLETE")
     || (normalized.includes("ENDED INCOMPLETE") && normalized.includes("STATUS=FEASIBLE"))) {
-    return "Silnik znalazł poprawny grafik, ale nie zdążył matematycznie potwierdzić, że nie istnieje lepszy układ. Konfiguracja użyta przez ten przebieg wymagała takiego potwierdzenia, dlatego wynik nie został zapisany. Jeśli wystarczy najlepszy poprawny wariant znaleziony w limicie czasu, wyłącz opcję „Czekaj na matematycznie najlepszy wynik”, opublikuj konfigurację firmy i uruchom nowe generowanie.";
+    return "Silnik znalazł poprawny grafik, ale nie zdążył matematycznie potwierdzić, że nie istnieje lepszy układ. Konfiguracja użyta przez ten przebieg miała włączony tryb audytowy, dlatego wynik nie został zapisany. Do zwykłego planowania wyłącz „Tryb audytowy: wymagaj matematycznego dowodu optimum”, opublikuj konfigurację firmy i uruchom nowe generowanie.";
   }
   if (normalized.includes("RUN_VARIANTS_INCOMPLETE")) return "Końcowa kontrola wykryła, że nie zapisano wyniku dla każdej strategii. Przebieg nie zostanie opublikowany; szczegółowa przyczyna pozostaje w historii próby.";
   if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Konfiguracja wymaga matematycznego dowodu optimum, a co najmniej jeden wariant jest poprawny, lecz silnik nie potwierdził optimum w dostępnym czasie. Zwiększ limit czasu albo świadomie dopuść najlepsze znalezione rozwiązanie i uruchom ponownie.";
+  if (normalized.includes("ROLE_PUBLICATION_CONFLICTS_WITH_EXISTING_STANDBY")) return "Nie można opublikować grafiku zespołu, ponieważ co najmniej jedna osoba jest już aktywowana jako rezerwa w tym samym dniu. Sprawdź aktywne zastępstwa w Operacje → Alerty, zakończ konflikt i ponów publikację.";
   if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
   if (normalized.includes("SOLVER_CONFIGURATION_MISSING") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_MISSING")) return "Nie ustawiono aktywnego silnika grafiku.";
   if (normalized.includes("SOLVER_ENGINE_INVALID") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_INVALID")) return "Konfiguracja silnika zawiera nieobsługiwaną wartość.";
