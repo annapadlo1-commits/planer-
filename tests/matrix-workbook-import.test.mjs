@@ -94,7 +94,7 @@ test("Apps Script employee identifiers are matched by email instead of appended 
   assert.equal(parsed.employees[0].active,true);
 });
 
-test("shift period is never inferred from a name or code",async()=>{
+test("shift period is derived only from exact start time, never from a name, code or imported label",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Zmiany:[
       {Kod:"RANO_1",Nazwa:"Poranna",Pora:"",Od:"10:00",Do:"17:00",Dni:"1",Aktywna:"TAK"},
@@ -103,7 +103,7 @@ test("shift period is never inferred from a name or code",async()=>{
   }));
 
   assert.deepEqual(parsed.shifts.map(shift=>shift.shiftPeriod),[
-    "","EVENING",
+    "MORNING","MIDDLE",
   ]);
 });
 
