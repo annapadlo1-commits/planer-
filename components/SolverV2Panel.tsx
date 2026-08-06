@@ -709,9 +709,9 @@ export function SolverV2Panel({
           <em>{strategy.progress}%</em>
         </div>)}
       </div>}
-      {run.failureMessage && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
+      {run.failureMessage && run.status!=="FAILED" && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
       {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
-      {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>„Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
+      {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>{run.failureMessage?solverErrorMessage(run.failureMessage):"Nie zapisano technicznej przyczyny awarii."} „Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
       {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej konfiguracji firmy.</small></span></div>}
       {pollWarning && <div className="solver-v2-poll-warning">{pollWarning}</div>}
       <div className="solver-v2-actions">
