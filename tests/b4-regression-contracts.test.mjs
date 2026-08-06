@@ -324,6 +324,8 @@ test("solver honors Matrix strategy budgets and fair-distribution tier order", a
   assert.doesNotMatch(engine,/MAX_RELAXED_STRATEGY_SECONDS/);
   assert.match(engine,/configured_strategy_budget =/);
   assert.match(engine,/strategy\.time_limit_seconds/);
+  assert.match(engine,/configured_coverage_ceiling/);
+  assert.doesNotMatch(engine,/MAX_RELAXED_COVERAGE_SECONDS/);
   assert.match(engine,/remaining_strategy_budget \/ max\(1, remaining_strategy_count\)/);
   assert.match(engine,/incumbent_zero_tier =/);
   assert.match(engine,/"verifiedZeroIncumbent": True/);
