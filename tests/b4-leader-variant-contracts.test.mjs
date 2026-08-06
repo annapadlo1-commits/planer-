@@ -64,6 +64,8 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(panel, /Wybierz jako bazę/);
   assert.match(panel, /Oryginalne trzy warianty powyżej pozostają niezmienione/);
   assert.equal((panel.match(/window\.confirm/g) ?? []).length, 1, "wybór i publikacja nie mogą otwierać blokujących okien przeglądarki");
+  const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
+  assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
   assert.match(workspace, /Uzupełnij w wersji lidera/);
   assert.match(workspace, /Usuń przydział/);
   assert.match(workspace, /Powód zmiany/);
