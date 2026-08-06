@@ -1,6 +1,6 @@
 -- Separate Matrix shift-template capacity from employee assignment rules.
 -- A Matrix may define any number of shifts.  Every employee is nevertheless
--- limited to one primary shift per calendar day and may not work the last
+-- limited by the company setting per calendar day and may not work the last
 -- configured shift of one day followed by the first shift of the next day.
 
 alter function solver_private.build_snapshot_payload_v2(
@@ -62,16 +62,16 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_snapshot jsonb:=p_snapshot;
-  v_employees jsonb:='[]'::jsonb;
   v_invalid bigint:=0;
+  v_maximum_shifts_per_day integer:=coalesce(
+    nullif(p_snapshot->'settings'->>'maximumShiftsPerDay','')::integer,1
+  );
   v_timezone text:=coalesce(
     nullif(p_snapshot->'settings'->>'timezone',''),'Europe/Warsaw'
   );
 begin
-  -- Exactly one primary shift per employee and calendar day.  Count shift
-  -- occurrences rather than staffing seats, and include already published
-  -- assignments projected into the snapshot as external work.
+  -- Apply the configured daily limit to shift occurrences rather than
+  -- staffing seats, including already published external work.
   with submitted as (
     select assignment.value->>'employeeId' employee_id,
       (slot.value->>'date')::date work_date,
@@ -95,7 +95,7 @@ begin
     select employee_id,work_date
     from submitted
     group by employee_id,work_date
-    having count(distinct item_key)>1
+    having count(distinct item_key)>v_maximum_shifts_per_day
   ) violation;
   if v_invalid>0 then
     raise exception 'VARIANT_MULTIPLE_PRIMARY_SHIFTS_PER_DAY_INVALID';
@@ -160,19 +160,8 @@ begin
     raise exception 'VARIANT_CONSECUTIVE_SHIFT_SEQUENCE_INVALID';
   end if;
 
-  -- The older validator expects this legacy field.  Force the employee value
-  -- to the invariant 1 so historical Matrix template counts cannot relax it.
-  select coalesce(jsonb_agg(
-    employee.value||jsonb_build_object('maximumShiftsPerDay',1)
-    order by employee.ordinality
-  ),'[]'::jsonb)
-  into v_employees
-  from jsonb_array_elements(coalesce(p_snapshot->'employees','[]'::jsonb))
-    with ordinality employee(value,ordinality);
-  v_snapshot:=jsonb_set(v_snapshot,'{employees}',v_employees,true);
-
   return solver_private.validate_variant_before_primary_shift_invariants_v2(
-    v_snapshot,p_variant
+    p_snapshot,p_variant
   );
 end;
 $$;

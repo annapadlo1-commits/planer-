@@ -1,5 +1,5 @@
 -- Keep the explanation and manual-override path on exactly the same hard
--- assignment rules as the worker: one primary shift per day, no last(D) ->
+-- assignment rules as the worker: configured daily shift limit, no last(D) ->
 -- first(D+1), and no ordinary assignment while the employee is published as
 -- Tier 1/Tier 2 stand-by.
 
@@ -62,6 +62,7 @@ declare
   v_month date;
   v_reasons text[]:='{}'::text[];
   v_tier integer;
+  v_maximum_shifts_per_day integer:=1;
 begin
   select shift_row.* into v_shift
   from public.plan_shifts_v2 shift_row
@@ -73,15 +74,19 @@ begin
   from public.plan_variants_v2 variant
   join public.optimization_runs_v2 run on run.id=variant.run_id
   where variant.id=p_variant_id;
+  select coalesce(nullif(version.settings->>'maximumShiftsPerDay','')::integer,1)
+  into v_maximum_shifts_per_day
+  from public.matrix_versions_v2 version
+  where version.id=v_matrix_version_id;
 
-  if exists(
-    select 1
+  if (
+    select count(distinct assignment.shift_id)
     from public.plan_assignments_v2 assignment
     join public.plan_shifts_v2 assigned_shift on assigned_shift.id=assignment.shift_id
     where assignment.variant_id=p_variant_id
       and assignment.employee_id=p_employee_id
       and assigned_shift.shift_date=v_shift.shift_date
-  ) then
+  )>=v_maximum_shifts_per_day then
     v_reasons:=array_append(v_reasons,'ONE_PRIMARY_SHIFT_PER_DAY');
   end if;
 
@@ -153,6 +158,7 @@ declare
   v_month date;
   v_reasons text[]:='{}'::text[];
   v_tier integer;
+  v_maximum_shifts_per_day integer:=1;
 begin
   select shift_row.* into v_shift
   from public.plan_shifts_v2 shift_row where shift_row.id=p_shift_id;
@@ -160,27 +166,31 @@ begin
   into v_matrix_version_id,v_month
   from public.published_schedules_v2 schedule
   where schedule.id=p_schedule_id and schedule.status='PUBLISHED';
+  select coalesce(nullif(version.settings->>'maximumShiftsPerDay','')::integer,1)
+  into v_maximum_shifts_per_day
+  from public.matrix_versions_v2 version
+  where version.id=v_matrix_version_id;
   if v_shift.id is null or v_matrix_version_id is null then
     return array['SHIFT_NOT_FOUND']::text[];
   end if;
 
-  if exists(
+  if (
     with scheduled as (
-      select assignment.employee_id,shift_row.shift_date
+      select assignment.employee_id,shift_row.shift_date,shift_row.id shift_id
       from public.published_schedule_variants_v2 link
       join public.plan_assignments_v2 assignment on assignment.variant_id=link.variant_id
       join public.plan_shifts_v2 shift_row on shift_row.id=assignment.shift_id
       where link.schedule_id=p_schedule_id
       union all
-      select override_row.employee_id,shift_row.shift_date
+      select override_row.employee_id,shift_row.shift_date,shift_row.id shift_id
       from public.operational_assignment_overrides_v2 override_row
       join public.plan_shifts_v2 shift_row on shift_row.id=override_row.shift_id
       where override_row.schedule_id=p_schedule_id and override_row.status='ACTIVE'
     )
-    select 1 from scheduled
+    select count(distinct scheduled.shift_id) from scheduled
     where scheduled.employee_id=p_employee_id
       and scheduled.shift_date=v_shift.shift_date
-  ) then
+  )>=v_maximum_shifts_per_day then
     v_reasons:=array_append(v_reasons,'ONE_PRIMARY_SHIFT_PER_DAY');
   end if;
 
@@ -456,4 +466,4 @@ grant execute on function public.optimizer_candidate_diagnostics_alpha16(
 comment on function public.optimizer_variant_issue_diagnostics_uat_v2(uuid,bigint) is
   'Explains an unfilled variant slot with current hard assignment and published stand-by reasons; exposes an operational schedule only when a safe audited correction path exists.';
 comment on function public.optimizer_candidate_diagnostics_alpha16(uuid,bigint) is
-  'Revalidates operational candidates with contract-aware limits, one shift per day, sequence order and stand-by reservations before any override.';
+  'Revalidates operational candidates with contract-aware limits, the configured daily shift limit, sequence order and stand-by reservations before any override.';
