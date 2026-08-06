@@ -14,6 +14,18 @@ const fullImportWarningFixMigrationUrl = new URL(
   "../supabase/migrations/20260806150000_b4_full_import_preview_rate_warning_fix.sql",
   import.meta.url,
 );
+const diagnosticsAndPublicationFixMigrationUrl = new URL(
+  "../supabase/migrations/20260806213000_b4_diagnostics_and_role_publication_fix.sql",
+  import.meta.url,
+);
+const workloadDistributionMigrationUrl = new URL(
+  "../supabase/migrations/20260806220000_b4_workload_distribution.sql",
+  import.meta.url,
+);
+const workloadDistributionIntervalFixUrl = new URL(
+  "../supabase/migrations/20260806221500_b4_workload_distribution_interval_fix.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -148,4 +160,126 @@ test("solver failure copy distinguishes an incomplete optimum proof from a worke
   assert.doesNotMatch(solverClient, /normalized\.includes\("CONFLICT"\)/);
   assert.match(panel, /run\.failureMessage && run\.status!=="FAILED"/);
   assert.match(panel, /run\.failureMessage\?solverErrorMessage\(run\.failureMessage\)/);
+});
+
+test("B4 candidate diagnostics use the real configuration table", async () => {
+  const sql=await readFile(diagnosticsAndPublicationFixMigrationUrl,"utf8");
+  assert.match(sql,/from public\.matrix_versions version/);
+  assert.doesNotMatch(sql,/from public\.matrix_versions_v2 version/);
+  assert.match(sql,/maximumShiftsPerDay/);
+});
+
+test("B4 role publication supersedes the previous logical role across configuration versions", async () => {
+  const sql=await readFile(diagnosticsAndPublicationFixMigrationUrl,"utf8");
+  assert.match(sql,/previous_role\.logical_id=v_logical_role_id/);
+  assert.match(sql,/publication\.status='PUBLISHED'/);
+  assert.match(sql,/published_role_supersede_logical_predecessor_v2/);
+  assert.match(sql,/pg_advisory_xact_lock/);
+});
+
+test("employee availability save stays in the open calendar", async () => {
+  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  const saveBlock=modules.slice(
+    modules.indexOf("async function saveTimeConstraint"),
+    modules.indexOf("async function saveShiftPreferences"),
+  );
+  assert.match(saveBlock,/await loadPortal\(\)/);
+  assert.doesNotMatch(saveBlock,/await reload\(\)/);
+});
+
+test("optimum is presented as an optional audit mode, not a promise of a better schedule", async () => {
+  const [editor,panel]=await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(editor,/Tryb audytowy: wymagaj matematycznego dowodu optimum/);
+  assert.match(editor,/nie ulepsza automatycznie grafiku/);
+  assert.doesNotMatch(panel,/Czekaj na matematycznie najlepszy wynik/);
+});
+
+test("variant comparison is constrained to the drawer width", async () => {
+  const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(css,/\.solver-v2-grid>article\{min-width:0;max-width:100%\}/);
+  assert.match(css,/\.solver-v2-analysis dt small\{display:block/);
+  assert.match(css,/@media\(max-width:1180px\)\{\.solver-v2-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/);
+});
+
+test("leader workload distribution includes the full eligible roster and decision reasons", async () => {
+  const [sql,workspace,client]=await Promise.all([
+    readFile(workloadDistributionMigrationUrl,"utf8"),
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(sql,/optimizer_variant_workload_distribution_uat_v1/);
+  assert.match(sql,/matrix_employee_profiles_v2 profile/);
+  assert.match(sql,/coalesce\(stats\.planned_minutes,0\)/);
+  assert.match(sql,/AVAILABILITY_LIMITED/);
+  assert.match(sql,/SOLVER_DISTRIBUTION/);
+  assert.match(sql,/TARGET_NOT_SET/);
+  assert.match(sql,/matrix_locations_v2 location/);
+  assert.match(workspace,/Rozkład pracy zespołu/);
+  assert.match(workspace,/Dlaczego taki wynik\?/);
+  assert.match(workspace,/WERSJA LIDERA • JESZCZE NIEOPUBLIKOWANA/);
+  assert.match(client,/getVariantWorkloadDistribution/);
+});
+
+test("workload distribution uses a valid end-of-month interval", async () => {
+  const [sql,fix]=await Promise.all([
+    readFile(workloadDistributionMigrationUrl,"utf8"),
+    readFile(workloadDistributionIntervalFixUrl,"utf8"),
+  ]);
+  assert.match(sql,/interval '1 month'-interval '1 day'/);
+  assert.doesNotMatch(sql,/interval '1 month-1 day'/);
+  assert.match(fix,/WORKLOAD_DISTRIBUTION_INTERVAL_FIX_FAILED/);
+});
+
+test("schedule review is a fullscreen weekly workspace without collapsed day lists", async () => {
+  const [workspace,css]=await Promise.all([
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/product-journey.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(workspace,/Grafik tygodniowy/);
+  assert.match(workspace,/Rozkład pracy/);
+  assert.match(workspace,/Braki i powody/);
+  assert.match(workspace,/solver-roster-grid/);
+  assert.match(workspace,/Pracownicy/);
+  assert.match(workspace,/Stanowiska/);
+  assert.match(workspace,/Pokrycie obsady/);
+  assert.doesNotMatch(workspace,/className="solver-workspace-calendar"/);
+  assert.match(workspace,/solver-week-duties/);
+  assert.match(css,/\.drawer\.solver-drawer\{inset:0!important;width:100vw!important/);
+  assert.match(css,/grid-template-columns:190px repeat\(7,minmax\(150px,1fr\)\)/);
+});
+
+test("role cards hide engine jargon and optional operational tools stay collapsed", async () => {
+  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  assert.match(modules,/role-plan-cards compact/);
+  assert.match(modules,/roleCardStyle\(role\.id\)/);
+  assert.doesNotMatch(modules,/<strong>OR-Tools<\/strong>/);
+  assert.doesNotMatch(modules,/Scenariusze, warianty i analiza OR-Tools/);
+  assert.match(modules,/<details className="operational-additional-tools">/);
+  assert.match(modules,/Narzędzia dodatkowe/);
+  assert.match(modules,/technical-details/);
+});
+
+test("token refresh does not reload the whole application context", async () => {
+  const provider=await readFile(new URL("../components/AppAuthProvider.tsx",import.meta.url),"utf8");
+  const listener=provider.slice(provider.indexOf("onAuthStateChange"),provider.indexOf("return () => listener.subscription.unsubscribe"));
+  assert.match(listener,/event === "SIGNED_IN" \|\| event === "USER_UPDATED"/);
+  assert.doesNotMatch(listener,/event === "TOKEN_REFRESHED"/);
+});
+
+test("employee and company calendars open a filterable day workspace", async () => {
+  const [modules,css]=await Promise.all([
+    readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(modules,/employee-day-workspace/);
+  assert.match(modules,/Pracujesz z/);
+  assert.match(modules,/company-day-workspace/);
+  assert.match(modules,/Wszystkie role/);
+  assert.match(modules,/Wszystkie lokale/);
+  assert.match(modules,/roleCardStyle\(assignment\.roleId\)/);
+  assert.match(css,/\.company-day-filters/);
+  assert.match(css,/\.employee-coworker-grid/);
 });
