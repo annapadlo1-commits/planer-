@@ -73,4 +73,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(page, /grafik-pro:open-role-generator/);
   assert.match(editor, /import-draft/);
   assert.match(editor, /import-open/);
+  assert.doesNotMatch(editor, /window\.prompt\("Nazwa nowej wersji roboczej:/, "utworzenie roboczej kopii nie może blokować karty natywnym oknem");
+  assert.doesNotMatch(editor, /window\.confirm\(`Odtworzyć atomowo pełną bazę firmy:/, "pełny import ma być zatwierdzany w aplikacji, nie w natywnym oknie");
+  assert.doesNotMatch(editor, /window\.confirm\(`Zapisać atomowo \$\{changeCount\}/, "import stawek ma być zatwierdzany w aplikacji, nie w natywnym oknie");
 });
