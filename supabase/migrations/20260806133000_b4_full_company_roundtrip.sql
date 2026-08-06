@@ -279,6 +279,32 @@ begin
         'normalizedRows','[]'::jsonb,'summary',jsonb_build_object('rows',jsonb_array_length(coalesce(v_finance->'payRates','[]'::jsonb)),
           'employees',0,'create',0,'update',0,'deactivate',0,'unchanged',0));
     end if;
+    -- The employee sheet intentionally omits the legacy inline rate because the
+    -- complete workbook owns rate periods in "Finanse pracowników".  Suppress
+    -- the legacy warning only when that same employee has an active, non-empty
+    -- finance row.  A genuinely missing rate still remains visible.
+    v_configuration_preview:=jsonb_set(v_configuration_preview,'{warnings}',coalesce((
+      select jsonb_agg(
+        case when warning.value->>'code'='PAY_RATE_MISSING' then
+          jsonb_set(warning.value,'{message}',to_jsonb('Brak stawki zablokuje późniejszą publikację konfiguracji firmy.'::text),true)
+        else warning.value end
+        order by warning.ordinality
+      )
+      from jsonb_array_elements(coalesce(v_configuration_preview->'warnings','[]'::jsonb))
+        with ordinality warning(value,ordinality)
+      where warning.value->>'code'<>'PAY_RATE_MISSING'
+        or not exists(
+          select 1
+          from jsonb_array_elements(coalesce(v_configuration->'employees','[]'::jsonb))
+            with ordinality employee(value,ordinality)
+          join jsonb_array_elements(coalesce(v_finance->'payRates','[]'::jsonb)) rate(value)
+            on upper(rate.value->>'employeeNo')=upper(employee.value->>'employeeNo')
+          where pg_catalog.pg_input_is_valid(warning.value->>'row','integer')
+            and employee.ordinality+1=(warning.value->>'row')::integer
+            and nullif(rate.value->>'baseRate','') is not null
+            and coalesce(nullif(rate.value->>'active','')::boolean,true)
+        )
+    ),'[]'::jsonb),true);
     v_extra:=jsonb_array_length(coalesce(v_configuration->'roles','[]'::jsonb))
       +jsonb_array_length(coalesce(v_configuration->'locations','[]'::jsonb))
       +jsonb_array_length(coalesce(v_configuration->'duties','[]'::jsonb))
