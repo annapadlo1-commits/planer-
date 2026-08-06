@@ -404,7 +404,13 @@ function validateStageObjective(value: unknown): void {
   assertExactKeys(
     value,
     ["tier", "name", "value", "status", "tolerance", "frozenUpperBound"],
-    ["bestBound", "terms"],
+    [
+      "bestBound",
+      "terms",
+      "fairnessIncumbentGuard",
+      "verifiedZeroIncumbent",
+      "certificate",
+    ],
   );
   assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
   assertString(value.name, "OBJECTIVE_NAME", 1, 100);
@@ -433,6 +439,16 @@ function validateStageObjective(value: unknown): void {
   if (Object.hasOwn(value, "terms")) {
     assertArray(value.terms, "OBJECTIVE_TERMS", 100);
     value.terms.forEach(validateObjectiveTerm);
+  }
+  if (Object.hasOwn(value, "fairnessIncumbentGuard")) {
+    validateMetrics(value.fairnessIncumbentGuard);
+  }
+  if (Object.hasOwn(value, "verifiedZeroIncumbent")) {
+    assertBoolean(value.verifiedZeroIncumbent, "VERIFIED_ZERO_INCUMBENT");
+  }
+  if (Object.hasOwn(value, "certificate")) {
+    assertObject(value.certificate, "COVERAGE_CERTIFICATE");
+    assertJsonTree(value.certificate);
   }
 }
 
