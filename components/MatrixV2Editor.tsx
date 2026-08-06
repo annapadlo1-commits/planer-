@@ -1265,6 +1265,9 @@ function auditValue(value:unknown){if(value===null||value===undefined||value==="
 
 type MatrixImportIssue={sheet:string;row:number;code:string;message:string};
 type MatrixImportArchive={employeeId:string;employeeNo:string;employeeName:string;email?:string|null;reason:"NOT_IN_FILE"|"DUPLICATE_IDENTITY"};
+function importIssueMessage(message:string){
+  return message.replace(/Matrix(?:a|ie|em|owi|u)?/gi,"konfiguracji firmy");
+}
 type MatrixImportPreview={valid:boolean;errors:MatrixImportIssue[];warnings:MatrixImportIssue[];employeesToArchive?:MatrixImportArchive[];summary:{employees:number;employeeDuties?:number;shifts:number;staffingRules:number;roleDuties:number;total:number;employeesToUpdate?:number;employeesToCreate?:number;employeesToArchive?:number}};
 type MatrixImportMode="UPDATE"|"REPLACE";
 type MatrixImportScope="FINANCE"|"CONFIGURATION";
@@ -1537,7 +1540,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
         <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"pełny plik GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
         <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as FullImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as FullImportPreview).summary.employeesToCreate??0}</b></span><span><small>Zmiany stawek</small><b>{(preview as FullImportPreview).summary.financeChanges}</b></span><span className={mode==="REPLACE"&&Number((preview as FullImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as FullImportPreview).summary.employeesToArchive??0}</b></span></div>
         {mode==="REPLACE"&&Boolean((preview as FullImportPreview).configuration.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as FullImportPreview).configuration.employeesToArchive?.length})</summary><ul>{(preview as FullImportPreview).configuration.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
-        {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
+        {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{importIssueMessage(issue.message)}</small></span></div>)}
         {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> Odtwórz pełną bazę firmy</button>}
       </section>}
     </div>
@@ -1551,7 +1554,7 @@ function FinanceImportPreviewCard({preview,busy,apply}:{preview:FinanceImportPre
     <p>{preview.summary.rows} wierszy dla {preview.summary.employees} pracowników. System zapisze tylko rzeczywiste zmiany.</p>
     <div className="matrix-import-impact"><span><small>Nowe okresy</small><b>{preview.summary.create}</b></span><span><small>Zmieniane</small><b>{preview.summary.update}</b></span><span className={preview.summary.deactivate?"warning":""}><small>Wyłączane</small><b>{preview.summary.deactivate}</b></span><span><small>Bez zmian</small><b>{preview.summary.unchanged}</b></span></div>
     {Boolean(preview.normalizedRows?.length)&&<details className="matrix-import-archive-list"><summary>Sprawdź listę zmian ({changes})</summary><ul>{preview.normalizedRows?.filter(row=>row.action!=="UNCHANGED").map(row=><li key={`${row.sourceRow}:${row.employeeNo}`}><span><b>{row.employeeName}</b><small>{row.employeeNo} • wiersz {row.sourceRow}</small></span><em>{row.action==="CREATE"?"nowa stawka":row.action==="UPDATE"?"zmiana":"wyłączenie"}</em></li>)}</ul></details>}
-    {[...preview.errors,...preview.warnings].map((issue,index)=><div className={`solver-v2-notice ${preview.errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{issue.message}</small></span></div>)}
+    {[...preview.errors,...preview.warnings].map((issue,index)=><div className={`solver-v2-notice ${preview.errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{importIssueMessage(issue.message)}</small></span></div>)}
     {preview.valid&&<button className="primary-button full" disabled={busy||changes===0} onClick={apply}><Save/> {changes?`Zapisz ${changes} zmian stawek`:"Brak zmian do zapisania"}</button>}
   </section>;
 }
