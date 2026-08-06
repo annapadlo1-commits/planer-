@@ -57,6 +57,7 @@ type ShiftSwapAnnouncement = {id:string;date:string;status:string;shiftName:stri
 type ShiftSwapBoardContext = {requests?:ShiftSwapAnnouncement[]};
 
 const DEFAULT_MONTH = new Date().toISOString().slice(0,7);
+const MONTH_STORAGE_KEY = "grafik-pro:selected-month";
 function monthDate(month:string){return `${month}-01`;}
 function monthLabel(month:string,_timeZone?:string){
   return new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric",timeZone:"UTC"})
@@ -145,6 +146,7 @@ export default function GrafikPro() {
   const [role,setRole]=useState("ALL");
   const [day,setDay]=useState("ALL");
   const [selectedMonth,setSelectedMonth]=useState(DEFAULT_MONTH);
+  const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
   const loadTokenRef=useRef(0),loadMonthRef=useRef(selectedMonthDate);loadMonthRef.current=selectedMonthDate;
   const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:""});
@@ -158,13 +160,13 @@ export default function GrafikPro() {
   const setActive=useCallback((next:NavKey)=>{
     setActiveState(next);
     const section=legacySection[next];
-    if(sectionFromPath(pathname,employeeShell)!==section)router.push(pathForSection(section));
-  },[employeeShell,pathname,router]);
+    if(sectionFromPath(pathname,employeeShell)!==section)router.push(`${pathForSection(section)}?month=${selectedMonth}`);
+  },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
     const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
-    router.push(pathForSection(section));
-  },[employeeShell,router]);
+    router.push(`${pathForSection(section)}?month=${selectedMonth}`);
+  },[employeeShell,router,selectedMonth]);
   const openSetupStep=useCallback((section:SetupSection,step:SetupStepKey,focus?:SetupFocus)=>{
     setConfigurationTab(section);setConfigurationStep(step);setMatrixFocusEmployeeId(focus?.employeeId??null);setActive("matrix");
     const targetId=focus?.targetId??`configuration-step-${step}`;
@@ -184,13 +186,13 @@ export default function GrafikPro() {
   const openEmployeeProfile=useCallback((employeeId:string)=>{
     window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"employee",employeeId}));
     setMatrixCreateEmployeeRequest(0);setMatrixFocusEmployeeId(employeeId);setConfigurationTab("workforce");setConfigurationStep("employees");setActiveState("matrix");
-    router.push(`${pathForSection("settings")}?employee=${encodeURIComponent(employeeId)}`);
-  },[router]);
+    router.push(`${pathForSection("settings")}?month=${selectedMonth}&employee=${encodeURIComponent(employeeId)}`);
+  },[router,selectedMonth]);
   const openNewEmployeeProfile=useCallback(()=>{
     window.sessionStorage.setItem("grafik-pro:matrix-v2:employee-request",JSON.stringify({kind:"new"}));
     setMatrixFocusEmployeeId(null);setConfigurationTab("workforce");setConfigurationStep("employees");setMatrixCreateEmployeeRequest(current=>current+1);setActiveState("matrix");
-    router.push(`${pathForSection("settings")}?employee=new`);
-  },[router]);
+    router.push(`${pathForSection("settings")}?month=${selectedMonth}&employee=new`);
+  },[router,selectedMonth]);
   const markNewEmployeeProfileOpened=useCallback(()=>setMatrixCreateEmployeeRequest(0),[]);
   const monthOptions=useMemo(()=>Array.from({length:48},(_,index)=>{
     const [year,number]=selectedMonth.split("-").map(Number);
@@ -326,6 +328,16 @@ export default function GrafikPro() {
     setLoading(false);
   },[supabase,user,selectedMonthDate,canReadCompanyWorkspace]);
   useEffect(()=>{void load();return()=>{loadTokenRef.current+=1};},[load]);
+  useEffect(()=>{
+    const fromUrl=new URLSearchParams(window.location.search).get("month");
+    const fromSession=window.sessionStorage.getItem(MONTH_STORAGE_KEY);
+    const remembered=[fromUrl,fromSession].find(value=>value&&/^\d{4}-\d{2}$/.test(value));
+    if(remembered)setSelectedMonth(remembered);
+    monthStorageReadyRef.current=true;
+  },[]);
+  useEffect(()=>{
+    if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
+  },[selectedMonth]);
   useEffect(()=>{
     if(employeeShell){setActiveState("portal");return;}
     const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
