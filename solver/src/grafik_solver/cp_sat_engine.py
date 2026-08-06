@@ -99,7 +99,6 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # the entire shared worker budget trying to prove the monthly minimum.  The
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_COVERAGE_SECONDS = 30.0
-MAX_RELAXED_STRATEGY_SECONDS = 35.0
 MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 15.0
 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
 MAX_RELAXED_DIVERSITY_SECONDS = 6.0
@@ -558,6 +557,16 @@ class CpSatScheduleEngine:
                 "Completed one reusable full-model warm start for %s strategies",
                 strategy_count,
             )
+        # A relaxed monthly solve can finish a later strategy with a weaker
+        # incumbent than one already found for the same snapshot. That is
+        # especially misleading for a Matrix-defined fairness-first strategy:
+        # it could show a worse load spread only because its time limit expired.
+        # Keep the best verified fairness incumbent as a feasible guard for
+        # later strategies whose Matrix tiers put fairness ahead of cost.
+        best_fairness_seed_solver: Any | None = None
+        best_fairness_key: tuple[int, int] | None = None
+        best_fairness_bounds: dict[str, int] = {}
+
         for strategy_index, strategy in enumerate(ordered_strategies):
             if self._cancel_event.is_set():
                 raise OptimizationCancelled("Optimization was cancelled")
@@ -567,12 +576,27 @@ class CpSatScheduleEngine:
                 model=strategy_base.model.clone(),
             )
             strategy_started = self._clock()
-            strategy_budget = strategy.time_limit_seconds or self._cp_sat_budget_seconds
-            if not snapshot.settings.require_optimal:
-                strategy_budget = min(
-                    strategy_budget,
-                    MAX_RELAXED_STRATEGY_SECONDS,
-                )
+            # The Matrix value is the authoritative per-strategy ceiling. Split
+            # the remaining worker budget fairly between strategies so an early
+            # variant cannot starve a later one, but never replace the configured
+            # value with a hidden hard-coded cap.
+            remaining_strategy_count = strategy_count - strategy_index
+            remaining_strategy_budget = self._remaining_seconds(
+                global_deadline,
+                f"{strategy.code}:BUDGET",
+            )
+            fair_strategy_share = (
+                remaining_strategy_budget / max(1, remaining_strategy_count)
+            )
+            configured_strategy_budget = (
+                strategy.time_limit_seconds
+                if strategy.time_limit_seconds is not None
+                else fair_strategy_share
+            )
+            strategy_budget = min(
+                float(configured_strategy_budget),
+                fair_strategy_share,
+            )
             strategy_deadline = min(
                 global_deadline,
                 strategy_started + strategy_budget,
@@ -587,6 +611,43 @@ class CpSatScheduleEngine:
                 strategy.code,
                 coverage_hint_count,
             )
+            active_metric_tiers: dict[str, list[int]] = defaultdict(list)
+            for objective_term in strategy.objective_terms:
+                if objective_term.weight == 0:
+                    continue
+                active_metric_tiers[
+                    METRIC_ALIASES.get(objective_term.metric, objective_term.metric)
+                ].append(objective_term.tier)
+            fairness_tiers = [
+                tier
+                for metric_name in (
+                    "LOAD_UTILIZATION_SPREAD_BPS",
+                    "NOMINAL_DEVIATION_MINUTES",
+                )
+                for tier in active_metric_tiers.get(metric_name, [])
+            ]
+            cost_tiers = active_metric_tiers.get("TOTAL_COST", [])
+            fairness_first = bool(fairness_tiers) and (
+                not cost_tiers or min(fairness_tiers) < min(cost_tiers)
+            )
+            applied_fairness_bounds: dict[str, int] = {}
+            if fairness_first and best_fairness_seed_solver is not None:
+                for metric_name in (
+                    "LOAD_UTILIZATION_SPREAD_BPS",
+                    "NOMINAL_DEVIATION_MINUTES",
+                ):
+                    if (
+                        metric_name in active_metric_tiers
+                        and metric_name in best_fairness_bounds
+                    ):
+                        bound = best_fairness_bounds[metric_name]
+                        artifacts.model.add(artifacts.metrics[metric_name] <= bound)
+                        applied_fairness_bounds[metric_name] = bound
+                LOGGER.info(
+                    "Strategy %s received Matrix-driven fairness guards %s",
+                    strategy.code,
+                    applied_fairness_bounds,
+                )
             stage_results: list[dict[str, Any]] = [
                 {
                     "tier": 0,
@@ -595,6 +656,11 @@ class CpSatScheduleEngine:
                     "status": common_solver.status_name(common_status),
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
+                    **(
+                        {"fairnessIncumbentGuard": dict(applied_fairness_bounds)}
+                        if applied_fairness_bounds
+                        else {}
+                    ),
                     **(
                         {
                             "certificate": {
@@ -626,9 +692,14 @@ class CpSatScheduleEngine:
                     artifacts.model.get_int_var_from_proto_index(variable_index)
                     for variable_index in range(len(artifacts.model.proto.variables))
                 )
+                seed_solver = (
+                    best_fairness_seed_solver
+                    if fairness_first and best_fairness_seed_solver is not None
+                    else shared_warm_start_solver
+                )
                 nonzero_hint_count = self._replace_with_nonzero_solution_hints(
                     artifacts.model,
-                    shared_warm_start_solver,
+                    seed_solver,
                     full_variables,
                 )
                 LOGGER.info(
@@ -636,7 +707,7 @@ class CpSatScheduleEngine:
                     strategy.code,
                     nonzero_hint_count,
                 )
-                feasible_fallback_solver = shared_warm_start_solver
+                feasible_fallback_solver = seed_solver
 
             tiers: dict[int, list[Any]] = defaultdict(list)
             tier_tolerances: dict[int, int] = defaultdict(int)
@@ -955,11 +1026,24 @@ class CpSatScheduleEngine:
                                 strategy.code,
                             )
                             result = candidate
+                            final_solver = diversity_solver
+                            final_status = diversity_status
                             owner = None
             if owner is not None:
                 result = replace(result, equivalent_to_strategy_id=owner)
             else:
                 solution_owners[result.solution_hash] = strategy.id
+            fairness_key = (
+                int(result.metrics.get("LOAD_UTILIZATION_SPREAD_BPS", 0)),
+                int(result.metrics.get("NOMINAL_DEVIATION_MINUTES", 0)),
+            )
+            if best_fairness_key is None or fairness_key < best_fairness_key:
+                best_fairness_key = fairness_key
+                best_fairness_seed_solver = final_solver
+                best_fairness_bounds = {
+                    "LOAD_UTILIZATION_SPREAD_BPS": fairness_key[0],
+                    "NOMINAL_DEVIATION_MINUTES": fairness_key[1],
+                }
             results.append(result)
             if self._result_callback is not None:
                 self._result_callback(result)
