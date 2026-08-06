@@ -164,7 +164,7 @@ test("staffing and role-duty semantics stay empty when the workbook does not sta
 
 test("one company workbook parses every business input required for a clean restore",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
-    Firma:[{"Waluta":"PLN","Strefa czasowa":"Europe/Warsaw","Minimalny odpoczynek (min)":"660","Maks. zmian dziennie":"1","Brak dostępności oznacza dostępność":"NIE","Wymagaj wyniku optymalnego":"TAK"}],
+    Firma:[{"Waluta":"PLN","Strefa czasowa":"Europe/Warsaw","Minimalny odpoczynek (min)":"660","Maks. zmian jednego pracownika na dobę":"2","Brak dostępności oznacza dostępność":"NIE","Wymagaj wyniku optymalnego":"TAK"}],
     Role:[{Kod:"KELNER",Nazwa:"Kelner",Kolor:"#7257d8",Kolejność:"1",Aktywna:"TAK"}],
     Lokale:[{Kod:"KRUCZA",Nazwa:"Krucza","Strefa czasowa":"Europe/Warsaw",Kolejność:"1",Aktywna:"TAK"}],
     Obowiązki:[{Kod:"RUNNER",Nazwa:"Runner",Opis:"Wsparcie",Kolor:"#4a8d78",Kolejność:"1",Aktywna:"TAK"}],
@@ -183,6 +183,7 @@ test("one company workbook parses every business input required for a clean rest
   }));
 
   assert.equal(parsed.settings.currency,"PLN");
+  assert.equal(parsed.settings.maximumShiftsPerDay,"2");
   assert.equal(parsed.roles[0].code,"KELNER");
   assert.equal(parsed.locations[0].timezone,"Europe/Warsaw");
   assert.equal(parsed.scenarios[0].isDefault,true);
@@ -194,4 +195,11 @@ test("one company workbook parses every business input required for a clean rest
   assert.equal(parsed.employeeLocationsDetailed[0].homeLocation,true);
   assert.equal(parsed.employeeCapabilities[0].dutyCode,"RUNNER");
   assert.equal(parsed.timeConstraints[0].kind,"AVAILABLE_WINDOW");
+});
+
+test("legacy daily-shift header remains import-compatible",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Firma:[{"Maks. zmian dziennie":"1"}],
+  }));
+  assert.equal(parsed.settings.maximumShiftsPerDay,"1");
 });

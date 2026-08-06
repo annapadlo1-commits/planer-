@@ -120,3 +120,19 @@ test("B4 user interface does not expose retired Matrix and English event labels"
   assert.match(app, /ETAP 2 Z 3 • SCALANIE FIRMY/);
   assert.doesNotMatch(modules, /<RoleCompositePanel/);
 });
+
+test("daily employee shift limit has one configurable source across UI, solver and validation", async () => {
+  const [editor, engine, validator, invariantSql, diagnosticSql] = await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py", import.meta.url), "utf8"),
+    readFile(new URL("../solver/src/grafik_solver/validator.py", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260804210000_primary_shift_sequence_invariants.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260805010000_diagnostic_hard_rules_and_actions.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(editor, /name="maximumShiftsPerDay"/);
+  assert.doesNotMatch(editor, /const maximumShiftsPerDay = 1;/);
+  assert.match(engine, /employee\.maximum_shifts_per_day/);
+  assert.match(validator, /count > employee\.maximum_shifts_per_day/);
+  assert.match(invariantSql, /count\(distinct item_key\)>v_maximum_shifts_per_day/);
+  assert.match(diagnosticSql, /count\(distinct assignment\.shift_id\)/);
+});
