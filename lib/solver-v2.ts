@@ -10,6 +10,9 @@ export type SolverScenario = {
   description?: string;
   strategyCount: number;
   isDefault: boolean;
+  validFrom?: string | null;
+  validTo?: string | null;
+  profileMode?: "BASELINE" | "PERIOD";
 };
 
 export type SolverRole = { id: string; code: string; name: string };
@@ -93,6 +96,10 @@ export type SolverWorkspaceContext = {
   matrixVersionId: string;
   publishedAt?: string | null;
   archivedAt?: string | null;
+  variantKind?: "GENERATED" | "LEADER_COPY";
+  sourceVariantId?: string | null;
+  revision?: number;
+  lastEditedAt?: string | null;
 };
 
 export type SolverWorkspaceVariant = {
@@ -166,6 +173,31 @@ export type SolverWorkspace = {
   shifts: SolverWorkspaceShift[];
   issues: SolverWorkspaceIssue[];
   finance: SolverWorkspaceFinance | null;
+};
+
+export type SolverLeaderVariant = {
+  id: string;
+  sourceVariantId: string;
+  name: string;
+  status: string;
+  revision: number;
+  assignmentCount: number;
+  unfilledCount: number;
+  lastEditedAt?: string | null;
+};
+
+export type SolverLeaderAssignmentContext = {
+  variantId: string;
+  assignmentId: string | null;
+  issueId: string | null;
+  slotKey: string;
+  currentEmployeeId: string | null;
+  role: { id: string; name: string };
+  shift: {
+    id: string; date: string; startsAt: string; endsAt: string;
+    locationId: string; locationName: string; shiftName: string;
+  };
+  candidates: { employeeId: string; employeeNo: string; employeeName: string; current: boolean }[];
 };
 
 export type SolverManagerStandby = {
@@ -676,6 +708,10 @@ function normalizeWorkspace(value: unknown): SolverWorkspace {
       matrixVersionId: String(valueOf(context, "matrixVersionId", "matrix_version_id", "")),
       publishedAt: valueOf<string | null | undefined>(context, "publishedAt", "published_at", undefined),
       archivedAt: valueOf<string | null | undefined>(context, "archivedAt", "archived_at", undefined),
+      variantKind: valueOf<"GENERATED" | "LEADER_COPY" | undefined>(context, "variantKind", "variant_kind", undefined),
+      sourceVariantId: valueOf<string | null | undefined>(context, "sourceVariantId", "source_variant_id", undefined),
+      revision: Number(valueOf(context, "revision", "revision", 0)),
+      lastEditedAt: valueOf<string | null | undefined>(context, "lastEditedAt", "last_edited_at", undefined),
     },
     variants: variants.map(normalizeWorkspaceVariant),
     shifts: shifts.map(normalizeWorkspaceShift),
@@ -880,6 +916,19 @@ export async function loadSolverConfiguration(
     || typeof settings.requireOptimal !== "boolean"
   ) throw new Error("SOLVER_MATRIX_SETTINGS_INVALID");
 
+  const profilePayload = record(await rpc(client, "optimizer_demand_profiles_uat_v1", {
+    p_month: monthStart,
+  }));
+  const profileRows = Array.isArray(profilePayload.profiles) ? profilePayload.profiles : [];
+  const profilesById = new Map(profileRows.map(value => {
+    const item = record(value);
+    return [String(item.id ?? ""), {
+      validFrom: item.validFrom ? String(item.validFrom) : null,
+      validTo: item.validTo ? String(item.validTo) : null,
+      profileMode: String(item.profileMode ?? "UNDATED_LEGACY"),
+    }] as const;
+  }));
+
   const scenarioResult = { data: (Array.isArray(configurationPayload.scenarios)
     ? configurationPayload.scenarios : []).map(value => {
       const item = record(value);
@@ -949,14 +998,23 @@ export async function loadSolverConfiguration(
       )).length,
     );
   }
-  const scenarios: SolverScenario[] = scenarioRows.filter(item => item.available).map(item => ({
+  const scenarios: SolverScenario[] = scenarioRows.filter(item => {
+    const profile = profilesById.get(item.id);
+    return item.available && (item.is_default || profile?.profileMode === "PERIOD");
+  }).map(item => {
+    const profile = profilesById.get(item.id);
+    return ({
     id: item.id,
     code: item.code,
     name: item.name,
     description: item.description ?? undefined,
     strategyCount: strategyCounts.get(item.id) ?? 0,
     isDefault: Boolean(item.is_default),
-  }));
+    validFrom: profile?.validFrom ?? null,
+    validTo: profile?.validTo ?? null,
+    profileMode: item.is_default ? "BASELINE" : "PERIOD",
+  });
+  });
   if (!scenarios.length) throw new Error("SOLVER_SCENARIOS_MISSING");
   if (scenarios.filter(scenario => scenario.isDefault).length !== 1) {
     throw new Error("SOLVER_DEFAULT_SCENARIO_INVALID");
@@ -1601,6 +1659,124 @@ export async function getVariantWorkspace(
   }));
 }
 
+function normalizeLeaderVariant(value: unknown): SolverLeaderVariant | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = record(value);
+  const id = String(source.id ?? "");
+  const sourceVariantId = String(source.sourceVariantId ?? "");
+  if (!id || !sourceVariantId) return null;
+  return {
+    id,
+    sourceVariantId,
+    name: String(source.name ?? "Wersja lidera"),
+    status: String(source.status ?? "SELECTED"),
+    revision: Number(source.revision ?? 0),
+    assignmentCount: numberOf(source, "assignmentCount", "assignment_count"),
+    unfilledCount: numberOf(source, "unfilledCount", "unfilled_count"),
+    lastEditedAt: source.lastEditedAt ? String(source.lastEditedAt) : null,
+  };
+}
+
+export async function getLeaderVariantForRun(
+  client: SupabaseClient,
+  runId: string,
+): Promise<SolverLeaderVariant | null> {
+  const payload = record(await rpc(client, "optimizer_leader_variant_for_run_uat_v1", {
+    p_run_id: runId,
+  }));
+  return normalizeLeaderVariant(payload.variant);
+}
+
+export async function createLeaderVariant(
+  client: SupabaseClient,
+  input: { runId: string; sourceVariantId: string; name: string },
+): Promise<SolverLeaderVariant> {
+  const payload = record(await rpc(client, "optimizer_create_leader_variant_uat_v1", {
+    p_run_id: input.runId,
+    p_source_variant_id: input.sourceVariantId,
+    p_name: input.name,
+  }));
+  const normalized = normalizeLeaderVariant({
+    ...payload,
+    status: "SELECTED",
+    assignmentCount: 0,
+    unfilledCount: 0,
+  });
+  if (!normalized) throw new Error("LEADER_VARIANT_CREATE_FAILED");
+  return normalized;
+}
+
+export async function getLeaderVariantWorkspace(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkspace> {
+  return normalizeWorkspace(await rpc(client, "optimizer_leader_variant_workspace_uat_v1", {
+    p_variant_id: variantId,
+  }));
+}
+
+export async function getLeaderAssignmentContext(
+  client: SupabaseClient,
+  input: { variantId: string; assignmentId?: string | null; issueId?: string | null },
+): Promise<SolverLeaderAssignmentContext> {
+  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v1", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+  }));
+  const role = record(payload.role), shift = record(payload.shift);
+  return {
+    variantId: String(payload.variantId ?? input.variantId),
+    assignmentId: payload.assignmentId ? String(payload.assignmentId) : null,
+    issueId: payload.issueId ? String(payload.issueId) : null,
+    slotKey: String(payload.slotKey ?? ""),
+    currentEmployeeId: payload.currentEmployeeId ? String(payload.currentEmployeeId) : null,
+    role: { id: String(role.id ?? ""), name: String(role.name ?? "Rola") },
+    shift: {
+      id: String(shift.id ?? ""), date: String(shift.date ?? ""),
+      startsAt: String(shift.startsAt ?? ""), endsAt: String(shift.endsAt ?? ""),
+      locationId: String(shift.locationId ?? ""), locationName: String(shift.locationName ?? "Lokal"),
+      shiftName: String(shift.shiftName ?? "Zmiana"),
+    },
+    candidates: Array.isArray(payload.candidates) ? payload.candidates.map(value => {
+      const candidate = record(value);
+      return {
+        employeeId: String(candidate.employeeId ?? ""),
+        employeeNo: String(candidate.employeeNo ?? ""),
+        employeeName: String(candidate.employeeName ?? ""),
+        current: Boolean(candidate.current),
+      };
+    }) : [],
+  };
+}
+
+export async function saveLeaderAssignment(
+  client: SupabaseClient,
+  input: {
+    variantId: string; assignmentId?: string | null; issueId?: string | null;
+    employeeId: string; reason: string;
+  },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v1", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+    p_employee_id: input.employeeId,
+    p_reason: input.reason,
+  }));
+}
+
+export async function removeLeaderAssignment(
+  client: SupabaseClient,
+  input: { variantId: string; assignmentId: string; reason: string },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_remove_uat_v1", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId,
+    p_reason: input.reason,
+  }));
+}
+
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
   month: string,
@@ -1950,6 +2126,12 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("SELECTED_COMPANY_VARIANT_REQUIRED")) return "Przed publikacją wybierz poprawny wariant grafiku całej firmy.";
   if (normalized.includes("COMPANY_RUN_NOT_READY")) return "Ten grafik nie jest jeszcze gotowy do publikacji.";
   if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
+  if (normalized.includes("LEADER_VARIANT_NOT_EDITABLE") || normalized.includes("LEADER_VARIANT_NOT_FOUND")) return "Wersja lidera nie jest już edytowalna. Utwórz świeżą kopię z jednego z trzech wygenerowanych wariantów.";
+  if (normalized.includes("LEADER_VARIANT_FORBIDDEN")) return "Nie masz uprawnień do przygotowania wersji lidera dla tego zespołu.";
+  if (normalized.includes("EDIT_REASON_REQUIRED")) return "Krótko opisz powód ręcznej zmiany. Zapiszemy go w historii wersji lidera.";
+  if (normalized.includes("LOCKED_ASSIGNMENT_CANNOT_BE_REMOVED")) return "Tego przydziału nie można usunąć, ponieważ pochodzi z twardo zablokowanej decyzji.";
+  if (normalized.includes("ASSIGNMENT_NOT_FOUND") || normalized.includes("UNFILLED_ISSUE_NOT_FOUND")) return "Wybrane miejsce zmieniło się. Odśwież wersję lidera i spróbuj ponownie.";
+  if (normalized.includes("VARIANT_MATERIALIZATION_HASH_MISMATCH") || normalized.includes("VARIANT_HAS_HARD_VIOLATIONS")) return "Ręczna zmiana nie przeszła kontroli całego grafiku i nie została zapisana.";
   if (normalized.includes("STANDBY_REVALIDATION_FAILED")) return "Nie można aktywować tej osoby z rezerwy, ponieważ od publikacji zmieniła się jej dostępność albo aktywacja naruszyłaby twardą regułę. Odśwież rezerwę i wybierz inną osobę.";
   if (normalized.includes("STANDBY_TIER_1_MUST_BE_USED_OR_DECLINED_FIRST")) return "Najpierw użyj albo odrzuć pierwszą osobę rezerwową. Druga rezerwa jest uruchamiana dopiero w kolejnym kroku.";
   if (normalized.includes("SOFT_OVERRIDE_REASON_REQUIRED")) return "Awaryjne naruszenie miękkiej reguły wymaga potwierdzenia i podania powodu.";
