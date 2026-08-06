@@ -2096,6 +2096,10 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("OPTIMIZATION_INCOMPLETE")
+    || (normalized.includes("ENDED INCOMPLETE") && normalized.includes("STATUS=FEASIBLE"))) {
+    return "Silnik znalazł poprawny grafik, ale nie zdążył matematycznie potwierdzić, że nie istnieje lepszy układ. Konfiguracja użyta przez ten przebieg wymagała takiego potwierdzenia, dlatego wynik nie został zapisany. Jeśli wystarczy najlepszy poprawny wariant znaleziony w limicie czasu, wyłącz opcję „Czekaj na matematycznie najlepszy wynik”, opublikuj konfigurację firmy i uruchom nowe generowanie.";
+  }
   if (normalized.includes("RUN_VARIANTS_INCOMPLETE")) return "Końcowa kontrola wykryła, że nie zapisano wyniku dla każdej strategii. Przebieg nie zostanie opublikowany; szczegółowa przyczyna pozostaje w historii próby.";
   if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Konfiguracja wymaga matematycznego dowodu optimum, a co najmniej jeden wariant jest poprawny, lecz silnik nie potwierdził optimum w dostępnym czasie. Zwiększ limit czasu albo świadomie dopuść najlepsze znalezione rozwiązanie i uruchom ponownie.";
   if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
@@ -2156,6 +2160,11 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("RUN_ID_INVALID")) return "Generator zwrócił nieprawidłowy identyfikator przebiegu.";
   if (normalized.includes("SCENARIO")) return "Wybrany profil zapotrzebowania nie jest już aktywny. Odśwież konfigurację firmy i wybierz ponownie.";
   if (normalized.includes("STALE")) return "Konfiguracja firmy zmieniła się w trakcie obliczeń. Uruchom nowy wariant na aktualnych danych.";
-  if (normalized.includes("CONFLICT") || normalized.includes("LEASE")) return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
+  if (normalized.includes("RUN_ALREADY_CLAIMED")
+    || normalized.includes("RUN_CLAIM_CONFLICT")
+    || normalized.includes("DISPATCH_CONFLICT")
+    || normalized.includes("HTTP 409")) {
+    return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
+  }
   return "Nie udało się połączyć z generatorem. Spróbujemy ponownie przy następnym odświeżeniu.";
 }
