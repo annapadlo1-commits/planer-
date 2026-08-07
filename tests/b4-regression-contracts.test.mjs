@@ -182,6 +182,16 @@ test("solver failure copy distinguishes an incomplete optimum proof from a worke
   assert.match(panel, /run\.failureMessage\?solverErrorMessage\(run\.failureMessage\)/);
 });
 
+test("leader corrections explain the rejected hard rule instead of reporting a connection failure", async () => {
+  const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
+  assert.match(solverClient, /VARIANT_HARD_BLOCK_INVALID/);
+  assert.match(solverClient, /ma twardą niedostępność, urlop albo L4/);
+  assert.match(solverClient, /VARIANT_OVERLAP_OR_REST_INVALID/);
+  assert.match(solverClient, /zbyt krótki odpoczynek/);
+  assert.match(solverClient, /VARIANT_WORK_LIMIT_INVALID/);
+  assert.match(solverClient, /przekroczyłaby limit pracy/);
+});
+
 test("B4 candidate diagnostics use the real configuration table", async () => {
   const sql=await readFile(diagnosticsAndPublicationFixMigrationUrl,"utf8");
   assert.match(sql,/from public\.matrix_versions version/);
