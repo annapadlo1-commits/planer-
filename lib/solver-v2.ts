@@ -2230,6 +2230,12 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("EDIT_REASON_REQUIRED")) return "Krótko opisz powód ręcznej zmiany. Zapiszemy go w historii wersji lidera.";
   if (normalized.includes("LOCKED_ASSIGNMENT_CANNOT_BE_REMOVED")) return "Tego przydziału nie można usunąć, ponieważ pochodzi z twardo zablokowanej decyzji.";
   if (normalized.includes("ASSIGNMENT_NOT_FOUND") || normalized.includes("UNFILLED_ISSUE_NOT_FOUND")) return "Wybrane miejsce zmieniło się. Odśwież wersję lidera i spróbuj ponownie.";
+  if (normalized.includes("VARIANT_HARD_BLOCK_INVALID")) return "Nie można zapisać tej osoby: w godzinach zmiany ma twardą niedostępność, urlop albo L4. Wersja lidera nie została zmieniona — wybierz inną osobę lub popraw dostępność z zachowaniem historii publikacji.";
+  if (normalized.includes("VARIANT_AVAILABILITY_INVALID")) return "Nie można zapisać tej osoby: podane godziny nie mieszczą się w jej dostępności. Wersja lidera nie została zmieniona — wybierz inną osobę albo sprawdź kalendarz dostępności.";
+  if (normalized.includes("VARIANT_OVERLAP_OR_REST_INVALID")) return "Nie można zapisać tej osoby: powstałoby nakładanie zmian albo zbyt krótki odpoczynek między nimi. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_WORK_LIMIT_INVALID") || normalized.includes("VARIANT_CONSECUTIVE_DAYS_INVALID")) return "Nie można zapisać tej osoby: przekroczyłaby limit pracy zapisany w konfiguracji firmy lub pracownika. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_EMPLOYEE_ELIGIBILITY_INVALID")) return "Nie można zapisać tej osoby: nie spełnia wymagań roli, lokalu, obowiązku, umowy albo aktywnej stawki dla tej zmiany. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_HARD_BUDGET_INVALID")) return "Nie można zapisać korekty: przekroczyłaby twardy budżet grafiku. Wersja lidera nie została zmieniona.";
   if (normalized.includes("VARIANT_MATERIALIZATION_HASH_MISMATCH") || normalized.includes("VARIANT_HAS_HARD_VIOLATIONS")) return "Ręczna zmiana nie przeszła kontroli całego grafiku i nie została zapisana.";
   if (normalized.includes("STANDBY_REVALIDATION_FAILED")) return "Nie można aktywować tej osoby z rezerwy, ponieważ od publikacji zmieniła się jej dostępność albo aktywacja naruszyłaby twardą regułę. Odśwież rezerwę i wybierz inną osobę.";
   if (normalized.includes("STANDBY_TIER_1_MUST_BE_USED_OR_DECLINED_FIRST")) return "Najpierw użyj albo odrzuć pierwszą osobę rezerwową. Druga rezerwa jest uruchamiana dopiero w kolejnym kroku.";
