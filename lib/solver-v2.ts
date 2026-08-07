@@ -1848,7 +1848,7 @@ export async function saveLeaderAssignment(
   client: SupabaseClient,
   input: {
     variantId: string; assignmentId?: string | null; issueId?: string | null;
-    employeeId: string; reason: string;
+    employeeId: string; reason: string; allowLimitOverride?: boolean;
   },
 ) {
   return record(await rpc(client, "optimizer_leader_assignment_save_uat_v1", {
@@ -1857,6 +1857,7 @@ export async function saveLeaderAssignment(
     p_issue_id: input.issueId ? Number(input.issueId) : null,
     p_employee_id: input.employeeId,
     p_reason: input.reason,
+    p_allow_limit_override: input.allowLimitOverride ?? false,
   }));
 }
 
@@ -2233,6 +2234,9 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("VARIANT_HARD_BLOCK_INVALID")) return "Nie można zapisać tej osoby: w godzinach zmiany ma twardą niedostępność, urlop albo L4. Wersja lidera nie została zmieniona — wybierz inną osobę lub popraw dostępność z zachowaniem historii publikacji.";
   if (normalized.includes("VARIANT_AVAILABILITY_INVALID")) return "Nie można zapisać tej osoby: podane godziny nie mieszczą się w jej dostępności. Wersja lidera nie została zmieniona — wybierz inną osobę albo sprawdź kalendarz dostępności.";
   if (normalized.includes("VARIANT_OVERLAP_OR_REST_INVALID")) return "Nie można zapisać tej osoby: powstałoby nakładanie zmian albo zbyt krótki odpoczynek między nimi. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_MULTIPLE_PRIMARY_SHIFTS_PER_DAY_INVALID")) return "Nie można zapisać tej osoby: osiągnęła dzienny limit zmian ustawiony w konfiguracji firmy. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_CONSECUTIVE_SHIFT_SEQUENCE_INVALID")) return "Nie można zapisać tej osoby: powstałaby niedozwolona sekwencja ostatniej zmiany dnia i pierwszej zmiany następnego dnia. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("LEADER_LIMIT_OVERRIDE_REQUIRED")) return "Ta zmiana przekroczy tygodniowy lub miesięczny limit pracownika. Lider może zapisać ją wyłącznie jako świadomy wyjątek z podanym powodem.";
   if (normalized.includes("VARIANT_WORK_LIMIT_INVALID") || normalized.includes("VARIANT_CONSECUTIVE_DAYS_INVALID")) return "Nie można zapisać tej osoby: przekroczyłaby limit pracy zapisany w konfiguracji firmy lub pracownika. Wersja lidera nie została zmieniona.";
   if (normalized.includes("VARIANT_EMPLOYEE_ELIGIBILITY_INVALID")) return "Nie można zapisać tej osoby: nie spełnia wymagań roli, lokalu, obowiązku, umowy albo aktywnej stawki dla tej zmiany. Wersja lidera nie została zmieniona.";
   if (normalized.includes("VARIANT_HARD_BUDGET_INVALID")) return "Nie można zapisać korekty: przekroczyłaby twardy budżet grafiku. Wersja lidera nie została zmieniona.";
