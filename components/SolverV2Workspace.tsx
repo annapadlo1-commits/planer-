@@ -472,10 +472,10 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     <details className="solver-workspace-issues" open={workspace.issues.length > 0}>
       <summary>
         <span><AlertTriangle/><strong>{unfilledIssues.length?"Napraw braki i sprawdź powody":"Uwagi do grafiku"}</strong></span>
-        <small>{workspace.issues.length}</small>
+        <small>{visibleIssues.length}</small>
       </summary>
-      {workspace.issues.length === 0
-        ? <p>Nie zgłoszono braków ani uwag do tego wariantu.</p>
+      {visibleIssues.length === 0
+        ? <p>{locationFilter?"Brak braków i uwag dla wybranego lokalu.":"Nie zgłoszono braków ani uwag do tego wariantu."}</p>
         : <div>
           {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})}/>)}
         </div>}
