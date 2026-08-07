@@ -390,6 +390,31 @@
 .variant-role-candidates article span { display: flex; flex-direction: column; }
 .variant-role-candidates article small { color: var(--muted); }
 .variant-role-candidates ul { margin: 0; padding-left: 18px; color: #9c3e32; }
+.candidate-calendar-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.candidate-calendar-link em {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5e43ca;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: right;
+}
+.candidate-calendar-link em svg { width: 16px; }
+.candidate-calendar-link:hover strong { text-decoration: underline; }
 .candidate-eligible { color: #137245; }
 .candidate-eligible-actions {
   display: flex;
