@@ -345,3 +345,36 @@ test("solver honors Matrix strategy budgets and fair-distribution tier order", a
   assert.match(gateway,/"fairnessIncumbentGuard"/);
   assert.match(gateway,/"verifiedZeroIncumbent"/);
 });
+
+test("team catalog uses the same explicit target and hard limit semantics as the solver", async () => {
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(page,/Cel godzinowy/);
+  assert.match(page,/Twardy limit miesięczny/);
+  assert.match(page,/Te same dane czyta generator, publikacja, portal oraz pełny eksport firmy/);
+  assert.doesNotMatch(page,/Uzgodniony pułap \(informacyjny\)/);
+  assert.doesNotMatch(page,/nie blokuje silnika/);
+});
+
+test("calendar comparison can preselect the compared employee for a server-validated replacement", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(workspace,/preferredEmployeeId/);
+  assert.match(workspace,/context\.candidates\.some\(candidate=>candidate\.employeeId===preferredEmployeeId\)/);
+  assert.match(workspace,/Sprawdź, czy \{primary\.length\?comparisonEmployee\.firstName:employeeDetailShortName\} może przejąć tę zmianę/);
+  assert.match(workspace,/rola, lokal i wymagany obowiązek/);
+  assert.match(workspace,/sprawdź, czy obowiązek może przejąć ktoś już pracujący na tej zmianie/);
+});
+
+test("shortage candidates open their calendar and an audited leader-only limit override", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/migrations/20260807090000_b4_leader_limit_override_and_candidate_context.sql",import.meta.url),"utf8");
+  assert.match(workspace,/openEmployeeCalendar\(candidate\)/);
+  assert.match(workspace,/Zaproponowane godziny/);
+  assert.match(workspace,/Przypisz mimo limitu/);
+  assert.match(workspace,/candidate\.reasons\.every\(reason=>reason==="WEEKLY_LIMIT"\|\|reason==="MONTHLY_LIMIT"\)/);
+  assert.match(client,/p_allow_limit_override: input\.allowLimitOverride \?\? false/);
+  assert.match(migration,/LEADER_LIMIT_OVERRIDE_REQUIRED/);
+  assert.match(migration,/'limitOverride',jsonb_array_length\(v_limit_details\)>0 and p_allow_limit_override/);
+  assert.match(migration,/maximumMonthlyMinutes',2147483647,'maximumWeeklyMinutes',2147483647/);
+  assert.match(migration,/WEEKLY_LIMIT','label',format/);
+});
