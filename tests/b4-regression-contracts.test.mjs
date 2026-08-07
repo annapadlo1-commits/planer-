@@ -281,6 +281,14 @@ test("schedule review is a fullscreen weekly workspace without collapsed day lis
   assert.match(css,/grid-template-columns:minmax\(128px,1\.15fr\) repeat\(7,minmax\(0,1fr\)\)/);
 });
 
+test("location filter keeps the issue summary, badge and empty state consistent", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(workspace,/<small>\{visibleIssues\.length\}<\/small>/);
+  assert.match(workspace,/visibleIssues\.length === 0/);
+  assert.match(workspace,/Brak braków i uwag dla wybranego lokalu\./);
+  assert.doesNotMatch(workspace,/<small>\{workspace\.issues\.length\}<\/small>/);
+});
+
 test("role cards hide engine jargon and optional operational tools stay collapsed", async () => {
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   assert.match(modules,/role-plan-cards compact/);
