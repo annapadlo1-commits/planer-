@@ -74,6 +74,7 @@ export type MatrixV2StaffingRule = {
 };
 export type MatrixV2Strategy = MatrixV2NamedItem & {
   solver_code: string;
+  solver_options?: Record<string, unknown>;
 };
 export type MatrixV2Objective = {
   id: string;
@@ -103,6 +104,7 @@ export type MatrixV2PayRule = MatrixV2NamedItem & {
   percent_basis_points?: number | null;
   multiplier_basis_points?: number | null;
   formula_expression?: Record<string, unknown> | null;
+  condition_expression?: Record<string, unknown> | null;
   threshold_minutes?: number | null;
   currency: string;
   priority: number;
@@ -154,6 +156,9 @@ export type MatrixV2Employee = {
   firstName: string;
   lastName: string;
   email?: string | null;
+  contractType?: "UMOWA_O_PRACE" | "ZLECENIE" | "CZESC_ETATU" | "B2B" | "INNE";
+  employmentFraction?: number;
+  workTimePolicy?: "CONTRACT_DEFAULT" | "CUSTOM";
   active: boolean;
   employmentStart?: string | null;
   employmentEnd?: string | null;
@@ -175,9 +180,14 @@ export type MatrixV2Employee = {
 
 export type MatrixV2PublicationBlocker = {
   code: "MISSING_PAY_RATE" | "MISSING_ROLE" | "MISSING_STANDARD_LOCATION" | string;
-  employeeId: string;
-  employeeNo: string;
-  employeeName: string;
+  employeeId?: string;
+  employeeNo?: string;
+  employeeName?: string;
+  requiredFrom?: string;
+  requiredTo?: string;
+  shiftTemplateId?: string;
+  shiftCode?: string;
+  shiftName?: string;
   message: string;
 };
 
@@ -185,6 +195,7 @@ export type MatrixV2PublicationReadiness = {
   ready: boolean;
   blockers: MatrixV2PublicationBlocker[];
   effectiveFrom: string;
+  scheduleMonth?: string;
   matrixVersionId: string;
 };
 export type MatrixV2EmployeeRole = {
@@ -302,7 +313,7 @@ export const OBJECTIVE_METRICS = [
   { value: "HOME_LOCATION_VIOLATIONS", label: "Wycofane kryterium lokalu macierzystego (zawsze 0)" },
   { value: "NOMINAL_DEVIATION_MINUTES", label: "Odchylenie od nominału" },
   { value: "OVERTIME_MINUTES", label: "Nadgodziny" },
-  { value: "LOAD_SPREAD_MINUTES", label: "Nierówny podział obciążenia" },
+  { value: "LOAD_SPREAD_MINUTES", label: "Różnica wykorzystania wymiarów pracy" },
   { value: "WEEKEND_SPREAD", label: "Nierówny podział weekendów" },
   { value: "BASELINE_CHANGES", label: "Zmiany względem planu bazowego" },
 ];
@@ -343,13 +354,23 @@ export function objectiveName(code: string) {
 
 export function matrixV2ErrorMessage(message: string) {
   const value = message.toUpperCase();
-  if (value.includes("INVALID_MATRIX_SETTINGS")) return "Aktywny Matrix nie ma kompletnych ustawień.";
-  if (value.includes("INVALID_MATRIX_TIMEZONE")) return "Matrix musi mieć prawidłową, jawnie wybraną strefę czasową.";
+  const correlatedImportError = message.match(/MATRIX_IMPORT_(?:PREVIEW|APPLY)_FAILED\|([^|]+)\|([^|]+)\|(.+)/i);
+  if (correlatedImportError) {
+    return `Import nie został zapisany z powodu błędu systemowego. Identyfikator: ${correlatedImportError[1]}. Żadne dane z pliku nie zostały zastosowane.`;
+  }
+  if (value.includes("MATRIX_IMPORT_CONTRACT_INCOMPLETE") ||
+      value.includes("MATRIX_IMPORT_PREREQUISITE_MISSING") ||
+      value.includes("MATRIX_V2_IMPORT_PREVIEW_UAT_V2") ||
+      value.includes("MATRIX_V2_IMPORT_APPLY_UAT_V2")) {
+    return "Import jest chwilowo niedostępny, ponieważ środowisko UAT nie ma kompletnej wersji mechanizmu importu. Żadne dane z pliku nie zostały zastosowane.";
+  }
+  if (value.includes("INVALID_MATRIX_SETTINGS")) return "Opublikowana konfiguracja firmy nie ma kompletnych ustawień.";
+  if (value.includes("INVALID_MATRIX_TIMEZONE")) return "Konfiguracja firmy musi mieć prawidłową, jawnie wybraną strefę czasową.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_ROLE_AND_LOCATION")) return "Każdy aktywny pracownik musi mieć co najmniej jedną aktywną rolę i dostęp do co najmniej jednego lokalu.";
-  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_PAY_RATE")) return "Co najmniej jeden aktywny pracownik nie ma stawki obowiązującej w dniu publikacji. Otwórz listę blokad, aby zobaczyć konkretną osobę.";
+  if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_PAY_RATE")) return "Co najmniej jeden aktywny pracownik nie ma stawki obowiązującej w miesiącu grafiku. Otwórz listę blokad, aby zobaczyć konkretną osobę.";
   if (value.includes("ACTIVE_EMPLOYEE_REQUIRES_STANDARD_LOCATION")) return "Wybierz co najmniej jeden lokal, w którym pracownik może pracować w zwykłym limicie.";
-  if (value.includes("MATRIX_WORKFORCE_VERSION_IMMUTABLE")) return "Opublikowane dane pracownika są historyczne i nie mogą być zmieniane. Utwórz nową wersję roboczą Matrixa.";
-  if (value.includes("MATRIX_EMPLOYEE_NOT_FOUND")) return "Nie znaleziono pracownika w bieżącej wersji roboczej Matrixa.";
+  if (value.includes("MATRIX_WORKFORCE_VERSION_IMMUTABLE")) return "Opublikowane dane pracownika są historyczne i nie mogą być zmieniane. Utwórz nową wersję roboczą konfiguracji firmy.";
+  if (value.includes("MATRIX_EMPLOYEE_NOT_FOUND")) return "Nie znaleziono pracownika w bieżącej wersji roboczej konfiguracji firmy.";
   if (value.includes("EMPLOYEE_NUMBER_ALREADY_EXISTS")) return "Ten numer pracownika jest już używany.";
   if (value.includes("EMPLOYEE_EMAIL_ALREADY_EXISTS")) return "Ten adres e-mail jest już przypisany do innego pracownika.";
   if (value.includes("EMPLOYEE_IDENTITY_REQUIRED")) return "Podaj numer pracownika, imię i nazwisko.";
@@ -357,25 +378,35 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID_SHIFT_PERIOD_PREFERENCES") || value.includes("INVALID_SHIFT_PREFERENCE_LEVEL")) return "Preferencje okresów zmian zawierają nieprawidłową wartość.";
   if (value.includes("MATRIX_IMPORT_HAS_ERRORS")) return "Import zawiera błędy. Wróć do podglądu i popraw wskazane wiersze.";
   if (value.includes("INVALID_EMPLOYMENT_DATES")) return "Data zakończenia zatrudnienia nie może być wcześniejsza od daty rozpoczęcia.";
+  if (value.includes("EMPLOYMENT_DATES_CONFLICT_PAY_RATES")) return "Nowy okres zatrudnienia jest sprzeczny z zapisaną historią stawek. Najpierw popraw daty odpowiednich okresów stawki.";
+  if (value.includes("PAY_RATE_BEFORE_EMPLOYMENT")) return "Stawka nie może obowiązywać przed datą rozpoczęcia zatrudnienia.";
+  if (value.includes("PAY_RATE_OUTSIDE_EMPLOYMENT")) return "Okres stawki musi mieścić się w okresie zatrudnienia pracownika.";
+  if (value.includes("OVERLAPPING_ACTIVE_PAY_RATE")) return "Ten okres nakłada się na inną aktywną stawkę pracownika. Zakończ poprzedni okres albo edytuj istniejący wpis.";
+  if (value.includes("INVALID_PAY_RATE")) return "Sprawdź datę rozpoczęcia, datę zakończenia i kwotę stawki.";
   if (value.includes("INVALID_EMPLOYEE_LIMITS")) return "Sprawdź nominał, limity czasu pracy i ograniczenia pracownika.";
-  if (value.includes("MIXED_CURRENCIES_UNSUPPORTED")) return "Matrix może używać tylko jednej waluty rozliczeniowej. Ujednolić stawki, dodatki i budżety przed publikacją.";
-  if (value.includes("INVALID_MATRIX_CURRENCY")) return "Waluta Matrixa musi być prawidłowym trzyliterowym kodem, np. PLN, EUR lub USD.";
-  if (value.includes("FORBIDDEN")) return "Tylko właściciel lub administrator może zmieniać Matrix.";
+  if (value.includes("MIXED_CURRENCIES_UNSUPPORTED")) return "Konfiguracja firmy może używać tylko jednej waluty rozliczeniowej. Ujednolić stawki, dodatki i budżety przed publikacją.";
+  if (value.includes("INVALID_MATRIX_CURRENCY")) return "Waluta firmy musi być prawidłowym trzyliterowym kodem, np. PLN, EUR lub USD.";
+  if (value.includes("FORBIDDEN")) return "Tylko właściciel lub administrator może zmieniać konfigurację firmy.";
   if (value.includes("EXACTLY_ONE_ACTIVE_DEFAULT_SCENARIO_REQUIRED")) return "Wybierz dokładnie jeden aktywny scenariusz domyślny.";
   if (value.includes("DEFAULT_SCENARIO_CANNOT_INHERIT")) return "Scenariusz domyślny nie może dziedziczyć po innym scenariuszu.";
   if (value.includes("SCENARIO_INHERITANCE_CYCLE")) return "Scenariusze tworzą zamknięty łańcuch dziedziczenia. Zmień scenariusz nadrzędny.";
   if (value.includes("ACTIVE_SCENARIO_HAS_INACTIVE_PARENT")) return "Aktywny scenariusz nie może dziedziczyć po wyłączonym scenariuszu.";
   if (value.includes("ACTIVE_SCENARIO_WITHOUT_ACTIVE_STRATEGY")) return "Każdy aktywny scenariusz musi mieć co najmniej jedną aktywną strategię.";
   if (value.includes("ACTIVE_STRATEGY_REQUIRES_TIER1_UNFILLED_OBJECTIVE")) return "Każda aktywna strategia musi zaczynać od minimalizacji braków na poziomie 1.";
-  if (value.includes("ACTIVE_ROLE_LOCATION_SHIFT_AND_STRATEGY_REQUIRED")) return "Matrix wymaga aktywnej roli, lokalu, zmiany i strategii.";
+  if (value.includes("ACTIVE_ROLE_LOCATION_SHIFT_AND_STRATEGY_REQUIRED")) return "Konfiguracja firmy wymaga aktywnej roli, lokalu, zmiany i wariantu biznesowego.";
   if (value.includes("ACTIVE_STAFFING_RULE_REFERENCES_INACTIVE_SCOPE")) return "Aktywna reguła obsady odwołuje się do wyłączonego elementu.";
   if (value.includes("INVALID_LOCATION_TIMEZONE")) return "Jedna z lokalizacji ma nieprawidłową strefę czasową.";
   if (value.includes("SHIFT_OVERNIGHT_FLAG_INCONSISTENT")) return "Zmiana kończąca się o wcześniejszej godzinie musi mieć zaznaczone „następny dzień”; przy późniejszej godzinie to oznaczenie musi być wyłączone.";
   if (value.includes("SHIFT_DAY_MASK_CONTAINS_DUPLICATES")) return "Dni tygodnia w zmianie nie mogą się powtarzać.";
-  if (value.includes("EFFECTIVE_FROM_PRECEDES_ACTIVE_MATRIX")) return "Data obowiązywania nie może być wcześniejsza niż data aktywnego Matrixa.";
-  if (value.includes("FUTURE_MATRIX_ACTIVATION_REQUIRES_SCHEDULER")) return "Przyszła wersja Matrixa wymaga osobnego mechanizmu zaplanowanej aktywacji. Na tym etapie opublikuj ją najwcześniej w dniu rozpoczęcia obowiązywania.";
+  if (value.includes("EFFECTIVE_FROM_PRECEDES_ACTIVE_MATRIX")) return "Data obowiązywania nie może być wcześniejsza niż data obecnie opublikowanej konfiguracji.";
+  if (value.includes("FUTURE_MATRIX_ACTIVATION_REQUIRES_SCHEDULER")) return "Przyszła wersja konfiguracji wymaga zaplanowanej aktywacji. Na tym etapie opublikuj ją najwcześniej w dniu rozpoczęcia obowiązywania.";
   if (value.includes("NO_MATRIX_V2_DRAFT")) return "Nie ma wersji roboczej do opublikowania.";
-  if (value.includes("UNIQUE") || value.includes("DUPLICATE")) return "Taki element lub powiązanie już istnieje w tej wersji Matrixa.";
-  if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł Matrixa. Sprawdź formularz.";
+  if (value.includes("SCHEDULE_PUBLICATION_CONFLICT_REQUIRES_OWNER_RESOLUTION") ||
+      value.includes("COMPANY_PUBLICATION_CONFLICTS_WITH_PUBLISHED_ROLES") ||
+      value.includes("ROLE_PUBLICATION_CONFLICTS_WITH_COMPANY_SCHEDULE")) {
+    return "Dla tego miesiąca istnieją konkurencyjne publikacje grafiku roli i firmy. System nie wybierze jednej po cichu — właściciel musi najpierw rozstrzygnąć konflikt.";
+  }
+  if (value.includes("UNIQUE") || value.includes("DUPLICATE")) return "Taki element lub powiązanie już istnieje w tej wersji konfiguracji.";
+  if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł konfiguracji firmy. Sprawdź formularz.";
   return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";
 }

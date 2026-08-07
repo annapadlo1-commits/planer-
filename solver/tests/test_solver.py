@@ -116,6 +116,7 @@ def decomposed_certificate_snapshot_raw(*, required_count: int = 1) -> dict:
         employee for employee in raw["employees"] if employee["id"] == "employee-bob"
     )
     bob["nominalMonthlyMinutes"] = 660
+    bob["workTimePolicy"] = "CUSTOM"
     bob["maximumMonthlyMinutes"] = 2_000
     bob["maximumWeeklyMinutes"] = 2_000
     bob["minimumRestMinutes"] = 660
@@ -339,6 +340,92 @@ class _FakeClock:
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_zlecenie_respects_explicit_employee_limits(self) -> None:
+        raw = load_raw()
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "nominalMonthlyMinutes": 9600,
+                "maximumMonthlyMinutes": 9600,
+                "maximumWeeklyMinutes": 2400,
+                "maximumConsecutiveDays": 5,
+                "minimumRestMinutes": 660,
+            }
+        )
+        raw["employees"] = [employee_raw]
+        raw["availabilityWindows"] = []
+
+        snapshot = Snapshot.from_dict(raw)
+        employee = snapshot.employees[0]
+
+        self.assertEqual(employee.nominal_monthly_minutes, 9600)
+        self.assertEqual(employee.maximum_monthly_minutes, 9600)
+        self.assertEqual(employee.maximum_weekly_minutes, 2400)
+        self.assertEqual(employee.maximum_consecutive_days, 5)
+        self.assertEqual(employee.minimum_rest_minutes, 660)
+        self.assertIsNone(employee.missing_availability_means_available)
+
+        slot = next(
+            slot
+            for slot in generate_slots(snapshot)
+            if slot.role_id in employee.role_ids
+            and slot.location_id in employee.location_ids
+        )
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+        self.assertTrue(eligibility.allowed)
+        self.assertNotIn("MISSING_AVAILABILITY", eligibility.reasons)
+
+    def test_zlecenie_can_explicitly_require_declared_availability(self) -> None:
+        raw = load_raw()
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "missingAvailabilityMeansAvailable": False,
+            }
+        )
+        raw["employees"] = [employee_raw]
+        raw["availabilityWindows"] = []
+
+        snapshot = Snapshot.from_dict(raw)
+        employee = snapshot.employees[0]
+        slot = next(
+            slot
+            for slot in generate_slots(snapshot)
+            if slot.role_id in employee.role_ids
+            and slot.location_id in employee.location_ids
+        )
+
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+
+        self.assertFalse(eligibility.allowed)
+        self.assertIn("MISSING_AVAILABILITY", eligibility.reasons)
+
+    def test_zlecenie_custom_policy_keeps_agreed_limits(self) -> None:
+        raw = load_raw()
+        employee_raw = raw["employees"][0]
+        employee_raw.update(
+            {
+                "contractCode": "ZLECENIE",
+                "workTimePolicy": "CUSTOM",
+                "maximumMonthlyMinutes": 7200,
+                "maximumWeeklyMinutes": 1800,
+                "maximumConsecutiveDays": 4,
+                "minimumRestMinutes": 480,
+            }
+        )
+        raw["employees"] = [employee_raw]
+
+        employee = Snapshot.from_dict(raw).employees[0]
+
+        self.assertEqual(employee.maximum_monthly_minutes, 7200)
+        self.assertEqual(employee.maximum_weekly_minutes, 1800)
+        self.assertEqual(employee.maximum_consecutive_days, 4)
+        self.assertEqual(employee.minimum_rest_minutes, 480)
+
     def test_canonical_hash_is_key_order_independent_and_ignores_embedded_hash(
         self,
     ) -> None:
@@ -780,6 +867,352 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(report.unfilled_count, 0)
             self.assertTrue(variant.optimal)
             self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
+            # Explicit employer inputs are authoritative regardless of the
+            # contract label.
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 3
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 0)
+            self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
+            self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
+
+    def test_targetless_employee_still_participates_in_fairness(self) -> None:
+        raw = load_raw()
+        bob = next(employee for employee in raw["employees"] if employee["id"] == "employee-bob")
+        bob.pop("nominalMonthlyMinutes", None)
+        bob.pop("maximumMonthlyMinutes", None)
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)
+        for variant in variants:
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 2
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 1)
+
+    def test_fairness_first_strategy_cannot_regress_prior_verified_incumbent(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        fairness_terms = [
+            {
+                "tier": 1,
+                "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                "weight": 2,
+                "direction": "MIN",
+            },
+            {
+                "tier": 1,
+                "metric": "NOMINAL_DEVIATION_MINUTES",
+                "weight": 1,
+                "direction": "MIN",
+            },
+        ]
+        raw["strategies"] = [
+            {
+                "id": "strategy-fair-baseline",
+                "code": "FAIR_BASELINE",
+                "label": "Fair baseline",
+                "sortOrder": 0,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": fairness_terms,
+            },
+            {
+                "id": "strategy-fair-business",
+                "code": "FAIR_BUSINESS",
+                "label": "Fair business",
+                "sortOrder": 1,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": [
+                    *fairness_terms,
+                    {
+                        "tier": 2,
+                        "metric": "TOTAL_COST",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            },
+        ]
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))
+        by_strategy = {variant.strategy_id: variant for variant in variants}
+        baseline = by_strategy["strategy-fair-baseline"]
+        fair = by_strategy["strategy-fair-business"]
+        self.assertLessEqual(
+            fair.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+            baseline.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+        )
+        self.assertLessEqual(
+            fair.metrics["NOMINAL_DEVIATION_MINUTES"],
+            baseline.metrics["NOMINAL_DEVIATION_MINUTES"],
+        )
+        self.assertEqual(
+            fair.stage_objectives[0]["fairnessIncumbentGuard"],
+            {
+                "LOAD_UTILIZATION_SPREAD_BPS": baseline.metrics[
+                    "LOAD_UTILIZATION_SPREAD_BPS"
+                ],
+                "NOMINAL_DEVIATION_MINUTES": baseline.metrics[
+                    "NOMINAL_DEVIATION_MINUTES"
+                ],
+            },
+        )
+
+    def test_verified_zero_tier_does_not_consume_later_fairness_budget(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                "id": "strategy-zero-then-fair",
+                "code": "ZERO_THEN_FAIR",
+                "label": "Zero then fair",
+                "sortOrder": 0,
+                "timeLimitSeconds": 20,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "PREFERENCE_VIOLATIONS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                    {
+                        "tier": 2,
+                        "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            }
+        ]
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))[0]
+        zero_stage = next(
+            stage
+            for stage in variant.stage_objectives
+            if stage.get("name") == "TIER_1"
+        )
+        self.assertEqual(zero_stage["value"], 0)
+        self.assertEqual(zero_stage["status"], "OPTIMAL")
+        self.assertTrue(zero_stage["verifiedZeroIncumbent"])
+        self.assertTrue(
+            any(
+                stage.get("name") == "TIER_2"
+                for stage in variant.stage_objectives
+            )
+        )
+
+    def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
+        raw = load_raw()
+        raw["settings"]["standbyTiersPerRoleDay"] = 2
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(snapshot)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        for variant in variants:
+            assignments_by_employee_day: dict[tuple[str, str], int] = {}
+            for assignment in variant.assignments:
+                day = slots[assignment.slot_id].date.isoformat()
+                key = (assignment.employee_id, day)
+                assignments_by_employee_day[key] = (
+                    assignments_by_employee_day.get(key, 0) + 1
+                )
+            self.assertTrue(
+                all(count <= 1 for count in assignments_by_employee_day.values())
+            )
+            self.assertEqual(len(variant.unfilled_slot_ids), 0)
+
+    def _flexible_single_employee_sequence_snapshot(
+        self, locked_slot_ids: list[str], maximum_shifts_per_day: int = 1
+    ) -> Snapshot:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [raw["strategies"][0]]
+        raw["shiftTemplates"][0]["sequenceOrder"] = 1
+        raw["shiftTemplates"][1]["sequenceOrder"] = 2
+        employee = next(
+            item for item in raw["employees"] if item["id"] == "employee-bob"
+        )
+        employee.update(
+            {
+                "contractCode": "ZLECENIE",
+                "workTimePolicy": "CONTRACT_DEFAULT",
+                "maximumShiftsPerDay": maximum_shifts_per_day,
+                "minimumRestMinutes": 0,
+            }
+        )
+        raw["employees"] = [employee]
+        raw["availabilityWindows"] = []
+        raw["lockedAssignments"] = [
+            {"slotId": slot_id, "employeeId": employee["id"]}
+            for slot_id in locked_slot_ids
+        ]
+        return Snapshot.from_dict(raw)
+
+    def test_daily_limit_one_rejects_two_employee_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_daily_limit_two_allows_two_non_overlapping_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ],
+            maximum_shifts_per_day=2,
+        )
+        variant = self.engine.solve(snapshot)[0]
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        assignments_on_test_day = [
+            assignment
+            for assignment in variant.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        ]
+        self.assertEqual(len(assignments_on_test_day), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
+
+    def test_last_shift_cannot_be_followed_by_first_shift_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+                (
+                    "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_morning_can_be_followed_by_evening_on_the_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        variant = self.engine.solve(snapshot)[0]
+        self.assertEqual(len(variant.assignments), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
+
+    def test_independent_validator_rejects_daily_and_sequence_invariants(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        valid = self.engine.solve(snapshot)[0]
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        morning_day_one = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        )
+        evening_day_two = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-02"
+        )
+
+        same_day = replace(
+            valid,
+            assignments=(
+                morning_day_one,
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+            ),
+        )
+        same_day_report = validate_variant(snapshot, same_day)
+        self.assertTrue(
+            any(
+                error.startswith("DAILY_SHIFT_LIMIT:")
+                for error in same_day_report.errors
+            )
+        )
+
+        last_then_first = replace(
+            valid,
+            assignments=(
+                replace(
+                    morning_day_one,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                        "demand-morning|1"
+                    ),
+                ),
+            ),
+        )
+        sequence_report = validate_variant(snapshot, last_then_first)
+        self.assertTrue(
+            any(
+                error.startswith("CONSECUTIVE_SHIFT_SEQUENCE:")
+                for error in sequence_report.errors
+            )
+        )
 
     def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
         raw = load_raw()
@@ -812,9 +1245,7 @@ class SolverTests(unittest.TestCase):
                 strategy_stages.append(stage_name)
                 if stage_name == "TIER_2":
                     model = args[0]
-                    initial_hint_counts.append(
-                        len(model.proto.solution_hint.vars)
-                    )
+                    initial_hint_counts.append(len(model.proto.solution_hint.vars))
             return original_solve_model(*args, **kwargs)
 
         with patch.object(engine, "_solve_model", side_effect=observe_stages):
@@ -841,41 +1272,62 @@ class SolverTests(unittest.TestCase):
         original_solve_model = engine._solve_model
         warm_start_limits: list[float] = []
         full_hint_counts: list[tuple[int, int]] = []
-        expect_full_hint = False
+        strategies_with_checked_hint: set[str] = set()
 
         def observe_stages(*args, **kwargs):
-            nonlocal expect_full_hint
             model = args[0]
-            if expect_full_hint:
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if (
+                strategy is not None
+                and stage_name.startswith("TIER_")
+                and strategy.id not in strategies_with_checked_hint
+            ):
                 full_hint_counts.append(
                     (
                         len(model.proto.solution_hint.vars),
                         len(model.proto.variables),
                     )
                 )
-                expect_full_hint = False
+                strategies_with_checked_hint.add(strategy.id)
             result = original_solve_model(*args, **kwargs)
-            if kwargs["stage_name"] == "WARM_START":
-                self.assertTrue(kwargs["fix_hints"])
+            if stage_name == "WARM_START":
+                self.assertFalse(kwargs.get("fix_hints", False))
+                self.assertIsNone(strategy)
                 warm_start_limits.append(kwargs["time_limit_seconds"])
-                expect_full_hint = True
             return result
 
         with patch.object(engine, "_solve_model", side_effect=observe_stages):
             variants = engine.solve(snapshot)
 
-        self.assertEqual(len(warm_start_limits), len(snapshot.strategies))
-        self.assertTrue(all(limit <= 30.0 for limit in warm_start_limits))
+        self.assertEqual(len(warm_start_limits), 1)
+        self.assertTrue(all(limit <= 15.0 for limit in warm_start_limits))
         self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
         self.assertTrue(
             all(
-                hint_count == variable_count
+                0 < hint_count < variable_count
                 for hint_count, variable_count in full_hint_counts
             )
         )
         for variant in variants:
             report = validate_variant(snapshot, variant)
             self.assertTrue(report.valid, report.errors)
+
+    def test_fixed_warm_start_skips_redundant_full_model_presolve(self) -> None:
+        fixed = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+            fix_hints=True,
+        )
+        regular = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+        )
+
+        self.assertFalse(fixed.parameters.cp_model_presolve)
+        self.assertTrue(regular.parameters.cp_model_presolve)
 
     def test_relaxed_strategy_uses_verified_fallback_on_unknown(self) -> None:
         snapshot = replace(
@@ -903,8 +1355,13 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(len(variants), len(snapshot.strategies))
         for variant in variants:
             self.assertFalse(variant.optimal)
-            self.assertEqual(variant.stage_objectives[-1]["status"], "FEASIBLE")
-            self.assertNotIn("bestBound", variant.stage_objectives[-1])
+            optimized_stage = next(
+                stage
+                for stage in reversed(variant.stage_objectives)
+                if stage["name"].startswith("TIER_")
+            )
+            self.assertEqual(optimized_stage["status"], "FEASIBLE")
+            self.assertNotIn("bestBound", optimized_stage)
             report = validate_variant(snapshot, variant)
             self.assertTrue(report.valid, report.errors)
 
@@ -1029,10 +1486,14 @@ class SolverTests(unittest.TestCase):
             len(slots) - selected,
         )
 
-    def test_relaxed_coverage_stage_has_a_bounded_uat_budget(self) -> None:
+    def test_relaxed_coverage_stage_uses_matrix_derived_uat_budget(self) -> None:
         snapshot = replace(
             self.snapshot,
             settings=replace(self.snapshot.settings, require_optimal=False),
+            strategies=tuple(
+                replace(strategy, time_limit_seconds=120)
+                for strategy in self.snapshot.strategies
+            ),
         )
         engine = CpSatScheduleEngine(
             max_total_seconds=900,
@@ -1050,6 +1511,62 @@ class SolverTests(unittest.TestCase):
             engine.solve(snapshot)
 
         self.assertEqual(observed_limit, [120.0])
+
+    def test_relaxed_identical_strategies_receive_distinct_tied_rosters(
+        self,
+    ) -> None:
+        raw = load_raw()
+        template = raw["strategies"][0]
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                **template,
+                "id": f"strategy-tied-{index}",
+                "code": f"TIED_{index}",
+                "label": f"Tied {index}",
+                "sortOrder": index,
+            }
+            for index in range(2)
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        ).solve(snapshot)
+
+        self.assertEqual(len({item.solution_hash for item in variants}), 2)
+        self.assertIsNone(variants[0].equivalent_to_strategy_id)
+        for variant in variants[1:]:
+            self.assertIsNone(variant.equivalent_to_strategy_id)
+            diversity = variant.stage_objectives[-1]
+            self.assertEqual(diversity["name"], "DIVERSIFY")
+            self.assertTrue(diversity["businessObjectiveBoundsPreserved"])
+            self.assertTrue(diversity["excludedEquivalentStrategies"])
+            self.assertTrue(validate_variant(snapshot, variant).valid)
+
+    def test_full_model_is_built_once_and_cloned_for_all_strategies(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_build_model = engine._build_model
+        full_model_builds = 0
+
+        def observe_build(*args, **kwargs):
+            nonlocal full_model_builds
+            if not kwargs.get("coverage_only", False):
+                full_model_builds += 1
+            return original_build_model(*args, **kwargs)
+
+        with patch.object(engine, "_build_model", side_effect=observe_build):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), len(snapshot.strategies))
+        self.assertEqual(full_model_builds, 1)
 
     def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
         raw = load_raw()
@@ -1236,9 +1753,15 @@ class SolverTests(unittest.TestCase):
         snapshot = Snapshot.from_dict(raw)
         variant = self.engine.solve(snapshot)[0]
         stage = variant.stage_objectives[1]
-        self.assertEqual(stage["tolerance"], 250)
-        self.assertEqual(stage["frozenUpperBound"], stage["value"] + 250)
+        coefficient = stage["terms"][0]["normalizationCoefficient"]
+        self.assertEqual(stage["tolerance"], coefficient * 125)
+        self.assertEqual(
+            stage["frozenUpperBound"],
+            stage["value"] + coefficient * 125,
+        )
         self.assertEqual(stage["terms"][0]["parameters"], {"targetValue": 0})
+        self.assertEqual(stage["terms"][0]["tolerance"], 125)
+        self.assertGreater(coefficient, 0)
         self.assertTrue(validate_variant(snapshot, variant).valid)
 
     def test_zero_weight_objective_is_accepted_and_omitted(self) -> None:
@@ -1340,7 +1863,10 @@ class SolverTests(unittest.TestCase):
         report = validate_variant(self.snapshot, invalid)
         self.assertFalse(report.valid)
         self.assertTrue(
-            any(error.startswith("OVERLAP_OR_REST:") for error in report.errors)
+            any(
+                error.startswith(("OVERLAP_OR_REST:", "DAILY_SHIFT_LIMIT:"))
+                for error in report.errors
+            )
         )
 
     def test_worker_lifecycle_claims_validates_saves_and_finalizes(self) -> None:
@@ -1374,6 +1900,39 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
+
+    def test_worker_treats_structured_finalization_failure_as_failed_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.finalization_value = {
+            "status": "FAILED",
+            "errorCode": "RUN_VARIANTS_INCOMPLETE",
+            "readyVariantCount": 2,
+            "expectedVariantCount": 3,
+        }
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        with self.assertLogs("grafik_solver.lifecycle", level="ERROR") as logs:
+            self.assertEqual(runtime.run_once(), 1)
+
+        self.assertTrue(rpc.finalized)
+        self.assertFalse(rpc.failed)
+        self.assertIn("RUN_VARIANTS_INCOMPLETE", "\n".join(logs.output))
 
     def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
         rpc = _FakeRpc(self.raw)
@@ -2001,6 +2560,7 @@ class _FakeRpc:
         self.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=True)
         self.heartbeat_errors = []
         self.interrupt_reason = None
+        self.finalization_value = None
 
     def claim(self, **kwargs):
         self.claim_requests.append(kwargs)
@@ -2022,6 +2582,7 @@ class _FakeRpc:
 
     def finalize(self, _claim):
         self.finalized = True
+        return self.finalization_value
 
     def interrupt(self, _claim, _reason):
         self.interrupt_reason = _reason

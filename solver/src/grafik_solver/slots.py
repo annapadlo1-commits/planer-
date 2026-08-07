@@ -22,6 +22,7 @@ class Slot:
     duty_ids: tuple[str, ...]
     start: datetime
     end: datetime
+    sequence_order: int | None = None
 
     @property
     def duration_minutes(self) -> int:
@@ -33,6 +34,59 @@ def _days(start: date, end: date):
     while current <= end:
         yield current
         current += timedelta(days=1)
+
+
+def shift_sequence_boundaries(
+    snapshot: Snapshot,
+) -> dict[tuple[str, int], tuple[str, str]]:
+    """Return the first/last template for every location and ISO weekday."""
+    grouped: dict[tuple[str, int], list[ShiftTemplate]] = {}
+    for template in snapshot.shift_templates:
+        for weekday in template.weekdays:
+            grouped.setdefault((template.location_id, weekday), []).append(template)
+
+    boundaries: dict[tuple[str, int], tuple[str, str]] = {}
+    for key, templates in grouped.items():
+        # A single recurring shift is not a last->first hand-off pair.  Without
+        # this guard the sequence rule would incorrectly force every second
+        # day off in locations that operate one shift only.
+        if len(templates) < 2:
+            continue
+        ordered = sorted(
+            templates,
+            key=lambda template: (
+                template.sequence_order
+                if template.sequence_order is not None
+                else template.start_time.hour * 60 + template.start_time.minute,
+                template.start_time.hour * 60 + template.start_time.minute,
+                template.id,
+            ),
+        )
+        boundaries[key] = (ordered[0].id, ordered[-1].id)
+    return boundaries
+
+
+def consecutive_shift_sequence(
+    boundaries: Mapping[tuple[str, int], tuple[str, str]],
+    first: Slot,
+    second: Slot,
+) -> bool:
+    """Whether ``second`` is the next business shift after ``first``.
+
+    Same-day sequences are handled by the stricter one-primary-shift-per-day
+    invariant.  Here we close the cyclic boundary: the last configured shift
+    of one day cannot be followed by the first configured shift of the next.
+    """
+    if second.date != first.date + timedelta(days=1):
+        return False
+    first_boundary = boundaries.get((first.location_id, first.date.isoweekday()))
+    second_boundary = boundaries.get((second.location_id, second.date.isoweekday()))
+    return bool(
+        first_boundary
+        and second_boundary
+        and first.shift_template_id == first_boundary[1]
+        and second.shift_template_id == second_boundary[0]
+    )
 
 
 def _demand_dates(
@@ -118,6 +172,7 @@ def generate_slots(snapshot: Snapshot) -> tuple[Slot, ...]:
                         duty_ids=demand.duty_ids,
                         start=start,
                         end=end,
+                        sequence_order=template.sequence_order,
                     )
                 )
     provided = snapshot.raw.get("slots")

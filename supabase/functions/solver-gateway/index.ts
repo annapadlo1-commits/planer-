@@ -48,10 +48,29 @@ const invokeRpc = async (
     body: JSON.stringify(args),
     signal: AbortSignal.timeout(30_000),
   });
+  if (response.ok) {
+    return {
+      status: response.status,
+      body: response.body,
+      contentType: response.headers.get("content-type"),
+    };
+  }
+  // PostgREST returns PostgreSQL exceptions as JSON.  Forward only a strict
+  // machine code (never details, hints or SQL text) so the worker can persist
+  // the real failure instead of the useless "HTTP 400" seen in UAT.
+  let errorCode: string | null = null;
+  try {
+    const upstream = await response.json() as { message?: unknown };
+    const message = typeof upstream.message === "string" ? upstream.message : "";
+    if (/^[A-Z][A-Z0-9_:-]{0,99}$/u.test(message)) errorCode = message;
+  } catch {
+    errorCode = null;
+  }
   return {
     status: response.status,
-    body: response.ok ? response.body : null,
+    body: null,
     contentType: response.headers.get("content-type"),
+    errorCode,
   };
 };
 

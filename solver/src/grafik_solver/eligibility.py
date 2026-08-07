@@ -129,7 +129,11 @@ class EligibilityIndex:
                 for window in windows
             ):
                 reasons.append("AVAILABILITY_WINDOW")
-        elif not self.snapshot.settings.missing_availability_means_available:
+        elif not (
+            employee.missing_availability_means_available
+            if employee.missing_availability_means_available is not None
+            else self.snapshot.settings.missing_availability_means_available
+        ):
             reasons.append("MISSING_AVAILABILITY")
 
         for block in self.blocks.get(employee.id, ()):

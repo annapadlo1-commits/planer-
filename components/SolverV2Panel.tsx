@@ -1,22 +1,29 @@
 "use client";
 
-import { AlertTriangle, Check, CircleDollarSign, RefreshCw, Sparkles, Square, Upload, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, RefreshCw, Search, Sparkles, Square, Upload, Users, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { presentSolverVariantMetrics } from "@/lib/solver-variant-presentation";
 import {
   createIdempotencyKey,
+  createLeaderVariant,
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
   getPublicationReadiness,
+  getPublicationAuthorityStatus,
+  getLeaderVariantForRun,
+  getLeaderVariantWorkspace,
   getSelectedVariantWorkspace,
+  getVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
   isValidIdempotencyKey,
   isSolverRunTerminal,
   publicationAttemptStorageKey,
   publishCompanyVariant,
+  publishRoleVariant,
   recoverPublishedSchedule,
   recoverSolverRun,
   rememberPublishedSchedule,
@@ -32,6 +39,7 @@ import {
   type RunStorageContext,
   type SolverEngine,
   type SolverRun,
+  type SolverLeaderVariant,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -52,12 +60,16 @@ type Props = {
   scopeType: SolverScope;
   scopeRoleId?: string | null;
   scopeLabel: string;
+  matrixEffectiveFrom?: string|null;
+  activeConfigurationVersion?: number|null;
+  draftConfigurationVersion?: number|null;
   allowStart?: boolean;
   onNameChange: (value: string) => void;
   onScenarioChange: (value: string) => void;
   onVariantSelected?: (variant: SolverVariant) => void | Promise<void>;
   onPublished?: (scheduleId: string) => void | Promise<void>;
   initialRunId?: string | null;
+  skipRecovery?: boolean;
 };
 
 function money(value: number | null | undefined, currency: string) {
@@ -70,13 +82,26 @@ function money(value: number | null | undefined, currency: string) {
 }
 
 function solutionLabel(value: string) {
-  return value === "OPTIMAL" ? "Potwierdzone optimum" : "Poprawne rozwiązanie";
+  return value === "OPTIMAL"
+    ? "Silnik matematycznie potwierdził, że dla tych priorytetów nie istnieje lepszy wynik"
+    : "Najlepszy wynik znaleziony w dostępnym czasie — bez matematycznego potwierdzenia optimum";
 }
 
 function variantCountLabel(value: number) {
   if (value === 1) return "1 wariant";
   if (value >= 2 && value <= 4) return `${value} warianty`;
   return `${value} wariantów`;
+}
+
+function aggregateVariantFingerprint(variant: SolverVariant) {
+  const metrics = Object.entries(variant.metrics)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify({
+    assignmentCount: variant.assignmentCount,
+    unfilledCount: variant.unfilledCount,
+    totalCostMinor: variant.totalCostMinor ?? null,
+    metrics,
+  });
 }
 
 function publicationIssueTime(value:string|undefined,timezone:string){
@@ -118,12 +143,16 @@ export function SolverV2Panel({
   scopeType,
   scopeRoleId,
   scopeLabel,
+  matrixEffectiveFrom,
+  activeConfigurationVersion,
+  draftConfigurationVersion,
   allowStart = true,
   onNameChange,
   onScenarioChange,
   onVariantSelected,
   onPublished,
   initialRunId,
+  skipRecovery = false,
 }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const selectedScenario = scenarios.find(item => item.code === scenarioCode);
@@ -145,21 +174,47 @@ export function SolverV2Panel({
   const [message, setMessage] = useState("");
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
+  const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
+  const [refreshing,setRefreshing]=useState(false);
+  const [lastStatusCheck,setLastStatusCheck]=useState("");
+  const statusFingerprintRef=useRef("");
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
-  const selectedVariant = variants.find(variant => variant.selected) ?? null;
+  const generatedSelectedVariant = variants.find(variant => variant.selected)
+    ?? (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
+    ?? null;
+  const selectedVariant = generatedSelectedVariant && leaderVariant ? {
+    ...generatedSelectedVariant,
+    id:leaderVariant.id,
+    name:leaderVariant.name,
+    status:leaderVariant.status,
+    assignmentCount:leaderVariant.assignmentCount||selectedWorkspace?.variants[0]?.assignmentCount||generatedSelectedVariant.assignmentCount,
+    unfilledCount:leaderVariant.unfilledCount||selectedWorkspace?.variants[0]?.unfilledCount||0,
+    selected:true,
+  } : generatedSelectedVariant;
   const selectedIsPublished = Boolean(
     selectedVariant
     && publishedWorkspace?.context.status === "PUBLISHED"
     && publishedWorkspace.variants.some(variant => variant.id === selectedVariant.id),
   );
-  const previewWorkspace = selectedIsPublished
+  const previewWorkspace = inspectedWorkspace ?? (selectedIsPublished
     ? publishedWorkspace
-    : selectedWorkspace ?? (!run ? publishedWorkspace : null);
+    : selectedWorkspace ?? (!run ? publishedWorkspace : null));
+  const allVariantsEquivalent = variants.length > 1 && variants.every((variant, index) => index === 0 || variant.equivalentToVariantId || variants[0].equivalentToVariantId === variant.id);
+  const aggregateVariantCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const variant of variants) {
+      const fingerprint = aggregateVariantFingerprint(variant);
+      counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+    }
+    return counts;
+  }, [variants]);
   const messageIsWarning = [
     "Nie udało",
     "Nie masz",
@@ -182,14 +237,35 @@ export function SolverV2Panel({
   const loadVariants = useCallback(async (runId: string) => {
     if (!supabase) return;
     const result = await getSolverVariants(supabase, runId);
-    setVariants(result.variants);
-    if (engine !== "SHADOW" && result.variants.some(variant => variant.selected)) {
-      await loadSelectedWorkspace(runId);
+    let loadedVariants=result.variants;
+    if(engine==="ORTOOLS_V2"&&scopeType==="ROLE"&&scopeRoleId){
+      try{
+        const authority=await getPublicationAuthorityStatus(supabase,month);
+        const rolePublication=authority.roles.find(item=>item.roleId===scopeRoleId);
+        if(rolePublication)loadedVariants=loadedVariants.map(variant=>variant.id===rolePublication.variantId
+          ? {...variant,status:"PUBLISHED"}
+          : variant);
+      }catch{
+        // Publication status is an enhancement to recovered runs; the run remains usable if it cannot be read.
+      }
     }
-  }, [supabase, engine, loadSelectedWorkspace]);
+    setVariants(loadedVariants);
+    if(engine!=="SHADOW"){
+      const leader=await getLeaderVariantForRun(supabase,runId);
+      setLeaderVariant(leader);
+      if(leader){
+        const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+        setSelectedWorkspace(workspace);
+        setPublicationName(workspace.context.name||leader.name);
+      }else if(loadedVariants.some(variant => variant.selected)){
+        await loadSelectedWorkspace(runId);
+      }
+    }
+  }, [supabase, engine, loadSelectedWorkspace, month, scopeRoleId, scopeType]);
 
   const refreshStatus = useCallback(async (runId: string, silent = false): Promise<StatusRefreshOutcome> => {
     if (!supabase) return "RETRY";
+    if(!silent)setRefreshing(true);
     try {
       const result = await getSolverStatus(supabase, runId);
       if (result.run.id !== runId) {
@@ -204,7 +280,17 @@ export function SolverV2Panel({
       setRun(result.run);
       setStrategies(result.strategies);
       setPollWarning("");
-      if (result.run.status === "READY") await loadVariants(result.run.id);
+      if (result.run.status === "READY" || result.run.status === "FAILED") await loadVariants(result.run.id);
+      const fingerprint=`${result.run.status}:${result.run.phase}:${result.run.progress}:${result.run.updatedAt??""}`;
+      const changed=Boolean(statusFingerprintRef.current&&statusFingerprintRef.current!==fingerprint);
+      statusFingerprintRef.current=fingerprint;
+      if(!silent){
+        const checkedAt=new Intl.DateTimeFormat("pl-PL",{hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:timezone}).format(new Date());
+        setLastStatusCheck(checkedAt);
+        setMessage(changed
+          ?`Status sprawdzony o ${checkedAt} — nowy stan: ${solverStatusLabel(result.run.status)} (${result.run.progress}%).`
+          :`Status sprawdzony o ${checkedAt} — bez zmian. ${solverStatusLabel(result.run.status)} (${result.run.progress}%).`);
+      }
       if (isSolverRunTerminal(result.run.status)) {
         setPollingRunId(current => current === runId ? null : current);
         return "TERMINAL";
@@ -219,6 +305,7 @@ export function SolverV2Panel({
         setStrategies([]);
         setVariants([]);
         setSelectedWorkspace(null);
+        setInspectedWorkspace(null);
         setPollWarning("");
         setMessage(solverErrorMessage(detail));
         return "STALE";
@@ -226,8 +313,10 @@ export function SolverV2Panel({
       if (!silent) setMessage(solverErrorMessage(detail));
       else setPollWarning("Nie udało się odświeżyć postępu. Kolejna próba nastąpi automatycznie.");
       return "RETRY";
+    } finally {
+      if(!silent)setRefreshing(false);
     }
-  }, [supabase, engine, expectedSolverVersion, loadVariants, context]);
+  }, [supabase, engine, expectedSolverVersion, loadVariants, context, timezone]);
 
   useEffect(() => {
     let disposed = false;
@@ -236,11 +325,15 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setLeaderVariant(null);
+    setInspectedWorkspace(null);
     setPublishedWorkspace(null);
     setMessage("");
     setPollWarning("");
     setPublicationReadiness(null);
-    const recovered = initialRunId ?? recoverSolverRun(context);
+    setLastStatusCheck("");
+    statusFingerprintRef.current="";
+    const recovered = skipRecovery ? null : (initialRunId ?? recoverSolverRun(context));
     if (recovered) setPollingRunId(recovered);
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
     if (publishedScheduleId && supabase) {
@@ -262,7 +355,7 @@ export function SolverV2Panel({
         });
     }
     return () => { disposed = true; };
-  }, [context, engine, month, supabase, initialRunId]);
+  }, [context, engine, month, supabase, initialRunId, skipRecovery]);
 
   useEffect(() => {
     if (!pollingRunId) return;
@@ -344,28 +437,68 @@ export function SolverV2Panel({
 
   async function choose(variant: SolverVariant) {
     if (!supabase || !run) return;
-    const costSummary = variant.totalCostMinor === undefined || variant.totalCostMinor === null
-      ? ""
-      : ` • koszt ${money(variant.totalCostMinor, variant.currency)}`;
-    const confirmation = window.confirm(
-      `Wybrać „${variant.strategy.name}” jako wynik tego generowania?\n\n` +
-      `${variant.assignmentCount} przydziałów • ${variant.unfilledCount} braków${costSummary}`,
-    );
-    if (!confirmation) return;
     setBusy(true);
     setMessage("");
     try {
       await selectSolverVariant(supabase, run.id, variant.id);
+      setLeaderVariant(null);
       setVariants(current => current.map(item => ({ ...item, selected: item.id === variant.id })));
       await loadSelectedWorkspace(run.id);
       setMessage(scopeType === "ROLE"
-        ? "Wariant roli został zapisany do późniejszego globalnego scalenia. Nie został opublikowany osobno."
+        ? "Wariant roli został wybrany. Możesz go teraz opublikować niezależnie dla swojego zespołu."
         : "Wariant został wybrany. Obowiązujący grafik nie zmieni się, dopóki nie potwierdzisz osobnej publikacji.");
       await onVariantSelected?.({ ...variant, selected: true });
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function createLeaderCopy(){
+    if(!supabase||!run||!generatedSelectedVariant)return;
+    setBusy(true);setMessage("");
+    try{
+      const leader=await createLeaderVariant(supabase,{
+        runId:run.id,sourceVariantId:generatedSelectedVariant.id,
+        name:`Wersja lidera • ${scopeLabel} • ${month.slice(0,7)}`,
+      });
+      const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+      const summary=workspace.variants[0];
+      setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??generatedSelectedVariant.assignmentCount,
+        unfilledCount:summary?.unfilledCount??generatedSelectedVariant.unfilledCount});
+      setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||leader.name);
+      setMessage("Utworzono niezależną wersję lidera. Trzy warianty matematyczne pozostały bez zmian; możesz teraz poprawić obsadę i opublikować własną wersję.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function reloadLeaderWorkspace(){
+    if(!supabase||!leaderVariant)return;
+    setBusy(true);
+    try{
+      const workspace=await getLeaderVariantWorkspace(supabase,leaderVariant.id);
+      const summary=workspace.variants[0];
+      setSelectedWorkspace(workspace);
+      setLeaderVariant(current=>current?{...current,revision:workspace.context.revision??current.revision,
+        assignmentCount:summary?.assignmentCount??current.assignmentCount,
+        unfilledCount:summary?.unfilledCount??current.unfilledCount,lastEditedAt:workspace.context.lastEditedAt}:current);
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function inspectVariant(variant: SolverVariant) {
+    if (!supabase) return;
+    setBusy(true);
+    setInspectingVariantId(variant.id);
+    setMessage("");
+    try {
+      setInspectedWorkspace(await getVariantWorkspace(supabase, variant.id));
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+      setInspectingVariantId(null);
     }
   }
 
@@ -403,17 +536,24 @@ export function SolverV2Panel({
         return;
       }
     }
-    const costSummary = selectedVariant.totalCostMinor === undefined || selectedVariant.totalCostMinor === null
-      ? ""
-      : ` • koszt ${money(selectedVariant.totalCostMinor, selectedVariant.currency)}`;
-    const confirmation = window.confirm(
-      `Opublikować „${trimmedName}” jako obowiązujący grafik dla wybranego miesiąca?\n\n`
-      + `Wybrano strategię „${selectedVariant.strategy.name}”: ${selectedVariant.assignmentCount} przydziałów • ${selectedVariant.unfilledCount} braków${costSummary}.\n\n`
-      + `${readiness.warnings.unfilledCount>0?`UWAGA: wariant zawiera ${readiness.warnings.unfilledCount} braków obsady.\n\n`:""}`
-      + "Obecnie opublikowany grafik dla tego miesiąca zostanie zarchiwizowany. Przed publikacją system ponownie sprawdzi aktualne dane i wszystkie twarde reguły.",
-    );
-    if (!confirmation){setBusy(false);return;}
-
+    let roleReplacementReason:string|null=null;
+    try {
+      const authority=await getPublicationAuthorityStatus(supabase,month);
+      if(authority.roles.length>0){
+        roleReplacementReason=window.prompt(
+          `Dla tego miesiąca istnieje ${authority.roles.length} opublikowanych grafików zespołów. Publikacja grafiku firmy zastąpi je atomowo i zachowa w historii.\n\nPodaj powód decyzji właściciela do audytu:`,
+        )?.trim()??null;
+        if(!roleReplacementReason||roleReplacementReason.length<5){
+          setBusy(false);
+          setMessage("Publikacja anulowana: zastąpienie grafików zespołów wymaga powodu do audytu.");
+          return;
+        }
+      }
+    }catch(error){
+      setBusy(false);
+      setMessage(solverErrorMessage(errorText(error)));
+      return;
+    }
     const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
     let idempotencyKey = window.localStorage.getItem(attemptKey);
     if (!isValidIdempotencyKey(idempotencyKey)) {
@@ -433,12 +573,14 @@ export function SolverV2Panel({
         name: trimmedName,
         idempotencyKey,
         warningReason,
+        roleReplacementReason,
       });
       rememberPublishedSchedule(context, publication.scheduleId);
       window.localStorage.removeItem(attemptKey);
       setVariants(current => current.map(variant => variant.id === selectedVariant.id
         ? { ...variant, status: "PUBLISHED" }
         : variant));
+      setLeaderVariant(current=>current&&current.id===selectedVariant.id?{...current,status:"PUBLISHED"}:current);
       try {
         const workspace = await getPublishedSchedule(supabase, publication.scheduleId);
         setPublishedWorkspace(workspace);
@@ -460,6 +602,55 @@ export function SolverV2Panel({
     }
   }
 
+  async function publishSelectedRole() {
+    if (!supabase || !run || !selectedVariant || engine === "SHADOW" || scopeType !== "ROLE") return;
+    const trimmedName = publicationName.trim();
+    if (!trimmedName) {
+      setMessage("Nie udało się opublikować grafiku zespołu. Podaj jego nazwę.");
+      return;
+    }
+    const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
+    let idempotencyKey = window.localStorage.getItem(attemptKey);
+    if (!isValidIdempotencyKey(idempotencyKey)) {
+      window.localStorage.removeItem(attemptKey);
+      const publicationFingerprint = solverRequestFingerprint(
+        context,
+        `${trimmedName}|publish-role:${run.id}:${selectedVariant.id}`,
+      );
+      idempotencyKey = createIdempotencyKey(context, publicationFingerprint);
+      window.localStorage.setItem(attemptKey, idempotencyKey);
+    }
+
+    setBusy(true);
+    setMessage("");
+    try {
+      if (leaderVariant && selectedVariant.id === leaderVariant.id) {
+        await selectSolverVariant(supabase, run.id, leaderVariant.id);
+        setVariants(current => current.map(variant => ({ ...variant, selected: false })));
+        setLeaderVariant(current => current ? { ...current, status: "SELECTED" } : current);
+      }
+      const publication = await publishRoleVariant(supabase, {
+        runId: run.id,
+        variantId: selectedVariant.id,
+        name: trimmedName,
+        idempotencyKey,
+      });
+      window.localStorage.removeItem(attemptKey);
+      setVariants(current => current.map(variant => variant.id === selectedVariant.id
+        ? { ...variant, status: "PUBLISHED" }
+        : variant));
+      setLeaderVariant(current=>current&&current.id===selectedVariant.id?{...current,status:"PUBLISHED"}:current);
+      await onVariantSelected?.({ ...selectedVariant, status: "PUBLISHED" });
+      setMessage(publication.reused
+        ? "Ten grafik zespołu był już opublikowany. Nie wysłano podwójnych powiadomień."
+        : `Grafik zespołu został opublikowany. Powiadomiono ${publication.notified} pracowników.`);
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function startAnother() {
     forgetSolverRun(context);
     setPollingRunId(null);
@@ -467,6 +658,8 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setLeaderVariant(null);
+    setInspectedWorkspace(null);
     setPublicationReadiness(null);
     setMessage("");
   }
@@ -475,11 +668,14 @@ export function SolverV2Panel({
     <div className="solver-v2-heading">
       <span className="solver-v2-icon"><Sparkles/></span>
       <span>
-        <strong>{engine === "SHADOW" ? "Nieprodukcyjny test nowego silnika" : "Optymalizacja całego Matrixa"}</strong>
-        <small>{scopeLabel} • liczba wariantów wynika z aktywnych strategii Matrixa</small>
+        <strong>{engine === "SHADOW" ? "Nieprodukcyjny test nowego silnika" : "Optymalizacja całej konfiguracji firmy"}</strong>
+        <small>{scopeLabel} • warianty pokazują różne priorytety biznesowe</small>
       </span>
       {engine === "SHADOW" && <em>TRYB CIENIA</em>}
     </div>
+
+    <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Źródło danych: opublikowana konfiguracja firmy{matrixEffectiveFrom?` obowiązująca od ${matrixEffectiveFrom}`:""}</strong><small>Zmiany robocze nie trafiają do silnika. Nowa rola, pracownik, stawka lub reguła zostanie użyta dopiero po opublikowaniu konfiguracji właściwej dla tego miesiąca.</small></span></div>
+    {draftConfigurationVersion&&activeConfigurationVersion&&draftConfigurationVersion>activeConfigurationVersion&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Masz nowszą wersję roboczą: v{draftConfigurationVersion}; generator nadal używa opublikowanej v{activeConfigurationVersion}</strong><small>Elementy dodane tylko w wersji roboczej — na przykład zmiana „Runner Help” — nie pojawią się w wyniku. Przed nowym generowaniem przejdź do konfiguracji firmy, usuń wskazane blokady i opublikuj wersję roboczą.</small></span></div>}
 
     {recovering && <div className="solver-v2-notice"><RefreshCw className="spin"/>Odzyskuję rozpoczęte wcześniej generowanie…</div>}
     {!run && !recovering && !allowStart && <div className="solver-v2-notice"><Sparkles/>Uruchamianie nowego silnika jest wyłączone w bieżącej konfiguracji.</div>}
@@ -487,16 +683,17 @@ export function SolverV2Panel({
       <label>Nazwa
         <input value={name} onChange={event => onNameChange(event.target.value)}/>
       </label>
-      <label>Scenariusz Matrixa
+      <label>Profil zapotrzebowania
         <select value={scenarioCode} onChange={event => onScenarioChange(event.target.value)}>
           {scenarios.map(scenario => <option value={scenario.code} key={scenario.id ?? scenario.code}>
-            {scenario.name}{scenario.strategyCount ? ` • ${variantCountLabel(scenario.strategyCount)}` : ""}
+            {scenario.name}{scenario.profileMode==="PERIOD"&&scenario.validFrom?` • od ${scenario.validFrom}${scenario.validTo?` do ${scenario.validTo}`:""}`:""}{scenario.strategyCount ? ` • ${variantCountLabel(scenario.strategyCount)}` : ""}
           </option>)}
         </select>
       </label>
       {selectedScenario?.description && <p>{selectedScenario.description}</p>}
-      {!selectedScenario?.id && <div className="solver-v2-notice warning"><AlertTriangle/>Nowy Matrix nie jest jeszcze gotowy. Użyj dotychczasowego silnika.</div>}
-      {selectedScenario?.id && selectedScenario.strategyCount===0 && <div className="solver-v2-notice warning"><AlertTriangle/>Ten scenariusz nie ma jeszcze aktywnej strategii. Dodaj co najmniej jedną w Matrixie.</div>}
+      <div className="solver-v2-notice"><CalendarDays/><span><strong>Wydarzenia i zwiększona obsada dotyczą konkretnych dni</strong><small>Profil obejmuje bazę miesiąca albo jawny okres sezonowy. Koncert, wysoki ruch w weekend lub wyjątkową zmianę dodaj w Kalendarzu operacyjnym — system doliczy obsadę tylko we wskazanych datach, lokalach, rolach i zmianach.</small></span></div>
+      {!selectedScenario?.id && <div className="solver-v2-notice warning"><AlertTriangle/>Konfiguracja firmy nie jest jeszcze gotowa do generowania.</div>}
+      {selectedScenario?.id && selectedScenario.strategyCount===0 && <div className="solver-v2-notice warning"><AlertTriangle/>Ten profil zapotrzebowania nie ma jeszcze wariantu biznesowego. Dodaj co najmniej jeden w konfiguracji firmy.</div>}
       <button className="primary-button full" disabled={busy || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount===0 || !name.trim()} onClick={() => void start()}>
         {busy ? <><RefreshCw className="spin"/> Uruchamiam…</> : <><Sparkles/> Generuj wszystkie aktywne warianty</>}
       </button>
@@ -517,25 +714,32 @@ export function SolverV2Panel({
           <em>{strategy.progress}%</em>
         </div>)}
       </div>}
-      {run.failureMessage && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
+      {run.failureMessage && run.status!=="FAILED" && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
+      {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
+      {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>{run.failureMessage?solverErrorMessage(run.failureMessage):"Nie zapisano technicznej przyczyny awarii."} „Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
+      {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej konfiguracji firmy.</small></span></div>}
       {pollWarning && <div className="solver-v2-poll-warning">{pollWarning}</div>}
       <div className="solver-v2-actions">
         {active && <button className="secondary-button" disabled={busy || run.status === "CANCEL_REQUESTED"} onClick={() => void cancel()}><Square/> Zatrzymaj bezpiecznie</button>}
-        <button className="secondary-button" disabled={busy} onClick={() => void refreshStatus(run.id)}><RefreshCw/> Odśwież</button>
-        {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>Nowe generowanie</button>}
+        <button className="secondary-button" disabled={busy||refreshing} onClick={() => void refreshStatus(run.id)}><RefreshCw className={refreshing?"spin":""}/> {refreshing?"Sprawdzam…":"Odśwież status"}</button>
+        {lastStatusCheck&&<small className="solver-v2-last-check">Ostatnie ręczne sprawdzenie: {lastStatusCheck}</small>}
+        {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>{["FAILED","STALE_INPUT"].includes(run.status)?"Spróbuj ponownie":"Nowe generowanie"}</button>}
       </div>
     </div>}
 
     {variants.length > 0 && <div className="solver-v2-results">
       <div className="solver-v2-results-head">
-        <span><strong>Porównaj gotowe warianty</strong><small>Każdy został policzony osobno według strategii zapisanej w Matrixie.</small></span>
+        <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy wariant stosuje inny zestaw priorytetów: koszt, preferencje i równy podział pracy.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>
+      {variants.some(variant=>variant.solverStatus!=="OPTIMAL")&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Co najmniej jeden wariant nie ma dowodu matematycznego optimum</strong><small>Wynik przestrzega twardych reguł i jest najlepszym znalezionym w limicie obliczeń, ale może istnieć lepszy układ. To normalny wynik planowania. Oddzielny „Tryb audytowy” może wymagać formalnego dowodu, lecz przy dużym grafiku potrafi zakończyć przebieg bez zapisu poprawnego wariantu.</small></span></div>}
+      {variants.some(variant=>Number(variant.metrics.LOAD_UTILIZATION_TARGET_COUNT??0)<2)&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Ten zapisany przebieg nie porównywał obciążenia pracowników</strong><small>Wynik powstał w starszej wersji silnika, w której osoby z umowami elastycznymi mogły wypaść z celu równego podziału. Wygeneruj nowe warianty — obecna wersja uwzględnia je przez wspólną bazę sprawiedliwości.</small></span></div>}
+      {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
-        {variants.map(variant => <article className={`${variant.recommended ? "recommended" : ""} ${variant.selected ? "selected" : ""}`} key={variant.id}>
+        {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
           <div className="solver-v2-card-head">
             <span><small>STRATEGIA</small><h3>{variant.strategy.name}</h3></span>
-            {variant.recommended && <em>REKOMENDOWANY</em>}
-            {variant.selected && <em className="chosen"><Check/> WYBRANY</em>}
+            {variant.recommended && <em>{variant.solverStatus==="OPTIMAL"?"REKOMENDOWANY":"NAJLEPSZY ZNALEZIONY"}</em>}
+            {chosenAsSource && <em className="chosen"><Check/> {leaderVariant?"BAZA WERSJI LIDERA":"WYBRANY"}</em>}
           </div>
           {variant.strategy.description && <p>{variant.strategy.description}</p>}
           <div className="solver-v2-metrics">
@@ -544,33 +748,67 @@ export function SolverV2Panel({
             {variant.totalCostMinor !== undefined && variant.totalCostMinor !== null
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
-          <dl className="solver-v2-analysis">
-            {Object.entries(variant.metrics).filter(([metric])=>metric!=="UNFILLED"&&metric!=="TOTAL_COST").map(([metric,value])=><div key={metric}><dt>{({PREFERENCE_VIOLATIONS:"Niespełnione preferencje",NOMINAL_DEVIATION_MINUTES:"Odchylenie od nominału (min)",OVERTIME_MINUTES:"Nadgodziny (min)",LOAD_SPREAD_MINUTES:"Rozpiętość obciążenia (min)",WEEKEND_SPREAD:"Różnica weekendów",BASELINE_CHANGES:"Zmiany wobec bazowego"} as Record<string,string>)[metric]??metric}</dt><dd>{String(value??"—")}</dd></div>)}
-            {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet</dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
-          </dl>
-          <div className="solver-v2-validation">
-            <Check/><span><strong>{variant.hardViolations === 0 ? "Wszystkie twarde reguły spełnione" : "Wariant wymaga poprawy"}</strong><small>{solutionLabel(variant.solverStatus)}</small></span>
+          <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
+          <details className="solver-v2-technical-metrics">
+            <summary><span>Jak silnik ocenił ten wariant?</span><small>Techniczne wskaźniki i wyjaśnienia</small></summary>
+            <dl className="solver-v2-analysis">
+              {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
+              {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
+            </dl>
+          </details>
+          {variant.strategy.name.toLocaleLowerCase("pl-PL").includes("równ")&&Number(variant.metrics.LOAD_UTILIZATION_SPREAD_BPS??0)>1000&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Podział godzin nadal wymaga decyzji lidera</strong><small>Różnica obciążenia przekracza 100%. Otwórz „Rozkład pracy”, aby sprawdzić dostępność, limity i decyzje solvera dla każdej osoby przed publikacją.</small></span></div>}
+          <div className={`solver-v2-validation ${variant.unfilledCount>0||variant.hardViolations>0?"warning":""}`}>
+            {variant.unfilledCount>0||variant.hardViolations>0?<AlertTriangle/>:<Check/>}<span><strong>{variant.hardViolations>0?"Wariant zawiera niedozwolone przydziały":variant.unfilledCount>0?`Technicznie poprawny, ale niekompletny: ${variant.unfilledCount} nieobsadzonych miejsc`:"Kompletny grafik bez naruszeń"}</strong><small>{variant.unfilledCount>0?`Silnik nie złamał reguł pracownika — pozostawił wakaty zamiast wykonać niedozwolony przydział. ${solutionLabel(variant.solverStatus)}.`:solutionLabel(variant.solverStatus)}</small></span>
           </div>
           {variant.equivalentToVariantId && <small className="solver-v2-equivalent">Ten wariant ma taki sam skład jak inny wynik.</small>}
+          {!variant.equivalentToVariantId && (aggregateVariantCounts.get(aggregateVariantFingerprint(variant)) ?? 0) > 1 && <small className="solver-v2-equivalent">Te same wskaźniki zbiorcze, ale inny skład pracowników. Otwórz szczegóły, aby porównać przydziały.</small>}
+          <button className="secondary-button full" disabled={busy} onClick={() => void inspectVariant(variant)}>{inspectingVariantId===variant.id?<RefreshCw className="spin"/>:<Search/>} {inspectingVariantId===variant.id?"Otwieram szczegóły…":"Pokaż grafik i przyczyny braków"}</button>
           {engine === "SHADOW"
             ? <button className="secondary-button full" disabled>Wynik testowy — bez publikacji</button>
-            : <button className="primary-button full" disabled={busy || variant.selected || variant.hardViolations > 0} onClick={() => void choose(variant)}>
-              {variant.selected ? <><Check/> Wybrano ten wariant</> : "Wybierz ten wariant"}
+            : <button className="primary-button full" disabled={busy || run?.status!=="READY" || chosenAsSource || variant.hardViolations > 0} onClick={() => void choose(variant)}>
+              {chosenAsSource ? <><Check/> {leaderVariant?"Użyty jako baza":"Wybrano ten wariant"}</> : "Wybierz jako bazę"}
             </button>}
-        </article>)}
+        </article>})}
       </div>
     </div>}
 
-    {engine !== "SHADOW" && previewWorkspace
-      && <SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"}/>}
+    {engine==="ORTOOLS_V2"&&generatedSelectedVariant&&!leaderVariant&&<section className="solver-leader-flow">
+      <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
+    </section>}
+    {leaderVariant&&selectedWorkspace&&<section className="solver-leader-workspace">
+      <header><span><Edit3/><div><small>KROK 3 • WERSJA LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
+      <SolverV2Workspace workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
+    </section>}
+
+    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}
+
+    {inspectedWorkspace && <>
+      <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>
+      <aside className="drawer role-drawer top solver-variant-preview-drawer" style={{width:"min(1280px, calc(100vw - 32px))"}} aria-label="Podgląd grafiku wariantu">
+        <div className="drawer-head">
+          <div><p className="eyebrow">WARIANT • PODGLĄD GRAFIKU</p><h2>{inspectedWorkspace.context.name}</h2><small>Pełny skład, obsada według dni oraz rozkład braków.</small></div>
+          <button className="icon-button" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}><X/></button>
+        </div>
+        <div className="drawer-content"><SolverV2Workspace workspace={inspectedWorkspace} timezone={timezone} published={false} notify={setMessage} fail={setMessage}/></div>
+      </aside>
+    </>}
 
     {engine === "ORTOOLS_V2" && selectedVariant && selectedWorkspace && scopeType === "ROLE"
-      && <div className="solver-v2-selection-note">
-        <Check/>
+      && <div className="solver-v2-publication">
         <span>
-          <strong>Wariant roli wybrany do późniejszego scalenia</strong>
-          <small>Nie został opublikowany osobno. Publikacja będzie możliwa dopiero po połączeniu kompletu ról i ponownej globalnej kontroli wszystkich reguł.</small>
+          <strong>{selectedVariant.status === "PUBLISHED" ? "Grafik tego zespołu jest opublikowany" : "Opublikuj gotowy grafik zespołu"}</strong>
+          <small>{selectedVariant.status === "PUBLISHED"
+            ? "Pracownicy zespołu widzą już swoje zmiany. Właściciel może później połączyć opublikowane grafiki wszystkich ról."
+            : "Nie musisz czekać na pozostałe role. Publikacja powiadomi tylko pracowników tego zespołu, a wynik pozostanie dostępny do późniejszego podsumowania całej firmy."}</small>
         </span>
+        <label>Nazwa grafiku zespołu
+          <input value={publicationName} maxLength={200} onChange={event => setPublicationName(event.target.value)}/>
+        </label>
+        <button className="primary-button" disabled={busy || !publicationName.trim() || selectedVariant.status === "PUBLISHED"} onClick={() => void publishSelectedRole()}>
+          {selectedVariant.status === "PUBLISHED"
+            ? <><Check/> Grafik opublikowany</>
+            : busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj dla zespołu</>}
+        </button>
       </div>}
 
     {engine === "ORTOOLS_V2" && selectedVariant && selectedWorkspace && scopeType === "COMPANY" && !selectedIsPublished

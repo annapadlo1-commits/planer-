@@ -241,6 +241,11 @@ class ShiftTemplate:
     weekdays: tuple[int, ...]
     ends_next_day: bool = False
     shift_period: str = "MIDDLE"
+    # Business order of shifts within a location/day.  This is deliberately
+    # unrelated to how many shifts one employee may work: a Matrix may contain
+    # any number of templates, while an employee may still work only one
+    # primary shift per calendar day.
+    sequence_order: int | None = None
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> ShiftTemplate:
@@ -255,6 +260,10 @@ class ShiftTemplate:
         ).upper()
         if shift_period not in {"MORNING", "MIDDLE", "EVENING"}:
             raise SnapshotError("shiftPeriod must be MORNING, MIDDLE or EVENING")
+        sequence_order_raw = _pick(
+            raw, "sequenceOrder", "sequence_order", "sortOrder", "sort_order",
+            default=None,
+        )
         return cls(
             id=str(_pick(raw, "id")),
             location_id=str(_pick(raw, "locationId", "location_id")),
@@ -265,6 +274,11 @@ class ShiftTemplate:
                 _pick(raw, "endsNextDay", "ends_next_day", default=False)
             ),
             shift_period=shift_period,
+            sequence_order=(
+                None
+                if sequence_order_raw is None
+                else _integer(sequence_order_raw, "sequenceOrder", 0)
+            ),
         )
 
 
@@ -464,6 +478,7 @@ class Employee:
     blocked_shift_template_ids: tuple[str, ...] = ()
     preferred_location_ids: tuple[str, ...] = ()
     soft_day_off_dates: tuple[date, ...] = ()
+    missing_availability_means_available: bool | None = None
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Employee:
@@ -524,6 +539,9 @@ class Employee:
         ):
             if previous.valid_to is None or previous.valid_to >= current.valid_from:
                 raise SnapshotError("Employee pay rate periods cannot overlap")
+        contract_code = str(
+            _pick(raw, "contractCode", "contract_code", default="")
+        ).upper()
         return cls(
             id=str(_pick(raw, "id")),
             role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
@@ -543,7 +561,7 @@ class Employee:
                 0,
             ),
             pay_rate_periods=pay_rate_periods,
-            contract_code=str(_pick(raw, "contractCode", "contract_code", default="")),
+            contract_code=contract_code,
             employment_start=_optional_date(
                 _pick(raw, "employmentStart", "employment_start", default=None),
                 "employmentStart",
@@ -611,6 +629,12 @@ class Employee:
                 for value in _pick(
                     raw, "softDayOffDates", "soft_day_off_dates", default=[]
                 )
+            ),
+            missing_availability_means_available=_pick(
+                raw,
+                "missingAvailabilityMeansAvailable",
+                "missing_availability_means_available",
+                default=None,
             ),
         )
 
@@ -1003,6 +1027,11 @@ class Settings:
     default_minimum_rest_minutes: int = 660
     require_optimal: bool = True
     random_seed: int = 1
+    standby_tiers_per_role_day: int = 0
+
+    def __post_init__(self) -> None:
+        if self.standby_tiers_per_role_day > 2:
+            raise SnapshotError("standbyTiersPerRoleDay must be between 0 and 2")
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Settings:
@@ -1031,6 +1060,16 @@ class Settings:
             ),
             random_seed=_integer(
                 _pick(raw, "randomSeed", "random_seed", default=1), "randomSeed", 0
+            ),
+            standby_tiers_per_role_day=_integer(
+                _pick(
+                    raw,
+                    "standbyTiersPerRoleDay",
+                    "standby_tiers_per_role_day",
+                    default=0,
+                ),
+                "standbyTiersPerRoleDay",
+                0,
             ),
         )
 

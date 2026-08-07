@@ -37,6 +37,9 @@ class _Response:
     def read(self, maximum: int) -> bytes:
         return self.body[:maximum]
 
+    def close(self) -> None:
+        return None
+
 
 class GatewayClientTests(unittest.TestCase):
     def test_call_uses_only_gateway_token_and_exact_envelope(self) -> None:
@@ -128,6 +131,22 @@ class GatewayClientTests(unittest.TestCase):
                     client.call("solver_finalize_v2", {})
                 self.assertEqual(raised.exception.status, status)
                 self.assertEqual(raised.exception.retryable, retryable)
+
+    def test_http_error_preserves_safe_gateway_failure_code(self) -> None:
+        client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=1)
+        error = urllib.error.HTTPError(
+            GATEWAY_URL,
+            400,
+            "gateway error",
+            {},
+            _Response(b'{"error":"RUN_VARIANTS_INCOMPLETE"}'),
+        )
+        with (
+            patch.object(client._opener, "open", side_effect=error),
+            self.assertRaisesRegex(RpcError, "RUN_VARIANTS_INCOMPLETE") as raised,
+        ):
+            client.call("solver_finalize_v2", {})
+        self.assertFalse(raised.exception.retryable)
 
     def test_heartbeat_retries_malformed_success_json(self) -> None:
         client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=2)
