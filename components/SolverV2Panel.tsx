@@ -777,10 +777,10 @@ export function SolverV2Panel({
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="solver-leader-workspace">
       <header><span><Edit3/><div><small>KROK 3 • WERSJA LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
-      <SolverV2Workspace workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
+      <SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
     </section>}
 
-    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}
+    {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace key={`preview:${previewWorkspace.context.runId??previewWorkspace.context.scheduleId??previewWorkspace.variants[0]?.id??"workspace"}`} workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}
 
     {inspectedWorkspace && <>
       <button className="drawer-scrim top" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}/>
@@ -789,7 +789,7 @@ export function SolverV2Panel({
           <div><p className="eyebrow">WARIANT • PODGLĄD GRAFIKU</p><h2>{inspectedWorkspace.context.name}</h2><small>Pełny skład, obsada według dni oraz rozkład braków.</small></div>
           <button className="icon-button" aria-label="Zamknij podgląd wariantu" onClick={() => setInspectedWorkspace(null)}><X/></button>
         </div>
-        <div className="drawer-content"><SolverV2Workspace workspace={inspectedWorkspace} timezone={timezone} published={false} notify={setMessage} fail={setMessage}/></div>
+        <div className="drawer-content"><SolverV2Workspace key={`inspect:${inspectedWorkspace.context.runId??inspectedWorkspace.variants[0]?.id??"workspace"}`} workspace={inspectedWorkspace} timezone={timezone} published={false} notify={setMessage} fail={setMessage}/></div>
       </aside>
     </>}
 

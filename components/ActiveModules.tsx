@@ -28,7 +28,9 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function roleCardStyle(value:string):CSSProperties{
-  const hue=[...value].reduce((sum,character)=>sum+character.charCodeAt(0),0)%360;
+  let hash=0x811c9dc5;
+  for(const character of value){hash^=character.charCodeAt(0);hash=Math.imul(hash,0x01000193)>>>0;}
+  const hue=hash%360;
   return {"--role-color":`hsl(${hue} 62% 47%)`,"--role-soft":`hsl(${hue} 72% 95%)`} as CSSProperties;
 }
 
@@ -633,6 +635,10 @@ export function ActiveModules({
       masterMode={Boolean(uatMasterEmployeeId)}
       busy={busy}
       section={portalSection}
+      availabilityWorkspace={portal.timeConstraints}
+      locations={data.locations}
+      saveAvailability={saveTimeConstraint}
+      fail={fail}
     /> : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
     {availabilityOpen && portal?.timeConstraints && <AvailabilityCalendarDrawer
       workspace={portal.timeConstraints}
@@ -740,7 +746,7 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   </section>;
 }
 
-function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section }: {
+function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section, availabilityWorkspace, locations, saveAvailability, fail }: {
   portal: PortalWorkspace;
   month: string;
   timezone: string;
@@ -755,6 +761,10 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
   masterMode: boolean;
   busy: boolean;
   section: EmployeePortalSection;
+  availabilityWorkspace?:PortalTimeConstraintsWorkspace;
+  locations:MatrixItem[];
+  saveAvailability:(entry:{dates:string[];kind:"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK";allDay:boolean;start?:string;end?:string;preferredLocationId?:string;note:string})=>Promise<boolean>;
+  fail:(message:string)=>void;
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
@@ -804,8 +814,9 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
   return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title={sectionCopy[section].title} subtitle={sectionCopy[section].subtitle} actions={showMine?<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>:undefined} />
     {masterMode && <div className="uat-master-active-banner"><ShieldCheck /><span><b>Testujesz widok: {employee?.firstName} {employee?.lastName} • {employee?.employeeNo}</b><small>Zapisy dostępności i preferencji są wykonywane dla tej osoby oraz oznaczone w audycie jako UAT MASTER. Akcje zamiany pozostają zablokowane.</small></span></div>}
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
-    {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Moja dostępność i preferencje godzinowe</h3><button className="primary-button portal-action-visible" onClick={openAvailability}><CalendarDays /> Otwórz kalendarz</button><p>Cały miesiąc jest domyślnie dostępny. Wskaż konkretne daty i godziny, kiedy możesz albo wolisz nie pracować.</p></section>}</div>}
+    {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Grafik i dostępność w jednym kalendarzu</h3><p>Zmiana, rezerwa, wydarzenie i Twoja deklaracja są nałożone na ten sam dzień. Edytor znajduje się bezpośrednio pod podsumowaniem.</p></section>}</div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
+    {availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} onSelectDay={setSelectedDay}/>} 
     <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Wybierz dzień, aby od razu zobaczyć swoje zmiany i osoby pracujące razem z Tobą.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const events = eventsByDay.get(date) || [];
@@ -823,6 +834,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
       })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany.</p>}</div>
     </section>}
     </>}
+    {showAvailability&&!showMine&&availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} onSelectDay={setSelectedDay}/>} 
     {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
     {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} />}
@@ -879,16 +891,18 @@ function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { works
   return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer shift-preferences-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • PREFERENCJE</p><h2>Preferowane godziny • {labelMonth(month)}</h2></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content"><p>To starszy sposób zapisu preferencji. Dokładną dostępność ustaw w kalendarzu godzinowym.</p>{periods.map(([period, label]) => <section className="shift-preference-row" key={period}><span><strong>{label}</strong>{workspace.managerOverrides?.[period] ? <small><ShieldCheck /> Ustawienie pracodawcy: {preferenceLevelLabel(workspace.managerOverrides[period])}</small> : <small>Aktualne ustawienie: {preferenceLevelLabel(workspace.effective?.[period] ?? preferences[period])}</small>}</span><select value={preferences[period]} onChange={(event) => setPreferences((current) => ({ ...current, [period]: event.target.value as ShiftPreferenceLevel }))}><option value="PREFERRED">Preferuję</option><option value="NEUTRAL">Neutralnie</option><option value="AVOIDED">Wolę unikać</option></select></section>)}<button className="primary-button full" disabled={busy} onClick={() => void save(preferences)}><Save /> {busy ? "Zapisuję…" : "Zapisz preferencje"}</button></div></aside></>;
 }
 
-function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext, assignments }: {
+function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext, assignments, embedded=false, onSelectDay }: {
   workspace: PortalTimeConstraintsWorkspace;
   month: string;
   locations: MatrixItem[];
-  close: () => void;
+  close?: () => void;
   save: (entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) => Promise<boolean>;
   fail: (message: string) => void;
   busy: boolean;
   calendarContext?: WorkforceCalendarContext;
   assignments: PortalAssignment[];
+  embedded?:boolean;
+  onSelectDay?:(date:string)=>void;
 }) {
   const timezone=workspace.timezone;
   const [year,monthNumber]=month.split("-").map(Number);
@@ -954,6 +968,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
     setRangeAnchor(null);
   };
   const clickDay=(date:string)=>{
+    onSelectDay?.(date);
     if(dayIsProtected(date)){fail("Ten dzień zawiera chroniony wpis pracodawcy, urlopu lub L4 i jest w portalu tylko do odczytu.");return;}
     if(rangeAnchor){selectRange(rangeAnchor,date);return;}
     if(selectedDays.length>1){
@@ -971,9 +986,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
     }catch(cause){fail(cause instanceof Error?cause.message:"Nie udało się zapisać dostępności.");}
   };
 
-  return <><button className="drawer-scrim" onClick={close}/><aside className="drawer role-drawer availability-calendar-drawer">
-    <div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • DOSTĘPNOŚĆ</p><h2>{labelMonth(month,timezone)}</h2><small>Domyślnie cały miesiąc jest dostępny. Zaznacz tylko dni, które chcesz zmienić.</small></div><button className="icon-button" onClick={close}><X/></button></div>
-    <div className="drawer-content availability-calendar-content">
+  const body=<div className="availability-calendar-content">
       <section className="availability-calendar-panel">
         <div className="availability-calendar-legend"><span className="available">Mogę pracować</span><span className="soft">Wolę nie pracować</span><span className="hard">Nie mogę / urlop / L4</span></div>
         <div className="availability-weekdays">{days.map(day=><b key={day}>{day}</b>)}</div>
@@ -1000,7 +1013,11 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
         <div className="availability-editor-actions"><button type="button" className="secondary-button" disabled={!selectedDays.length||busy} onClick={()=>{setSelectedDays([]);setRangeAnchor(null);}}>Wyczyść wybór</button><button className="primary-button" disabled={!selectedDays.length||busy}><Save/>{busy?"Zapisuję…":"Zapisz i zostań tutaj"}</button></div>
         <small className="availability-protected-note"><ShieldCheck/> Wpis pracodawcy, urlop lub L4 ma pierwszeństwo i pozostaje tylko do odczytu.</small>
       </form>
-    </div>
+    </div>;
+  if(embedded)return <section className="employee-combined-calendar"><div className="matrix-demand-head"><div><h3>Mój grafik i dostępność — {labelMonth(month,timezone)}</h3><p>Opublikowane zmiany, wydarzenia i deklaracje dostępności są na jednym kalendarzu. Kliknij dzień, aby zobaczyć zespół i od razu zmienić dostępność.</p></div></div>{body}</section>;
+  return <><button className="drawer-scrim" onClick={close}/><aside className="drawer role-drawer availability-calendar-drawer">
+    <div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • GRAFIK I DOSTĘPNOŚĆ</p><h2>{labelMonth(month,timezone)}</h2><small>Opublikowany grafik i deklaracje są na jednym kalendarzu.</small></div><button className="icon-button" onClick={close}><X/></button></div>
+    <div className="drawer-content">{body}</div>
   </aside></>;
 }
 
