@@ -388,15 +388,20 @@ export function MatrixV2Editor({
       if (!timezone) throw new Error("Podaj strefę czasową firmy.");
       const minimumRestMinutes = requiredNumber(formText(form, "minimumRestMinutes"));
       const maximumShiftsPerDay = requiredNumber(formText(form, "maximumShiftsPerDay"));
+      const standbyTiersPerRoleDay = requiredNumber(formText(form, "standbyTiersPerRoleDay"));
       if (minimumRestMinutes < 0) throw new Error("Minimalny odpoczynek nie może być ujemny.");
       if (!Number.isInteger(maximumShiftsPerDay) || maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) {
         throw new Error("Podaj maksymalną liczbę zmian jednego pracownika na dobę od 1 do 24.");
+      }
+      if (!Number.isInteger(standbyTiersPerRoleDay) || standbyTiersPerRoleDay < 0 || standbyTiersPerRoleDay > 2) {
+        throw new Error("Podaj od 0 do 2 poziomów rezerwy stand-by na rolę i dzień.");
       }
       await save("MATRIX_SETTINGS", null, {
         currency,
         timezone,
         minimumRestMinutes,
         maximumShiftsPerDay,
+        standbyTiersPerRoleDay,
         missingAvailabilityMeansAvailable: checked(form, "missingAvailabilityMeansAvailable"),
         requireOptimal: checked(form, "requireOptimal"),
       });
@@ -680,7 +685,7 @@ function MatrixSettingsCard({
       <span><strong>Podstawowe ustawienia firmy</strong><small>Waluta i strefa czasowa. Limity czasu pracy ustawiasz przy pracowniku zgodnie z jego umową.</small></span>
       <em>{settings.currency}</em>
     </div>
-    <form key={`${settings.currency}:${settings.timezone}:${settings.minimumRestMinutes}:${settings.maximumShiftsPerDay}:${settings.missingAvailabilityMeansAvailable}:${settings.requireOptimal}`} onSubmit={event=>{event.preventDefault();void save(event.currentTarget);}}>
+    <form key={`${settings.currency}:${settings.timezone}:${settings.minimumRestMinutes}:${settings.maximumShiftsPerDay}:${settings.standbyTiersPerRoleDay}:${settings.missingAvailabilityMeansAvailable}:${settings.requireOptimal}`} onSubmit={event=>{event.preventDefault();void save(event.currentTarget);}}>
       <label>Waluta rozliczeniowa
         <input name="currency" required minLength={3} maxLength={3} pattern="[A-Za-z]{3}" disabled={!editable} defaultValue={settings.currency} onChange={event=>{event.currentTarget.value=event.currentTarget.value.toUpperCase();}}/>
         <small>Trzyliterowy kod, np. PLN, EUR lub USD.</small>
@@ -693,6 +698,7 @@ function MatrixSettingsCard({
         <p className="matrix-v2-form-hint">Te wartości są technicznym zabezpieczeniem. Umowa i indywidualne ustalenia pracownika mają pierwszeństwo.</p>
         <label>Domyślny odpoczynek dla umów pracowniczych (minuty)<input name="minimumRestMinutes" type="number" min="0" step="15" required disabled={!editable} defaultValue={settings.minimumRestMinutes}/></label>
         <label>Maksymalna liczba zmian jednego pracownika na dobę<input name="maximumShiftsPerDay" type="number" min="1" max="24" step="1" required disabled={!editable} defaultValue={settings.maximumShiftsPerDay}/><small>Silnik stosuje tę wartość przy generowaniu, ręcznym uzupełnianiu i publikacji grafiku. Nadal nie dopuści zmian nakładających się ani naruszających minimalny odpoczynek.</small></label>
+        <label>Poziomy rezerwy stand-by na rolę i dzień<input name="standbyTiersPerRoleDay" type="number" min="0" max="2" step="1" required disabled={!editable} defaultValue={settings.standbyTiersPerRoleDay}/><small>0 wyłącza rezerwę, 1 tworzy pierwszą osobę rezerwową, a 2 tworzy dwa sprawiedliwie rotowane poziomy. Pełna obsada zawsze ma pierwszeństwo.</small></label>
         <label className="check-label"><input name="missingAvailabilityMeansAvailable" type="checkbox" disabled={!editable} defaultChecked={settings.missingAvailabilityMeansAvailable}/> Dla umów pracowniczych brak deklaracji oznacza dostępność</label>
         <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Tryb audytowy: wymagaj matematycznego dowodu optimum<small>Ta opcja nie ulepsza automatycznie grafiku — blokuje zapis, dopóki solver formalnie nie udowodni, że nie istnieje lepszy układ. Przy pełnym grafiku miesiąca dowód może nie powstać w limicie czasu, mimo że znaleziony grafik jest poprawny. Do codziennego planowania pozostaw wyłączoną; używaj tylko do małych testów i audytu silnika.</small></label>
       </details>
@@ -1356,14 +1362,15 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
     ["Godziny zmian","Podaj dokładne godziny Od i Do. Techniczna klasyfikacja czasu jest obliczana automatycznie i nie jest polem użytkownika."],
     ["Limit zmian na dobę","Pole „Maks. zmian jednego pracownika na dobę” steruje silnikiem. Standardowo wpisz 1. Większa wartość pozwala rozważyć kolejną nienakładającą się zmianę tylko wtedy, gdy zachowany jest minimalny odpoczynek i pozostałe reguły."],
+    ["Rezerwa stand-by","Pole „Poziomy rezerwy stand-by na rolę i dzień” przyjmuje 0, 1 albo 2. Wartość jest częścią konfiguracji firmy, eksportu i importu; silnik oraz publikacja czytają dokładnie tę samą wartość."],
     ["Bezpieczeństwo","Najpierw użyj Podglądu. Zapis wszystkich arkuszy odbywa się atomowo w jednej transakcji."],
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
   const json=(value:unknown)=>JSON.stringify(value??{});
   const settings=matrixV2Settings(data.matrixVersion);
-  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian jednego pracownika na dobę","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
-    [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
+  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian jednego pracownika na dobę","Poziomy rezerwy stand-by na rolę i dzień","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
+    [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.standbyTiersPerRoleDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
   ]);
   add("Role",["Kod","Nazwa","Kolor","Kolejność","Aktywna"],data.roles.map(item=>[item.code,item.name,item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
   add("Lokale",["Kod","Nazwa","Strefa czasowa","Kolejność","Aktywna"],data.locations.map(item=>[item.code,item.name,item.timezone,item.sort_order,item.active?"TAK":"NIE"]));
