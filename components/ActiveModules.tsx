@@ -420,7 +420,11 @@ export function ActiveModules({
   async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
     let publicationConflicts: Array<{ scheduleName?: string; publishedAt?: string; date?: string; shiftName?: string; locationName?: string }> = [];
     if (entry.kind === "CANNOT_WORK" && supabase) {
-      const employeeId = uatMasterEmployeeId || portal?.employee?.id;
+      // OR-Tools' published schedule payload intentionally contains only assignments
+      // and stand-by entries.  The stable employee id is provided by the shared
+      // availability workspace, so keep it as the self-service fallback.  Without
+      // this fallback the post-publication conflict check was silently skipped.
+      const employeeId = uatMasterEmployeeId || portal?.employee?.id || portal?.timeConstraints?.employeeId;
       if (employeeId) {
         const conflictResult = await supabase.rpc("employee_availability_publication_conflicts_uat_v1", {
           p_employee_id: employeeId,
