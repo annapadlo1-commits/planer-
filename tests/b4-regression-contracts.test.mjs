@@ -366,10 +366,10 @@ test("team catalog uses the same explicit target and hard limit semantics as the
 test("calendar comparison can preselect the compared employee for a server-validated replacement", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(workspace,/preferredEmployeeId/);
-  assert.match(workspace,/context\.candidates\.some\(candidate=>candidate\.employeeId===preferredEmployeeId\)/);
+  assert.match(workspace,/context\.candidates\.some\(candidate=>candidate\.employeeId===preferredEmployeeId&&candidate\.suggestionEligible\)/);
   assert.match(workspace,/Sprawdź, czy \{primary\.length\?comparisonEmployee\.firstName:employeeDetailShortName\} może przejąć tę zmianę/);
-  assert.match(workspace,/rola, lokal i wymagany obowiązek/);
-  assert.match(workspace,/sprawdź, czy obowiązek może przejąć ktoś już pracujący na tej zmianie/);
+  assert.match(workspace,/rolę, lokal i obowiązek/);
+  assert.match(workspace,/przejmie obowiązek/);
 });
 
 test("shortage candidates open their calendar and an audited leader-only limit override", async () => {
@@ -385,4 +385,50 @@ test("shortage candidates open their calendar and an audited leader-only limit o
   assert.match(migration,/'limitOverride',jsonb_array_length\(v_limit_details\)>0 and p_allow_limit_override/);
   assert.match(migration,/maximumMonthlyMinutes',2147483647,'maximumWeeklyMinutes',2147483647/);
   assert.match(migration,/WEEKLY_LIMIT','label',format/);
+});
+
+test("every opened variant owns fresh workload and diagnostic state", async () => {
+  const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(panel,/key=\{`leader:/);
+  assert.match(panel,/key=\{`preview:/);
+  assert.match(panel,/key=\{`inspect:/);
+  assert.match(workspace,/const workspaceIdentity=/);
+  assert.match(workspace,/setWorkloadRows\(null\)/);
+  assert.match(workspace,/setComparisonAvailability\(\[\]\)/);
+});
+
+test("swap discovery starts on the first employee and validates availability plus duty hand-off", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",import.meta.url),"utf8");
+  assert.match(workspace,/Możliwa zamiana/);
+  assert.match(workspace,/swap-suggestion-layer/);
+  assert.match(workspace,/suggestionEligible/);
+  assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
+  assert.match(client,/optimizer_leader_assignment_context_uat_v2/);
+  assert.match(client,/p_duty_transfer_assignment_id/);
+  assert.match(migration,/optimizer_employee_availability_month_uat_v1/);
+  assert.match(migration,/'date',day_value\.day_date::date/);
+  assert.match(migration,/dutyTransferAssignmentId/);
+  assert.match(migration,/DUTY_TRANSFER_REQUIRED/);
+});
+
+test("employee portal uses one combined schedule and availability calendar", async () => {
+  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(modules,/Grafik i dostępność w jednym kalendarzu/);
+  assert.match(modules,/employee-combined-calendar/);
+  assert.match(modules,/publishedAssignments\.length/);
+  assert.match(css,/\.employee-calendar-card\{display:none\}/);
+});
+
+test("stand-by is balanced by role and tier after the required schedule", async () => {
+  const migration=await readFile(new URL("../supabase/migrations/20260807151000_b4_standby_fairness_v3.sql",import.meta.url),"utf8");
+  assert.match(migration,/standby_candidates_for_role_day_uat_v3/);
+  assert.match(migration,/history\.tier=v_tier/);
+  assert.match(migration,/v_tier_counts/);
+  assert.match(migration,/v_counts/);
+  assert.match(migration,/issue_code='UNFILLED_SLOT'/);
+  assert.match(migration,/v_tier=2 and (?:exists|v_role_day\.has_shortage)/);
 });
