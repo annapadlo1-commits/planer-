@@ -521,8 +521,17 @@ class CpSatScheduleEngine:
 
         results: list[VariantResult] = []
         solution_owners: dict[str, str] = {}
+        # Cost-first is solved last in normal comparison mode. This lets it use
+        # every already verified complete roster as a price ceiling; a card
+        # labelled "Minimalny koszt" can therefore never be more expensive than
+        # another displayed variant merely because its own time limit expired.
         ordered_strategies = sorted(
-            snapshot.strategies, key=lambda item: (item.sort_order, item.id)
+            snapshot.strategies,
+            key=lambda item: (
+                1 if item.code.upper() == "MIN_COST" else 0,
+                item.sort_order,
+                item.id,
+            ),
         )
         strategy_count = len(ordered_strategies)
         strategy_base = self._build_model(snapshot, slots, eligibility)
@@ -583,6 +592,8 @@ class CpSatScheduleEngine:
         best_fairness_seed_solver: Any | None = None
         best_fairness_key: tuple[int, int] | None = None
         best_fairness_bounds: dict[str, int] = {}
+        best_cost_seed_solver: Any | None = None
+        best_cost_value: int | None = None
 
         for strategy_index, strategy in enumerate(ordered_strategies):
             if self._cancel_event.is_set():
@@ -656,6 +667,9 @@ class CpSatScheduleEngine:
             fairness_first = bool(fairness_tiers) and (
                 not cost_tiers or min(fairness_tiers) < min(cost_tiers)
             )
+            cost_first = bool(cost_tiers) and (
+                not fairness_tiers or min(cost_tiers) < min(fairness_tiers)
+            )
             applied_fairness_bounds: dict[str, int] = {}
             if fairness_first and best_fairness_seed_solver is not None:
                 for metric_name in (
@@ -674,6 +688,15 @@ class CpSatScheduleEngine:
                     strategy.code,
                     applied_fairness_bounds,
                 )
+            applied_cost_bound: int | None = None
+            if cost_first and best_cost_seed_solver is not None and best_cost_value is not None:
+                artifacts.model.add(artifacts.metrics["TOTAL_COST"] <= best_cost_value)
+                applied_cost_bound = best_cost_value
+                LOGGER.info(
+                    "Strategy %s received verified comparison cost guard %s",
+                    strategy.code,
+                    applied_cost_bound,
+                )
             stage_results: list[dict[str, Any]] = [
                 {
                     "tier": 0,
@@ -685,6 +708,11 @@ class CpSatScheduleEngine:
                     **(
                         {"fairnessIncumbentGuard": dict(applied_fairness_bounds)}
                         if applied_fairness_bounds
+                        else {}
+                    ),
+                    **(
+                        {"costIncumbentGuard": applied_cost_bound}
+                        if applied_cost_bound is not None
                         else {}
                     ),
                     **(
@@ -719,7 +747,9 @@ class CpSatScheduleEngine:
                     for variable_index in range(len(artifacts.model.proto.variables))
                 )
                 seed_solver = (
-                    best_fairness_seed_solver
+                    best_cost_seed_solver
+                    if cost_first and best_cost_seed_solver is not None
+                    else best_fairness_seed_solver
                     if fairness_first and best_fairness_seed_solver is not None
                     else shared_warm_start_solver
                 )
@@ -1120,6 +1150,10 @@ class CpSatScheduleEngine:
                     "LOAD_UTILIZATION_SPREAD_BPS": fairness_key[0],
                     "NOMINAL_DEVIATION_MINUTES": fairness_key[1],
                 }
+            result_cost = int(result.metrics.get("TOTAL_COST", 0))
+            if best_cost_value is None or result_cost < best_cost_value:
+                best_cost_value = result_cost
+                best_cost_seed_solver = final_solver
             results.append(result)
             if self._result_callback is not None:
                 self._result_callback(result)
