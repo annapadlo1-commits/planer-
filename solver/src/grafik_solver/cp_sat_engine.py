@@ -402,7 +402,7 @@ class CpSatScheduleEngine:
         return "; ".join(values)
 
     @staticmethod
-    def _cost_precedes_fairness(strategy: Strategy) -> bool:
+    def _cost_precedes_other_goals(strategy: Strategy) -> bool:
         """Return whether Matrix objectives make cost the leading business goal.
 
         Strategy codes and labels are editable Matrix data, so neither may be
@@ -417,16 +417,14 @@ class CpSatScheduleEngine:
                 term.tier
             )
         cost_tiers = metric_tiers.get("TOTAL_COST", [])
-        fairness_tiers = [
+        other_goal_tiers = [
             tier
-            for metric_name in (
-                "LOAD_UTILIZATION_SPREAD_BPS",
-                "NOMINAL_DEVIATION_MINUTES",
-            )
-            for tier in metric_tiers.get(metric_name, [])
+            for metric_name, tiers in metric_tiers.items()
+            if metric_name not in {"TOTAL_COST", "UNFILLED"}
+            for tier in tiers
         ]
         return bool(cost_tiers) and (
-            not fairness_tiers or min(cost_tiers) < min(fairness_tiers)
+            not other_goal_tiers or min(cost_tiers) < min(other_goal_tiers)
         )
 
     def stop(self) -> None:
@@ -558,7 +556,7 @@ class CpSatScheduleEngine:
         ordered_strategies = sorted(
             snapshot.strategies,
             key=lambda item: (
-                1 if self._cost_precedes_fairness(item) else 0,
+                1 if self._cost_precedes_other_goals(item) else 0,
                 item.sort_order,
                 item.id,
             ),
@@ -697,9 +695,7 @@ class CpSatScheduleEngine:
             fairness_first = bool(fairness_tiers) and (
                 not cost_tiers or min(fairness_tiers) < min(cost_tiers)
             )
-            cost_first = bool(cost_tiers) and (
-                not fairness_tiers or min(cost_tiers) < min(fairness_tiers)
-            )
+            cost_first = self._cost_precedes_other_goals(strategy)
             applied_fairness_bounds: dict[str, int] = {}
             if fairness_first and best_fairness_seed_solver is not None:
                 for metric_name in (
