@@ -62,6 +62,7 @@ function normalizedVariant() {
       bestBound: 0,
       tolerance: 0,
       frozenUpperBound: 0,
+      costIncumbentGuard: 0,
       terms: [{
         metric: "TOTAL_COST",
         direction: "MIN",

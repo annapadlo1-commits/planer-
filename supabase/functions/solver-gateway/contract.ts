@@ -408,6 +408,7 @@ function validateStageObjective(value: unknown): void {
       "bestBound",
       "terms",
       "fairnessIncumbentGuard",
+      "costIncumbentGuard",
       "verifiedZeroIncumbent",
       "certificate",
     ],
@@ -442,6 +443,14 @@ function validateStageObjective(value: unknown): void {
   }
   if (Object.hasOwn(value, "fairnessIncumbentGuard")) {
     validateMetrics(value.fairnessIncumbentGuard);
+  }
+  if (Object.hasOwn(value, "costIncumbentGuard")) {
+    assertInteger(
+      value.costIncumbentGuard,
+      "COST_INCUMBENT_GUARD",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
   }
   if (Object.hasOwn(value, "verifiedZeroIncumbent")) {
     assertBoolean(value.verifiedZeroIncumbent, "VERIFIED_ZERO_INCUMBENT");
