@@ -422,6 +422,7 @@ test("swap discovery starts on the first employee and validates availability plu
 test("employee portal uses one combined schedule and availability calendar", async () => {
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  const publicationCalendar=await readFile(new URL("../supabase/migrations/20260809152000_b4_deduplicate_published_company_calendar.sql",import.meta.url),"utf8");
   assert.match(modules,/Grafik i dostępność w jednym kalendarzu/);
   assert.match(modules,/employee-combined-calendar/);
   assert.match(modules,/publishedAssignments\.length/);
@@ -430,6 +431,10 @@ test("employee portal uses one combined schedule and availability calendar", asy
   assert.match(modules,/Zapisano niedostępność po publikacji/);
   assert.match(modules,/Konflikty z opublikowanym grafikiem:/);
   assert.match(css,/\.employee-calendar-card\{display:none\}/);
+  assert.match(publicationCalendar,/distinct on\(role\.logical_id\)/);
+  assert.match(publicationCalendar,/where not exists\(select 1 from company_variants\)/);
+  assert.match(publicationCalendar,/'locationId',location\.logical_id/);
+  assert.match(publicationCalendar,/'roleId',role\.logical_id/);
 });
 
 test("stand-by is balanced by role and tier after the required schedule", async () => {
