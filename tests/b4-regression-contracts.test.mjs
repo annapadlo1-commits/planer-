@@ -407,11 +407,14 @@ test("swap discovery starts on the first employee and validates availability plu
   assert.match(workspace,/swap-suggestion-hint/);
   assert.match(workspace,/suggestionEligible/);
   assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
+  assert.match(workspace,/DAILY_LIMIT:\"Osiągnięty dzienny limit zmian\"/);
   assert.match(client,/optimizer_leader_assignment_context_uat_v2/);
   assert.match(client,/p_duty_transfer_assignment_id/);
   assert.match(migration,/optimizer_employee_availability_month_uat_v1/);
   assert.match(migration,/'date',day_value\.day_date::date/);
   assert.match(migration,/dutyTransferAssignmentId/);
+  assert.match(migration,/occupied_shift\.shift_date=v_shift\.shift_date/);
+  assert.match(migration,/then 'DAILY_LIMIT'/);
   assert.match(migration,/DUTY_TRANSFER_REQUIRED/);
 });
 
