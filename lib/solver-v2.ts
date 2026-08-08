@@ -246,7 +246,15 @@ export type SolverLeaderAssignmentContext = {
     id: string; date: string; startsAt: string; endsAt: string;
     locationId: string; locationName: string; shiftName: string;
   };
-  candidates: { employeeId: string; employeeNo: string; employeeName: string; current: boolean; roleName?: string; locationName?: string; dutyName?: string | null }[];
+  candidates: {
+    employeeId: string; employeeNo: string; employeeName: string; current: boolean;
+    roleName?: string; locationName?: string; dutyName?: string | null;
+    dutyMatch: boolean; dutyCoverageMode: "DIRECT"|"TRANSFER"|"NOT_COVERED";
+    dutyTransferAssignmentId: string|null; dutyTransferEmployeeId: string|null;
+    dutyTransferEmployeeName: string|null;
+    availabilityStatus: "AVAILABLE"|"SOFT_AVOID"|"HARD_UNAVAILABLE"|"SHIFT_CONFLICT"|"OUTSIDE_AVAILABLE_WINDOW"|string;
+    suggestionEligible: boolean;
+  }[];
 };
 
 export type SolverManagerStandby = {
@@ -261,6 +269,10 @@ export type SolverManagerStandby = {
   employeeName: string;
   sourceType: "COMPANY" | "ROLE";
   activatedShiftId: string | null;
+};
+
+export type SolverEmployeeDayAvailability={
+  employeeId:string;date:string;scheduled:boolean;status:string;label:string;
 };
 
 export async function getManagerStandbyMonth(
@@ -1809,7 +1821,7 @@ export async function getLeaderAssignmentContext(
   client: SupabaseClient,
   input: { variantId: string; assignmentId?: string | null; issueId?: string | null },
 ): Promise<SolverLeaderAssignmentContext> {
-  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v1", {
+  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v2", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
@@ -1839,9 +1851,29 @@ export async function getLeaderAssignmentContext(
         roleName: candidate.roleName ? String(candidate.roleName) : undefined,
         locationName: candidate.locationName ? String(candidate.locationName) : undefined,
         dutyName: candidate.dutyName ? String(candidate.dutyName) : null,
+        dutyMatch: Boolean(candidate.dutyMatch),
+        dutyCoverageMode: String(candidate.dutyCoverageMode??"NOT_COVERED") as "DIRECT"|"TRANSFER"|"NOT_COVERED",
+        dutyTransferAssignmentId: candidate.dutyTransferAssignmentId?String(candidate.dutyTransferAssignmentId):null,
+        dutyTransferEmployeeId: candidate.dutyTransferEmployeeId?String(candidate.dutyTransferEmployeeId):null,
+        dutyTransferEmployeeName: candidate.dutyTransferEmployeeName?String(candidate.dutyTransferEmployeeName):null,
+        availabilityStatus: String(candidate.availabilityStatus??"UNKNOWN"),
+        suggestionEligible: Boolean(candidate.suggestionEligible),
       };
     }) : [],
   };
+}
+
+export async function getEmployeeAvailabilityMonth(
+  client:SupabaseClient,variantId:string,employeeIds:string[],
+):Promise<SolverEmployeeDayAvailability[]>{
+  const value=await rpc(client,"optimizer_employee_availability_month_uat_v1",{
+    p_variant_id:variantId,p_employee_ids:employeeIds,
+  });
+  if(!Array.isArray(value))return [];
+  return value.map(item=>{const row=record(item);return{
+    employeeId:String(row.employeeId??""),date:String(row.date??""),
+    scheduled:Boolean(row.scheduled),status:String(row.status??"UNKNOWN"),label:String(row.label??"Wymaga sprawdzenia"),
+  };});
 }
 
 export async function saveLeaderAssignment(
@@ -1849,15 +1881,17 @@ export async function saveLeaderAssignment(
   input: {
     variantId: string; assignmentId?: string | null; issueId?: string | null;
     employeeId: string; reason: string; allowLimitOverride?: boolean;
+    dutyTransferAssignmentId?: string|null;
   },
 ) {
-  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v1", {
+  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v2", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
     p_employee_id: input.employeeId,
     p_reason: input.reason,
     p_allow_limit_override: input.allowLimitOverride ?? false,
+    p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
   }));
 }
 
