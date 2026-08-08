@@ -458,7 +458,7 @@ export function ActiveModules({
     if (!result) return false;
     const reviewCount = Number((result as { pendingReviewDays?: number }).pendingReviewDays || 0);
     notify(publicationConflicts.length > 0
-      ? `Zapisano niedostępność po publikacji. ${publicationConflicts.length} konfliktów z opublikowanym grafikiem wymaga decyzji lidera.`
+      ? `Zapisano niedostępność po publikacji. Konflikty z opublikowanym grafikiem: ${publicationConflicts.length}. Wymagają decyzji lidera.`
       : reviewCount > 0
       ? `${reviewCount} dni z limitem nieobecności przekazano liderowi do weryfikacji.`
       : "Zapisano wybrany zakres dostępności.");
