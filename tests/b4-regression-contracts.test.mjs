@@ -403,7 +403,8 @@ test("swap discovery starts on the first employee and validates availability plu
   const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
   const migration=await readFile(new URL("../supabase/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",import.meta.url),"utf8");
   assert.match(workspace,/Możliwa zamiana/);
-  assert.match(workspace,/swap-suggestion-layer/);
+  assert.match(workspace,/possible-swap-day/);
+  assert.match(workspace,/swap-suggestion-hint/);
   assert.match(workspace,/suggestionEligible/);
   assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
   assert.match(client,/optimizer_leader_assignment_context_uat_v2/);
