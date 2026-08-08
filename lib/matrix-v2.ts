@@ -14,6 +14,7 @@ export type MatrixV2Settings = {
   timezone: string;
   minimumRestMinutes: number;
   maximumShiftsPerDay: number;
+  standbyTiersPerRoleDay: number;
   missingAvailabilityMeansAvailable: boolean;
   requireOptimal: boolean;
 };
@@ -329,8 +330,10 @@ export function matrixV2Settings(version: MatrixV2Version): MatrixV2Settings {
   catch { throw new Error("INVALID_MATRIX_TIMEZONE"); }
   const minimumRestMinutes = Number(source.minimumRestMinutes);
   const maximumShiftsPerDay = Number(source.maximumShiftsPerDay ?? source.maxShiftsPerDay);
+  const standbyTiersPerRoleDay = Number(source.standbyTiersPerRoleDay ?? 0);
   if (!Number.isInteger(minimumRestMinutes) || minimumRestMinutes < 0) throw new Error("INVALID_MATRIX_SETTINGS");
   if (!Number.isInteger(maximumShiftsPerDay) || maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) throw new Error("INVALID_MATRIX_SETTINGS");
+  if (!Number.isInteger(standbyTiersPerRoleDay) || standbyTiersPerRoleDay < 0 || standbyTiersPerRoleDay > 2) throw new Error("INVALID_MATRIX_SETTINGS");
   if (typeof source.missingAvailabilityMeansAvailable !== "boolean" || typeof source.requireOptimal !== "boolean") {
     throw new Error("INVALID_MATRIX_SETTINGS");
   }
@@ -339,6 +342,7 @@ export function matrixV2Settings(version: MatrixV2Version): MatrixV2Settings {
     timezone,
     minimumRestMinutes,
     maximumShiftsPerDay,
+    standbyTiersPerRoleDay,
     missingAvailabilityMeansAvailable: source.missingAvailabilityMeansAvailable,
     requireOptimal: source.requireOptimal,
   };

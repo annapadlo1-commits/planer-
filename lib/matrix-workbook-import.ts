@@ -114,6 +114,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     timezone:importCell(settingsRow,"Strefa czasowa","timezone"),
     minimumRestMinutes:importCell(settingsRow,"Minimalny odpoczynek (min)","minimumRestMinutes"),
     maximumShiftsPerDay:importCell(settingsRow,"Maks. zmian jednego pracownika na dobę","Maks. zmian dziennie","maximumShiftsPerDay"),
+    standbyTiersPerRoleDay:importCell(settingsRow,"Poziomy rezerwy stand-by na rolę i dzień","Poziomy stand-by","standbyTiersPerRoleDay"),
     missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
     requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
   };
