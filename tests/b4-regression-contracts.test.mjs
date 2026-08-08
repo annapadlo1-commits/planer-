@@ -428,6 +428,7 @@ test("employee portal uses one combined schedule and availability calendar", asy
   assert.match(modules,/portal\?\.employee\?\.id \|\| portal\?\.timeConstraints\?\.employeeId/);
   assert.match(modules,/Niedostępność zostanie zapisana PO publikacji/);
   assert.match(modules,/Zapisano niedostępność po publikacji/);
+  assert.match(modules,/Konflikty z opublikowanym grafikiem:/);
   assert.match(css,/\.employee-calendar-card\{display:none\}/);
 });
 
