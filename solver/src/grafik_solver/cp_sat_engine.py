@@ -401,6 +401,34 @@ class CpSatScheduleEngine:
             values.append(f"{name}={rendered}")
         return "; ".join(values)
 
+    @staticmethod
+    def _cost_precedes_fairness(strategy: Strategy) -> bool:
+        """Return whether Matrix objectives make cost the leading business goal.
+
+        Strategy codes and labels are editable Matrix data, so neither may be
+        used as a hidden switch.  The tier order of active objective terms is
+        the only authoritative contract.
+        """
+        metric_tiers: dict[str, list[int]] = defaultdict(list)
+        for term in strategy.objective_terms:
+            if term.weight == 0:
+                continue
+            metric_tiers[METRIC_ALIASES.get(term.metric, term.metric)].append(
+                term.tier
+            )
+        cost_tiers = metric_tiers.get("TOTAL_COST", [])
+        fairness_tiers = [
+            tier
+            for metric_name in (
+                "LOAD_UTILIZATION_SPREAD_BPS",
+                "NOMINAL_DEVIATION_MINUTES",
+            )
+            for tier in metric_tiers.get(metric_name, [])
+        ]
+        return bool(cost_tiers) and (
+            not fairness_tiers or min(cost_tiers) < min(fairness_tiers)
+        )
+
     def stop(self) -> None:
         self._cancel_event.set()
         with self._solver_lock:
@@ -525,10 +553,12 @@ class CpSatScheduleEngine:
         # every already verified complete roster as a price ceiling; a card
         # labelled "Minimalny koszt" can therefore never be more expensive than
         # another displayed variant merely because its own time limit expired.
+        # The decision is derived from Matrix objective tiers, never a mutable
+        # strategy code or label.
         ordered_strategies = sorted(
             snapshot.strategies,
             key=lambda item: (
-                1 if item.code.upper() == "MIN_COST" else 0,
+                1 if self._cost_precedes_fairness(item) else 0,
                 item.sort_order,
                 item.id,
             ),
