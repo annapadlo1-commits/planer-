@@ -8,7 +8,7 @@ as $$
 declare v_variant public.plan_variants_v2%rowtype; v_run public.optimization_runs_v2%rowtype;
   v_shift public.plan_shifts_v2%rowtype; v_assignment public.plan_assignments_v2%rowtype;
   v_issue public.plan_issues_v2%rowtype; v_role_id uuid; v_slot_key text; v_duty_id uuid;
-  v_default_available boolean:=true;
+  v_default_available boolean:=true; v_daily_limit integer:=1;
 begin
   if (p_assignment_id is null)=(p_issue_id is null) then raise exception 'ASSIGNMENT_OR_ISSUE_REQUIRED'; end if;
   if not solver_private.can_edit_leader_variant_uat_v1(p_variant_id) then raise exception 'LEADER_VARIANT_NOT_EDITABLE'; end if;
@@ -16,6 +16,8 @@ begin
   select * into v_run from public.optimization_runs_v2 where id=v_variant.run_id;
   select coalesce((settings->>'missingAvailabilityMeansAvailable')::boolean,true)
     into v_default_available from public.matrix_versions where id=v_run.matrix_version_id;
+  select greatest(1,coalesce(nullif(settings->>'maximumShiftsPerDay','')::integer,1))
+    into v_daily_limit from public.matrix_versions where id=v_run.matrix_version_id;
   if p_assignment_id is not null then
     select * into v_assignment from public.plan_assignments_v2 where id=p_assignment_id and variant_id=p_variant_id;
     if v_assignment.id is null then raise exception 'ASSIGNMENT_NOT_FOUND'; end if;
@@ -72,6 +74,11 @@ begin
                 and occupied.id is distinct from p_assignment_id
                 and tstzrange(occupied_shift.starts_at,occupied_shift.ends_at,'[)')
                   &&tstzrange(v_shift.starts_at,v_shift.ends_at,'[)')) then 'SHIFT_CONFLICT'
+            when (select count(*) from public.plan_assignments_v2 occupied
+              join public.plan_shifts_v2 occupied_shift on occupied_shift.id=occupied.shift_id
+              where occupied.variant_id=p_variant_id and occupied.employee_id=employee.id
+                and occupied.id is distinct from p_assignment_id
+                and occupied_shift.shift_date=v_shift.shift_date)>=v_daily_limit then 'DAILY_LIMIT'
             when not v_default_available and not exists(select 1 from public.employee_time_constraints_v2 window_row
               where window_row.employee_id=employee.id and window_row.status='ACTIVE'
                 and window_row.constraint_kind='AVAILABLE_WINDOW'
