@@ -162,6 +162,7 @@ test("daily employee shift limit has one configurable source across UI, solver a
     readFile(new URL("../supabase/migrations/20260805010000_diagnostic_hard_rules_and_actions.sql", import.meta.url), "utf8"),
   ]);
   assert.match(editor, /name="maximumShiftsPerDay"/);
+  assert.match(editor, /name="standbyTiersPerRoleDay"/);
   assert.doesNotMatch(editor, /const maximumShiftsPerDay = 1;/);
   assert.match(engine, /employee\.maximum_shifts_per_day/);
   assert.match(validator, /count > employee\.maximum_shifts_per_day/);
