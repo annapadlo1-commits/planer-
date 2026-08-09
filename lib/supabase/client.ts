@@ -1,4 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+let browserClient: SupabaseClient | null | undefined;
 
 export function hasSupabaseConfig() {
   return Boolean(
@@ -15,7 +18,12 @@ export function createSupabaseBrowserClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) return null;
-  return createBrowserClient(url, key);
+  // Every screen, drawer and provider must share one auth/session instance.
+  // Creating a fresh client during route remounts caused short windows where
+  // an OWNER request was sent without the refreshed token and the schedule
+  // screen fell back to stale Matrix counts.
+  if (browserClient === undefined) browserClient = createBrowserClient(url, key);
+  return browserClient;
 }
 
 export function supabaseProjectRef() {
