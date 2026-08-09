@@ -446,3 +446,49 @@ test("stand-by is balanced by role and tier after the required schedule", async 
   assert.match(migration,/issue_code='UNFILLED_SLOT'/);
   assert.match(migration,/v_tier=2 and (?:exists|v_role_day\.has_shortage)/);
 });
+
+test("merged company publication is preflighted, auditable and available on UAT", async () => {
+  const [client,panel,preflightSql,severitySql]=await Promise.all([
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+    readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260809162000_b4_company_preflight_grouped_severity.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(client,/optimizer_role_composite_preflight_uat_v2/);
+  assert.match(client,/optimizer_publish_role_composite_uat_v3/);
+  assert.match(client,/p_warning_reason: input\.warningReason\?\.trim\(\)\s*\|\|\s*null/);
+  assert.match(panel,/Przed publikacją potwierdź \{preflight\.totalGaps\} nieobsadzonych miejsc/);
+  assert.match(panel,/preflight\.criticalGaps/);
+  assert.match(panel,/publicationReason\.trim\(\)\.length\s*<\s*10/);
+  assert.match(preflightSql,/optimizer_publish_role_composite_uat_v3/);
+  assert.match(preflightSql,/WARNING_REASON_REQUIRED/);
+  assert.match(preflightSql,/optimizer_publish_role_composite_v2/);
+  assert.match(severitySql,/assigned\.assigned_count = 0 critical/);
+  assert.match(severitySql,/sum\(gap\.missing_count\) filter \(where gap\.critical\)/);
+});
+
+test("operational events and absence limits accept one audited date range", async () => {
+  const [modules,migration]=await Promise.all([
+    readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(modules,/workforce_calendar_event_range_save_uat_v2/);
+  assert.match(modules,/Od dnia/);
+  assert.match(modules,/Do dnia/);
+  assert.match(migration,/p_start_date date/);
+  assert.match(migration,/p_end_date date/);
+  assert.match(migration,/generate_series\(p_start_date,\s*p_end_date,\s*interval '1 day'\)/);
+});
+
+test("one browser client and synchronous month context prevent transient duplicate configuration", async () => {
+  const [client,page,workspace]=await Promise.all([
+    readFile(new URL("../lib/supabase/client.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(client,/let browserClient/);
+  assert.match(client,/if \(browserClient === undefined\) browserClient = createBrowserClient/);
+  assert.match(page,/\[selectedMonth,setSelectedMonth\]=useState\(\(\)=>/);
+  assert.match(page,/const fromUrl=new URLSearchParams\(window\.location\.search\)\.get\("month"\)/);
+  assert.match(workspace,/setLeaderEmployeeId\(candidate\.employeeId\);setLeaderFeedback\(""\);setLeaderLimitWarning\(""\)/);
+});
