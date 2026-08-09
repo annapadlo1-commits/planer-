@@ -146,7 +146,12 @@ export default function GrafikPro() {
   const [location,setLocation]=useState("ALL");
   const [role,setRole]=useState("ALL");
   const [day,setDay]=useState("ALL");
-  const [selectedMonth,setSelectedMonth]=useState(DEFAULT_MONTH);
+  const [selectedMonth,setSelectedMonth]=useState(()=>{
+    if(typeof window==="undefined")return DEFAULT_MONTH;
+    const fromUrl=new URLSearchParams(window.location.search).get("month");
+    const fromSession=window.sessionStorage.getItem(MONTH_STORAGE_KEY);
+    return [fromUrl,fromSession].find(value=>value&&/^\d{4}-\d{2}$/.test(value))??DEFAULT_MONTH;
+  });
   const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
   const loadTokenRef=useRef(0),loadMonthRef=useRef(selectedMonthDate);loadMonthRef.current=selectedMonthDate;
@@ -330,13 +335,7 @@ export default function GrafikPro() {
     setLoading(false);
   },[supabase,user,selectedMonthDate,canReadCompanyWorkspace]);
   useEffect(()=>{void load();return()=>{loadTokenRef.current+=1};},[load]);
-  useEffect(()=>{
-    const fromUrl=new URLSearchParams(window.location.search).get("month");
-    const fromSession=window.sessionStorage.getItem(MONTH_STORAGE_KEY);
-    const remembered=[fromUrl,fromSession].find(value=>value&&/^\d{4}-\d{2}$/.test(value));
-    if(remembered)setSelectedMonth(remembered);
-    monthStorageReadyRef.current=true;
-  },[]);
+  useEffect(()=>{monthStorageReadyRef.current=true;},[]);
   useEffect(()=>{
     if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
   },[selectedMonth]);
