@@ -270,10 +270,10 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
     if (publicationReasonInvalid) {
       setMessage(`Nie można jeszcze opublikować grafiku. Dopisz ${publicationReasonMissing} ${publicationReasonMissing === 1 ? "znak" : "znaków"} uzasadnienia decyzji o brakach.`);
-      window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
         publicationReasonRef.current?.focus();
         publicationReasonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
+      }, 0);
       return;
     }
 
