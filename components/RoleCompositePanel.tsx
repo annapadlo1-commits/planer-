@@ -102,6 +102,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
   const [publicationReason, setPublicationReason] = useState("");
+  const [publicationAttempted, setPublicationAttempted] = useState(false);
+  const publicationReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -240,6 +242,9 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   );
   const assignmentCount = candidates?.roles.reduce((sum, role) => sum + (role.variant?.assignmentCount ?? 0), 0) ?? 0;
   const unfilledCount = candidates?.roles.reduce((sum, role) => sum + (role.variant?.unfilledCount ?? 0), 0) ?? 0;
+  const publicationReasonLength = publicationReason.trim().length;
+  const publicationReasonMissing = Math.max(0, 10 - publicationReasonLength);
+  const publicationReasonInvalid = unfilledCount > 0 && publicationReasonLength < 10;
   const missingRoleLabel = [
     ...missingRoles.map(role => role.name),
     ...(unknownMissingCount ? [`${unknownMissingCount} inne wymagane role`] : []),
@@ -257,13 +262,18 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
   async function publish() {
     if (!supabase || engine !== "ORTOOLS_V2" || !candidates || !selectedScenario?.id || !ready) return;
+    setPublicationAttempted(true);
     const trimmedName = publicationName.trim();
     if (!trimmedName) {
       setMessage("Nie podano nazwy publikowanego grafiku.");
       return;
     }
-    if (unfilledCount > 0 && publicationReason.trim().length < 10) {
-      setMessage("Grafik zawiera braki. Opisz decyzję biznesową (minimum 10 znaków), aby publikacja była świadoma i audytowalna.");
+    if (publicationReasonInvalid) {
+      setMessage(`Nie można jeszcze opublikować grafiku. Dopisz ${publicationReasonMissing} ${publicationReasonMissing === 1 ? "znak" : "znaków"} uzasadnienia decyzji o brakach.`);
+      window.requestAnimationFrame(() => {
+        publicationReasonRef.current?.focus();
+        publicationReasonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
       return;
     }
 
@@ -502,13 +512,26 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         </div>}
         <label className="role-composite-reason">Dlaczego publikujesz grafik mimo braków?
           <textarea
+            ref={publicationReasonRef}
             value={publicationReason}
             maxLength={1000}
             disabled={busy}
+            aria-invalid={publicationAttempted && publicationReasonInvalid}
+            aria-describedby="role-composite-reason-help"
             placeholder="Np. lider zaakceptował obsadę 5/6, a krytyczny brak zostanie pokryty ofertą zmiany przed rozpoczęciem pracy."
-            onChange={event => setPublicationReason(event.target.value)}
+            onChange={event => {
+              setPublicationReason(event.target.value);
+              if (event.target.value.trim().length >= 10) setPublicationAttempted(false);
+            }}
           />
-          <small>Minimum 10 znaków. Uzasadnienie, liczba braków i osoba publikująca trafią do audytu.</small>
+          <small
+            id="role-composite-reason-help"
+            style={publicationReasonInvalid ? { color: "#b42318", fontWeight: 700 } : undefined}
+          >
+            {publicationReasonInvalid
+              ? `Wpisano ${publicationReasonLength}/10 znaków — dopisz jeszcze ${publicationReasonMissing}. Uzasadnienie zapisze się razem z publikacją; osobny zapis nie jest potrzebny.`
+              : "Uzasadnienie jest gotowe i zapisze się razem z publikacją wraz z liczbą braków oraz osobą publikującą."}
+          </small>
         </label>
       </section>}
 
@@ -520,7 +543,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         <label>Nazwa wspólnego grafiku
           <input value={publicationName} maxLength={200} disabled={busy} onChange={event => setPublicationName(event.target.value)}/>
         </label>
-        <button className="primary-button" disabled={busy || !ready || !publicationName.trim() || (unfilledCount > 0 && publicationReason.trim().length < 10)} onClick={() => void publish()}>
+        <button className="primary-button" disabled={busy || !ready || !publicationName.trim()} onClick={() => void publish()}>
           {busy ? <><RefreshCw className="spin"/> Sprawdzam i publikuję…</> : <><Upload/> Opublikuj scalony grafik</>}
         </button>
       </div>
