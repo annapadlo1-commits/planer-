@@ -540,14 +540,14 @@ export function ActiveModules({
   }
 
   async function saveOperationalEvent(entry: {
-    date: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string;
+    startDate: string; endDate: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string;
     locationId?: string; roleId: string; shiftTemplateIds: string[];
     additionalCount: number; maximumHardUnavailable: number;
   }) {
-    const result = await rpc("workforce_calendar_event_save_uat_v2", {
-      p_event_id: null,
+    const result = await rpc("workforce_calendar_event_range_save_uat_v2", {
       p_month: selectedMonthDate,
-      p_event_date: entry.date,
+      p_start_date: entry.startDate,
+      p_end_date: entry.endDate,
       p_event_kind: entry.kind,
       p_title: entry.title,
       p_description: entry.description || null,
@@ -702,14 +702,15 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   context: WorkforceCalendarContext;
   month: string;
   busy: boolean;
-  save: (entry: { date: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string; locationId?: string; roleId: string; shiftTemplateIds: string[]; additionalCount: number; maximumHardUnavailable: number }) => Promise<boolean>;
+  save: (entry: { startDate: string; endDate: string; kind: "EVENT" | "HOT_DAY"; title: string; description: string; locationId?: string; roleId: string; shiftTemplateIds: string[]; additionalCount: number; maximumHardUnavailable: number }) => Promise<boolean>;
   review: (reviewId: string, decision: "APPROVE" | "REJECT") => Promise<boolean>;
 }) {
   const roles = context.roles || [];
   const locations = context.locations || [];
   const templates = context.shiftTemplates || [];
   const [kind, setKind] = useState<"EVENT" | "HOT_DAY">("EVENT");
-  const [date, setDate] = useState(`${month}-01`);
+  const [startDate, setStartDate] = useState(`${month}-01`);
+  const [endDate, setEndDate] = useState(`${month}-01`);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
@@ -721,14 +722,14 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
     if (!roles.some(role => role.id === roleId)) setRoleId(roles[0]?.id || "");
     if (!locations.some(location => location.id === locationId)) setLocationId(locations[0]?.id || "");
   }, [locationId, locations, roleId, roles]);
-  const dayOfWeek = date ? ((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1 : 1;
+  const dayOfWeek = startDate ? ((new Date(`${startDate}T12:00:00Z`).getUTCDay() + 6) % 7) + 1 : 1;
   const visibleTemplates = useMemo(() => templates.filter(template => template.locationId === locationId && template.dayMask.includes(dayOfWeek)), [dayOfWeek, locationId, templates]);
-  useEffect(() => { setSelectedTemplates(visibleTemplates.map(template => template.id)); }, [locationId, date]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelectedTemplates(visibleTemplates.map(template => template.id)); }, [locationId, startDate]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!date || !title.trim() || !roleId) return;
+    if (!startDate || !endDate || endDate < startDate || !title.trim() || !roleId) return;
     if (kind === "EVENT" && (!locationId || !selectedTemplates.length)) return;
-    const ok = await save({ date, kind, title, description, locationId: kind === "EVENT" ? locationId : undefined, roleId, shiftTemplateIds: selectedTemplates, additionalCount: count, maximumHardUnavailable: limit });
+    const ok = await save({ startDate, endDate, kind, title, description, locationId: kind === "EVENT" ? locationId : undefined, roleId, shiftTemplateIds: selectedTemplates, additionalCount: count, maximumHardUnavailable: limit });
     if (ok) { setTitle(""); setDescription(""); }
   };
   return <section className="operational-calendar-panel">
@@ -737,7 +738,7 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
       <summary><span><Plus/><strong>Narzędzia dodatkowe</strong><small>Dodaj wydarzenie, zwiększoną obsadę albo limit nieobecności tylko wtedy, gdy jest potrzebny.</small></span></summary>
       <form className="operational-event-form" onSubmit={event => void submit(event)}>
       <div className="segmented-choice"><button type="button" className={kind === "EVENT" ? "active" : ""} onClick={() => setKind("EVENT")}><Megaphone /> Wydarzenie + obsada</button><button type="button" className={kind === "HOT_DAY" ? "active" : ""} onClick={() => setKind("HOT_DAY")}><Flame /> Limit nieobecności</button></div>
-      <div className="form-row"><label>Data<input type="date" min={`${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={date} onChange={event => setDate(event.target.value)} required /></label><label>Nazwa<input value={title} maxLength={160} onChange={event => setTitle(event.target.value)} placeholder={kind === "EVENT" ? "np. Koncert — większy ruch" : "np. Długi weekend"} required /></label></div>
+      <div className="form-row"><label>Od dnia<input type="date" min={`${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={startDate} onChange={event => { setStartDate(event.target.value); if (endDate < event.target.value) setEndDate(event.target.value); }} required /></label><label>Do dnia<input type="date" min={startDate || `${month}-01`} max={`${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, "0")}`} value={endDate} onChange={event => setEndDate(event.target.value)} required /></label><label>Nazwa<input value={title} maxLength={160} onChange={event => setTitle(event.target.value)} placeholder={kind === "EVENT" ? "np. Koncert — większy ruch" : "np. Długi weekend"} required /></label></div>
       <label>Opis (opcjonalnie)<textarea value={description} maxLength={500} onChange={event => setDescription(event.target.value)} /></label>
       <fieldset className="operational-card-picker"><legend>Rola</legend>{roles.map(role => <button type="button" key={role.id} className={roleId === role.id ? "active" : ""} onClick={() => setRoleId(role.id)}>{role.name}</button>)}</fieldset>
       {kind === "EVENT" ? <><fieldset className="operational-card-picker"><legend>Lokal</legend>{locations.map(location => <button type="button" key={location.id} className={locationId === location.id ? "active" : ""} onClick={() => setLocationId(location.id)}>{location.name}</button>)}</fieldset><fieldset className="operational-shift-picker"><legend>Zmiany objęte dodatkową obsadą</legend>{visibleTemplates.map(template => <label key={template.id}><input type="checkbox" checked={selectedTemplates.includes(template.id)} onChange={() => setSelectedTemplates(current => current.includes(template.id) ? current.filter(id => id !== template.id) : [...current, template.id])} /><span><b>{template.name}</b><small>{String(template.startsAt).slice(0, 5)}–{String(template.endsAt).slice(0, 5)}</small></span></label>)}</fieldset><label className="compact-number">Dodatkowe osoby na każdej zaznaczonej zmianie<input type="number" min={1} max={500} value={count} onChange={event => setCount(Number(event.target.value))} /></label></> : <label className="compact-number">Ile twardych niedostępności roli można przyjąć automatycznie?<input type="number" min={0} max={500} value={limit} onChange={event => setLimit(Number(event.target.value))} /><small>Kolejne zgłoszenie będzie oczekiwać na decyzję lidera.</small></label>}
