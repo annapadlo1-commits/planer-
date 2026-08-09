@@ -972,7 +972,6 @@ async function rpc(client: SupabaseClient, name: string, args: Record<string, un
       result.error.details,
       result.error.hint,
     ].filter(value => Boolean(String(value ?? "").trim()));
-    console.error("[GRAFIK PRO UAT RPC]", JSON.stringify({ name, code: result.error.code, message: result.error.message, details: result.error.details, hint: result.error.hint }));
     throw new Error(parts.join(":"));
   }
   return result.data as unknown;
