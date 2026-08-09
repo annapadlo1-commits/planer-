@@ -10,6 +10,7 @@ import {
   getPublishedSchedule,
   getPublicationAuthorityStatus,
   getRoleCompositeCandidates,
+  getRoleCompositePreflight,
   getRolePublicationOverview,
   isValidIdempotencyKey,
   publishRoleComposite,
@@ -21,6 +22,7 @@ import {
   type RunStorageContext,
   type SolverEngine,
   type SolverRoleCompositeCandidates,
+  type SolverRoleCompositePreflight,
   type SolverRolePublicationOverview,
   type SolverPublicationAuthorityStatus,
   type SolverScenario,
@@ -76,6 +78,16 @@ function sameVariantSet(left: string[], right: string[]) {
   return [...left].sort().join(":") === [...right].sort().join(":");
 }
 
+function gapDurationHours(startsAt: string, endsAt: string) {
+  const [startHour, startMinute] = startsAt.split(":").map(Number);
+  const [endHour, endMinute] = endsAt.split(":").map(Number);
+  if (![startHour, startMinute, endHour, endMinute].every(Number.isFinite)) return 0;
+  const start = startHour * 60 + startMinute;
+  let end = endHour * 60 + endMinute;
+  if (end <= start) end += 24 * 60;
+  return (end - start) / 60;
+}
+
 export function RoleCompositePanel({ engine, solverVersion, userId, month, timezone, scenarios, matrixEffectiveFrom, refreshKey = 0, onPublished }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const expectedSolverVersion = solverVersion.trim();
@@ -84,10 +96,12 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const defaultScenarioId = availableScenarios.find(scenario => scenario.isDefault)?.id ?? "";
   const [scenarioId, setScenarioId] = useState(defaultScenarioId);
   const [candidates, setCandidates] = useState<SolverRoleCompositeCandidates | null>(null);
+  const [preflight, setPreflight] = useState<SolverRoleCompositePreflight | null>(null);
   const [overview, setOverview] = useState<SolverRolePublicationOverview | null>(null);
   const [authority, setAuthority] = useState<SolverPublicationAuthorityStatus | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
+  const [publicationReason, setPublicationReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -100,6 +114,17 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     scopeType: "COMPANY",
     scopeRoleId: null,
   }), [userId, engine, expectedSolverVersion, month, scenarioId]);
+  const shortagePatterns = useMemo(() => {
+    const groups = new Map<string, { role: string; location: string; startsAt: string; endsAt: string; dates: string[]; hours: number }>();
+    for (const gap of preflight?.gaps ?? []) {
+      const key = `${gap.role}:${gap.location}:${gap.startsAt}:${gap.endsAt}`;
+      const current = groups.get(key) ?? { role: gap.role, location: gap.location, startsAt: gap.startsAt, endsAt: gap.endsAt, dates: [], hours: 0 };
+      current.dates.push(gap.date);
+      current.hours += gapDurationHours(gap.startsAt, gap.endsAt) * gap.missingCount;
+      groups.set(key, current);
+    }
+    return [...groups.values()].filter(item => item.dates.length >= 2).sort((left, right) => right.hours - left.hours);
+  }, [preflight]);
 
   useEffect(() => {
     if (!availableScenarios.some(scenario => scenario.id === scenarioId)) {
@@ -122,11 +147,18 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         throw new Error("ROLE_COMPOSITE_REFERENCE_MISMATCH");
       }
       setCandidates(result);
+      const selectedVariantIds = result.roles.flatMap(role => role.variant ? [role.variant.id] : []);
+      if (selectedVariantIds.length === result.roles.length && selectedVariantIds.length > 0) {
+        setPreflight(await getRoleCompositePreflight(supabase, month, scenarioId, selectedVariantIds));
+      } else {
+        setPreflight(null);
+      }
       if (!silent) setMessage("");
       return result;
     } catch (error) {
       if (requestId !== candidateRequestRef.current) return null;
       setCandidates(null);
+      setPreflight(null);
       if (!silent) setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
       return null;
     } finally {
@@ -157,6 +189,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   useEffect(() => {
     candidateRequestRef.current += 1;
     setCandidates(null);
+    setPreflight(null);
     if (scenarioId) void loadCandidates();
   }, [scenarioId, refreshKey, loadCandidates]);
 
@@ -229,6 +262,10 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       setMessage("Nie podano nazwy publikowanego grafiku.");
       return;
     }
+    if (unfilledCount > 0 && publicationReason.trim().length < 10) {
+      setMessage("Grafik zawiera braki. Opisz decyzję biznesową (minimum 10 znaków), aby publikacja była świadoma i audytowalna.");
+      return;
+    }
 
     setBusy(true);
     setMessage("");
@@ -246,10 +283,17 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       }
       const freshAssignmentCount = fresh.roles.reduce((sum, role) => sum + (role.variant?.assignmentCount ?? 0), 0);
       const freshUnfilledCount = fresh.roles.reduce((sum, role) => sum + (role.variant?.unfilledCount ?? 0), 0);
+      const freshPreflight = await getRoleCompositePreflight(supabase, month, selectedScenario.id, freshIds);
+      setPreflight(freshPreflight);
+      if (freshPreflight.totalGaps > 0 && publicationReason.trim().length < 10) {
+        setMessage("Po ponownej kontroli grafik nadal zawiera braki. Uzupełnij uzasadnienie świadomej publikacji.");
+        return;
+      }
 
       const confirmation = window.confirm(
         `Opublikować „${trimmedName}” jako obowiązujący grafik dla ${monthLabel(month)}?\n\n`
         + `System połączy ${fresh.roles.length} grafików ról: ${freshAssignmentCount} przydziałów i ${freshUnfilledCount} braków.\n\n`
+        + `${freshPreflight.criticalGaps > 0 ? `UWAGA: ${freshPreflight.criticalGaps} zmian nie ma ani jednej osoby w wymaganej roli.\n\n` : ""}`
         + "Przed publikacją całość zostanie ponownie sprawdzona globalnie. Obecnie opublikowany grafik tego miesiąca zostanie zarchiwizowany.",
       );
       if (!confirmation) return;
@@ -278,6 +322,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         variantIds: freshIds,
         name: trimmedName,
         idempotencyKey,
+        warningReason: publicationReason,
       });
       rememberPublishedSchedule(storageContext, publication.scheduleId);
       window.localStorage.removeItem(attemptKey);
@@ -430,15 +475,52 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
       {!candidates.roles.length && <div className="solver-v2-notice warning"><AlertTriangle/>Ten scenariusz nie zawiera wymaganych ról do scalenia.</div>}
 
+      {preflight && preflight.totalGaps > 0 && <section className="role-composite-preflight">
+        <header>
+          <AlertTriangle/>
+          <span>
+            <strong>Przed publikacją potwierdź {preflight.totalGaps} nieobsadzonych miejsc</strong>
+            <small>{preflight.criticalGaps > 0
+              ? `${preflight.criticalGaps} z nich to krytyczne braki: na zmianie nie ma ani jednej osoby w wymaganej roli.`
+              : "Każda zmiana ma co najmniej część wymaganej obsady, ale grafik pozostaje niekompletny."}</small>
+          </span>
+        </header>
+        <div className="role-composite-gap-list">
+          {preflight.gaps.slice(0, 12).map(gap => <article className={gap.critical ? "critical" : "partial"} key={gap.issueId}>
+            <span><strong>{gap.date} • {gap.startsAt.slice(0,5)}–{gap.endsAt.slice(0,5)}</strong><small>{gap.location} • {gap.role}{gap.duty ? ` • ${gap.duty}` : ""}</small></span>
+            <b>{gap.assignedCount}/{gap.requiredCount}<small>{gap.critical ? "brak całej roli" : `brakuje ${gap.missingCount}`}</small></b>
+          </article>)}
+          {preflight.gaps.length > 12 && <small className="role-composite-gap-more">oraz {preflight.gaps.length - 12} kolejnych miejsc — pełna lista pozostaje w grafikach ról.</small>}
+        </div>
+        {shortagePatterns.length > 0 && <div className="role-composite-structural-shortage">
+          <strong>System wykrył powtarzalny brak zasobów, nie tylko pojedynczy wakat</strong>
+          {shortagePatterns.slice(0, 4).map(pattern => <article key={`${pattern.role}:${pattern.location}:${pattern.startsAt}`}>
+            <span><b>{pattern.role} • {pattern.location} • {pattern.startsAt.slice(0,5)}–{pattern.endsAt.slice(0,5)}</b><small>{pattern.dates.length} dni: {pattern.dates.join(", ")}</small></span>
+            <em>około {new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 }).format(pattern.hours)} roboczogodzin do pokrycia</em>
+          </article>)}
+          <small>Możliwe działania: dodatkowa osoba lub pula ad-hoc, zwiększenie wymiaru za zgodą, przeniesienie między lokalami, zmiana minimum obsady albo godzin działalności. System niczego nie zmieni bez decyzji właściciela.</small>
+        </div>}
+        <label className="role-composite-reason">Dlaczego publikujesz grafik mimo braków?
+          <textarea
+            value={publicationReason}
+            maxLength={1000}
+            disabled={busy}
+            placeholder="Np. lider zaakceptował obsadę 5/6, a krytyczny brak zostanie pokryty ofertą zmiany przed rozpoczęciem pracy."
+            onChange={event => setPublicationReason(event.target.value)}
+          />
+          <small>Minimum 10 znaków. Uzasadnienie, liczba braków i osoba publikująca trafią do audytu.</small>
+        </label>
+      </section>}
+
       <div className="role-composite-publish">
         <span>
           <strong>{ready ? "Wszystkie zespoły w tym scenariuszu są opublikowane" : "Wspólna wersja czeka na brakujące publikacje zespołów"}</strong>
-          <small>Niezależne grafiki są już widoczne dla swoich pracowników. Wspólna publikacja jest opcjonalnym, późniejszym krokiem właściciela.</small>
+          <small>Niezależne grafiki są widoczne dla zespołów. Wspólna publikacja tworzy jeden obowiązujący grafik firmy i podlega końcowej kontroli oraz audytowi braków.</small>
         </span>
         <label>Nazwa wspólnego grafiku
           <input value={publicationName} maxLength={200} disabled={busy} onChange={event => setPublicationName(event.target.value)}/>
         </label>
-        <button className="primary-button" disabled={busy || !ready || !publicationName.trim()} onClick={() => void publish()}>
+        <button className="primary-button" disabled={busy || !ready || !publicationName.trim() || (unfilledCount > 0 && publicationReason.trim().length < 10)} onClick={() => void publish()}>
           {busy ? <><RefreshCw className="spin"/> Sprawdzam i publikuję…</> : <><Upload/> Opublikuj scalony grafik</>}
         </button>
       </div>
