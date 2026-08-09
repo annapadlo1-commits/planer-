@@ -581,6 +581,30 @@ export type SolverRoleCompositeCandidates = {
   ready: boolean;
 };
 
+export type SolverRoleCompositeGap = {
+  issueId: string;
+  variantId: string;
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  location: string;
+  role: string;
+  duty?: string;
+  requiredCount: number;
+  assignedCount: number;
+  missingCount: number;
+  critical: boolean;
+  message: string;
+};
+
+export type SolverRoleCompositePreflight = {
+  month: string;
+  scenarioId: string;
+  totalGaps: number;
+  criticalGaps: number;
+  gaps: SolverRoleCompositeGap[];
+};
+
 export type SolverRolePublicationOverview = {
   month: string;
   totals: {
@@ -940,7 +964,16 @@ function normalizeVariant(value: unknown): SolverVariant {
 
 async function rpc(client: SupabaseClient, name: string, args: Record<string, unknown>) {
   const result = await client.rpc(name, args);
-  if (result.error) throw new Error(result.error.message);
+  if (result.error) {
+    const parts = [
+      `RPC_${name.toUpperCase()}`,
+      result.error.code,
+      result.error.message,
+      result.error.details,
+      result.error.hint,
+    ].filter(value => Boolean(String(value ?? "").trim()));
+    throw new Error(parts.join(":"));
+  }
   return result.data as unknown;
 }
 
@@ -1917,6 +1950,44 @@ export async function getRoleCompositeCandidates(
   }));
 }
 
+export async function getRoleCompositePreflight(
+  client: SupabaseClient,
+  month: string,
+  scenarioId: string,
+  variantIds: string[],
+): Promise<SolverRoleCompositePreflight> {
+  const payload = record(await rpc(client, "optimizer_role_composite_preflight_uat_v2", {
+    p_month: month,
+    p_scenario_id: scenarioId,
+    p_variant_ids: variantIds,
+  }));
+  const gaps = Array.isArray(payload.gaps) ? payload.gaps.map(value => {
+    const row = record(value);
+    return {
+      issueId: String(valueOf(row, "issueId", "issue_id", "")),
+      variantId: String(valueOf(row, "variantId", "variant_id", "")),
+      date: String(valueOf(row, "date", "date", "")),
+      startsAt: String(valueOf(row, "startsAt", "starts_at", "")),
+      endsAt: String(valueOf(row, "endsAt", "ends_at", "")),
+      location: String(valueOf(row, "location", "location", "Lokal")),
+      role: String(valueOf(row, "role", "role", "Rola")),
+      duty: valueOf<string | undefined>(row, "duty", "duty", undefined),
+      requiredCount: numberOf(row, "requiredCount", "required_count"),
+      assignedCount: numberOf(row, "assignedCount", "assigned_count"),
+      missingCount: numberOf(row, "missingCount", "missing_count"),
+      critical: Boolean(valueOf(row, "critical", "critical", false)),
+      message: String(valueOf(row, "message", "message", "Brak obsady")),
+    };
+  }) : [];
+  return {
+    month: String(valueOf(payload, "month", "month", month)),
+    scenarioId: String(valueOf(payload, "scenarioId", "scenario_id", scenarioId)),
+    totalGaps: numberOf(payload, "totalGaps", "total_gaps"),
+    criticalGaps: numberOf(payload, "criticalGaps", "critical_gaps"),
+    gaps,
+  };
+}
+
 export async function getRolePublicationOverview(
   client: SupabaseClient,
   month: string,
@@ -1965,14 +2036,16 @@ export async function publishRoleComposite(
     variantIds: string[];
     name: string;
     idempotencyKey: string;
+    warningReason?: string;
   },
 ): Promise<SolverPublication> {
-  const payload = record(await rpc(client, "optimizer_publish_role_composite_v2", {
+  const payload = record(await rpc(client, "optimizer_publish_role_composite_uat_v3", {
     p_month: input.month,
     p_scenario_id: input.scenarioId,
     p_variant_ids: input.variantIds,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
+    p_warning_reason: input.warningReason?.trim() || null,
   }));
   const scheduleId = String(valueOf(payload, "scheduleId", "schedule_id", ""));
   if (!scheduleId) throw new Error("SCHEDULE_ID_MISSING");
@@ -2255,6 +2328,7 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("VARIANT_STRATEGY_MISSING") || normalized.includes("VARIANT_STRATEGY_INVALID") || normalized.includes("ROLE_COMPOSITE_STRATEGY")) return "Odpowiedź generatora nie zawiera prawidłowej strategii wariantu. Odśwież dane przed kontynuacją.";
   if (normalized.includes("COMPANY_PUBLICATION_FORBIDDEN")) return "Tylko właściciel lub administrator może opublikować grafik całej firmy.";
   if (normalized.includes("WARNING_REASON_REQUIRED")) return "Publikacja z brakami obsady wymaga podania powodu decyzji.";
+  if (normalized.includes("ROLE_COMPOSITE_CRITICAL_GAPS")) return "Scalony grafik zawiera dzień, w którym dla wymaganej roli nie obsadzono nikogo. Otwórz kontrolę braków, wybierz działanie i dopiero potem świadomie potwierdź publikację.";
   if (normalized.includes("PLAN_NOT_READY")) return "Grafik nie jest gotowy do publikacji. Rozwiń listę blokad i przejdź do wskazanych alertów.";
   if (normalized.includes("PUBLICATION_INPUT_CHANGED")) return "Dane firmy zmieniły się od czasu generowania. Uruchom nowy grafik przed publikacją.";
   if (normalized.includes("SELECTED_COMPANY_VARIANT_REQUIRED")) return "Przed publikacją wybierz poprawny wariant grafiku całej firmy.";
@@ -2306,5 +2380,6 @@ export function solverErrorMessage(message: string) {
     || normalized.includes("HTTP 409")) {
     return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
   }
-  return "Nie udało się połączyć z generatorem. Spróbujemy ponownie przy następnym odświeżeniu.";
+  const technicalCode = normalized.match(/(?:RPC_[A-Z0-9_]+|PGRST\d+|[A-Z][A-Z0-9_]{5,})/)?.[0] ?? "NIEZNANY_BŁĄD_RPC";
+  return `Operacja nie została zapisana. Kod techniczny: ${technicalCode}. Odśwież dane i spróbuj ponownie; jeśli błąd wróci, przekaż ten kod administratorowi UAT.`;
 }
