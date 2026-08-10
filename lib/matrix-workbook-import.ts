@@ -288,7 +288,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
 
   const shiftRows=rows(["Zmiany","Shifts","DEFINICJE_ZMIAN"]);
   const sourceShiftLayout=shiftRows.some(row=>Boolean(importCell(row,"LOKALIZACJA_ID","GRUPA_DNI","ZMIANA_ID")));
-  const shifts=shiftRows.map(row=>{
+  const shifts=shiftRows.map((row,index)=>{
     const baseCode=importCell(row,"Kod","code","ZMIANA_ID");
     const group=importCell(row,"GRUPA_DNI");
     const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:baseCode;
@@ -300,7 +300,10 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       // dokładne godziny, a import nigdy nie ufa ręcznemu MORNING/MIDDLE/EVENING.
       shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:normalizeTime(importCell(row,"Do","endsAt","KONIEC")),
       endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni","days")),
-      sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
+      // „Kolejność” jest polem opcjonalnym i nie występuje w prostym pliku
+      // startowym. Nigdy nie wysyłamy pustego tekstu do pola liczbowego w bazie;
+      // stabilna kolejność wierszy jest bezpiecznym ustawieniem domyślnym.
+      sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
   const groupedShifts=Array.from(new Map(shifts.map(shift=>[`${shift.locationCode}:${shift.code}:${shift.startsAt}:${shift.endsAt}`,shift])).values()).map(shift=>({
