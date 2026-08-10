@@ -83,7 +83,11 @@ export function RecoveryCenter({ month, employees = [], currency = "PLN", employ
       else {
         const next = await getRecoveryWorkspace(supabase, month);
         setWorkspace(next);
-        setBudgetForm({ amount: String(next.budget.amount ?? 0), warningPercent: String(next.budget.warningPercent ?? 90), hardLimit: Boolean(next.budget.hardLimit) });
+        setBudgetForm({
+          amount: String(next.budget?.amount ?? 0),
+          warningPercent: String(next.budget?.warningPercent ?? 90),
+          hardLimit: Boolean(next.budget?.hardLimit),
+        });
       }
     } catch (error) { fail(recoveryErrorMessage(error)); }
     finally { setLoading(false); }
