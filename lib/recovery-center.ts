@@ -283,7 +283,19 @@ export async function saveRecoveryBudget(client: SupabaseClient, month: string, 
 }
 
 export function recoveryErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const record = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
+  const nested = record && typeof record.error === "object" && record.error !== null
+    ? record.error as Record<string, unknown> : null;
+  const parts = [
+    error instanceof Error ? error.message : null,
+    record?.message, record?.details, record?.hint, record?.code,
+    nested?.message, nested?.details, nested?.hint, nested?.code,
+    typeof error === "string" ? error : null,
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  let message = parts.join(" • ");
+  if (!message && record) {
+    try { message = JSON.stringify(record); } catch { message = ""; }
+  }
   if (message.includes("RECOVERY_REVISION_CONFLICT")) return "Ktoś inny zmienił ten miesiąc. Odświeżyliśmy dane — sprawdź je przed ponownym zapisem.";
   if (message.includes("ROLE_SCOPE_FORBIDDEN") || message.includes("ROLE_OR_LOCATION_SCOPE_FORBIDDEN")) return "Nie masz uprawnień do tej roli lub lokalizacji.";
   if (message.includes("EMPLOYEE_ACKNOWLEDGEMENT_REQUIRED")) return "Przekroczenie limitu godzin wymaga potwierdzenia poinformowania lub wymaganej zgody pracownika.";
@@ -296,5 +308,7 @@ export function recoveryErrorMessage(error: unknown) {
   if (message.includes("LEADER_LIMIT_OVERRIDE_REQUIRED")) return "Wybrana osoba przekroczyłaby limit. Dodaj datowany wyjątek z uzasadnieniem i potwierdzeniem pracownika albo wybierz inną osobę.";
   if (message.includes("OWNER_REQUIRED")) return "Budżet bazowy może zmienić właściciel lub administrator.";
   if (message.includes("INVALID_INCIDENT_RANGE")) return "Zakres incydentu musi mieścić się w wybranym miesiącu.";
-  return message || "Operacja Centrum napraw nie powiodła się.";
+  return message && message !== "[object Object]"
+    ? message
+    : "Operacja Centrum napraw nie powiodła się. Odśwież dane i spróbuj ponownie; jeśli błąd wróci, zgłoś godzinę operacji administratorowi UAT.";
 }
