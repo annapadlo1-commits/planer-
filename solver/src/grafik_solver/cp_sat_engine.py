@@ -1013,20 +1013,41 @@ class CpSatScheduleEngine:
                         continue
                     artifacts.model.clear_objective()
                     artifacts.model.minimize(expression)
-                    final_solver, final_status = self._solve_model(
-                        artifacts.model,
-                        snapshot,
-                        strategy=strategy,
-                        stage_name=f"TIER_{tier}",
-                        time_limit_seconds=max(
+                    remaining_tier_count = len(ordered_tiers) - tier_index + 1
+                    remaining_tier_budget = self._remaining_seconds(
+                        strategy_deadline,
+                        f"{strategy.code}:TIER_{tier}:BUDGET",
+                    )
+                    if snapshot.settings.require_optimal:
+                        tier_time_budget = remaining_tier_budget
+                    else:
+                        # In comparison mode every remaining business tier must
+                        # receive solver time.  Giving the first non-trivial tier
+                        # the whole remaining budget made later objectives (most
+                        # visibly the promised fair workload distribution) fall
+                        # back to the shared feasibility roster, so all three
+                        # strategy cards could be identical.  Split only the
+                        # currently available time; an early proof automatically
+                        # leaves its unused share for the following tiers.
+                        usable_tier_budget = max(
                             0.001,
-                            self._remaining_seconds(strategy_deadline, strategy.code)
+                            remaining_tier_budget
                             - (
                                 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS
                                 if feasible_fallback_solver is not None
                                 else 0.0
                             ),
-                        ),
+                        )
+                        tier_time_budget = max(
+                            0.001,
+                            usable_tier_budget / max(1, remaining_tier_count),
+                        )
+                    final_solver, final_status = self._solve_model(
+                        artifacts.model,
+                        snapshot,
+                        strategy=strategy,
+                        stage_name=f"TIER_{tier}",
+                        time_limit_seconds=tier_time_budget,
                     )
                     used_fallback = False
                     if (
@@ -1079,6 +1100,7 @@ class CpSatScheduleEngine:
                             ),
                             "tolerance": allowed_degradation,
                             "frozenUpperBound": exact_value + allowed_degradation,
+                            "timeBudgetSeconds": round(tier_time_budget, 3),
                             "terms": tier_terms[tier],
                         }
                     )
