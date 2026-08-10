@@ -472,6 +472,10 @@ test("merged company publication is preflighted, auditable and available on UAT"
   assert.match(panel,/publicationReasonRef\.current\?\.focus\(\)/);
   assert.match(panel,/Uzasadnienie zapisze się razem z publikacją; osobny zapis nie jest potrzebny/);
   assert.match(panel,/disabled=\{busy \|\| !ready \|\| !publicationName\.trim\(\)\}/);
+  assert.match(panel,/publishedScenarioGroups/);
+  assert.match(panel,/completePublishedScenario/);
+  assert.match(panel,/wcześniej opublikowane grafiki/);
+  assert.match(panel,/Scalasz istniejące publikacje z ich konfiguracji źródłowej/);
   assert.match(preflightSql,/optimizer_publish_role_composite_uat_v3/);
   assert.match(preflightSql,/WARNING_REASON_REQUIRED/);
   assert.match(preflightSql,/optimizer_publish_role_composite_v2/);
