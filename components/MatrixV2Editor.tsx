@@ -66,8 +66,6 @@ const payMethodLabel: Record<string, string> = {
   SHIFT_DURATION_THRESHOLD_PER_HOUR: "Dodatek po długości zmiany",
   MONTHLY_THRESHOLD_PER_HOUR: "Dodatek po progu miesięcznym",
 };
-const EXPECTED_ACTIVE_EMPLOYEES = 76;
-
 function time(value?: string | null) { return value ? value.slice(0, 5) : "—"; }
 function money(value: number | null | undefined, currency: string) {
   if (value === undefined || value === null) return "—";
@@ -1310,7 +1308,7 @@ function importIssueMessage(message:string){
 }
 type MatrixImportPreview={valid:boolean;errors:MatrixImportIssue[];warnings:MatrixImportIssue[];employeesToArchive?:MatrixImportArchive[];summary:{employees:number;employeeDuties?:number;shifts:number;staffingRules:number;roleDuties:number;total:number;employeesToUpdate?:number;employeesToCreate?:number;employeesToArchive?:number}};
 type MatrixImportMode="UPDATE"|"REPLACE";
-type MatrixImportScope="FINANCE"|"CONFIGURATION";
+type MatrixImportScope="TEAM"|"FINANCE"|"CONFIGURATION";
 type FinanceImportPreview={
   valid:boolean;
   errors:MatrixImportIssue[];
@@ -1338,7 +1336,7 @@ type FullImportPreview={
   };
 };
 
-async function downloadMatrixTemplate(data:MatrixV2Workspace){
+async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const add=(name:string,headers:string[],rows:(string|number|boolean|null)[][]=[])=>{
@@ -1349,10 +1347,16 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     XLSX.utils.book_append_sheet(workbook,sheet,name);
   };
   const instructions=XLSX.utils.aoa_to_sheet([
-    ["GRAFIK PRO — import konfiguracji firmy","Zasada"],
+    [variant==="QUICK"?"GRAFIK PRO — szybki start firmy":"GRAFIK PRO — import konfiguracji firmy","Zasada"],
+    ...(variant==="QUICK"?[
+      ["Co uzupełnić","Pracuj tylko w widocznych arkuszach. Najpierw ustaw strukturę firmy i zespół; stawki uzupełnisz w osobnym pliku po nadaniu numerów GP-###."],
+      ["Ukryte arkusze","Zawierają bezpieczne ustawienia techniczne bieżącej wersji. Nie musisz ich otwierać ani wypełniać."],
+    ]:[]),
     ["Nowy pracownik","Pozostaw Numer pracownika pusty. System nada kolejny wolny numer GP-### automatycznie."],
     ["Aktualizacja pracownika","Podaj istniejący numer lub e-mail. Nieistniejący numer zostanie odrzucony w podglądzie."],
     ["Kody","Kody ról, lokali, obowiązków i scenariuszy skopiuj z arkusza Słowniki."],
+    ["Kolejność","Pole jest opcjonalne. Puste wartości system ułoży automatycznie; wpisz liczby tylko wtedy, gdy chcesz wymusić własną kolejność."],
+    ["Kolory","W arkuszu Słowniki znajdziesz gotową paletę. Możesz też wpisać własny kolor w formacie #RRGGBB."],
     ["Listy","Kody lokali oraz dni rozdzielaj przecinkiem; dni: 1=poniedziałek, 7=niedziela."],
     ["Kompetencje pracownika","Każdy aktywny obowiązek ma osobną kolumnę w arkuszu Pracownicy. Wpisz TAK tylko przy osobach, które mogą go wykonywać."],
     ["Lokale pracownika","Kolumny <KOD>_STANDARD i <KOD>_NADGODZINY są niezależne. Lokal bazowy musi być również dozwolony standardowo."],
@@ -1448,13 +1452,21 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace){
     ...data.locations.filter(item=>item.active).map(item=>["LOKAL",item.code,item.name]),
     ...data.duties.filter(item=>item.active).map(item=>["OBOWIĄZEK",item.code,item.name]),
     ...data.scenarios.filter(item=>item.active).map(item=>["SCENARIUSZ",item.code,item.name]),
+    ["KOLOR","#7257D8","Fioletowy"],["KOLOR","#0F8F7A","Turkusowy"],
+    ["KOLOR","#2F75B5","Niebieski"],["KOLOR","#C9A51D","Złoty"],
+    ["KOLOR","#C62BBE","Różowy"],["KOLOR","#D4574F","Koralowy"],
+    ["KOLOR","#4A8D78","Zielony"],["KOLOR","#7A6F85","Szary"],
     ["OPERACJA OBSADY","SET","Ustaw liczbę"],["OPERACJA OBSADY","ADD","Dodaj liczbę"],["OPERACJA OBSADY","REMOVE","Usuń regułę"],
   ];
   const dictionarySheet=XLSX.utils.aoa_to_sheet(dictionaries);
   dictionarySheet["!autofilter"]={ref:`A1:C${dictionaries.length}`};
   dictionarySheet["!cols"]=[{wch:24},{wch:30},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"Słowniki");
-  XLSX.writeFile(workbook,`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
+  if(variant==="QUICK"){
+    const hidden=new Set(["Scenariusze","Strategie","Kryteria strategii","Warianty scenariuszy","Role pracowników","Lokale pracowników","Kompetencje pracowników","Dostępność","Zasady płacowe","Dodatki scenariuszy","Budżety scenariuszy","Finanse pracowników"]);
+    workbook.Workbook={...(workbook.Workbook??{}),Sheets:workbook.SheetNames.map(name=>({Hidden:hidden.has(name)?1:0}))};
+  }
+  XLSX.writeFile(workbook,variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
 }
 
 async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
@@ -1518,7 +1530,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const importDraftKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-draft`;
   const restored=useMemo(()=>readStoredMatrixImport(data.matrixVersion.id),[data.matrixVersion.id]);
-  const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"CONFIGURATION");
+  const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"TEAM");
   const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
   const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
   useEffect(()=>{
@@ -1544,15 +1556,15 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       const [configuration,finance]=await Promise.all([readMatrixWorkbook(file),readWorkforceFinanceWorkbook(file)]);
       if(!configuration.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
       if(!configuration.roles.length||!configuration.locations.length||!configuration.duties.length||!configuration.scenarios.length||!configuration.strategies.length){
-        throw new Error("Pełna baza firmy wymaga arkuszy: Role, Lokale, Obowiązki, Scenariusze i Strategie. Pobierz świeży pełny plik z aplikacji.");
+        throw new Error("Plik wymaga arkuszy: Role, Lokale, Obowiązki, Scenariusze i Strategie. Pobierz świeży plik z aplikacji — ustawienia techniczne są w nim bezpiecznie ukryte.");
       }
-      if(!finance.payRates.length)throw new Error("Pełna baza firmy nie zawiera arkusza „Finanse pracowników” albo żadnej stawki. Import został zatrzymany.");
-      const activeImported=configuration.employees.filter(employee=>employee.active!==false).length;
-      if(mode==="REPLACE"&&activeImported!==EXPECTED_ACTIVE_EMPLOYEES){
-        throw new Error(`Tryb „Zastąp aktywną bazę” wymaga obecnie dokładnie ${EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników. Plik zawiera ${activeImported}. Wybierz „Aktualizuj i dodaj” dla częściowej zmiany albo popraw kompletny plik.`);
+      if(scope==="CONFIGURATION"&&!finance.payRates.length){
+        throw new Error("Pełna baza firmy nie zawiera arkusza „Finanse pracowników” albo żadnej stawki. Dla wdrożenia dwuetapowego wybierz „Struktura i zespół”.");
       }
       const parsed={configuration,finance};
-      const result=await supabase.rpc("matrix_v2_full_import_preview_uat_v1",{p_payload:parsed,p_mode:mode});
+      const result=scope==="TEAM"
+        ?await supabase.rpc("matrix_v2_team_import_preview_uat_v1",{p_configuration:configuration,p_mode:mode})
+        :await supabase.rpc("matrix_v2_full_import_preview_uat_v1",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
       setPayload(parsed);setPreview(result.data as FullImportPreview);
     }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
@@ -1572,30 +1584,36 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     }
     const configurationPreview=preview as FullImportPreview;
     setBusy(true);
-    const result=await supabase.rpc("matrix_v2_full_import_apply_uat_v1",{p_payload:payload,p_mode:mode});
+    const result=scope==="TEAM"
+      ?await supabase.rpc("matrix_v2_team_import_apply_uat_v1",{p_configuration:(payload as {configuration:Record<string,unknown>}).configuration,p_mode:mode})
+      :await supabase.rpc("matrix_v2_full_import_apply_uat_v1",{p_payload:payload,p_mode:mode});
     setBusy(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     const archived=Number((result.data as {archivedEmployees?:number})?.archivedEmployees??0);
+    if(scope==="TEAM"){
+      notify(`Struktura i zespół zapisane: ${configurationPreview.summary.employees} pracowników. System nadał brakujące numery GP-###. Pobierz teraz gotowy plik finansowy i uzupełnij stawki${archived?`; zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
+      clearPersistedImport();await reload();resetImport("FINANCE");return;
+    }
     notify(`Pełna baza firmy została odtworzona atomowo: ${configurationPreview.summary.employees} pracowników, ${configurationPreview.summary.financeRows} okresów stawek i wszystkie reguły konfiguracji${archived?`; zarchiwizowano ${archived} nieobecnych pracowników`:""}.`);
     clearPersistedImport();close();await reload();
   }
   return <><button className="drawer-scrim top" onClick={close}/><aside className="drawer matrix-v2-drawer top">
     <div className="drawer-head"><div><p className="eyebrow">KONFIGURACJA • IMPORT ZBIORCZY</p><h2>Aktualizacja z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
-      <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Pełna baza firmy</strong><small>Jeden plik: firma, role, lokale, pracownicy, umowy, stawki, dostępność, zmiany, obsada, scenariusze, strategie, dodatki i budżety.</small></button><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>Tylko stawki zespołu</strong><small>Szybka aktualizacja okresów i kwot bez zmiany pozostałej konfiguracji.</small></button></fieldset>
-      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
-      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
-      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data))}><Download/> {scope==="FINANCE"?"Pobierz plik stawek całego zespołu":"Pobierz pełną bazę firmy"}</button>
-      {scope==="CONFIGURATION"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej.</small></button></fieldset>}
+      <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="TEAM"?"active":""} onClick={()=>resetImport("TEAM")}><strong>1. Struktura i zespół</strong><small>Prosty start: role, lokale, obowiązki i pracownicy. Numery GP-### nada system; finanse uzupełnisz w kroku 2.</small></button><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>2. Finanse zespołu</strong><small>Gotowy plik zawiera już pracowników i nadane numery. Uzupełniasz wyłącznie okresy i stawki.</small></button><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Import zaawansowany</strong><small>Pełny techniczny round-trip wszystkich arkuszy dla administratora.</small></button></fieldset>
+      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
+      <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":scope==="TEAM"?"System najpierw tworzy nowe role, lokale i obowiązki, potem przypisuje zespół. Nowa osoba może mieć pusty numer; istniejący e-mail zostanie bezpiecznie podpięty do zachowanej historii.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
+      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL"))}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy z nadanymi numerami":scope==="TEAM"?"Pobierz prosty plik startowy":"Pobierz pełną bazę firmy"}</button>
+      {scope!=="FINANCE"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej. Liczba osób nie jest zaszyta w kodzie.</small></button></fieldset>}
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
       {localError&&<div className="solver-v2-notice warning"><AlertTriangle/>{localError}</div>}
       {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
-      {preview&&scope==="CONFIGURATION"&&<section className="matrix-import-preview">
+      {preview&&scope!=="FINANCE"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
         <p>{(preview as FullImportPreview).summary.total} wierszy konfiguracji oraz {(preview as FullImportPreview).summary.financeRows} okresów stawek: {(preview as FullImportPreview).summary.employees} pracowników, {(preview as FullImportPreview).summary.roles} ról, {(preview as FullImportPreview).summary.locations} lokali, {(preview as FullImportPreview).summary.shifts} zmian, {(preview as FullImportPreview).summary.staffingRules} reguł obsady i {(preview as FullImportPreview).summary.timeConstraints} wpisów dostępności.</p>
-        <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":"pełny plik GRAFIK PRO"}. Tryb zastąpienia jest dostępny wyłącznie dla kompletnej bazy {EXPECTED_ACTIVE_EMPLOYEES} aktywnych pracowników.</p>
+        <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":scope==="TEAM"?"prosty plik startowy GRAFIK PRO":"pełny plik GRAFIK PRO"}. Tryb zastąpienia przyjmuje rzeczywisty skład z pliku — bez stałej liczby pracowników w kodzie.</p>
         <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as FullImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as FullImportPreview).summary.employeesToCreate??0}</b></span><span><small>Zmiany stawek</small><b>{(preview as FullImportPreview).summary.financeChanges}</b></span><span className={mode==="REPLACE"&&Number((preview as FullImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as FullImportPreview).summary.employeesToArchive??0}</b></span></div>
         {mode==="REPLACE"&&Boolean((preview as FullImportPreview).configuration.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as FullImportPreview).configuration.employeesToArchive?.length})</summary><ul>{(preview as FullImportPreview).configuration.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
         {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{importIssueMessage(issue.message)}</small></span></div>)}
