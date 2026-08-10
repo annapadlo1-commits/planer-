@@ -213,13 +213,13 @@ test("a partial employee row does not overwrite preferences that are absent from
   assert.equal("shiftPeriodPreferences" in parsed.employees[0],false);
 });
 
-test("staffing and role-duty semantics stay empty when the workbook does not state them",async()=>{
+test("staffing defaults to SET while role-duty semantics stay empty when not stated",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Obsada:[{"Kod zmiany":"S1","Kod roli":"BARMAN","Liczba osób":"2"}],
     "Role-Obowiązki":[{"Kod roli":"BARMAN","Kod obowiązku":"ZAMKNIECIE"}],
   }));
   assert.equal(parsed.staffingRules[0].scenarioCode,"");
-  assert.equal(parsed.staffingRules[0].operation,"");
+  assert.equal(parsed.staffingRules[0].operation,"SET");
   assert.equal(parsed.roleDuties[0].assignmentMode,"");
 });
 
