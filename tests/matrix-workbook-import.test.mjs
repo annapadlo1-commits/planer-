@@ -124,6 +124,38 @@ test("shift period is derived only from exact start time, never from a name, cod
   ]);
 });
 
+test("Excel-native times are normalized to strict HH:MM before server validation",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Zmiany:[
+      {Kod:"RANO",Nazwa:"Poranna",Od:10/24,Do:"17:00:00",Dni:"1",Aktywna:"TAK"},
+      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"1899-12-30T17:00:00Z",Do:1/24,Dni:"5",Aktywna:"TAK"},
+    ],
+  }));
+
+  assert.deepEqual(parsed.shifts.map(shift=>[shift.startsAt,shift.endsAt,shift.shiftPeriod]),[
+    ["10:00","17:00","MORNING"],
+    ["17:00","01:00","EVENING"],
+  ]);
+});
+
+test("new role and location may be entered by name and receive stable codes in the same workbook",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Role:[{Kod:"",Nazwa:"Barista senior",Aktywna:"TAK"}],
+    Lokale:[{Kod:"",Nazwa:"Nowy lokal",Aktywna:"TAK"}],
+    Pracownicy:[{
+      Imię:"Anna",Nazwisko:"Nowak","E-mail":"anna@example.test",
+      "Kod roli":"Barista senior","Kody lokali":"Nowy lokal","Rodzaj umowy":"ZLECENIE",
+    }],
+  }));
+
+  assert.equal(parsed.roles[0].code,"BARISTA_SENIOR");
+  assert.equal(parsed.roles[0].sortOrder,"1");
+  assert.equal(parsed.locations[0].code,"NOWY_LOKAL");
+  assert.equal(parsed.locations[0].sortOrder,"1");
+  assert.equal(parsed.employees[0].primaryRoleCode,"BARISTA_SENIOR");
+  assert.deepEqual(parsed.employees[0].locationCodes,["NOWY_LOKAL"]);
+});
+
 test("Apps Script Sunday code ND and duty column aliases are preserved",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     BAZA_PRACOWNIKÓW:[{
