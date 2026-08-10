@@ -15,7 +15,7 @@ export type SolverScenario = {
   profileMode?: "BASELINE" | "PERIOD";
 };
 
-export type SolverRole = { id: string; code: string; name: string };
+export type SolverRole = { id: string; code: string; name: string; color?: string | null; logicalId?: string | null };
 export type SolverLocation = { id: string; code: string; name: string };
 
 export type SolverConfiguration = {
@@ -1066,10 +1066,17 @@ export async function loadSolverConfiguration(
         available: Boolean(item.available),
       };
     }) };
+  const roleColoursPayload = record(await rpc(client, "optimizer_role_colours_uat_v1", { p_month: monthStart }));
+  const roleColours = new Map((Array.isArray(roleColoursPayload.roles) ? roleColoursPayload.roles : []).map(value => {
+    const item = record(value);
+    return [String(item.id ?? ""), { color: item.color ? String(item.color) : null, logicalId: item.logicalId ? String(item.logicalId) : null }] as const;
+  }));
   const roleResult = { data: (Array.isArray(configurationPayload.roles)
     ? configurationPayload.roles : []).map(value => {
       const item = record(value);
-      return { id: String(item.id ?? ""), code: String(item.code ?? ""), name: String(item.name ?? "") };
+      const id = String(item.id ?? "");
+      return { id, code: String(item.code ?? ""), name: String(item.name ?? ""),
+        color: roleColours.get(id)?.color ?? null, logicalId: roleColours.get(id)?.logicalId ?? null };
     }) };
   const locationResult = { data: (Array.isArray(configurationPayload.locations)
     ? configurationPayload.locations : []).map(value => {
