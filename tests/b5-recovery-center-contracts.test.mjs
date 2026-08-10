@@ -4,6 +4,8 @@ import {readFile} from "node:fs/promises";
 
 const migrationUrl=new URL("../supabase/migrations/20260809210000_b4plus_b5_recovery_center.sql",import.meta.url);
 const applyMigrationUrl=new URL("../supabase/migrations/20260809223000_b5_recovery_draft_application.sql",import.meta.url);
+const draftFixMigrationUrl=new URL("../supabase/migrations/20260810103000_b5_recovery_draft_selection_fix.sql",import.meta.url);
+const candidateFixMigrationUrl=new URL("../supabase/migrations/20260810111500_b5_recovery_candidate_parity_fix.sql",import.meta.url);
 
 test("B5 recovery schema is RLS protected and exposes the complete audited workflow",async()=>{
   const sql=await readFile(migrationUrl,"utf8");
@@ -40,6 +42,32 @@ test("manager recovery center contains structural diagnosis, three repair modes 
   assert.match(source,/bez cichej zmiany grafiku/i);
   assert.match(source,/next\.budget\?\.amount/);
   assert.match(source,/next\.budget\?\.warningPercent/);
+  assert.match(source,/AWARYJNA PULA DLA TEGO INCYDENTU/);
+  assert.match(source,/incidentAdHoc/);
+});
+
+test("recovery errors expose PostgREST details instead of object Object",async()=>{
+  const client=await readFile(new URL("../lib/recovery-center.ts",import.meta.url),"utf8");
+  assert.match(client,/record\?\.details/);
+  assert.match(client,/nested\?\.message/);
+  assert.match(client,/message !== "\[object Object\]"/);
+});
+
+test("recovery draft moves editor selection without changing published schedule references",async()=>{
+  const sql=await readFile(draftFixMigrationUrl,"utf8");
+  assert.match(sql,/update public\.plan_variants_v2 set selected=false[\s\S]*where run_id=v_run\.id and selected/);
+  assert.match(sql,/published schedule reference remains untouched/i);
+  assert.doesNotMatch(sql,/update\s+public\.published_schedules_v2/i);
+  assert.doesNotMatch(sql,/update\s+public\.published_role_schedules_v2/i);
+});
+
+test("green recovery candidates use the same Matrix daily and adjacent-shift rules as final save",async()=>{
+  const sql=await readFile(candidateFixMigrationUrl,"utf8");
+  assert.match(sql,/variant_primary_conflict_reasons_uat_v2/);
+  assert.match(sql,/ONE_PRIMARY_SHIFT_PER_DAY/);
+  assert.match(sql,/CONSECUTIVE_SHIFT_SEQUENCE/);
+  assert.match(sql,/Osiągnięty dzienny limit zmian z konfiguracji firmy/);
+  assert.match(sql,/not \(primary_conflicts && array/);
 });
 
 test("employee offer response and manager navigation are wired into the application",async()=>{
