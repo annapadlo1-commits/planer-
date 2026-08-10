@@ -5,6 +5,7 @@ import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "..");
 const editor = fs.readFileSync(path.join(root, "components", "MatrixV2Editor.tsx"), "utf8");
+const importer = fs.readFileSync(path.join(root, "lib", "matrix-workbook-import.ts"), "utf8");
 const migration = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260810200000_uat_quick_start_import_identity_reconnect.sql"),
   "utf8",
@@ -58,11 +59,19 @@ test("quick-start import drops stale detailed relations and has a bounded RPC ti
 
 test("incoming dictionaries and shifts exist before staffing validation", () => {
   assert.match(guidedImportOrderFix, /matrix_v2_seed_import_shifts_uat_v1/);
-  assert.ok(guidedImportOrderFix.indexOf("'PRE'") < guidedImportOrderFix.indexOf("matrix_v2_seed_import_shifts_uat_v1"));
-  assert.ok(guidedImportOrderFix.indexOf("matrix_v2_seed_import_shifts_uat_v1") < guidedImportOrderFix.indexOf("matrix_v2_import_preview_uat_v5"));
-  assert.match(guidedImportOrderFix, /when not solver_private\.matrix_v2_json_bool_uat_v1\(rule\.value->'active'\)/);
-  assert.match(guidedImportOrderFix, /set search_path=''/);
-  assert.match(guidedImportOrderFix, /revoke all on function solver_private\.matrix_v2_seed_import_shifts_uat_v1/);
+  const preCall=guidedImportOrderFix.indexOf("'PRE'");
+  const seedCall=guidedImportOrderFix.indexOf("matrix_v2_seed_import_shifts_uat_v1",preCall);
+  const previewCall=guidedImportOrderFix.indexOf("matrix_v2_import_preview_uat_v5",seedCall);
+  assert.ok(preCall < seedCall);
+  assert.ok(seedCall < previewCall);
+  assert.match(guidedImportOrderFix, /else row\.value\|\|jsonb_build_object\('operation','SET','countValue','0'\)/);
+  assert.match(guidedImportOrderFix, /set search_path\s*=\s*''/);
+  assert.match(guidedImportOrderFix, /revoke all on function[\s\S]*solver_private\.matrix_v2_seed_import_shifts_uat_v1/);
+});
+
+test("optional shift order receives a stable numeric default before the UAT RPC", () => {
+  assert.match(importer, /const shifts=shiftRows\.map\(\(row,index\)=>/);
+  assert.match(importer, /sortOrder:importCell\(row,"Kolejność","sortOrder"\)\|\|String\(index\+1\)/);
 });
 
 test("import UI explains errors and separates everyday setup from backup restore", () => {
