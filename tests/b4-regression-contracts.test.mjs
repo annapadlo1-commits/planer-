@@ -293,7 +293,7 @@ test("location filter keeps the issue summary, badge and empty state consistent"
 test("role cards hide engine jargon and optional operational tools stay collapsed", async () => {
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   assert.match(modules,/role-plan-cards compact/);
-  assert.match(modules,/roleCardStyle\(role\.id\)/);
+  assert.match(modules,/roleCardStyle\(role\.id,role\.color\)/);
   assert.doesNotMatch(modules,/<strong>OR-Tools<\/strong>/);
   assert.doesNotMatch(modules,/Scenariusze, warianty i analiza OR-Tools/);
   assert.match(modules,/<details className="operational-additional-tools">/);
@@ -318,7 +318,7 @@ test("employee and company calendars open a filterable day workspace", async () 
   assert.match(modules,/company-day-workspace/);
   assert.match(modules,/Wszystkie role/);
   assert.match(modules,/Wszystkie lokale/);
-  assert.match(modules,/roleCardStyle\(assignment\.roleId\)/);
+  assert.match(modules,/roleCardStyle\(assignment\.roleId,roleColors\[assignment\.roleId\]\)/);
   assert.match(css,/\.company-day-filters/);
   assert.match(css,/\.employee-coworker-grid/);
 });
@@ -353,6 +353,14 @@ test("solver honors Matrix strategy budgets and fair-distribution tier order", a
   assert.match(sql,/version\.status = 'DRAFT'/);
   assert.match(gateway,/"fairnessIncumbentGuard"/);
   assert.match(gateway,/"verifiedZeroIncumbent"/);
+});
+
+test("relaxed comparison reserves solver time for every remaining business tier", async () => {
+  const engine=await readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py",import.meta.url),"utf8");
+  assert.match(engine,/remaining_tier_count = len\(ordered_tiers\) - tier_index \+ 1/);
+  assert.match(engine,/usable_tier_budget \/ max\(1, remaining_tier_count\)/);
+  assert.match(engine,/time_limit_seconds=tier_time_budget/);
+  assert.match(engine,/"timeBudgetSeconds": round\(tier_time_budget, 3\)/);
 });
 
 test("team catalog uses the same explicit target and hard limit semantics as the solver", async () => {
