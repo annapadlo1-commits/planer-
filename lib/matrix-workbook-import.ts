@@ -38,6 +38,11 @@ function importBoolean(value:string,defaultValue=false){
 
 function importList(value:string){return value.split(/[;,|]/).map(item=>item.trim()).filter(Boolean);}
 
+function importCode(value:string){
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .toLocaleUpperCase("pl-PL").replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+}
+
 function importDays(value:string){
   const labels:Record<string,number>={pon:1,wt:2,sr:3,śr:3,czw:4,pt:5,sob:6,nd:7,nie:7,niedz:7};
   return importList(value).map(item=>Number(item)||labels[item.toLocaleLowerCase("pl-PL")]).filter(day=>Number.isInteger(day)&&day>=1&&day<=7);
@@ -97,13 +102,34 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     if(!trimmed)return "";
     if(/^\d{4}-\d{2}-\d{2}$/.test(trimmed))return trimmed;
     if(/^\d{5}(?:\.\d+)?$/.test(trimmed)){
-      const parsed=XLSX.SSF.parse_date_code(Number(trimmed));
-      if(parsed)return `${String(parsed.y).padStart(4,"0")}-${String(parsed.m).padStart(2,"0")}-${String(parsed.d).padStart(2,"0")}`;
+      const parsed=new Date(Date.UTC(1899,11,30)+Math.floor(Number(trimmed))*86_400_000);
+      if(!Number.isNaN(parsed.valueOf()))return parsed.toISOString().slice(0,10);
     }
     const match=trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/);
     if(match){
       const year=match[3].length===2?2000+Number(match[3]):Number(match[3]);
       return `${String(year).padStart(4,"0")}-${String(Number(match[2])).padStart(2,"0")}-${String(Number(match[1])).padStart(2,"0")}`;
+    }
+    return trimmed;
+  };
+  const normalizeTime=(value:string)=>{
+    const trimmed=value.trim();
+    if(!trimmed)return "";
+    const clock=trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:[.,]\d+)?)?$/);
+    if(clock){
+      const hour=Number(clock[1]),minute=Number(clock[2]);
+      if(hour>=0&&hour<=23&&minute>=0&&minute<=59)return `${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`;
+    }
+    const numeric=trimmed.replace(",",".");
+    if(/^\d+(?:\.\d+)?$/.test(numeric)){
+      const fraction=((Number(numeric)%1)+1)%1;
+      const minutes=Math.round(fraction*24*60)%(24*60);
+      return `${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(minutes%60).padStart(2,"0")}`;
+    }
+    const embedded=trimmed.match(/(?:^|[T\s])(\d{1,2}):(\d{2})(?::\d{2})?(?:$|[\sZ+-])/);
+    if(embedded){
+      const hour=Number(embedded[1]),minute=Number(embedded[2]);
+      if(hour>=0&&hour<=23&&minute>=0&&minute<=59)return `${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`;
     }
     return trimmed;
   };
@@ -118,17 +144,29 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
     requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
   };
-  const namedRows=(sheetNames:string[])=>rows(sheetNames).map(row=>({
-    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
+  const namedRows=(sheetNames:string[])=>rows(sheetNames).map((row,index)=>({
+    code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
-    sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+    sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
   }));
   const roles=namedRows(["Role","Roles"]);
-  const locations=rows(["Lokale","Locations"]).map(row=>({
-    code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
-    timezone:importCell(row,"Strefa czasowa","timezone"),sortOrder:importCell(row,"Kolejność","sortOrder"),
+  const roleAliases=new Map<string,string>();
+  for(const role of roles){
+    const code=String(role.code??"");
+    for(const alias of [code,String(role.name??"")])if(alias.trim())roleAliases.set(importCode(alias),code);
+  }
+  const normalizeRoleCode=(value:string)=>roleAliases.get(importCode(value))??importCode(value);
+  const locations=rows(["Lokale","Locations"]).map((row,index)=>({
+    code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
+    timezone:importCell(row,"Strefa czasowa","timezone"),sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),
     active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
   }));
+  const locationAliases=new Map<string,string>();
+  for(const location of locations){
+    const code=String(location.code??"");
+    for(const alias of [code,String(location.name??"")])if(alias.trim())locationAliases.set(importCode(alias),code);
+  }
+  const normalizeLocationCode=(value:string)=>locationAliases.get(importCode(value))??importCode(value);
   const duties=namedRows(["Obowiązki","Obowiazki","Duties"]);
   const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
     code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
@@ -162,11 +200,11 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     multiplierBasisPoints:importMultiplierBasisPoints(importCell(row,"Mnożnik","multiplier")),thresholdMinutes:importCell(row,"Próg minut","thresholdMinutes"),
     currency:importCell(row,"Waluta","currency").toUpperCase(),priority:importCell(row,"Priorytet","priority"),stackingGroup:importCell(row,"Grupa łączenia","stackingGroup"),
     stackingMode:importCell(row,"Sposób łączenia","stackingMode").toUpperCase(),days:importDays(importCell(row,"Dni","days")),
-    localStart:importCell(row,"Od","localStart"),localEnd:importCell(row,"Do","localEnd"),endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay")),
+    localStart:normalizeTime(importCell(row,"Od","localStart")),localEnd:normalizeTime(importCell(row,"Do","localEnd")),endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay")),
     validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
     conditionExpression:importJson(importCell(row,"Warunek JSON","conditionExpression")),formulaExpression:importJson(importCell(row,"Formuła JSON","formulaExpression")),
-    roleCodes:importList(importCell(row,"Kody ról","roleCodes")),dutyCodes:importList(importCell(row,"Kody obowiązków","dutyCodes")),
-    locationCodes:importList(importCell(row,"Kody lokali","locationCodes")),shiftCodes:importList(importCell(row,"Kody zmian","shiftCodes")),
+    roleCodes:importList(importCell(row,"Kody ról","roleCodes")).map(normalizeRoleCode),dutyCodes:importList(importCell(row,"Kody obowiązków","dutyCodes")),
+    locationCodes:importList(importCell(row,"Kody lokali","locationCodes")).map(normalizeLocationCode),shiftCodes:importList(importCell(row,"Kody zmian","shiftCodes")),
     sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
   const scenarioPayRuleOverrides=rows(["Dodatki scenariuszy","Scenario Pay Rules"]).map(row=>({
@@ -177,7 +215,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   }));
   const scenarioBudgets=rows(["Budżety scenariuszy","Budzety scenariuszy","Scenario Budgets"]).map(row=>({
     scenarioCode:importCell(row,"Kod scenariusza","scenarioCode").toUpperCase(),budgetMonth:normalizeDate(importCell(row,"Miesiąc","budgetMonth")),
-    locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),
+    locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
     dutyCode:importCell(row,"Kod obowiązku","dutyCode").toUpperCase(),operation:importCell(row,"Operacja","operation").toUpperCase(),
     amountMinor:importMoneyMinor(importCell(row,"Budżet","amount")),multiplierBasisPoints:importMultiplierBasisPoints(importCell(row,"Mnożnik","multiplier")),
     currency:importCell(row,"Waluta","currency").toUpperCase(),hardLimit:importBoolean(importCell(row,"Twardy limit","hardLimit")),
@@ -202,7 +240,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       overtimeAllowed:importBoolean(importCell(row,`${code}_NADGODZINY`)),
       homeLocation:false,
     }));
-    const baseLocation=importCell(row,"LOKALIZACJA_BAZOWA*","LOKALIZACJA_BAZOWA","Lokal bazowy","Kod lokalu bazowego");
+    const baseLocation=normalizeLocationCode(importCell(row,"LOKALIZACJA_BAZOWA*","LOKALIZACJA_BAZOWA","Lokal bazowy","Kod lokalu bazowego"));
     const sourceLocationGrants=locationGrants.map(grant=>({
       ...grant,
       standardAllowed:grant.standardAllowed||grant.code.toLocaleUpperCase("pl-PL")===baseLocation.toLocaleUpperCase("pl-PL"),
@@ -217,8 +255,8 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       employeeNo:sourceEmployeeLayout&&!/^GP-\d+$/i.test(sourceEmployeeNo)?"":sourceEmployeeNo||importCell(row,"Numer pracownika","employeeNo"),
       sourceEmployeeNo:sourceEmployeeNo||undefined,
       firstName:importCell(row,"Imię","firstName")||combinedName.firstName,lastName:importCell(row,"Nazwisko","lastName")||combinedName.lastName,
-      email:importCell(row,"E-mail","Email","EMAIL*"),primaryRoleCode:importCell(row,"Kod roli","primaryRoleCode","ROLA_GŁÓWNA*","ROLA_GŁÓWNA"),
-      locationCodes:locationColumns.length?sourceLocationGrants.filter(grant=>grant.standardAllowed).map(grant=>grant.code):importList(importCell(row,"Kody lokali","locationCodes")),
+      email:importCell(row,"E-mail","Email","EMAIL*"),primaryRoleCode:normalizeRoleCode(importCell(row,"Kod roli","primaryRoleCode","ROLA_GŁÓWNA*","ROLA_GŁÓWNA")),
+      locationCodes:locationColumns.length?sourceLocationGrants.filter(grant=>grant.standardAllowed).map(grant=>normalizeLocationCode(grant.code)):importList(importCell(row,"Kody lokali","locationCodes")).map(normalizeLocationCode),
       employmentStart:normalizeDate(importCell(row,"Zatrudniony od","employmentStart","DATA_ZATRUDNIENIA_OD*","DATA_ZATRUDNIENIA_OD")),employmentEnd:normalizeDate(importCell(row,"Zatrudniony do","employmentEnd","DATA_ZATRUDNIENIA_DO")),
       nominalHours,maximumMonthlyHours:importCell(row,"Limit miesięczny godzin","maximumMonthlyHours"),
       maximumWeeklyHours:importCell(row,"Limit tygodniowy godzin","maximumWeeklyHours","MAX_GODZIN_TYGODNIOWO"),maximumConsecutiveDays:importCell(row,"Maks. kolejnych dni","maximumConsecutiveDays","MAX_DNI_Z_RZĘDU"),
@@ -255,12 +293,12 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const group=importCell(row,"GRUPA_DNI");
     const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:baseCode;
     const day=importCell(row,"DZIEŃ_TYGODNIA");
-    const startsAt=importCell(row,"Od","startsAt","START");
+    const startsAt=normalizeTime(importCell(row,"Od","startsAt","START"));
     return {
-      code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
+      code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
       // Pora jest wyłącznie techniczną wartością pochodną. Użytkownik podaje
       // dokładne godziny, a import nigdy nie ufa ręcznemu MORNING/MIDDLE/EVENING.
-      shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:importCell(row,"Do","endsAt","KONIEC"),
+      shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:normalizeTime(importCell(row,"Do","endsAt","KONIEC")),
       endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni","days")),
       sortOrder:importCell(row,"Kolejność","sortOrder"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
@@ -274,8 +312,8 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const group=importCell(row,"GRUPA_DNI");
     const sourceShift=importCell(row,"ZMIANA_ID");
     return {
-      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID"),
-      roleCode:importCell(row,"Kod roli","roleCode","ROLA"),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase(),
+      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
+      roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA")),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase(),
       countValue:importCell(row,"Liczba osób","countValue","OPTYMALNIE_OSÓB","MIN_OSÓB"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
@@ -283,31 +321,31 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const sourceMode=importCell(row,"TYP_PRZYDZIAŁU","ASSIGNMENT_MODE").toLocaleUpperCase("pl-PL");
     const assignmentMode=["WYMÓG_ZMIANY","REQUIRED"].includes(sourceMode)?"REQUIRED":["OPCJONALNY","OPTIONAL"].includes(sourceMode)?"OPTIONAL":"";
     return {
-      roleCode:importCell(row,"ROLA_WYMAGANA"),dutyCode:importCell(row,"KOD"),assignmentMode,
+      roleCode:normalizeRoleCode(importCell(row,"ROLA_WYMAGANA")),dutyCode:importCell(row,"KOD"),assignmentMode,
       minimumCount:assignmentMode==="REQUIRED"?"1":"0",shiftObligation:assignmentMode==="REQUIRED",
       shiftPeriod:importCell(row,"PORA","SHIFT_PERIOD").toUpperCase(),active:true,
     };
   }):rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]).map(row=>({
-    roleCode:importCell(row,"Kod roli","roleCode"),dutyCode:importCell(row,"Kod obowiązku","dutyCode"),assignmentMode:importCell(row,"Znaczenie","assignmentMode").toUpperCase(),
+    roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),dutyCode:importCell(row,"Kod obowiązku","dutyCode"),assignmentMode:importCell(row,"Znaczenie","assignmentMode").toUpperCase(),
     minimumCount:importCell(row,"Minimum","minimumCount"),shiftObligation:importBoolean(importCell(row,"Obowiązek zmianowy","shiftObligation")),
     shiftPeriod:importCell(row,"Pora","shiftPeriod").toUpperCase(),active:importBoolean(importCell(row,"Aktywne","active"),true),
   }));
 
   const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>({
-    employeeNo:importCell(row,"Numer pracownika","employeeNo"),roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
     isPrimary:importBoolean(importCell(row,"Podstawowa","isPrimary")),canLead:importBoolean(importCell(row,"Może zatwierdzać","canLead")),
     validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
     active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
   const employeeLocationsDetailed=rows(["Lokale pracowników","Lokale pracownikow","Employee Locations"]).map(row=>({
-    employeeNo:importCell(row,"Numer pracownika","employeeNo"),locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),
     standardAllowed:importBoolean(importCell(row,"Zwykła praca","standardAllowed")),overtimeAllowed:importBoolean(importCell(row,"Dodatkowa praca","overtimeAllowed")),
     homeLocation:importBoolean(importCell(row,"Lokal bazowy","homeLocation")),validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),
     validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
   const employeeCapabilities=rows(["Kompetencje pracowników","Kompetencje pracownikow","Employee Capabilities"]).map(row=>({
     employeeNo:importCell(row,"Numer pracownika","employeeNo"),dutyCode:importCell(row,"Kod obowiązku","dutyCode").toUpperCase(),
-    roleCode:importCell(row,"Kod roli","roleCode").toUpperCase(),locationCode:importCell(row,"Kod lokalu","locationCode").toUpperCase(),
+    roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),
     validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
     active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
