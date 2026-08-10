@@ -138,6 +138,18 @@ test("Excel-native times are normalized to strict HH:MM before server validation
   ]);
 });
 
+test("quick-start shifts without an optional order never emit an empty integer",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Zmiany:[
+      {Kod:"RANO",Nazwa:"Poranna",Od:"10:00",Do:"17:00",Dni:"1",Aktywna:"TAK"},
+      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"17:00",Do:"01:00",Dni:"5",Aktywna:"TAK"},
+    ],
+  }));
+
+  assert.deepEqual(parsed.shifts.map(shift=>shift.sortOrder),["1","2"]);
+  assert.ok(parsed.shifts.every(shift=>shift.sortOrder!==""));
+});
+
 test("new role and location may be entered by name and receive stable codes in the same workbook",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Role:[{Kod:"",Nazwa:"Barista senior",Aktywna:"TAK"}],
