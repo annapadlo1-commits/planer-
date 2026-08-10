@@ -316,7 +316,11 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const sourceShift=importCell(row,"ZMIANA_ID");
     return {
       scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
-      roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA")),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase(),
+      roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA")),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),
+      // W prostym imporcie pracodawca podaje docelową liczbę osób. Pole
+      // „Operacja” jest technicznym detalem importu pełnej kopii, dlatego jego
+      // brak oznacza bezpieczne i intuicyjne SET zamiast blokować cały plik.
+      operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase()||"SET",
       countValue:importCell(row,"Liczba osób","countValue","OPTYMALNIE_OSÓB","MIN_OSÓB"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
