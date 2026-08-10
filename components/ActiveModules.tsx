@@ -27,7 +27,10 @@ import {
 } from "@/lib/solver-v2";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-function roleCardStyle(value:string):CSSProperties{
+function roleCardStyle(value:string,color?:string|null):CSSProperties{
+  if(color && /^#[0-9a-f]{6}$/i.test(color)){
+    return {"--role-color":color,"--role-soft":`${color}18`} as CSSProperties;
+  }
   let hash=0x811c9dc5;
   for(const character of value){hash^=character.charCodeAt(0);hash=Math.imul(hash,0x01000193)>>>0;}
   const hue=hash%360;
@@ -251,6 +254,10 @@ export function ActiveModules({
   portalMonthRef.current = selectedMonthDate;
   const dynamicRoleNames = useMemo(
     () => Object.fromEntries(solverRoles.flatMap((role) => [[role.id, role.name], [role.code, role.name], [role.name, role.name]])),
+    [solverRoles],
+  );
+  const dynamicRoleColors = useMemo(
+    () => Object.fromEntries(solverRoles.flatMap((role) => [[role.id, role.color ?? ""], [role.code, role.color ?? ""], [role.name, role.color ?? ""]])),
     [solverRoles],
   );
 
@@ -607,7 +614,7 @@ export function ActiveModules({
     />
     <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Grafiki ról korzystają wyłącznie z opublikowanej konfiguracji firmy{solverMatrixEffectiveFrom?` obowiązującej od ${solverMatrixEffectiveFrom}`:""}</strong><small>Zmiany zapisane tylko w wersji roboczej nie są jeszcze widoczne dla generatora.</small></span></div>
     {operationalContext && <OperationalCalendarPanel context={operationalContext} month={month} busy={busy} save={saveOperationalEvent} review={reviewAvailability} />}
-    <div className="role-plan-cards compact">{solverRoles.map((role) => <article key={role.id} style={roleCardStyle(role.id)}>
+    <div className="role-plan-cards compact">{solverRoles.map((role) => <article key={role.id} style={roleCardStyle(role.id,role.color)}>
       <i />
       <div><small>GRAFIK ROLI</small><h3>{role.name}</h3></div>
       {solverEngine === "SHADOW"&&<span className="workflow-status empty">Test bez publikacji</span>}
@@ -630,6 +637,7 @@ export function ActiveModules({
       timezone={timezone}
       dynamic={solverEngine === "ORTOOLS_V2"}
       roleNames={dynamicRoleNames}
+      roleColors={dynamicRoleColors}
       openAvailability={() => portal.timeConstraints ? setAvailabilityOpen(true) : fail("Odśwież portal przed edycją dostępności.")}
       openPreferences={() => portal.shiftPreferences ? setShiftPreferencesOpen(true) : fail("Odśwież portal przed edycją preferencji.")}
       requestSwap={createSwapRequest}
@@ -751,12 +759,13 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   </section>;
 }
 
-function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section, availabilityWorkspace, locations, saveAvailability, fail }: {
+function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColors, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section, availabilityWorkspace, locations, saveAvailability, fail }: {
   portal: PortalWorkspace;
   month: string;
   timezone: string;
   dynamic: boolean;
   roleNames: Record<string, string>;
+  roleColors: Record<string, string>;
   openAvailability: () => void;
   openPreferences: () => void;
   requestSwap: (assignmentId: string, targetEmployeeId: string | null, message: string) => Promise<boolean>;
@@ -835,13 +844,13 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, openAvail
       <div className="employee-day-shifts">{selectedDayAssignments.map(assignment=>{
         const query=daySearch.trim().toLocaleLowerCase("pl-PL");
         const coworkers=(assignment.coworkers||[]).filter(coworker=>!query||`${coworker.name} ${roleNames[coworker.role]??coworker.role} ${assignment.location} ${portalShiftLabel(assignment)}`.toLocaleLowerCase("pl-PL").includes(query));
-        return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</small></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role)} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
+        return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</small></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role,roleColors[coworker.role])} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
       })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany.</p>}</div>
     </section>}
     </>}
     {showAvailability&&!showMine&&availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} onSelectDay={setSelectedDay}/>} 
     {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
-    {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} />}
+    {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} roleColors={roleColors} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => setSelected(null)} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} />}
   </>;
 }
@@ -857,7 +866,7 @@ function ShiftSwapBoardPanel({ board, busy, decideAsEmployee, decideAsLeader }: 
   return <section className="swap-board-card"><div className="matrix-demand-head"><div><h3><ArrowLeftRight /> Tablica zamian</h3><p>Przejęcie zmiany zawsze wymaga zgodności roli, lokalu, kompetencji, dostępności i odpoczynku. Po zgodzie pracownika decyzję podejmuje lider.</p></div><span>{activeCount} aktywnych • {visible.length} w historii</span></div>{visible.length ? <div className="swap-board-list">{visible.map(request => <article key={request.id}><div><small>{request.date} • {time(request.startsAt)}–{time(request.endsAt)}</small><h4>{request.shiftName} • {request.locationName}</h4><p><b>{request.proposerName}</b> • {request.roleName}{request.targetName?` → ${request.targetName}`:" • ogłoszenie otwarte"}{request.message ? ` — ${request.message}` : ""}</p>{request.acceptedByName&&<p>Przejęcie zaproponował(a): <b>{request.acceptedByName}</b></p>}</div><span className={`swap-status ${request.status.toLowerCase()}`}>{swapStatusLabel(request.status)}</span><div className="swap-actions">{request.status === "OPEN" && !request.isMine && request.eligible && <button className="primary-button" disabled={busy} onClick={() => void decideAsEmployee(request.id, "ACCEPT")}>Mogę przejąć</button>}{request.status === "OPEN" && !request.isMine && !request.eligible && <small>{swapReasonLabel(request.ineligibilityReasons[0])}</small>}{request.status === "OPEN" && request.targetEmployeeId === board.employeeId && <button className="secondary-button" disabled={busy} onClick={() => void decideAsEmployee(request.id, "REJECT")}>Odrzuć</button>}{request.requiresLeaderDecision && board.canManage && <><button className="primary-button" disabled={busy} onClick={() => void decideAsLeader(request.id, "APPROVE")}>Akceptuj jako lider</button><button className="secondary-button" disabled={busy} onClick={() => void decideAsLeader(request.id, "REJECT")}>Odrzuć</button></>}</div>{Boolean(request.history?.length)&&<details className="swap-audit"><summary>Historia decyzji • {request.history?.length} zdarzeń</summary>{request.history?.map(entry=><div key={entry.id}><span><b>{swapHistoryLabel(entry.action)}</b><small>{entry.actorName}</small></span><time>{new Intl.DateTimeFormat("pl-PL",{dateStyle:"short",timeStyle:"short"}).format(new Date(entry.createdAt))}</time></div>)}</details>}</article>)}</div> : <p className="empty-inline">Brak ogłoszeń o zamianie w tym miesiącu.</p>}</section>;
 }
 
-function CompanyScheduleCalendar({ calendar, month, timezone, events }: { calendar: CompanyCalendar; month: string; timezone: string; events: WorkforceCalendarEvent[] }) {
+function CompanyScheduleCalendar({ calendar, month, timezone, events, roleColors }: { calendar: CompanyCalendar; month: string; timezone: string; events: WorkforceCalendarEvent[]; roleColors: Record<string,string> }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [query,setQuery]=useState("");
   const [roleFilter,setRoleFilter]=useState("");
@@ -887,7 +896,7 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events }: { calend
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const assignments = byDate.get(date) || [];
     return <button type="button" key={index} className={`${!day ? "blank" : ""} ${eventDates.has(date) ? "has-event" : ""} ${selectedDate === date ? "selected" : ""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day && <><b>{day}</b><strong>{assignments.length} os.</strong>{assignments.some(assignment => assignment.isSwap) && <small>Zamiana</small>}{eventDates.has(date) && <Megaphone />}</>}</button>;
-  })}</div>{selectedDate && <section className="company-day-workspace" ref={detailRef}><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId)} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
+  })}</div>{selectedDate && <section className="company-day-workspace" ref={detailRef}><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId,roleColors[assignment.roleId])} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
 }
 
 function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { workspace: PortalShiftPreferences; month: string; close: () => void; save: (preferences: Record<ShiftPeriod, ShiftPreferenceLevel>) => Promise<boolean>; busy: boolean }) {
