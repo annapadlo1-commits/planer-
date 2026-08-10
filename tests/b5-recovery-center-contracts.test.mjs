@@ -38,6 +38,8 @@ test("manager recovery center contains structural diagnosis, three repair modes 
   assert.match(source,/Budżet i limity/);
   assert.match(source,/Rodzaj współpracy/);
   assert.match(source,/bez cichej zmiany grafiku/i);
+  assert.match(source,/next\.budget\?\.amount/);
+  assert.match(source,/next\.budget\?\.warningPercent/);
 });
 
 test("employee offer response and manager navigation are wired into the application",async()=>{
