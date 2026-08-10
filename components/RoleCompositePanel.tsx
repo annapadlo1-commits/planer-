@@ -175,15 +175,27 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     const requestId = ++candidateRequestRef.current;
     if (!silent) setLoading(true);
     try {
-      const result = await getRoleCompositeCandidates(supabase, month, scenarioId);
+      const [result, latestOverview] = await Promise.all([
+        getRoleCompositeCandidates(supabase, month, scenarioId),
+        getRolePublicationOverview(supabase, month),
+      ]);
       if (requestId !== candidateRequestRef.current) return null;
       if (result.month.slice(0, 7) !== month.slice(0, 7) || result.scenario.id !== scenarioId) {
         throw new Error("ROLE_COMPOSITE_REFERENCE_MISMATCH");
       }
       setCandidates(result);
-      const selectedVariantIds = result.roles.flatMap(role => role.variant ? [role.variant.id] : []);
-      if (selectedVariantIds.length === result.roles.length && selectedVariantIds.length > 0) {
-        setPreflight(await getRoleCompositePreflight(supabase, month, scenarioId, selectedVariantIds));
+      setOverview(latestOverview);
+      const publishedRoleById = new Map(
+        latestOverview.roles
+          .filter(publication => publication.scenario.id === scenarioId)
+          .map(publication => [publication.role.id, publication] as const),
+      );
+      const publishedVariantIds = result.roles.flatMap(role => {
+        const publication = publishedRoleById.get(role.id);
+        return publication?.variantId ? [publication.variantId] : [];
+      });
+      if (publishedVariantIds.length === result.roles.length && publishedVariantIds.length > 0) {
+        setPreflight(await getRoleCompositePreflight(supabase, month, scenarioId, publishedVariantIds));
       } else {
         setPreflight(null);
       }
@@ -279,20 +291,28 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
   if (engine !== "ORTOOLS_V2") return null;
 
-  const missingRoles = candidates?.roles.filter(role => !role.variant || candidates.missingRoleIds.includes(role.id)) ?? [];
+  const publishedRoleById = new Map(
+    (overview?.roles ?? [])
+      .filter(publication => publication.scenario.id === scenarioId)
+      .map(publication => [publication.role.id, publication] as const),
+  );
+  const missingRoles = candidates?.roles.filter(role => !publishedRoleById.get(role.id)) ?? [];
   const unknownMissingCount = candidates
     ? candidates.missingRoleIds.filter(id => !candidates.roles.some(role => role.id === id)).length
     : 0;
-  const variantIds = candidates?.roles.flatMap(role => role.variant ? [role.variant.id] : []) ?? [];
+  const variantIds = candidates?.roles.flatMap(role => {
+    const publication = publishedRoleById.get(role.id);
+    return publication?.variantId ? [publication.variantId] : [];
+  }) ?? [];
   const ready = Boolean(
-    candidates?.ready
+    candidates
     && candidates.roles.length > 0
     && missingRoles.length === 0
     && unknownMissingCount === 0
     && variantIds.length === candidates.roles.length,
   );
-  const assignmentCount = candidates?.roles.reduce((sum, role) => sum + (role.variant?.assignmentCount ?? 0), 0) ?? 0;
-  const unfilledCount = candidates?.roles.reduce((sum, role) => sum + (role.variant?.unfilledCount ?? 0), 0) ?? 0;
+  const assignmentCount = candidates?.roles.reduce((sum, role) => sum + (publishedRoleById.get(role.id)?.assignmentCount ?? 0), 0) ?? 0;
+  const unfilledCount = candidates?.roles.reduce((sum, role) => sum + (publishedRoleById.get(role.id)?.unfilledCount ?? 0), 0) ?? 0;
   const publicationReasonLength = publicationReason.trim().length;
   const publicationReasonMissing = Math.max(0, 10 - publicationReasonLength);
   const publicationReasonInvalid = unfilledCount > 0 && publicationReasonLength < 10;
@@ -331,19 +351,31 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     setBusy(true);
     setMessage("");
     try {
-      const fresh = await getRoleCompositeCandidates(supabase, month, selectedScenario.id);
+      const [fresh, freshOverview] = await Promise.all([
+        getRoleCompositeCandidates(supabase, month, selectedScenario.id),
+        getRolePublicationOverview(supabase, month),
+      ]);
       setCandidates(fresh);
-      const freshIds = fresh.roles.flatMap(role => role.variant ? [role.variant.id] : []);
-      if (!fresh.ready || fresh.missingRoleIds.length > 0 || freshIds.length !== fresh.roles.length) {
-        setMessage("Nie wszystkie wymagane role mają teraz wybrany wariant. Uzupełnij braki i odśwież zestaw.");
+      setOverview(freshOverview);
+      const freshPublishedRoleById = new Map(
+        freshOverview.roles
+          .filter(publication => publication.scenario.id === selectedScenario.id)
+          .map(publication => [publication.role.id, publication] as const),
+      );
+      const freshIds = fresh.roles.flatMap(role => {
+        const publication = freshPublishedRoleById.get(role.id);
+        return publication?.variantId ? [publication.variantId] : [];
+      });
+      if (fresh.missingRoleIds.some(id => !fresh.roles.some(role => role.id === id)) || freshIds.length !== fresh.roles.length) {
+        setMessage("Nie wszystkie wymagane role mają teraz opublikowany grafik. Uzupełnij braki i odśwież zestaw.");
         return;
       }
       if (!sameVariantSet(variantIds, freshIds)) {
         setMessage("Zestaw wybranych wariantów zmienił się. Sprawdź odświeżoną listę i ponownie potwierdź publikację.");
         return;
       }
-      const freshAssignmentCount = fresh.roles.reduce((sum, role) => sum + (role.variant?.assignmentCount ?? 0), 0);
-      const freshUnfilledCount = fresh.roles.reduce((sum, role) => sum + (role.variant?.unfilledCount ?? 0), 0);
+      const freshAssignmentCount = fresh.roles.reduce((sum, role) => sum + (freshPublishedRoleById.get(role.id)?.assignmentCount ?? 0), 0);
+      const freshUnfilledCount = fresh.roles.reduce((sum, role) => sum + (freshPublishedRoleById.get(role.id)?.unfilledCount ?? 0), 0);
       const freshPreflight = await getRoleCompositePreflight(supabase, month, selectedScenario.id, freshIds);
       setPreflight(freshPreflight);
       if (freshPreflight.totalGaps > 0 && publicationReason.trim().length < 10) {
@@ -514,26 +546,28 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       </div>
 
       <div className="role-composite-roles">
-        {candidates.roles.map(role => <article className={role.variant ? "ready" : "missing"} key={role.id}>
+        {candidates.roles.map(role => {
+          const publication = publishedRoleById.get(role.id);
+          return <article className={publication ? "ready" : "missing"} key={role.id}>
           <span>
             <small>ROLA</small>
             <strong>{role.name}</strong>
           </span>
-          {role.variant
+          {publication
             ? <>
               <span className="role-composite-variant">
-                <small>{role.variant.strategy.name}</small>
-                <strong>{role.variant.name}</strong>
-                <em>{solutionLabel(role.variant.solverStatus)}</em>
+                <small>Opublikowany grafik roli</small>
+                <strong>{publication.name}</strong>
+                <em>Źródło scalenia • {new Date(publication.publishedAt).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" })}</em>
               </span>
               <span className="role-composite-counts">
-                <b>{role.variant.assignmentCount}</b><small>przydziałów</small>
-                <b>{role.variant.unfilledCount}</b><small>braków</small>
+                <b>{publication.assignmentCount}</b><small>przydziałów</small>
+                <b>{publication.unfilledCount}</b><small>braków</small>
               </span>
               <em className="role-composite-state"><Check/> Opublikowany</em>
             </>
             : <div className="role-composite-missing"><AlertTriangle/><span><strong>Brak opublikowanego grafiku</strong><small>Lider tej roli musi wybrać wariant i opublikować go dla zespołu.</small></span></div>}
-        </article>)}
+        </article>})}
       </div>
 
       {(missingRoles.length > 0 || unknownMissingCount > 0) && <div className="solver-v2-notice warning">
