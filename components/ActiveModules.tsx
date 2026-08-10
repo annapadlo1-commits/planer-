@@ -222,6 +222,7 @@ export function ActiveModules({
   timezone,
   onOpenSolverV2,
   portalSection = "overview",
+  allowUatMasterPersona = false,
 }: {
   month: string;
   view: View;
@@ -237,6 +238,7 @@ export function ActiveModules({
   currency: string;
   onOpenSolverV2?: (role: SolverRole) => void;
   portalSection?: EmployeePortalSection;
+  allowUatMasterPersona?: boolean;
 }) {
   const selectedMonthDate = `${month}-01`;
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -274,7 +276,7 @@ export function ActiveModules({
   }, [fail, supabase]);
 
   useEffect(() => {
-    if (!supabase || view !== "portal") {
+    if (!supabase || view !== "portal" || !allowUatMasterPersona) {
       setUatMaster(null);
       setUatMasterEmployeeId(null);
       setUatMasterSearch("");
@@ -287,7 +289,7 @@ export function ActiveModules({
       if (preview.enabled) setUatMaster({ ...preview, employees: preview.employees || [] });
     });
     return () => { current = false; };
-  }, [supabase, view]);
+  }, [allowUatMasterPersona, supabase, view]);
 
   const loadPortal = useCallback(async () => {
     const requestedMonth = selectedMonthDate;
