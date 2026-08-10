@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Loader2,
+  RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
   Users,
@@ -34,6 +35,39 @@ const stepIcons = {
   variants: SlidersHorizontal,
   readiness: ShieldCheck,
 } satisfies Record<SetupStepKey, typeof Building2>;
+
+const stepGuidance: Record<SetupStepKey, { purpose: string; actions: string[]; result: string }> = {
+  company: {
+    purpose: "Ustalamy wspólne zasady firmy, zanim powstaną role, zmiany i grafiki.",
+    actions: ["Sprawdź strefę czasową i walutę", "Dodaj wszystkie lokale, w których układasz grafik"],
+    result: "Każda późniejsza zmiana i stawka będzie liczona w prawidłowym miejscu i czasie.",
+  },
+  roles: {
+    purpose: "Role opisują stanowiska, a obowiązki tylko dodatkowe kwalifikacje potrzebne na wybranych zmianach.",
+    actions: ["Dodaj stanowiska używane w firmie", "Przypisz obowiązek tylko tam, gdzie jest naprawdę wymagany"],
+    result: "System nie będzie wymagał sztucznych obowiązków od każdej roli.",
+  },
+  shifts: {
+    purpose: "Szablon zmiany łączy lokal, godziny, dni tygodnia i wymaganą liczbę osób.",
+    actions: ["Dodaj godziny i dni każdej zmiany", "W tej samej karcie ustaw role i minimalną obsadę"],
+    result: "Generator otrzyma kompletną informację, kogo i kiedy ma zaplanować.",
+  },
+  employees: {
+    purpose: "Każda osoba potrzebuje roli, zwykłego lokalu pracy oraz danych umowy i stawki.",
+    actions: ["Dodaj lub zaimportuj zespół", "Uzupełnij role, lokale, limity i stawki dla miesiąca grafiku"],
+    result: "Profile będą gotowe do bezpiecznego użycia przez silnik i finanse.",
+  },
+  variants: {
+    purpose: "Warianty pokazują różne decyzje biznesowe, a nie trzy kopie tego samego grafiku.",
+    actions: ["Wybierz scenariusz bazowy", "Włącz strategie, które chcesz rzeczywiście porównywać"],
+    result: "Lider zobaczy koszt, pokrycie i równomierność dla każdego podejścia.",
+  },
+  readiness: {
+    purpose: "Ostatnia kontrola łączy wszystkie dane i wskazuje dokładne miejsce każdego problemu.",
+    actions: ["Otwórz wskazany problem", "Po naprawie uruchom kontrolę ponownie"],
+    result: "Dopiero pozytywny wynik odblokuje publikację konfiguracji i generator.",
+  },
+};
 
 function localDate(timezone: string) {
   const parts = new Intl.DateTimeFormat("en", {
@@ -63,6 +97,8 @@ export function ConfigurationJourney({
   const [serverReadiness, setServerReadiness] = useState<MatrixV2PublicationReadiness | null>(null);
   const [serverError, setServerError] = useState("");
   const [checking, setChecking] = useState(data.editable);
+  const [checkRevision, setCheckRevision] = useState(0);
+  const [showAllBlockers, setShowAllBlockers] = useState(false);
   const timezone = String(data.matrixVersion.settings?.timezone ?? "Europe/Warsaw");
   const signature = JSON.stringify({
     version: data.matrixVersion,
@@ -105,7 +141,7 @@ export function ConfigurationJourney({
       setServerReadiness(result.data as MatrixV2PublicationReadiness);
     });
     return () => { alive = false; };
-  }, [data.editable, month, signature, supabase, timezone]);
+  }, [checkRevision, data.editable, month, signature, supabase, timezone]);
 
   const journey = configurationJourney(data, month, serverReadiness);
   const next = journey.next;
@@ -118,6 +154,11 @@ export function ConfigurationJourney({
   const blockerHelp = onlyPayRateBlockers
     ? "Kliknij osobę. Otworzymy jej profil, przewiniemy do historii stawek i ustawimy kursor w formularzu."
     : "Kliknij problem, aby przejść bezpośrednio do miejsca naprawy.";
+  const currentGuide = next ? stepGuidance[next.key] : null;
+  const firstRun = data.employees.every(item => !item.active)
+    || data.locations.every(item => !item.active)
+    || data.shiftTemplates.every(item => !item.active);
+  const visibleBlockers = showAllBlockers ? journey.blockers : journey.blockers.slice(0, 5);
 
   return <section id={compact ? undefined : "configuration-step-readiness"} className={`configuration-journey ${compact ? "compact" : ""}`} aria-labelledby="configuration-journey-title">
     <header className="configuration-journey-head">
@@ -133,6 +174,11 @@ export function ConfigurationJourney({
       </div>
     </header>
 
+    {firstRun && <div className="configuration-first-run">
+      <WandSparkles />
+      <span><small>PIERWSZE URUCHOMIENIE</small><strong>Przejdziemy od pustej firmy do pierwszego grafiku</strong><p>Nie musisz znać kolejności. Uzupełnij bieżący krok, a następny odblokuje się automatycznie. Możesz bezpiecznie wrócić do ukończonych etapów.</p></span>
+    </div>}
+
     {next ? <div className="configuration-next-action">
       <span className="configuration-next-icon"><WandSparkles /></span>
       <div><small>NASTĘPNA NAJLEPSZA AKCJA</small><strong>{next.label}</strong><p>{next.description}</p></div>
@@ -143,11 +189,16 @@ export function ConfigurationJourney({
       <button className="primary-button" onClick={onCreateSchedule}>Utwórz grafik <ArrowRight /></button>
     </div>}
 
+    {next && currentGuide && <section className="configuration-current-guide" aria-label={`Instrukcja kroku ${next.label}`}>
+      <header><span><small>TERAZ ROBISZ</small><h3>{next.label}</h3><p>{currentGuide.purpose}</p></span><button className="primary-button" onClick={() => onOpenStep(next.section, next.key)}>Otwórz krok <ArrowRight /></button></header>
+      <div><ol>{currentGuide.actions.map(action => <li key={action}>{action}</li>)}</ol><p><CheckCircle2 /><span><small>EFEKT TEGO KROKU</small>{currentGuide.result}</span></p></div>
+    </section>}
+
     <ol className="configuration-steps">
       {journey.steps.map((step, index) => {
         const Icon = stepIcons[step.key];
         return <li key={step.key} className={step.state}>
-          <button type="button" onClick={() => onOpenStep(step.section, step.key)} aria-current={step.state === "current" ? "step" : undefined}>
+          <button type="button" disabled={step.state === "blocked"} onClick={() => onOpenStep(step.section, step.key)} aria-current={step.state === "current" ? "step" : undefined}>
             <span className="configuration-step-index">{step.complete ? <Check /> : checking && step.key === "readiness" ? <Loader2 className="spin" /> : <Icon />}</span>
             <span><small>KROK {index + 1}</small><strong>{step.label}</strong><p>{step.description}</p><em>{step.detail}</em></span>
             {step.complete ? <CheckCircle2 className="configuration-step-status" /> : <CircleDashed className="configuration-step-status" />}
@@ -158,13 +209,14 @@ export function ConfigurationJourney({
 
     {(serverError || journey.blockers.length > 0) && <div className="configuration-blockers">
       <div><AlertTriangle /><span><strong>{blockerTitle}</strong><small>{serverError ? "Odśwież dane i ponów kontrolę gotowości." : blockerHelp}</small></span></div>
-      {journey.blockers.slice(0, 5).map(blocker => {
+      {visibleBlockers.map(blocker => {
         const action = configurationBlockerAction(blocker, data, month);
         return <button type="button" key={`${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`} onClick={() => onOpenStep(action.section, action.step, action.focus)}>
           <span><b>{action.title}</b><small>{action.message}</small><em>{action.actionLabel}</em></span><ArrowRight />
         </button>;
       })}
-      {journey.blockers.length > 5 && <small className="configuration-blockers-more">Pokazano 5 z {journey.blockers.length} problemów. Po naprawieniu profilu lista odświeży się automatycznie.</small>}
+      {journey.blockers.length > 5 && <button type="button" className="configuration-blockers-toggle" onClick={() => setShowAllBlockers(value => !value)}>{showAllBlockers ? "Pokaż krótszą listę" : `Pokaż wszystkie problemy (${journey.blockers.length})`}</button>}
+      <button type="button" className="configuration-readiness-retry" disabled={checking} onClick={() => setCheckRevision(value => value + 1)}><RefreshCw className={checking ? "spin" : ""} /> {checking ? "Sprawdzam dane…" : "Sprawdź gotowość ponownie"}</button>
     </div>}
   </section>;
 }

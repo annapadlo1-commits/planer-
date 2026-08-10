@@ -957,6 +957,10 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
     const windowEntry=entries.find(entry=>entry.kind==="AVAILABLE_WINDOW");
     return {tone:"available",label:windowEntry?"Mogę w podanych godzinach":"Mogę pracować",entry:windowEntry};
   };
+  const explicitDays=monthDates.filter(date=>(entriesByDay.get(date)??[]).length>0).length;
+  const publishedDays=new Set(assignments.map(assignment=>assignment.date)).size;
+  const exceptionDays=monthDates.filter(date=>(entriesByDay.get(date)??[]).some(entry=>entry.kind!=="AVAILABLE_WINDOW")).length;
+  const defaultDays=monthDates.length-explicitDays;
   const dayIsProtected=(date:string)=>(entriesByDay.get(date)??[]).some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO");
   const applyDayToEditor=(date:string)=>{
     const state=dayState(date);
@@ -1003,6 +1007,15 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   };
 
   const body=<div className="availability-calendar-content">
+      <section className="availability-month-status" aria-label="Podsumowanie dostępności miesiąca">
+        <div><small>Dni z własnym wpisem</small><strong>{explicitDays}</strong></div>
+        <div><small>Dni według zasady firmy</small><strong>{defaultDays}</strong></div>
+        <div><small>Dni z opublikowaną zmianą</small><strong>{publishedDays}</strong></div>
+        <div><small>Wyjątki i preferencje</small><strong>{exceptionDays}</strong></div>
+        <p>{workspace.defaultAvailable!==false
+          ?"Nie musisz zaznaczać każdego dnia. Bez własnego wpisu system przyjmuje, że możesz pracować; urlop, L4 i inne wyjątki pokaże osobno."
+          :"Firma wymaga jawnej deklaracji dostępności. Dni bez wpisu nie zostaną uznane za dostępne podczas planowania."}</p>
+      </section>
       <section className="availability-calendar-panel">
         <div className="availability-calendar-legend"><span className="available">Mogę pracować</span><span className="soft">Wolę nie pracować</span><span className="hard">Nie mogę / urlop / L4</span></div>
         <div className="availability-weekdays">{days.map(day=><b key={day}>{day}</b>)}</div>
