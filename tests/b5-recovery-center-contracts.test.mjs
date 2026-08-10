@@ -31,6 +31,7 @@ test("B5 recovery schema is RLS protected and exposes the complete audited workf
 
 test("manager recovery center contains structural diagnosis, three repair modes and emergency controls",async()=>{
   const source=await readFile(new URL("../components/RecoveryCenter.tsx",import.meta.url),"utf8");
+  const styles=await readFile(new URL("../app/recovery-center.css",import.meta.url),"utf8");
   assert.match(source,/Centrum napraw grafiku/);
   assert.match(source,/POWTARZALNY BRAK ZASOBÓW/);
   assert.match(source,/Zaproponuj/);
@@ -44,6 +45,7 @@ test("manager recovery center contains structural diagnosis, three repair modes 
   assert.match(source,/next\.budget\?\.warningPercent/);
   assert.match(source,/AWARYJNA PULA DLA TEGO INCYDENTU/);
   assert.match(source,/incidentAdHoc/);
+  assert.match(styles,/\.recovery-incident-list>button\{grid-template-columns:minmax\(0,1fr\) auto auto\}/);
 });
 
 test("recovery errors expose PostgREST details instead of object Object",async()=>{
