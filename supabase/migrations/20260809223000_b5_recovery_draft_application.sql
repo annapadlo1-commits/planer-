@@ -26,6 +26,11 @@ begin
 
   update public.plan_variants_v2 set status='ARCHIVED',selected=false
   where run_id=v_run.id and variant_kind='LEADER_COPY' and status in ('READY','SELECTED');
+  -- A published leader copy may still be the selected row for the run. The
+  -- publication points to the variant by id, so moving only the editor
+  -- selection flag to the new draft does not change the published schedule.
+  update public.plan_variants_v2 set selected=false
+  where run_id=v_run.id and selected;
   update public.plan_variants_v2 set selected=false,
     status=case when status='SELECTED' then 'READY' else status end
   where run_id=v_run.id and variant_kind='GENERATED';
