@@ -17,6 +17,7 @@ import {SolverV2Workspace} from "@/components/SolverV2Workspace";
 import {RoleCompositePanel} from "@/components/RoleCompositePanel";
 import {GeneratorV2Page} from "@/components/GeneratorV2Page";
 import {MatrixV2Editor} from "@/components/MatrixV2Editor";
+import {RecoveryCenter} from "@/components/RecoveryCenter";
 import {
   getOperationalSolverWorkspace,
   getManagerStandbyMonth,
@@ -49,7 +50,7 @@ import {
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
-type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"budzet";
+type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"budzet";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";role:null}|{type:"ROLE";role:SolverRole};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
@@ -88,7 +89,7 @@ const productIcons: Record<ProductSection, LucideIcon> = {
 };
 const legacySection: Record<NavKey, ProductSection> = {
   centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
-  kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",
+  kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",
   budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
 };
 
@@ -452,10 +453,11 @@ export default function GrafikPro() {
           {primarySection==="messages"&&<section className="feature-coming-card"><Bell/><h2>Wiadomości zespołu są następnym rozszerzeniem portalu</h2><p>Ten moduł pozostaje jawnie nieaktywny w pierwszym vertical slice. Nie udajemy działającej komunikacji, dopóki nie ma wersjonowanych rozmów, powiadomień i pełnego E2E.</p></section>}
           {primarySection==="time"&&complete&&<ActiveModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
           {["my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
+          {primarySection==="swaps"&&<RecoveryCenter month={selectedMonth} employeeMode notify={notify} fail={setError}/>} 
           {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
         {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["scalanie","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
-        {primarySection==="operations"&&<ContextTabs items={[["alerty","Alerty"],["kalendarz","Kalendarz"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
+        {primarySection==="operations"&&<ContextTabs items={[["naprawy","Centrum napraw"],["alerty","Alerty"],["kalendarz","Kalendarz"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
         {active==="centrum"&&<>
           {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")}/>} 
           <section className="kpi-grid">
@@ -508,8 +510,9 @@ export default function GrafikPro() {
         {active==="portal"&&complete&&<ActiveModules month={selectedMonth} view="portal" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
         {active==="czas"&&complete&&<ActiveModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
         {active==="integracje"&&complete&&<ActiveModules month={selectedMonth} view="integracje" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
-        {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
+        {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>} 
         {active==="alerty"&&!isOrtools&&<IssuesView issues={data.issues} shifts={data.shifts} roleLabels={activeRoleLabels} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
+        {active==="naprawy"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} notify={notify} fail={setError} reload={load}/>} 
         {active==="budzet"&&<BudgetView cost={cost} budget={budget} assignments={data.assignments} currency={activeCurrency} dynamic={isOrtools}/>} 
         </>}
       </div>}
