@@ -445,6 +445,15 @@ test("employee portal uses one combined schedule and availability calendar", asy
   assert.match(publicationCalendar,/'roleId',role\.logical_id/);
 });
 
+test("employee portal never calls the owner-only UAT MASTER persona preview", async () => {
+  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(modules,/allowUatMasterPersona = false/);
+  assert.match(modules,/view !== "portal" \|\| !allowUatMasterPersona/);
+  assert.match(page,/view="portal" allowUatMasterPersona/);
+  assert.doesNotMatch(page,/portalSection=\{employeePortalSection\}[^\n]+allowUatMasterPersona/);
+});
+
 test("stand-by is balanced by role and tier after the required schedule", async () => {
   const migration=await readFile(new URL("../supabase/migrations/20260807151000_b4_standby_fairness_v3.sql",import.meta.url),"utf8");
   assert.match(migration,/standby_candidates_for_role_day_uat_v3/);
@@ -456,11 +465,12 @@ test("stand-by is balanced by role and tier after the required schedule", async 
 });
 
 test("merged company publication is preflighted, auditable and available on UAT", async () => {
-  const [client,panel,preflightSql,severitySql]=await Promise.all([
+  const [client,panel,preflightSql,severitySql,continuitySql]=await Promise.all([
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260809162000_b4_company_preflight_grouped_severity.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260810150416_b4_b5_published_role_composite_selection_continuity.sql",import.meta.url),"utf8"),
   ]);
   assert.match(client,/optimizer_role_composite_preflight_uat_v2/);
   assert.match(client,/optimizer_publish_role_composite_uat_v3/);
@@ -474,6 +484,10 @@ test("merged company publication is preflighted, auditable and available on UAT"
   assert.match(panel,/disabled=\{busy \|\| !ready \|\| !publicationName\.trim\(\)\}/);
   assert.match(panel,/publishedScenarioGroups/);
   assert.match(panel,/completePublishedScenario/);
+  assert.match(panel,/publishedRoleById/);
+  assert.match(panel,/publication\?\.variantId/);
+  assert.match(panel,/freshPublishedRoleById/);
+  assert.match(panel,/Nie wszystkie wymagane role mają teraz opublikowany grafik/);
   assert.match(panel,/wcześniej opublikowane grafiki/);
   assert.match(panel,/Scalasz istniejące publikacje z ich konfiguracji źródłowej/);
   assert.match(preflightSql,/optimizer_publish_role_composite_uat_v3/);
@@ -481,6 +495,11 @@ test("merged company publication is preflighted, auditable and available on UAT"
   assert.match(preflightSql,/optimizer_publish_role_composite_v2/);
   assert.match(severitySql,/assigned\.assigned_count = 0 critical/);
   assert.match(severitySql,/sum\(gap\.missing_count\) filter \(where gap\.critical\)/);
+  assert.match(continuitySql,/PUBLISHED_ROLE_VARIANTS_REQUIRED/);
+  assert.match(continuitySql,/role_schedule\.status = 'PUBLISHED'/);
+  assert.match(continuitySql,/'select-v2:' \|\| v_source_run_id::text/);
+  assert.match(continuitySql,/v_temporarily_deselected/);
+  assert.match(continuitySql,/leaderSelectionRestored/);
 });
 
 test("operational events and absence limits accept one audited date range", async () => {
