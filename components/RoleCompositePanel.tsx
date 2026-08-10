@@ -92,8 +92,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const expectedSolverVersion = solverVersion.trim();
   const candidateRequestRef = useRef(0);
-  const availableScenarios = useMemo(() => scenarios.filter(scenario => Boolean(scenario.id)), [scenarios]);
-  const defaultScenarioId = availableScenarios.find(scenario => scenario.isDefault)?.id ?? "";
+  const configuredScenarios = useMemo(() => scenarios.filter(scenario => Boolean(scenario.id)), [scenarios]);
+  const defaultScenarioId = configuredScenarios.find(scenario => scenario.isDefault)?.id ?? "";
   const [scenarioId, setScenarioId] = useState(defaultScenarioId);
   const [candidates, setCandidates] = useState<SolverRoleCompositeCandidates | null>(null);
   const [preflight, setPreflight] = useState<SolverRoleCompositePreflight | null>(null);
@@ -107,6 +107,38 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const availableScenarios = useMemo(() => {
+    const result = [...configuredScenarios];
+    const known = new Set(result.map(scenario => scenario.id));
+    for (const publication of overview?.roles ?? []) {
+      if (!publication.scenario.id || known.has(publication.scenario.id)) continue;
+      known.add(publication.scenario.id);
+      result.push({
+        id: publication.scenario.id,
+        code: `PUBLISHED_${publication.scenario.id}`,
+        name: publication.scenario.name,
+        description: "Scenariusz źródłowy wcześniej opublikowanych grafików ról.",
+        strategyCount: 0,
+        isDefault: false,
+      });
+    }
+    return result;
+  }, [configuredScenarios, overview]);
+  const publishedScenarioGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; roleIds: Set<string> }>();
+    for (const publication of overview?.roles ?? []) {
+      if (!publication.scenario.id) continue;
+      const group = groups.get(publication.scenario.id) ?? {
+        id: publication.scenario.id,
+        name: publication.scenario.name,
+        roleIds: new Set<string>(),
+      };
+      group.roleIds.add(publication.role.id);
+      groups.set(publication.scenario.id, group);
+    }
+    return [...groups.values()];
+  }, [overview]);
+  const selectedScenarioIsCurrent = configuredScenarios.some(scenario => scenario.id === scenarioId);
   const storageContext = useMemo<RunStorageContext>(() => ({
     userId,
     engine,
@@ -196,6 +228,25 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   }, [scenarioId, refreshKey, loadCandidates]);
 
   useEffect(() => { void loadOverview(); void loadAuthority(); }, [loadOverview, loadAuthority, refreshKey]);
+
+  useEffect(() => {
+    if (
+      !candidates
+      || loading
+      || scenarioId !== defaultScenarioId
+      || candidates.roles.length === 0
+      || candidates.roles.some(role => Boolean(role.variant))
+    ) return;
+    const completePublishedScenario = publishedScenarioGroups.find(group => (
+      group.id !== defaultScenarioId && group.roleIds.size === candidates.roles.length
+    ));
+    if (!completePublishedScenario) return;
+    setMessage(
+      `Pokazuję kompletny zestaw grafików ról opublikowany dla scenariusza „${completePublishedScenario.name}”. `
+      + "Nowa konfiguracja firmy obowiązuje przy następnym generowaniu, ale nie unieważnia wcześniejszych publikacji.",
+    );
+    setScenarioId(completePublishedScenario.id);
+  }, [candidates, defaultScenarioId, loading, publishedScenarioGroups, scenarioId]);
 
   useEffect(() => {
     setPublishedWorkspace(null);
@@ -436,9 +487,21 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
     <label className="role-composite-scenario">Pokaż publikacje zespołów dla scenariusza
       <select value={scenarioId} disabled={loading || busy || !expectedSolverVersion} onChange={event => setScenarioId(event.target.value)}>
-        {availableScenarios.map(scenario => <option key={scenario.id ?? scenario.code} value={scenario.id ?? ""}>{scenario.name}</option>)}
+        {availableScenarios.map(scenario => <option key={scenario.id ?? scenario.code} value={scenario.id ?? ""}>
+          {scenario.name}{configuredScenarios.some(item => item.id === scenario.id) ? "" : " • wcześniej opublikowane grafiki"}
+        </option>)}
       </select>
     </label>
+
+    {!selectedScenarioIsCurrent && scenarioId && <div className="solver-v2-notice warning">
+      <AlertTriangle/>
+      <span>
+        <strong>Scalasz istniejące publikacje z ich konfiguracji źródłowej.</strong>
+        <small>
+          Wspólny grafik zachowa reguły, według których liderzy opublikowali swoje zespoły. Aktywna konfiguracja firmy zostanie użyta przy następnym generowaniu grafików ról.
+        </small>
+      </span>
+    </div>}
 
     {!availableScenarios.length && <div className="solver-v2-notice warning"><AlertTriangle/>Opublikowana konfiguracja firmy nie ma profilu zapotrzebowania dostępnego do scalenia.</div>}
     {loading && <div className="role-composite-loading"><RefreshCw className="spin"/> Sprawdzam opublikowane grafiki wszystkich ról…</div>}
