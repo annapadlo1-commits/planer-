@@ -411,6 +411,9 @@ export function matrixV2ErrorMessage(message: string) {
     return "Dla tego miesiąca istnieją konkurencyjne publikacje grafiku roli i firmy. System nie wybierze jednej po cichu — właściciel musi najpierw rozstrzygnąć konflikt.";
   }
   if (value.includes("UNIQUE") || value.includes("DUPLICATE")) return "Taki element lub powiązanie już istnieje w tej wersji konfiguracji.";
+  if (value.includes('INVALID INPUT SYNTAX FOR TYPE INTEGER: ""')) {
+    return "Importer utworzył pustą wartość techniczną w polu liczbowym. To błąd mapowania pliku, a nie komórka, którą użytkownik ma odgadnąć. Żadne dane nie zostały zastosowane.";
+  }
   if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł konfiguracji firmy. Sprawdź formularz.";
   return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";
 }
