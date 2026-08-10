@@ -95,3 +95,20 @@ test("employee search input is constrained inside its grid cell", async () => {
   assert.match(cssSource, /\.workforce-picker>\*\{min-width:0\}/);
   assert.match(cssSource, /\.workforce-employee-search input\{width:100%;min-width:0;max-width:100%;box-sizing:border-box\}/);
 });
+
+test("first run is a guided wizard with retryable readiness", async () => {
+  const source = await readFile(new URL("../components/ConfigurationJourney.tsx", import.meta.url), "utf8");
+  assert.match(source, /PIERWSZE URUCHOMIENIE/);
+  assert.match(source, /const stepGuidance/);
+  assert.match(source, /Sprawdź gotowość ponownie/);
+  assert.match(source, /disabled=\{step\.state === "blocked"\}/);
+  assert.match(source, /Pokaż wszystkie problemy/);
+});
+
+test("employee availability makes monthly defaults and exceptions explicit", async () => {
+  const source = await readFile(new URL("../components/ActiveModules.tsx", import.meta.url), "utf8");
+  assert.match(source, /availability-month-status/);
+  assert.match(source, /Dni według zasady firmy/);
+  assert.match(source, /Nie musisz zaznaczać każdego dnia/);
+  assert.match(source, /Firma wymaga jawnej deklaracji dostępności/);
+});

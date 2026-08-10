@@ -17,6 +17,10 @@ const relationAndTimeoutFix = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260810223000_uat_team_import_relation_and_timeout_fix.sql"),
   "utf8",
 );
+const guidedImportOrderFix = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260810234500_uat_guided_onboarding_import_order_fix.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -50,4 +54,21 @@ test("quick-start import drops stale detailed relations and has a bounded RPC ti
   assert.match(relationAndTimeoutFix, /upper\(trim\(employee\.value->>'employeeNo'\)\)=upper\(trim\(relation\.value->>'employeeNo'\)\)/);
   assert.match(relationAndTimeoutFix, /matrix_v2_team_import_preview_uat_v1\(jsonb,text\)[\s\S]*statement_timeout to '60s'/);
   assert.doesNotMatch(relationAndTimeoutFix, /alter role authenticated/);
+});
+
+test("incoming dictionaries and shifts exist before staffing validation", () => {
+  assert.match(guidedImportOrderFix, /matrix_v2_seed_import_shifts_uat_v1/);
+  assert.ok(guidedImportOrderFix.indexOf("'PRE'") < guidedImportOrderFix.indexOf("matrix_v2_seed_import_shifts_uat_v1"));
+  assert.ok(guidedImportOrderFix.indexOf("matrix_v2_seed_import_shifts_uat_v1") < guidedImportOrderFix.indexOf("matrix_v2_import_preview_uat_v5"));
+  assert.match(guidedImportOrderFix, /when not solver_private\.matrix_v2_json_bool_uat_v1\(rule\.value->'active'\)/);
+  assert.match(guidedImportOrderFix, /set search_path=''/);
+  assert.match(guidedImportOrderFix, /revoke all on function solver_private\.matrix_v2_seed_import_shifts_uat_v1/);
+});
+
+test("import UI explains errors and separates everyday setup from backup restore", () => {
+  assert.match(editor, /Pełna kopia firmy/);
+  assert.match(editor, /Zapisz strukturę i zespół/);
+  assert.match(editor, /Kod roli z tego wiersza nie występuje/);
+  assert.match(editor, /Kod zmiany i lokal nie odpowiadają/);
+  assert.match(editor, /Co zawiera pełna kopia i kiedy jej użyć/);
 });
