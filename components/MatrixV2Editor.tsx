@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAppAuth } from "@/components/AppAuthProvider";
 import { configurationBlockerAction } from "@/lib/product-journey";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
@@ -29,7 +30,7 @@ import {
   type MatrixV2PublicationReadiness,
 } from "@/lib/matrix-v2";
 
-type MatrixTab = "structure" | "workforce" | "strategies" | "finance";
+type MatrixTab = "structure" | "workforce" | "strategies" | "finance" | "access";
 type EditableItem = MatrixV2NamedItem | MatrixV2Shift | MatrixV2RoleDuty |
   MatrixV2Scenario | MatrixV2StaffingRule | MatrixV2Strategy | MatrixV2Objective |
   MatrixV2ScenarioStrategy | MatrixV2PayRule | MatrixV2ScenarioPayRule | MatrixV2Budget |
@@ -49,8 +50,14 @@ type MatrixAuditEntry={
 };
 type MatrixHistoryPayload={versions:MatrixRevisionVersion[];audit:MatrixAuditEntry[]};
 type MatrixVersionComparison={settingsChanged:boolean;sections:{key:string;label:string;leftCount:number;rightCount:number;changed:boolean}[]};
-type UatResetPreview={enabled:boolean;draftMatrixVersionId?:string|null;draftVersion?:number|null;confirmation:string;employees:number;roleAssignments:number;locationAssignments:number;dutyAssignments:number;preserves:string[]};
+type UatResetPreview={enabled:boolean;confirmation:string;employees:number;matrixVersions:number;publishedSchedules:number;otherUsers:number;preserves:string[]};
 type PublicationDialogState={effectiveFrom:string;step:"date"|"confirm"};
+type ShiftMergeDialogState={
+  groups:number;duplicates:number;loading:boolean;error?:string|null;
+};
+type AccessDirectoryEntry={id:string;email:string;appRole:string;active:boolean;authUserId?:string|null;status:"ACTIVE"|"PENDING";roleLogicalId?:string|null;roleName?:string|null;locationLogicalId?:string|null;locationName?:string|null};
+type AccessDirectoryOption={rowId:string;logicalId:string;name:string;code:string};
+type AccessDirectoryPayload={entries:AccessDirectoryEntry[];roles:AccessDirectoryOption[];locations:AccessDirectoryOption[]};
 
 const assignmentModeLabel: Record<string, string> = {
   REQUIRED: "Wymagany", OPTIONAL: "Opcjonalny", EXTRA: "Dodatkowy",
@@ -127,6 +134,7 @@ export function MatrixV2Editor({
   onCreateEmployeeOpened?: () => void;
   onOpenOperationalCalendar?:()=>void;
 }) {
+  const {access}=useAppAuth();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const tabStorageKey = `grafik-pro:matrix-v2:${data.matrixVersion.id}:tab`;
   const importOpenStorageKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-open`;
@@ -135,7 +143,7 @@ export function MatrixV2Editor({
     if (typeof window === "undefined") return "structure";
     const saved = window.sessionStorage.getItem(tabStorageKey);
     if(saved==="staffing")return "structure";
-    return (["workforce", "structure", "strategies", "finance"] as MatrixTab[]).includes(saved as MatrixTab)
+    return (["workforce", "structure", "strategies", "finance", "access"] as MatrixTab[]).includes(saved as MatrixTab)
       ? saved as MatrixTab
       : "structure";
   });
@@ -148,10 +156,14 @@ export function MatrixV2Editor({
   const [financeOnboardingEmployeeId,setFinanceOnboardingEmployeeId]=useState<string|null>(null);
   const [publicationReadiness,setPublicationReadiness]=useState<MatrixV2PublicationReadiness|null>(null);
   const [publicationDialog,setPublicationDialog]=useState<PublicationDialogState|null>(null);
+  const [publicationError,setPublicationError]=useState<string|null>(null);
+  const [shiftMergeDialog,setShiftMergeDialog]=useState<ShiftMergeDialogState|null>(null);
   const [importOpen,setImportOpen]=useState(()=>typeof window!=="undefined"&&window.sessionStorage.getItem(importOpenStorageKey)==="true");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
+  const [uatResetDialog,setUatResetDialog]=useState<{confirmation:string;error?:string|null}|null>(null);
   const settings = matrixV2Settings(data.matrixVersion);
+  const canManageAccess=Boolean(access?.roles?.some(role=>role.app_role==="OWNER"||role.app_role==="ADMIN"));
   useEffect(()=>{
     window.sessionStorage.setItem(importOpenStorageKey,importOpen?"true":"false");
   },[importOpen,importOpenStorageKey]);
@@ -223,25 +235,24 @@ export function MatrixV2Editor({
   useEffect(()=>{
     let alive=true;
     if(!supabase||!data.editable){setUatReset(null);return()=>{alive=false;};}
-    void supabase.rpc("uat_matrix_workforce_reset_preview_v2").then(result=>{
+    void supabase.rpc("uat_full_business_reset_preview_v1").then(result=>{
       if(alive&&!result.error&&result.data)setUatReset(result.data as UatResetPreview);
     });
     return()=>{alive=false;};
   },[data.editable,data.matrixVersion.id,supabase]);
 
-  async function resetUatDraftWorkforce(){
-    if(!supabase||!uatReset?.enabled)return;
-    const confirmation=window.prompt(`Ta operacja usunie ${uatReset.employees} profili wyłącznie z roboczej konfiguracji v${uatReset.draftVersion}. Opublikowana konfiguracja, grafiki, stawki i historia pozostaną zachowane.\n\nAby kontynuować, wpisz dokładnie: ${uatReset.confirmation}`);
-    if(confirmation!==uatReset.confirmation){if(confirmation!==null)fail("Reset anulowany: tekst potwierdzenia nie jest zgodny.");return;}
-    if(!window.confirm("Ostatnie potwierdzenie: wyczyścić pracowników, role, lokale i kompetencje z wersji roboczej UAT?"))return;
+  async function resetUatBusinessData(){
+    if(!supabase||!uatReset?.enabled||!uatResetDialog)return;
+    if(uatResetDialog.confirmation!==uatReset.confirmation){setUatResetDialog({...uatResetDialog,error:`Wpisz dokładnie: ${uatReset.confirmation}`});return;}
     setBusy(true);
-    const result=await supabase.rpc("uat_matrix_workforce_reset_v2",{p_confirmation:confirmation});
+    const result=await supabase.rpc("uat_full_business_reset_v1",{p_confirmation:uatResetDialog.confirmation});
     setBusy(false);
-    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    if(result.error){setUatResetDialog({...uatResetDialog,error:matrixV2ErrorMessage(result.error.message)});return;}
+    setUatResetDialog(null);
     setWorkforceFocusEmployeeId(null);
-    selectTab("workforce");
-    notify("Robocza baza pracowników UAT została wyczyszczona. Aktywne dane i historia pozostały bez zmian.");
-    await reloadInPlace();
+    selectTab("structure");
+    notify("UAT jest pusty i gotowy do pierwszej konfiguracji firmy. Zachowano wyłącznie Twoje konto właściciela.");
+    await reload();
   }
 
   async function createDraft() {
@@ -275,29 +286,50 @@ export function MatrixV2Editor({
 
   async function mergeEquivalentShifts(){
     if(!supabase)return;
+    setShiftMergeDialog({groups:0,duplicates:0,loading:true,error:null});
     setBusy(true);
     const preview=await supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:false});
     setBusy(false);
-    if(preview.error){fail(matrixV2ErrorMessage(preview.error.message));return;}
+    if(preview.error){
+      setShiftMergeDialog({groups:0,duplicates:0,loading:false,error:matrixV2ErrorMessage(preview.error.message)});
+      return;
+    }
     const payload=preview.data as {groups?:number;duplicates?:number;blockers?:{message:string}[]};
-    if(!payload.groups){notify("Nie znaleziono równoważnych wpisów zmian do scalenia.");return;}
-    if(payload.blockers?.length){fail(`Scalanie jest zablokowane: ${payload.blockers.map(item=>item.message).join(" • ")}`);return;}
-    if(!window.confirm(`Połączyć ${payload.duplicates??0} powielonych wpisów w ${payload.groups} czytelnych kart zmian?\n\nSystem nie zmieni godzin ani wymaganej obsady. Połączy listy dni tygodnia, przepnie reguły obsady i wyłączy duplikaty wyłącznie w wersji roboczej. Historia pozostanie zachowana.`))return;
+    if(!payload.groups){
+      setShiftMergeDialog({groups:0,duplicates:0,loading:false,error:"Nie znaleziono równoważnych wpisów zmian do scalenia."});
+      return;
+    }
+    if(payload.blockers?.length){
+      setShiftMergeDialog({groups:payload.groups,duplicates:payload.duplicates??0,loading:false,error:`Scalanie jest zablokowane: ${payload.blockers.map(item=>item.message).join(" • ")}`});
+      return;
+    }
+    setShiftMergeDialog({groups:payload.groups,duplicates:payload.duplicates??0,loading:false,error:null});
+  }
+
+  async function applyEquivalentShiftMerge(){
+    if(!supabase||!shiftMergeDialog||shiftMergeDialog.loading||shiftMergeDialog.error)return;
+    setShiftMergeDialog({...shiftMergeDialog,loading:true});
     setBusy(true);
     const result=await supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:true});
     setBusy(false);
-    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    if(result.error){
+      setShiftMergeDialog({...shiftMergeDialog,loading:false,error:matrixV2ErrorMessage(result.error.message)});
+      return;
+    }
+    setShiftMergeDialog(null);
     notify(`Scalono ${Number((result.data as {groups?:number}|null)?.groups??0)} logicznych zmian. Dni są teraz zapisane wspólnie.`);
     await reloadInPlace();
   }
 
   function beginPublication(){
     setPublicationReadiness(null);
+    setPublicationError(null);
     setPublicationDialog({effectiveFrom:localToday(settings.timezone),step:"date"});
   }
 
   async function checkPublicationReadiness() {
     if (!supabase) return;
+    setPublicationError(null);
     const effective=publicationDialog?.effectiveFrom.trim()??"";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effective)) { fail("Podaj datę w formacie RRRR-MM-DD."); return; }
     setBusy(true);
@@ -320,10 +352,11 @@ export function MatrixV2Editor({
   async function publishDraft() {
     if(!supabase||!publicationDialog)return;
     const effective=publicationDialog.effectiveFrom;
+    setPublicationError(null);
     setBusy(true);
-    const result = await supabase.rpc("matrix_v2_publish_draft", { p_effective_from: effective });
+    const result = await supabase.rpc("matrix_v2_publish_draft_uat_v2", { p_effective_from: effective });
     setBusy(false);
-    if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
+    if (result.error) { setPublicationError(matrixV2ErrorMessage(result.error.message)); return; }
     setPublicationDialog(null);
     notify("Nowa konfiguracja firmy została opublikowana.");
     await reloadInPlace();
@@ -602,7 +635,7 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>void resetUatDraftWorkforce()}><Trash2/> Reset danych UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>setUatResetDialog({confirmation:""})}><Trash2/> Wyczyść całe UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
@@ -626,6 +659,7 @@ export function MatrixV2Editor({
       <button className={tab === "workforce" ? "active" : ""} onClick={() => selectTab("workforce")}><Users/> 2. Pracownicy, umowy i stawki</button>
       <button className={tab === "strategies" ? "active" : ""} onClick={() => selectTab("strategies")}><Target/> 3. Warianty biznesowe</button>
       {data.financeVisible && <button className={tab === "finance" ? "active" : ""} onClick={() => selectTab("finance")}><CircleDollarSign/> 4. Finanse</button>}
+      {canManageAccess&&<button className={tab === "access" ? "active" : ""} onClick={() => selectTab("access")}><ShieldCheck/> 5. Dostępy do aplikacji</button>}
     </nav>
 
     {!data.editable && <div className="matrix-v2-readonly"><ShieldCheck/><span><strong>Oglądasz opublikowaną konfigurację</strong><small>Utwórz wersję roboczą, aby bezpiecznie wprowadzić zmiany bez wpływu na istniejące grafiki.</small></span></div>}
@@ -634,6 +668,7 @@ export function MatrixV2Editor({
     {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding}/>}
     {tab === "strategies" && <StrategiesTab data={data} editable={data.editable} edit={setEdit} unlinkedScenarios={unlinkedScenarios} incompleteStrategies={incompleteStrategies}/>}
     {tab === "finance" && data.financeVisible && <FinanceTab data={data} editable={data.editable} edit={setEdit}/>}
+    {tab === "access" && canManageAccess && <AccessTab notify={notify} fail={fail}/>} 
 
     {edit && (
       <MatrixV2Drawer key={`${edit.kind}:${String((edit.item as {id?: string} | undefined)?.id ?? "new")}`} target={edit} data={data} month={month} busy={busy} close={() => setEdit(null)} save={async (kind, id, payload) => {
@@ -645,12 +680,37 @@ export function MatrixV2Editor({
     {employeeEdit && <EmployeeProfileDrawer employee={employeeEdit==="new"?null:employeeEdit} data={data} month={month} busy={busy} close={()=>setEmployeeEdit(null)} save={saveEmployeeProfile}/>} 
     {importOpen&&<MatrixExcelImport data={data} busy={busy} setBusy={setBusy} close={()=>setImportOpen(false)} reload={reload} notify={notify} fail={fail}/>} 
     {historyOpen&&<MatrixHistoryDrawer currentVersionId={data.matrixVersion.id} close={()=>setHistoryOpen(false)} fail={fail}/>} 
+    {uatResetDialog&&uatReset&&<><button className="drawer-scrim top" aria-label="Zamknij pełny reset UAT" onClick={()=>{if(!busy)setUatResetDialog(null);}}/><aside className="drawer top" aria-label="Pełny reset danych UAT">
+      <div className="drawer-head"><div><p className="eyebrow">TYLKO ŚRODOWISKO UAT</p><h2>Wyczyść całą firmę</h2><span>Przygotowanie prawdziwego testu pierwszego uruchomienia</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij pełny reset UAT" onClick={()=>setUatResetDialog(null)}><X/></button></div>
+      <div className="drawer-content">
+        <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>To usuwa wszystkie dane biznesowe UAT</strong><small>Usuniemy {uatReset.employees} pracowników, {uatReset.matrixVersions} wersji konfiguracji, {uatReset.publishedSchedules} opublikowanych grafików i {uatReset.otherUsers} innych kont. Produkcja nie jest objęta tą operacją.</small></span></div>
+        <div className="impact-box"><ShieldCheck/><span><strong>Co pozostanie?</strong><small>{uatReset.preserves.join(" • ")}. Powstanie pusta wersja robocza „Pierwsza konfiguracja firmy”.</small></span></div>
+        <label>Wpisz dokładnie: <b>{uatReset.confirmation}</b>
+          <input value={uatResetDialog.confirmation} onChange={event=>setUatResetDialog({confirmation:event.target.value,error:null})}/>
+        </label>
+        {uatResetDialog.error&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Reset nie został wykonany</strong><small>{uatResetDialog.error}</small></span></div>}
+        <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setUatResetDialog(null)}>Anuluj</button><button className="danger-button" disabled={busy||uatResetDialog.confirmation!==uatReset.confirmation} onClick={()=>void resetUatBusinessData()}><Trash2/> Wyczyść UAT i rozpocznij od zera</button></div>
+      </div>
+    </aside></>}
+    {shiftMergeDialog&&<><button className="drawer-scrim top" aria-label="Zamknij porządkowanie zmian" onClick={()=>{if(!busy)setShiftMergeDialog(null);}}/><aside className="drawer top" aria-label="Porządkowanie powtarzających się zmian">
+      <div className="drawer-head"><div><p className="eyebrow">PORZĄDKOWANIE DANYCH</p><h2>Połącz powtarzające się zmiany</h2><span>Wersja robocza v{data.matrixVersion.version}</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij porządkowanie zmian" onClick={()=>setShiftMergeDialog(null)}><X/></button></div>
+      <div className="drawer-content">
+        {shiftMergeDialog.loading?<div className="impact-box"><RefreshCw/><span><strong>Sprawdzamy zmiany i ich zależności</strong><small>Za chwilę pokażemy dokładny zakres operacji. Nic nie zostanie zmienione bez potwierdzenia.</small></span></div>:shiftMergeDialog.error?<>
+          <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Nie można teraz połączyć zmian</strong><small>{shiftMergeDialog.error}</small></span></div>
+          <div className="drawer-actions"><button className="secondary-button" onClick={()=>setShiftMergeDialog(null)}>Zamknij</button><button className="primary-button" onClick={()=>void mergeEquivalentShifts()}><RefreshCw/> Sprawdź ponownie</button></div>
+        </>:<>
+          <div className="detail-status"><Check/><span><strong>Zmiany są gotowe do bezpiecznego połączenia</strong><small>Godziny, wymagana obsada i historia pozostaną zachowane. Zmieniamy wyłącznie sposób prezentacji powtarzających się wpisów w wersji roboczej.</small></span></div>
+          <dl className="matrix-version-readonly"><div><dt>Grupy zmian</dt><dd>{shiftMergeDialog.groups}</dd></div><div><dt>Powielone wpisy</dt><dd>{shiftMergeDialog.duplicates}</dd></div></dl>
+          <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setShiftMergeDialog(null)}>Anuluj</button><button className="primary-button" disabled={busy} onClick={()=>void applyEquivalentShiftMerge()}><Link2/> Połącz {shiftMergeDialog.groups} grup</button></div>
+        </>}
+      </div>
+    </aside></>}
     {publicationDialog&&<><button className="drawer-scrim top" aria-label="Zamknij publikację" onClick={()=>{if(!busy)setPublicationDialog(null);}}/><aside className="drawer top" aria-label="Publikacja konfiguracji firmy">
       <div className="drawer-head"><div><p className="eyebrow">PUBLIKACJA KONFIGURACJI</p><h2>{publicationDialog.step==="date"?"Wybierz datę obowiązywania":"Potwierdź publikację"}</h2><span>Wersja v{data.matrixVersion.version} • grafik {month}</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij publikację" onClick={()=>setPublicationDialog(null)}><X/></button></div>
       <div className="drawer-content">
         {publicationDialog.step==="date"?<>
           <label>Od kiedy konfiguracja ma obowiązywać?
-            <input type="date" value={publicationDialog.effectiveFrom} onChange={event=>setPublicationDialog({...publicationDialog,effectiveFrom:event.target.value})}/>
+            <input type="date" value={publicationDialog.effectiveFrom} onChange={event=>{setPublicationError(null);setPublicationDialog({...publicationDialog,effectiveFrom:event.target.value});}}/>
             <small>Ta data określa moment aktywacji konfiguracji firmy. Grafik nadal zostanie policzony dla {month}.</small>
           </label>
           <div className="impact-box"><ShieldCheck/><span><strong>Najpierw sprawdzimy gotowość</strong><small>Serwer zweryfikuje stawki, obsadę i wszystkie blokery. Nic nie zostanie opublikowane bez kolejnego, wyraźnego potwierdzenia.</small></span></div>
@@ -658,10 +718,83 @@ export function MatrixV2Editor({
         </>:<>
           <div className="detail-status"><Check/><span><strong>Kontrola gotowości zakończona pomyślnie</strong><small>Brak blokerów. Po publikacji v{data.matrixVersion.version} stanie się aktywną konfiguracją, a poprzednia wersja pozostanie w historii.</small></span></div>
           <dl className="matrix-version-readonly"><div><dt>Data obowiązywania</dt><dd>{publicationDialog.effectiveFrom}</dd></div><div><dt>Miesiąc grafiku</dt><dd>{month}</dd></div><div><dt>Aktywni pracownicy</dt><dd>{data.workforceCounts?.active??data.employees.filter(employee=>employee.active).length}</dd></div></dl>
-          <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setPublicationDialog({...publicationDialog,step:"date"})}>Wróć</button><button className="primary-button" disabled={busy} onClick={()=>void publishDraft()}><Check/> Opublikuj wersję v{data.matrixVersion.version}</button></div>
+          {publicationError&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Publikacja nie została wykonana</strong><small>{publicationError}</small></span></div>}
+          <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>{setPublicationError(null);setPublicationDialog({...publicationDialog,step:"date"});}}>Wróć</button><button className="primary-button" disabled={busy} onClick={()=>void publishDraft()}><Check/> Opublikuj wersję v{data.matrixVersion.version}</button></div>
         </>}
       </div>
     </aside></>}
+  </section>;
+}
+
+const accessRoleLabels:Record<string,string>={
+  OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Finanse / HR",
+  ROLE_MANAGER:"Lider roli",LOCATION_MANAGER:"Lider lokalu",
+  VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik",
+};
+const accessRoleDescriptions:Record<string,string>={
+  OWNER:"Pełna kontrola firmy, dostępów i publikacji.",
+  ADMIN:"Administracja aplikacją bez konieczności udziału w grafiku.",
+  HR_FINANCE:"Dane pracowników, umowy, stawki, budżety i analizy finansowe.",
+  ROLE_MANAGER:"Tworzenie i korekta grafiku wyłącznie wskazanej roli.",
+  LOCATION_MANAGER:"Zarządzanie operacyjne wyłącznie wskazanego lokalu.",
+  VERIFIER:"Kontrola i akceptacja danych bez prawa do zarządzania dostępami.",
+  EMPLOYEE:"Portal pracownika, własny grafik, dostępność, zamiany i czas pracy.",
+};
+
+function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:string)=>void}){
+  const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
+  const [directory,setDirectory]=useState<AccessDirectoryPayload|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [form,setForm]=useState({email:"",appRole:"EMPLOYEE",roleId:"",locationId:""});
+
+  async function loadDirectory(){
+    if(!supabase)return;
+    setLoading(true);
+    const result=await supabase.rpc("application_access_directory_uat_v1");
+    setLoading(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    setDirectory(result.data as AccessDirectoryPayload);
+  }
+  useEffect(()=>{void loadDirectory();},[]);
+
+  async function saveAccess(active=true,entry?:AccessDirectoryEntry){
+    if(!supabase)return;
+    const role=entry?.appRole??form.appRole;
+    const roleId=entry?.roleLogicalId
+      ? directory?.roles.find(item=>item.logicalId===entry.roleLogicalId)?.rowId??null
+      : form.roleId||null;
+    const locationId=entry?.locationLogicalId
+      ? directory?.locations.find(item=>item.logicalId===entry.locationLogicalId)?.rowId??null
+      : form.locationId||null;
+    setSaving(true);
+    const result=await supabase.rpc("application_access_save_uat_v1",{
+      p_email:entry?.email??form.email,p_app_role:role,
+      p_role_id:roleId,p_location_id:locationId,p_active:active,
+    });
+    setSaving(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    if(!entry)setForm({email:"",appRole:"EMPLOYEE",roleId:"",locationId:""});
+    notify(active?"Dostęp zapisano. Jeśli konto jeszcze nie istnieje, zostanie aktywowany przy pierwszym logowaniu.":"Dostęp został wyłączony.");
+    await loadDirectory();
+  }
+
+  return <section className="access-management">
+    <div className="matrix-v2-section-head"><div><h3>Dostępy do aplikacji</h3><p>Uprawnienia są niezależne od składu grafiku i działają od razu. Osoba z finansów lub administrator nie musi być pracownikiem planowanym na zmianach.</p></div></div>
+    <div className="access-explainer"><ShieldCheck/><span><strong>Jedna osoba może mieć kilka funkcji</strong><small>Przykład: pracownik może mieć portal pracownika i jednocześnie dostęp lidera do grafiku roli Barman. Lider roli i lider lokalu otrzymują wyłącznie wskazany zakres.</small></span></div>
+    <form className="access-form" onSubmit={event=>{event.preventDefault();void saveAccess();}}>
+      <label>Adres e-mail<input required type="email" value={form.email} onChange={event=>setForm({...form,email:event.target.value})} placeholder="np. finanse@firma.pl"/></label>
+      <label>Rodzaj dostępu<select value={form.appRole} onChange={event=>setForm({...form,appRole:event.target.value,roleId:"",locationId:""})}>{Object.entries(accessRoleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><small>{accessRoleDescriptions[form.appRole]}</small></label>
+      {form.appRole==="ROLE_MANAGER"&&<label>Rola<select required value={form.roleId} onChange={event=>setForm({...form,roleId:event.target.value})}><option value="">Wybierz rolę</option>{directory?.roles.map(item=><option key={item.rowId} value={item.rowId}>{item.name}</option>)}</select></label>}
+      {form.appRole==="LOCATION_MANAGER"&&<label>Lokal<select required value={form.locationId} onChange={event=>setForm({...form,locationId:event.target.value})}><option value="">Wybierz lokal</option>{directory?.locations.map(item=><option key={item.rowId} value={item.rowId}>{item.name}</option>)}</select></label>}
+      <button className="primary-button" disabled={saving||loading}><Plus/> Nadaj dostęp</button>
+    </form>
+    <div className="access-directory-head"><h4>Osoby z dostępem</h4><button className="secondary-button" disabled={loading} onClick={()=>void loadDirectory()}><RefreshCw/> Odśwież</button></div>
+    {loading?<div className="impact-box"><RefreshCw/><span><strong>Pobieramy aktualne dostępy</strong><small>Lista obejmuje aktywne konta i zaproszenia oczekujące na pierwsze logowanie.</small></span></div>:!directory?.entries.length?<p className="matrix-v2-empty">Nie nadano jeszcze żadnych dostępów.</p>:<div className="access-directory">{directory.entries.map(entry=><article key={entry.id} className={!entry.active?"inactive":""}>
+      <div><strong>{entry.email}</strong><small>{accessRoleLabels[entry.appRole]??entry.appRole}{entry.roleName?` • ${entry.roleName}`:""}{entry.locationName?` • ${entry.locationName}`:""}</small></div>
+      <span className={entry.active?(entry.status==="PENDING"?"pending":"active"):"inactive"}>{!entry.active?"Wyłączony":entry.status==="PENDING"?"Czeka na logowanie":"Aktywny"}</span>
+      {entry.active&&<button className="secondary-button danger" disabled={saving} onClick={()=>void saveAccess(false,entry)}>Wyłącz</button>}
+    </article>)}</div>}
   </section>;
 }
 
