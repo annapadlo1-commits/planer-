@@ -67,7 +67,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
         accessResult,
         matrixResult,
       ] = await Promise.all([
-        supabase.rpc("current_user_access"),
+        supabase.rpc("current_user_access_v2"),
         supabase.rpc("matrix_v2_workspace",{p_month:`${new Date().toISOString().slice(0,7)}-01`}),
       ]);
 
