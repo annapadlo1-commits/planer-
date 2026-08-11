@@ -527,3 +527,67 @@ test("one browser client and synchronous month context prevent transient duplica
   assert.match(page,/const fromUrl=new URLSearchParams\(window\.location\.search\)\.get\("month"\)/);
   assert.match(workspace,/setLeaderEmployeeId\(candidate\.employeeId\);setLeaderFeedback\(""\);setLeaderLimitWarning\(""\)/);
 });
+
+test("configuration publication uses the company day and keeps failures inside the drawer", async () => {
+  const [editor,migration]=await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260811235500_uat_publication_company_timezone_fix.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(editor,/matrix_v2_publish_draft_uat_v2/);
+  assert.match(editor,/Publikacja nie została wykonana/);
+  assert.match(editor,/setPublicationError\(matrixV2ErrorMessage\(result\.error\.message\)\)/);
+  assert.match(migration,/pg_catalog\.set_config\('TimeZone',v_timezone,true\)/);
+  assert.match(migration,/clock_timestamp\(\) at time zone v_timezone/);
+  assert.match(migration,/return public\.matrix_v2_publish_draft\(v_effective_from\)/);
+});
+
+test("duplicate shift cleanup has an explicit in-app preview and confirmation", async () => {
+  const editor=await readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8");
+  assert.match(editor,/setShiftMergeDialog\(\{groups:0,duplicates:0,loading:true,error:null\}\)/);
+  assert.match(editor,/Porządkowanie powtarzających się zmian/);
+  assert.match(editor,/applyEquivalentShiftMerge/);
+  assert.match(editor,/Połącz \{shiftMergeDialog\.groups\} grup/);
+  assert.doesNotMatch(editor,/window\.confirm\(`Połączyć \$\{payload\.duplicates/);
+});
+
+test("application access is configured independently from schedule employees", async () => {
+  const [editor,auth,migration]=await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../components/AppAuthProvider.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260812001000_uat_application_access_and_full_reset.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(editor,/5\. Dostępy do aplikacji/);
+  assert.match(editor,/Osoba z finansów lub administrator nie musi być pracownikiem/);
+  assert.match(editor,/application_access_save_uat_v1/);
+  assert.match(editor,/ROLE_MANAGER/);
+  assert.match(editor,/LOCATION_MANAGER/);
+  assert.match(auth,/current_user_access_v2/);
+  assert.match(migration,/application_access_directory_v1/);
+  assert.match(migration,/ROLE_SCOPE_REQUIRED/);
+  assert.match(migration,/LOCATION_SCOPE_REQUIRED/);
+});
+
+test("full UAT reset preserves only the owner and creates an empty first-run draft", async () => {
+  const [editor,migration]=await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260812001000_uat_application_access_and_full_reset.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(editor,/Wyczyść UAT i rozpocznij od zera/);
+  assert.match(editor,/uat_full_business_reset_v1/);
+  assert.doesNotMatch(editor,/window\.prompt\(`Ta operacja usunie/);
+  assert.match(migration,/ISOLATED_UAT_DESTRUCTIVE_TOOLS/);
+  assert.match(migration,/delete from auth\.users u where u\.id<>v_actor/);
+  assert.match(migration,/Pierwsza konfiguracja firmy/);
+  assert.match(migration,/'maximumShiftsPerDay',1/);
+});
+
+test("global feedback remains above every active drawer and modal", async () => {
+  const [page,styles]=await Promise.all([
+    readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/globals.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(page,/context-feedback-stack/);
+  assert.match(page,/aria-live="assertive"/);
+  assert.match(styles,/\.context-feedback-stack\{position:fixed;z-index:5000/);
+  assert.match(styles,/\.toast\{position:fixed;z-index:5000/);
+});
