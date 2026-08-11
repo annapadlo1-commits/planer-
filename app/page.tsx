@@ -445,8 +445,10 @@ export default function GrafikPro() {
           {!employeeShell&&<button className="primary-button" disabled={!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
         </div>
       </header>
-      {solverConfigurationError&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Generator jest zablokowany</strong>{solverConfigurationError}</span></div>}
-      {error&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Operacja nie powiodła się</strong>{error}</span><button onClick={()=>setError("")}>×</button></div>}
+      {(solverConfigurationError||error)&&<div className="context-feedback-stack" role="region" aria-live="assertive">
+        {solverConfigurationError&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Generator jest zablokowany</strong>{solverConfigurationError}</span></div>}
+        {error&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Operacja nie powiodła się</strong>{error}</span><button aria-label="Zamknij komunikat" onClick={()=>setError("")}>×</button></div>}
+      </div>}
       {loading?<div className="engine-loading"><RefreshCw className="spin"/><strong>Pobieram rzeczywisty grafik…</strong></div>:
       <div className="content">
         {employeeShell?<>
