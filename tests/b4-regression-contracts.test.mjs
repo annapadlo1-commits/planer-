@@ -593,3 +593,11 @@ test("global feedback is dismissible and remains in the active workspace flow", 
   assert.doesNotMatch(styles,/\.context-feedback-stack\{position:fixed/);
   assert.match(styles,/\.toast\{position:fixed;z-index:5000/);
 });
+
+test("duty-only shifts do not inherit unrelated role-wide duty minima", async () => {
+  const migration=await readFile(new URL("../supabase/migrations/20260812194000_b4f_duty_only_shift_demand_fix.sql",import.meta.url),"utf8");
+  assert.match(migration,/minimum_requirements as/);
+  assert.match(migration,/and rd\.shift_obligation and rd\.shift_period=ro\.shift_period/);
+  assert.match(migration,/where ro\.generic_count>0/);
+  assert.match(migration,/duty-only staffing rows remain independent demand slots/);
+});
