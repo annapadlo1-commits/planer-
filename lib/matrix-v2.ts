@@ -29,7 +29,8 @@ export type MatrixV2NamedItem = {
   active: boolean;
 };
 
-export type MatrixV2Role = MatrixV2NamedItem;
+export type MatrixV2RoleCategory = MatrixV2NamedItem;
+export type MatrixV2Role = MatrixV2NamedItem & { category_id?: string | null };
 export type MatrixV2Location = MatrixV2NamedItem & { timezone: string };
 export type MatrixV2Duty = MatrixV2NamedItem;
 export type MatrixV2Shift = MatrixV2NamedItem & {
@@ -163,6 +164,8 @@ export type MatrixV2Employee = {
   active: boolean;
   employmentStart?: string | null;
   employmentEnd?: string | null;
+  employmentStage?: "REGULAR" | "PROBATION" | "NOTICE";
+  probationEnd?: string | null;
   nominalMonthlyMinutes: number;
   maximumMonthlyMinutes: number;
   maximumWeeklyMinutes: number;
@@ -210,6 +213,8 @@ export type MatrixV2EmployeeRole = {
   role_id: string;
   is_primary: boolean;
   can_lead: boolean;
+  assignment_mode?: "STANDARD" | "BACKUP";
+  backup_priority?: number;
   active: boolean;
   valid_from?: string | null;
   valid_to?: string | null;
@@ -263,6 +268,7 @@ export type MatrixV2Workspace = {
   editable: boolean;
   financeVisible: boolean;
   featureFlag?: { engine?: string } | null;
+  roleCategories?: MatrixV2RoleCategory[];
   roles: MatrixV2Role[];
   locations: MatrixV2Location[];
   duties: MatrixV2Duty[];
@@ -286,6 +292,7 @@ export type MatrixV2Workspace = {
   scenarioPayRuleOverrides: MatrixV2ScenarioPayRule[];
   scenarioBudgets: MatrixV2Budget[];
   employeePayRates: MatrixV2PayRate[];
+  adHocWorkers?: MatrixV2AdHocWorker[];
   workforceHash?: string | null;
   workforceCounts?: { active: number; archived: number };
 };
@@ -296,6 +303,22 @@ export type MatrixV2EmployeeDirectory = {
   activeCount: number;
   archivedCount: number;
   employees: MatrixV2Employee[];
+};
+
+export type MatrixV2AdHocWorker = {
+  id: string;
+  employee_id?: string | null;
+  display_name: string;
+  email?: string | null;
+  phone?: string | null;
+  role_id: string;
+  contract_type: "UMOWA_O_PRACE" | "ZLECENIE" | "CZESC_ETATU" | "B2B" | "INNE";
+  base_rate_minor?: number | null;
+  currency: string;
+  available_from?: string | null;
+  available_to?: string | null;
+  active: boolean;
+  notes?: string | null;
 };
 
 export type MatrixV2SaveKind =

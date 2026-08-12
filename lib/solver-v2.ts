@@ -16,6 +16,16 @@ export type SolverScenario = {
 };
 
 export type SolverRole = { id: string; code: string; name: string; color?: string | null; logicalId?: string | null };
+export type SolverRoleCategory = {
+  id: string;
+  code: string;
+  name: string;
+  color?: string | null;
+  sortOrder: number;
+  anchorRoleId: string;
+  roleIds: string[];
+  roleNames: string[];
+};
 export type SolverLocation = { id: string; code: string; name: string };
 
 export type SolverConfiguration = {
@@ -25,6 +35,7 @@ export type SolverConfiguration = {
   matrixVersionId: string | null;
   matrixEffectiveFrom: string | null;
   scenarios: SolverScenario[];
+  roleCategories: SolverRoleCategory[];
   roles: SolverRole[];
   locations: SolverLocation[];
   currency: string | null;
@@ -1008,6 +1019,7 @@ export async function loadSolverConfiguration(
       matrixVersionId: null,
       matrixEffectiveFrom: null,
       scenarios: [LEGACY_DEFAULT_SCENARIO],
+      roleCategories: [],
       roles: [],
       locations: [],
       currency: null,
@@ -1078,6 +1090,17 @@ export async function loadSolverConfiguration(
       return { id, code: String(item.code ?? ""), name: String(item.name ?? ""),
         color: roleColours.get(id)?.color ?? null, logicalId: roleColours.get(id)?.logicalId ?? null };
     }) };
+  const categoryPayload = record(await rpc(client, "optimizer_role_categories_uat_v1", { p_month: monthStart }));
+  const roleCategories: SolverRoleCategory[] = (Array.isArray(categoryPayload.categories) ? categoryPayload.categories : []).map(value => {
+    const item = record(value);
+    return {
+      id: String(item.id ?? ""), code: String(item.code ?? ""), name: String(item.name ?? ""),
+      color: item.color ? String(item.color) : null, sortOrder: Number(item.sortOrder ?? 0),
+      anchorRoleId: String(item.anchorRoleId ?? ""),
+      roleIds: Array.isArray(item.roleIds) ? item.roleIds.map(String) : [],
+      roleNames: Array.isArray(item.roleNames) ? item.roleNames.map(String) : [],
+    };
+  }).filter(category => category.id && category.anchorRoleId && category.roleIds.length);
   const locationResult = { data: (Array.isArray(configurationPayload.locations)
     ? configurationPayload.locations : []).map(value => {
       const item = record(value);
@@ -1166,6 +1189,7 @@ export async function loadSolverConfiguration(
     matrixVersionId: activeMatrixId,
     matrixEffectiveFrom: String(matrixVersion.effectiveFrom??"")||null,
     scenarios,
+    roleCategories,
     roles,
     locations,
     currency,
