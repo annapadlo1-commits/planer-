@@ -281,3 +281,41 @@ test("legacy daily-shift header remains import-compatible",async()=>{
   }));
   assert.equal(parsed.settings.maximumShiftsPerDay,"1");
 });
+
+test("first-run workbook imports schedule categories, fallback roles, probation and ad-hoc pool",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    "Kategorie grafików":[
+      {Kod:"SALA",Nazwa:"Sala",Kolor:"#7257d8",Kolejność:"1",Aktywna:"TAK"},
+      {Kod:"BAR",Nazwa:"Bar",Kolor:"#0f8f7a",Kolejność:"2",Aktywna:"TAK"},
+    ],
+    Role:[
+      {Kod:"KELNER",Nazwa:"Kelner","Kod kategorii":"SALA",Aktywna:"TAK"},
+      {Kod:"HOST",Nazwa:"Host","Kod kategorii":"SALA",Aktywna:"TAK"},
+      {Kod:"BARMAN",Nazwa:"Barman","Kod kategorii":"BAR",Aktywna:"TAK"},
+    ],
+    Pracownicy:[{
+      "Numer pracownika":"GP-201",Imię:"Anna",Nazwisko:"Nowak","Kod roli":"KELNER",
+      "Role rezerwowe (kolejność)":"HOST:1","Etap zatrudnienia":"PROBATION",
+      "Koniec okresu próbnego":"2026-09-30","Rodzaj umowy":"ZLECENIE",
+    }],
+    "Role pracowników":[
+      {"Numer pracownika":"GP-201","Kod roli":"KELNER",Podstawowa:"TAK","Sposób użycia":"STANDARD","Priorytet rezerwowy":"0",Aktywna:"TAK"},
+      {"Numer pracownika":"GP-201","Kod roli":"HOST",Podstawowa:"NIE","Sposób użycia":"BACKUP","Priorytet rezerwowy":"1",Aktywna:"TAK"},
+    ],
+    "Pula ad-hoc":[{
+      "Imię i nazwisko":"Jan Adhoc","E-mail":"jan.adhoc@example.test","Kod roli":"BARMAN",
+      "Rodzaj współpracy":"Umowa zlecenie","Stawka godzinowa":"45,50",Waluta:"PLN",
+      "Dostępny od":"2026-09-01","Dostępny do":"2026-09-30",Aktywna:"TAK",
+    }],
+  }));
+
+  assert.deepEqual(parsed.roleCategories.map(category=>category.code),["SALA","BAR"]);
+  assert.deepEqual(parsed.roles.map(role=>[role.code,role.categoryCode]),[["KELNER","SALA"],["HOST","SALA"],["BARMAN","BAR"]]);
+  assert.equal(parsed.employees[0].employmentStage,"PROBATION");
+  assert.equal(parsed.employees[0].probationEnd,"2026-09-30");
+  assert.deepEqual(parsed.employees[0].backupRoles,[{roleCode:"HOST",priority:1}]);
+  assert.deepEqual(parsed.employeeRoles.map(role=>[role.roleCode,role.assignmentMode,role.backupPriority]),[["KELNER","STANDARD","0"],["HOST","BACKUP","1"]]);
+  assert.equal(parsed.adHocWorkers[0].roleCode,"BARMAN");
+  assert.equal(parsed.adHocWorkers[0].baseRateMinor,"4550");
+  assert.equal(parsed.adHocWorkers[0].availableFrom,"2026-09-01");
+});

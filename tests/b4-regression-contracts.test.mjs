@@ -290,10 +290,13 @@ test("location filter keeps the issue summary, badge and empty state consistent"
   assert.doesNotMatch(workspace,/<small>\{workspace\.issues\.length\}<\/small>/);
 });
 
-test("role cards hide engine jargon and optional operational tools stay collapsed", async () => {
+test("category cards hide engine jargon and optional operational tools stay collapsed", async () => {
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   assert.match(modules,/role-plan-cards compact/);
-  assert.match(modules,/roleCardStyle\(role\.id,role\.color\)/);
+  assert.match(modules,/solverRoleCategories\.map\(\(category\)/);
+  assert.match(modules,/roleCardStyle\(category\.id,category\.color\)/);
+  assert.match(modules,/category\.roleNames\.join\(" • "\)/);
+  assert.match(modules,/onOpenSolverV2\?\.\(category\)/);
   assert.doesNotMatch(modules,/<strong>OR-Tools<\/strong>/);
   assert.doesNotMatch(modules,/Scenariusze, warianty i analiza OR-Tools/);
   assert.match(modules,/<details className="operational-additional-tools">/);
