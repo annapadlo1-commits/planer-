@@ -275,8 +275,7 @@ export default function GrafikPro() {
     const errors:string[]=[];
     setManagerStandby(standbyResult.rows);
     setSwapAnnouncements(((swapBoardResult.data as ShiftSwapBoardContext|null)?.requests??[]).filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)));
-    if(standbyResult.error&&canReadCompanyWorkspac
-e)errors.push(`Nie udało się pobrać rezerwy bezpieczeństwa: ${standbyResult.error.message}`);
+    if(standbyResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać rezerwy bezpieczeństwa: ${standbyResult.error.message}`);
     if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać ogłoszeń zamiany: ${swapBoardResult.error.message}`);
     if(solverConfigurationResult.error){
       const message=solverErrorMessage(solverConfigurationResult.error.message);
