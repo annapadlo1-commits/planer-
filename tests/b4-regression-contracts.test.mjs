@@ -433,9 +433,13 @@ test("swap discovery starts on the first employee and validates availability plu
 test("employee portal uses one combined schedule and availability calendar", async () => {
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  const uatCss=await readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8");
   const publicationCalendar=await readFile(new URL("../supabase/migrations/20260809152000_b4_deduplicate_published_company_calendar.sql",import.meta.url),"utf8");
   assert.match(modules,/Grafik i dostępność w jednym kalendarzu/);
   assert.match(modules,/employee-combined-calendar/);
+  assert.match(css,/\.portal-grid\.portal-top\{grid-template-columns:minmax\(250px,320px\) minmax\(0,1fr\)\}/);
+  assert.match(css,/\.employee-combined-calendar \.availability-calendar-content\{min-height:0;grid-template-columns:minmax\(560px,1\.55fr\) minmax\(310px,\.65fr\)\}/);
+  assert.match(uatCss,/\.availability-calendar-content > \.availability-month-status \{\s*grid-column: 1 \/ -1;/);
   assert.match(modules,/publishedAssignments\.length/);
   assert.match(modules,/portal\?\.employee\?\.id \|\| portal\?\.timeConstraints\?\.employeeId/);
   assert.match(modules,/Niedostępność zostanie zapisana PO publikacji/);
