@@ -323,6 +323,8 @@ class EmployeeRoleGrant:
     role_id: str
     valid_from: date | None = None
     valid_to: date | None = None
+    assignment_mode: str = "STANDARD"
+    backup_priority: int = 100
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> EmployeeRoleGrant:
@@ -334,10 +336,21 @@ class EmployeeRoleGrant:
         )
         if valid_from and valid_to and valid_to < valid_from:
             raise SnapshotError("Role grant validTo cannot precede validFrom")
+        assignment_mode = str(
+            _pick(raw, "assignmentMode", "assignment_mode", default="STANDARD")
+        ).upper()
+        if assignment_mode not in {"STANDARD", "BACKUP"}:
+            raise SnapshotError("Role grant assignmentMode must be STANDARD or BACKUP")
         return cls(
             role_id=str(_pick(raw, "roleId", "role_id")),
             valid_from=valid_from,
             valid_to=valid_to,
+            assignment_mode=assignment_mode,
+            backup_priority=_integer(
+                _pick(raw, "backupPriority", "backup_priority", default=100),
+                "backupPriority",
+                1,
+            ),
         )
 
     def active_on(self, day: date) -> bool:
@@ -644,6 +657,27 @@ class Employee:
         return any(
             grant.role_id == role_id and grant.active_on(day)
             for grant in self.role_grants
+        )
+
+    def role_assignment_penalty(self, role_id: str, day: date) -> int:
+        """Return zero for normal role grants and a stable penalty for backup use.
+
+        Coverage always wins, but among equally complete schedules the engine
+        must use a dedicated HOST/RUNNER before a waiter carrying that duty as
+        an emergency capability. Multiple grants are resolved by the least
+        restrictive active grant.
+        """
+        if self.role_grants is None:
+            return 0
+        grants = [
+            grant for grant in self.role_grants
+            if grant.role_id == role_id and grant.active_on(day)
+        ]
+        if not grants:
+            return 0
+        return min(
+            0 if grant.assignment_mode == "STANDARD" else grant.backup_priority
+            for grant in grants
         )
 
     def location_allowed_on(self, location_id: str, day: date) -> bool:

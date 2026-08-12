@@ -489,7 +489,14 @@ class CpSatScheduleEngine:
             ),
         )
         common.model.clear_objective()
-        common.model.minimize(common.metrics["UNFILLED"])
+        # Coverage is still the absolute first priority.  For schedules with
+        # the same number of filled seats, dedicated role holders precede
+        # BACKUP grants (for example HOST before a waiter with HOST duty).
+        role_priority_multiplier = common.metric_bounds["ROLE_BACKUP_PENALTY"] + 1
+        common.model.minimize(
+            common.metrics["UNFILLED"] * role_priority_multiplier
+            + common.metrics["ROLE_BACKUP_PENALTY"]
+        )
         common_time_limit = self._remaining_seconds(global_deadline, "GLOBAL:UNFILLED")
         if not snapshot.settings.require_optimal:
             # Coverage is the first and most important business objective.  Its
@@ -536,6 +543,9 @@ class CpSatScheduleEngine:
             common_solver, common_status, snapshot, "UNFILLED"
         )
         minimum_unfilled = int(common_solver.value(common.metrics["UNFILLED"]))
+        minimum_role_backup_penalty = int(
+            common_solver.value(common.metrics["ROLE_BACKUP_PENALTY"])
+        )
         self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
         self._emit_progress(
             phase="SOLVING",
@@ -583,6 +593,10 @@ class CpSatScheduleEngine:
             )
             warm_artifacts.model.add(
                 warm_artifacts.metrics["UNFILLED"] == minimum_unfilled
+            )
+            warm_artifacts.model.add(
+                warm_artifacts.metrics["ROLE_BACKUP_PENALTY"]
+                == minimum_role_backup_penalty
             )
             self._apply_coverage_solution_hint(
                 common,
@@ -668,6 +682,10 @@ class CpSatScheduleEngine:
             )
             self._ensure_deadline(strategy_deadline, strategy.code)
             artifacts.model.add(artifacts.metrics["UNFILLED"] == minimum_unfilled)
+            artifacts.model.add(
+                artifacts.metrics["ROLE_BACKUP_PENALTY"]
+                == minimum_role_backup_penalty
+            )
             coverage_hint_count = self._apply_coverage_solution_hint(
                 common, common_solver, artifacts, slots
             )
@@ -731,6 +749,7 @@ class CpSatScheduleEngine:
                     "status": common_solver.status_name(common_status),
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
+                    "roleBackupPenalty": minimum_role_backup_penalty,
                     **(
                         {"fairnessIncumbentGuard": dict(applied_fairness_bounds)}
                         if applied_fairness_bounds
@@ -2021,6 +2040,22 @@ class CpSatScheduleEngine:
                     x[key] = model.new_bool_var(f"x|{employee.id}|{slot.id}")
                     static_quotes[key] = quote_assignment(snapshot, employee, slot)
 
+        employees_by_id = {employee.id: employee for employee in snapshot.employees}
+        role_backup_penalty_terms = [
+            variable
+            * employees_by_id[employee_id].role_assignment_penalty(
+                slots_by_id[slot_id].role_id, slots_by_id[slot_id].date
+            )
+            for (employee_id, slot_id), variable in x.items()
+        ]
+        role_backup_penalty_expression = _sum(role_backup_penalty_terms)
+        role_backup_penalty_bound = sum(
+            employees_by_id[employee_id].role_assignment_penalty(
+                slots_by_id[slot_id].role_id, slots_by_id[slot_id].date
+            )
+            for employee_id, slot_id in x
+        )
+
         unfilled: dict[str, Any] = {}
         if aggregate_coverage:
             for group_key, group_slots in coverage_groups.items():
@@ -2242,8 +2277,8 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values())},
-                metric_bounds={"UNFILLED": len(slots)},
+                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
+                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -2324,8 +2359,8 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values())},
-                metric_bounds={"UNFILLED": len(slots)},
+                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
+                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -2446,8 +2481,8 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values())},
-                metric_bounds={"UNFILLED": len(slots)},
+                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
+                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -2619,6 +2654,7 @@ class CpSatScheduleEngine:
 
         metrics = {
             "UNFILLED": _sum(unfilled.values()),
+            "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
             "TOTAL_COST": total_cost_expression,
             "PREFERENCE_VIOLATIONS": preference_expression,
             "HOME_LOCATION_VIOLATIONS": home_expression,
@@ -2634,6 +2670,7 @@ class CpSatScheduleEngine:
         }
         metric_bounds = {
             "UNFILLED": len(slots),
+            "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
             "TOTAL_COST": total_cost_upper,
             "PREFERENCE_VIOLATIONS": 4 * len(slots),
             "HOME_LOCATION_VIOLATIONS": 0,
