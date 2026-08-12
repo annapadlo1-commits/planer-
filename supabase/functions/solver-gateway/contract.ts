@@ -412,6 +412,7 @@ function validateStageObjective(value: unknown): void {
       "verifiedZeroIncumbent",
       "certificate",
       "timeBudgetSeconds",
+      "roleBackupPenalty",
     ],
   );
   assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
@@ -443,6 +444,14 @@ function validateStageObjective(value: unknown): void {
     if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
       fail(400, "INVALID_TIME_BUDGET_SECONDS");
     }
+  }
+  if (Object.hasOwn(value, "roleBackupPenalty")) {
+    assertInteger(
+      value.roleBackupPenalty,
+      "ROLE_BACKUP_PENALTY",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
   }
   if (Object.hasOwn(value, "terms")) {
     assertArray(value.terms, "OBJECTIVE_TERMS", 100);

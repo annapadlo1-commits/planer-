@@ -219,6 +219,25 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
   assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
 });
 
+test("accepts the primary-role-before-backup diagnostic emitted by category runs", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives[0].roleBackupPenalty = 200;
+  variant.metrics.ROLE_BACKUP_PENALTY = 200;
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
+});
+
 test("rejects invalid stage time budgets before invoking PostgreSQL", async () => {
   const calls = [];
   const handler = handlerWith(calls);
