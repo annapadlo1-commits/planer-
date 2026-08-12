@@ -128,7 +128,7 @@ test("Excel-native times are normalized to strict HH:MM before server validation
   const parsed=await readMatrixWorkbook(workbookFile({
     Zmiany:[
       {Kod:"RANO",Nazwa:"Poranna",Od:10/24,Do:"17:00:00",Dni:"1",Aktywna:"TAK"},
-      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"1899-12-30T17:00:00Z",Do:1/24,Dni:"5",Aktywna:"TAK"},
+      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"1899-12-30T17:00:00Z",Do:1/24,Dni:"5","Następny dzień":"TAK",Aktywna:"TAK"},
     ],
   }));
 
@@ -142,12 +142,28 @@ test("quick-start shifts without an optional order never emit an empty integer",
   const parsed=await readMatrixWorkbook(workbookFile({
     Zmiany:[
       {Kod:"RANO",Nazwa:"Poranna",Od:"10:00",Do:"17:00",Dni:"1",Aktywna:"TAK"},
-      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"17:00",Do:"01:00",Dni:"5",Aktywna:"TAK"},
+      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"17:00",Do:"01:00",Dni:"5","Następny dzień":"TAK",Aktywna:"TAK"},
     ],
   }));
 
   assert.deepEqual(parsed.shifts.map(shift=>shift.sortOrder),["1","2"]);
   assert.ok(parsed.shifts.every(shift=>shift.sortOrder!==""));
+});
+
+test("overnight validation names every invalid Excel row before server publication",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({
+      Zmiany:[
+        {Kod:"NOC_1",Nazwa:"Nocna",Od:"17:00",Do:"00:00",Dni:"1","Następny dzień":"NIE",Aktywna:"TAK"},
+        {Kod:"DZIEN_1",Nazwa:"Dzienna",Od:"10:00",Do:"17:00",Dni:"2","Następny dzień":"TAK",Aktywna:"TAK"},
+      ],
+    })),
+    error=>{
+      assert.match(error.message,/Zmiany • wiersz 2 • NOC_1 \(17:00–00:00\).*TAK/);
+      assert.match(error.message,/Zmiany • wiersz 3 • DZIEN_1 \(10:00–17:00\).*NIE/);
+      return true;
+    },
+  );
 });
 
 test("new role and location may be entered by name and receive stable codes in the same workbook",async()=>{

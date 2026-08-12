@@ -144,7 +144,7 @@ test("B4 user interface does not expose retired Matrix and English event labels"
   assert.match(visibleSource, /Wydarzenie \+ obsada/);
   assert.match(visibleSource, /Limit nieobecności/);
   assert.match(editor, /KONFIGURACJA FIRMY • MODEL DYNAMICZNY/);
-  assert.match(editor, /importIssueMessage\(issue\.message\)/);
+  assert.match(editor, /importIssueMessage\(issue\)/);
   assert.match(solverClient, /Nieobsadzone miejsce w wymaganej obsadzie/);
   assert.match(app, /grafik-pro:selected-month/);
   assert.match(panel, /rolePublication\.variantId/);
@@ -581,13 +581,15 @@ test("full UAT reset preserves only the owner and creates an empty first-run dra
   assert.match(migration,/'maximumShiftsPerDay',1/);
 });
 
-test("global feedback remains above every active drawer and modal", async () => {
+test("global feedback is dismissible and remains in the active workspace flow", async () => {
   const [page,styles]=await Promise.all([
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/globals.css",import.meta.url),"utf8"),
   ]);
   assert.match(page,/context-feedback-stack/);
   assert.match(page,/aria-live="assertive"/);
-  assert.match(styles,/\.context-feedback-stack\{position:fixed;z-index:5000/);
+  assert.match(page,/aria-label="Zamknij komunikat"/);
+  assert.match(styles,/\.context-feedback-stack\{position:relative;z-index:2/);
+  assert.doesNotMatch(styles,/\.context-feedback-stack\{position:fixed/);
   assert.match(styles,/\.toast\{position:fixed;z-index:5000/);
 });
