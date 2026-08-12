@@ -82,8 +82,9 @@ function automaticShiftPeriod(startsAt:string){
 export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayload>{
   const XLSX=await import("xlsx");
   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
+  const matchingSheetName=(names:string[])=>workbook.SheetNames.find(name=>names.some(expected=>name.toLocaleLowerCase("pl-PL")===expected.toLocaleLowerCase("pl-PL")));
   const rows=(names:string[])=>{
-    const sheetName=workbook.SheetNames.find(name=>names.some(expected=>name.toLocaleLowerCase("pl-PL")===expected.toLocaleLowerCase("pl-PL")));
+    const sheetName=matchingSheetName(names);
     return sheetName?XLSX.utils.sheet_to_json<Record<string,unknown>>(workbook.Sheets[sheetName],{defval:"",raw:false,dateNF:"yyyy-mm-dd"}):[];
   };
   const splitName=(value:string)=>{const parts=value.trim().split(/\s+/);return {firstName:parts.shift()??"",lastName:parts.join(" ")};};
@@ -286,7 +287,9 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     employeeNo:employees[index].employeeNo,email:employees[index].email,dutyCode:code,roleCode:employees[index].primaryRoleCode,active:true,
   }))):[];
 
-  const shiftRows=rows(["Zmiany","Shifts","DEFINICJE_ZMIAN"]);
+  const shiftSheetAliases=["Zmiany","Shifts","DEFINICJE_ZMIAN"];
+  const shiftSheetName=matchingSheetName(shiftSheetAliases)??"Zmiany";
+  const shiftRows=rows(shiftSheetAliases);
   const sourceShiftLayout=shiftRows.some(row=>Boolean(importCell(row,"LOKALIZACJA_ID","GRUPA_DNI","ZMIANA_ID")));
   const shifts=shiftRows.map((row,index)=>{
     const baseCode=importCell(row,"Kod","code","ZMIANA_ID");
@@ -306,6 +309,16 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
+  const overnightErrors=shifts.flatMap((shift,index)=>{
+    if(!/^\d{2}:\d{2}$/.test(shift.startsAt)||!/^\d{2}:\d{2}$/.test(shift.endsAt))return [];
+    const expectedEndsNextDay=shift.endsAt<=shift.startsAt;
+    if(shift.endsNextDay===expectedEndsNextDay)return [];
+    const expected=expectedEndsNextDay?"TAK":"NIE";
+    return [`${shiftSheetName} • wiersz ${index+2} • ${shift.code||shift.name||"zmiana"} (${shift.startsAt}–${shift.endsAt}): pole „Następny dzień” powinno mieć wartość ${expected}.`];
+  });
+  if(overnightErrors.length){
+    throw new Error(`Nie można sprawdzić pliku: ${overnightErrors.length} ${overnightErrors.length===1?"zmiana ma":"zmiany mają"} niespójne oznaczenie przejścia przez północ.\n${overnightErrors.join("\n")}`);
+  }
   const groupedShifts=Array.from(new Map(shifts.map(shift=>[`${shift.locationCode}:${shift.code}:${shift.startsAt}:${shift.endsAt}`,shift])).values()).map(shift=>({
     ...shift,days:[...new Set(shifts.filter(candidate=>candidate.locationCode===shift.locationCode&&candidate.code===shift.code&&candidate.startsAt===shift.startsAt&&candidate.endsAt===shift.endsAt).flatMap(candidate=>candidate.days))].sort(),
   }));

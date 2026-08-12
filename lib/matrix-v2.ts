@@ -189,6 +189,11 @@ export type MatrixV2PublicationBlocker = {
   shiftTemplateId?: string;
   shiftCode?: string;
   shiftName?: string;
+  locationId?: string;
+  startsAt?: string;
+  endsAt?: string;
+  endsNextDay?: boolean;
+  expectedEndsNextDay?: boolean;
   message: string;
 };
 

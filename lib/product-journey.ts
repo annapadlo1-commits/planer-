@@ -152,6 +152,17 @@ export function configurationBlockerAction(
       actionLabel: "Otwórz profil",
     };
   }
+  if (blocker.code === "SHIFT_OVERNIGHT_FLAG_INCONSISTENT") {
+    const expected = blocker.expectedEndsNextDay ? "włączone" : "wyłączone";
+    return {
+      section: "structure",
+      step: "shifts",
+      focus: blocker.shiftTemplateId ? { targetId: "configuration-step-shifts" } : undefined,
+      title,
+      message: `${blocker.startsAt ?? "?"}–${blocker.endsAt ?? "?"}: ustaw pole „Następny dzień” jako ${expected}. Północ 00:00 po zmianie wieczornej należy już do następnego dnia.`,
+      actionLabel: "Popraw tę zmianę",
+    };
+  }
   return {
     section: "structure",
     step: "shifts",
