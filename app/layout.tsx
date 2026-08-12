@@ -12,6 +12,7 @@ import "./alpha16.css";
 import "./standby-manager.css";
 import "./product-journey.css";
 import "./recovery-center.css";
+import "./next-batch.css";
 
 export const metadata: Metadata = {
   title: "GRAFIK PRO 3.0",

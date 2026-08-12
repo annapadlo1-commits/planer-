@@ -71,6 +71,25 @@ export const employeeNavigation: ProductNavigationItem[] = [
   { key: "time", label: "Czas pracy", description: "Moja ewidencja czasu" },
 ];
 
+const MANAGEMENT_ACCESS: Record<string, ManagementSection[]> = {
+  OWNER: ["start", "team", "schedule", "operations", "analytics", "settings"],
+  ADMIN: ["start", "team", "schedule", "operations", "analytics", "settings"],
+  HR_FINANCE: ["start", "team", "operations", "analytics", "settings"],
+  ROLE_MANAGER: ["start", "team", "schedule", "operations", "analytics"],
+  LOCATION_MANAGER: ["start", "team", "schedule", "operations", "analytics"],
+  VERIFIER: ["start", "schedule", "operations", "analytics"],
+};
+
+export function managementNavigationForRoles(roles: { app_role: string }[] | null | undefined) {
+  const allowed = new Set<ManagementSection>();
+  for (const role of roles ?? []) for (const section of MANAGEMENT_ACCESS[role.app_role] ?? []) allowed.add(section);
+  return managementNavigation.filter(item => allowed.has(item.key as ManagementSection));
+}
+
+export function canManageSchedule(roles: { app_role: string }[] | null | undefined) {
+  return roles?.some(role => ["OWNER", "ADMIN", "ROLE_MANAGER", "LOCATION_MANAGER"].includes(role.app_role)) ?? false;
+}
+
 export function isEmployeePersona(roles: { app_role: string }[] | null | undefined) {
   const names = roles?.map(role => role.app_role) ?? [];
   return names.length > 0 && !names.some(role => MANAGEMENT_ROLES.has(role));

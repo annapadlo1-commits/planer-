@@ -18,6 +18,8 @@ import {RoleCompositePanel} from "@/components/RoleCompositePanel";
 import {GeneratorV2Page} from "@/components/GeneratorV2Page";
 import {MatrixV2Editor} from "@/components/MatrixV2Editor";
 import {RecoveryCenter} from "@/components/RecoveryCenter";
+import {AnalyticsDashboard} from "@/components/AnalyticsDashboard";
+import {MessageCenter} from "@/components/MessageCenter";
 import {
   getOperationalSolverWorkspace,
   getManagerStandbyMonth,
@@ -41,8 +43,9 @@ import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,typ
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import {
   employeeNavigation,
+  canManageSchedule,
   isEmployeePersona,
-  managementNavigation,
+  managementNavigationForRoles,
   pathForSection,
   sectionFromPath,
   type ProductSection,
@@ -50,7 +53,7 @@ import {
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
-type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"budzet";
+ type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";category:null}|{type:"CATEGORY";category:SolverRoleCategory};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
@@ -89,7 +92,7 @@ const productIcons: Record<ProductSection, LucideIcon> = {
 };
 const legacySection: Record<NavKey, ProductSection> = {
   centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
-  kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",
+  kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",wiadomosci:"operations",
   budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
 };
 
@@ -114,8 +117,12 @@ export default function GrafikPro() {
   const router=useRouter();
   const pathname=usePathname();
   const employeeShell=isEmployeePersona(access?.roles);
-  const primarySection=sectionFromPath(pathname,employeeShell);
-  const productNavigation=employeeShell?employeeNavigation:managementNavigation;
+  const productNavigation=employeeShell?employeeNavigation:managementNavigationForRoles(access?.roles);
+  const requestedPrimarySection=sectionFromPath(pathname,employeeShell);
+  const primarySection=productNavigation.some(item=>item.key===requestedPrimarySection)
+    ?requestedPrimarySection
+    :(productNavigation[0]?.key??(employeeShell?"my-schedule":"start"));
+  const scheduleWriteAllowed=canManageSchedule(access?.roles);
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [data,setData]=useState<Workspace>({
     plan:null,assignments:[],shifts:[],issues:[],events:[],
@@ -220,7 +227,7 @@ export default function GrafikPro() {
     [item.value,item.label],[item.code,item.label],[item.label,item.label],
   ])),[roleOptions]);
   const canReadCompanyWorkspace=Boolean(access?.roles?.some(item=>
-    ["OWNER","ADMIN","HR_FINANCE","VERIFIER"].includes(item.app_role)
+    ["OWNER","ADMIN","HR_FINANCE","VERIFIER","ROLE_MANAGER","LOCATION_MANAGER"].includes(item.app_role)
   ));
 
   const notify=(message:string)=>{setToast(message);window.setTimeout(()=>setToast(""),3200);};
@@ -294,217 +301,7 @@ export default function GrafikPro() {
       if(canReadCompanyWorkspace&&activeWorkspaceResult.error){
         errors.push(`Nie udało się pobrać obowiązującego grafiku OR-Tools: ${activeWorkspaceResult.error.message}`);
       }else if(canReadCompanyWorkspace&&activeWorkspaceResult.workspace){
-        errors.push("Odczyt obowiązującego grafiku nie potwierdził aktywnego workspace OR-Tools.");
-      }
-    }else if(currentSolverConfiguration?.engine==="ALPHA15"||currentSolverConfiguration?.engine==="SHADOW"){
-      setOperationalWorkspace(null);
-      setData(legacyData);
-    }else{
-      setOperationalWorkspace(null);
-      setData({plan:null,assignments:[],shifts:[],issues:[],events:legacyData.events,budget:{amount:0,warning_percent:100,hard_limit:false}});
-    }
-    if(!completeResult.error&&completeResult.data)setComplete(completeResult.data as ActiveWorkspace);
-    if(completeResult.error
-      &&completeResult.error.message!=="Could not find the function public.complete_workspace"
-      &&!completeResult.error.message.includes("EMPLOYEE_ACCOUNT_NOT_LINKED")){
-      errors.push(completeResult.error.message);
-    }
-    if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
-    else{
-      setWorkforceCalendar({events:[]});
-      if(calendarResult.error)errors.push(`Nie udało się pobrać wydarzeń i limitów nieobecności: ${calendarResult.error.message}`);
-    }
-    if(!matrixV2Result.error&&matrixV2Result.data&&(matrixV2Result.data as MatrixV2Workspace).matrixVersion?.schema_version>=2){
-      try{
-        const workspace=matrixV2Result.data as MatrixV2Workspace;
-        matrixV2Settings(workspace.matrixVersion);
-        if(!employeeDirectoryResult.error&&employeeDirectoryResult.data){
-          const directory=employeeDirectoryResult.data as MatrixV2EmployeeDirectory;
-          setMatrixV2({...workspace,employees:directory.employees,
-            workforceHash:directory.workforceHash,
-            workforceCounts:{active:directory.activeCount,archived:directory.archivedCount}});
-        }else setMatrixV2(workspace);
-      }catch(cause){
-        setMatrixV2(null);
-        errors.push(matrixV2ErrorMessage(cause instanceof Error?cause.message:String(cause)));
-      }
-    }else{
-      setMatrixV2(null);
-      if(matrixV2Result.error&&currentSolverConfiguration?.engine==="ORTOOLS_V2")errors.push(matrixV2Result.error.message);
-    }
-    setError(errors.join(" • "));
-    setLoading(false);
-  },[supabase,user,selectedMonthDate,canReadCompanyWorkspace]);
-  useEffect(()=>{void load();return()=>{loadTokenRef.current+=1};},[load]);
-  useEffect(()=>{monthStorageReadyRef.current=true;},[]);
-  useEffect(()=>{
-    if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
-  },[selectedMonth]);
-  useEffect(()=>{
-    if(employeeShell){setActiveState("portal");return;}
-    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
-    setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
-  },[employeeShell,primarySection]);
-  useEffect(()=>{
-    setDay("ALL");setModal(null);setSelectedShift(null);setSelectedEmployee("");
-    setPlanScope({type:"COMPANY",category:null});
-    setPlanForm(current=>({...current,name:`Plan operacyjny ${selectedMonth}`}));
-  },[selectedMonth]);
-  const previousSolverEngineRef=useRef<string|null>(null);
-  useEffect(()=>{
-    const nextEngine=solverConfiguration?.engine;
-    if(!nextEngine)return;
-    const previousEngine=previousSolverEngineRef.current;
-    previousSolverEngineRef.current=nextEngine;
-    if(previousEngine&&previousEngine!==nextEngine){
-      setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",category:null});
-    }
-  },[solverConfiguration?.engine]);
-  useEffect(()=>{
-    if(!solverConfiguration||employeeShell)return;
-    try{
-      const raw=window.sessionStorage.getItem(planPanelStorageKey);
-      if(!raw)return;
-      const saved=JSON.parse(raw) as {month?:string;categoryId?:string};
-      if(saved.month!==selectedMonth||!saved.categoryId)return;
-      const savedCategory=solverConfiguration.roleCategories.find(item=>item.id===saved.categoryId);
-      if(savedCategory){setPlanScope({type:"CATEGORY",category:savedCategory});setModal("plan");}
-    }catch{window.sessionStorage.removeItem(planPanelStorageKey);}
-  },[employeeShell,selectedMonth,solverConfiguration]);
-  useEffect(()=>{
-    if(role!=="ALL"&&!roleOptions.some(option=>option.value===role))setRole("ALL");
-  },[role,roleOptions]);
-  useEffect(()=>{
-    if(location!=="ALL"&&!locationOptions.some(option=>option.value===location))setLocation("ALL");
-  },[location,locationOptions]);
-
-  const openCompanyGenerator=()=>{
-    if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
-    if(solverConfiguration.engine!=="ALPHA15"&&!solverConfiguration.solverVersion?.trim()){setError("Generator jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
-    setPlanScope({type:"COMPANY",category:null});setActive("generator");
-  };
-  const openRoleGenerator=(requestedCategory:SolverRoleCategory)=>{
-    if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
-    if(!solverConfiguration.solverVersion?.trim()){setError("Generator kategorii jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
-    const dynamicCategory=solverConfiguration.roleCategories.find(item=>item.id===requestedCategory.id||item.code===requestedCategory.code);
-    if(!dynamicCategory){setError("Ta kategoria nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
-    setPlanScope({type:"CATEGORY",category:dynamicCategory});
-    setPlanForm(current=>({...current,name:`Grafik ${dynamicCategory.name} • ${selectedMonth}`}));
-    window.sessionStorage.setItem(planPanelStorageKey,JSON.stringify({month:selectedMonth,categoryId:dynamicCategory.id}));
-    setModal("plan");
-  };
-  const closeModal=()=>{window.sessionStorage.removeItem(planPanelStorageKey);setModal(null);};
-
-  const assignments=useMemo(()=>data.assignments.filter(a=>
-    (location==="ALL"||(isOrtools?a.location_id===location:a.location===location))&&
-    (role==="ALL"||(isOrtools?a.role_id===role:a.role===role))&&
-    (day==="ALL"||a.date===day)&&(selectedEmployee===""||a.employee_id===selectedEmployee)
-  ),[data.assignments,location,role,day,selectedEmployee,isOrtools]);
-  const employees=useMemo(()=>{
-    const map=new Map<string,{id:string;no:string;name:string;role:string;minutes:number;nominal:number;cost:number;shifts:number}>();
-    for(const a of data.assignments){
-      const x=map.get(a.employee_id)||{id:a.employee_id,no:a.employee_no,name:a.name,role:a.role_name??a.role,minutes:a.monthly_minutes,nominal:a.nominal_minutes,cost:0,shifts:0};
-      x.cost+=Number(a.cost);x.shifts++;map.set(a.employee_id,x);
-    }
-    return [...map.values()].sort((a,b)=>b.minutes/Math.max(b.nominal,1)-a.minutes/Math.max(a.nominal,1));
-  },[data.assignments]);
-  const rolePlanningData=useMemo<ActiveWorkspace|null>(()=>{
-    if(!complete||solverConfiguration?.engine!=="ORTOOLS_V2"||!solverConfiguration.roles.length)return complete;
-    return {...complete,roles:solverConfiguration.roles.map(item=>({id:item.id,code:item.code,name:item.name,active:true}))};
-  },[complete,solverConfiguration]);
-  const shiftAssignments=selectedShift?data.assignments.filter(a=>a.shift_id===selectedShift.id):[];
-  const totalMinutes=data.assignments.reduce((n,a)=>n+(new Date(a.ends_at).getTime()-new Date(a.starts_at).getTime())/60000,0);
-  const cost=Number(data.plan?.total_cost||0);
-  const budget=Number(data.budget?.amount||0);
-  const coverage=data.shifts.length?Math.round(100*(1-Math.min(data.issues.filter(i=>i.issue_type==="SHORTAGE"||i.issue_type==="CAPABILITY_MISSING").length/data.shifts.length,1))):0;
-
-  const activeNavigation=productNavigation.find(item=>item.key===primarySection)??productNavigation[0];
-  const employeePortalSection=primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
-
-  return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
-    <aside className="sidebar product-sidebar">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>PLANOWANIE I OPERACJE</small></div></div>
-      <div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>
-      <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>openProductSection(item.key)}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
-      <div className="sidebar-footer">
-        <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{({OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Kadry i finanse",ROLE_MANAGER:"Menadżer roli",LOCATION_MANAGER:"Menadżer lokalu",VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik"} as Record<string,string>)[access?.roles?.[0]?.app_role||""]||"Użytkownik"}</small></div></div>
-        <button className="sidebar-signout" onClick={()=>void signOut()}><LogOut size={15}/> Wyloguj się</button>
-      </div>
-    </aside>
-    <section className="workspace">
-      <header className="topbar">
-        <button className="icon-button menu-button"><Menu size={20}/></button>
-        <div className="product-topbar-copy"><p className="eyebrow">{employeeShell?"MOJE SPRAWY":"ZARZĄDZANIE"} / {selectedMonthLabel.toLocaleUpperCase("pl-PL")}</p><h1>{activeNavigation.label}</h1><small>{activeNavigation.description}</small></div>
-        <div className="topbar-actions">
-          <button className={`live-status environment-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}} title={`Projekt Supabase: ${projectRef}`}><Wifi size={15}/><span><b>{environmentLabel}</b><small>{projectRef} • konfiguracja {matrixV2?`v${matrixV2.matrixVersion.version} ${matrixV2.editable?"robocza":"aktywna"}`:"niedostępna"} • {matrixV2?.workforceCounts?.active??summary?.employees??0} osób</small></span></button>
-          <div className="month-selector" aria-label="Wybór miesiąca">
-            <button type="button" aria-label="Poprzedni miesiąc" title="Poprzedni miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,-1))}><ChevronLeft size={17}/></button>
-            <label className="date-selector" title="Wybierz miesiąc"><CalendarDays size={16}/><select aria-label="Wybierz miesiąc z listy" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{monthOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <button type="button" aria-label="Następny miesiąc" title="Następny miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,1))}><ChevronRight size={17}/></button>
-          </div>
-          {!employeeShell&&<button className="primary-button" disabled={!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
-        </div>
-      </header>
-      {error&&<div className="context-feedback-stack" role="region" aria-live="assertive">
-        {error&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Operacja nie powiodła się</strong>{error}</span><button aria-label="Zamknij komunikat" onClick={()=>setError("")}>×</button></div>}
-      </div>}
-      {loading?<div className="engine-loading"><RefreshCw className="spin"/><strong>Pobieram rzeczywisty grafik…</strong></div>:
-      <div className="content">
-        {employeeShell?<>
-          {primarySection==="messages"&&<section className="feature-coming-card"><Bell/><h2>Wiadomości zespołu są następnym rozszerzeniem portalu</h2><p>Ten moduł pozostaje jawnie nieaktywny w pierwszym vertical slice. Nie udajemy działającej komunikacji, dopóki nie ma wersjonowanych rozmów, powiadomień i pełnego E2E.</p></section>}
-          {primarySection==="time"&&complete&&<ActiveModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
-          {["my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
-          {primarySection==="swaps"&&<RecoveryCenter month={selectedMonth} employeeMode notify={notify} fail={setError}/>} 
-          {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
-        </>:<>
-        {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["scalanie","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
-        {primarySection==="operations"&&<ContextTabs items={[["naprawy","Centrum napraw"],["alerty","Alerty"],["kalendarz","Kalendarz"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
-        {active==="centrum"&&<>
-          {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")}/>} 
-          <section className="kpi-grid">
-            <button className="kpi-card" onClick={()=>setActive("grafik")}><span className="kpi-icon violet"><Users/></span><span><small>Obsada</small><strong>{data.plan?`${coverage}%`:"—"}</strong><em>{data.plan?`${data.assignments.length} przydziałów`:"Brak planu"}</em></span></button>
-            <button className="kpi-card" onClick={()=>setActive("alerty")}><span className="kpi-icon coral"><AlertTriangle/></span><span><small>Otwarte alerty</small><strong>{data.issues.length}</strong><em>{data.issues.filter(i=>i.severity==="CRITICAL").length} krytycznych</em></span></button>
-            <button className="kpi-card" onClick={()=>setActive("budzet")}><span className="kpi-icon teal"><CircleDollarSign/></span><span><small>Koszt / budżet</small><strong>{data.plan&&budget?`${Math.round(cost/budget*100)}%`:"—"}</strong><em>{formatMoney(cost,activeCurrency)}</em></span></button>
-            {isOrtools?<button className="kpi-card" onClick={()=>openSetupStep("strategies","variants")}><span className="kpi-icon orange"><Boxes/></span><span><small>Warianty biznesowe</small><strong>{solverConfiguration?.scenarios.length||0}</strong><em>w aktywnej konfiguracji</em></span></button>:<button className="kpi-card" onClick={()=>setActive("kalendarz")}><span className="kpi-icon orange"><CalendarDays/></span><span><small>Wydarzenia</small><strong>{data.events.length}</strong><em>{data.events.filter(e=>e.status==="NEEDS_VERIFICATION").length} do weryfikacji</em></span></button>}
-          </section>
-          {!data.plan?<section className="empty-engine"><WandSparkles size={36}/><h2>{matrixV2?"Dokończ konfigurację albo utwórz pierwszy plan":"Baza jest gotowa do pierwszego rzeczywistego planu"}</h2><p>Generator sprawdzi role, lokalizacje, kompetencje, limity i {isOrtools?"warianty biznesowe":"eventy"}. Jeśli czegoś brakuje, prowadzona konfiguracja wskaże dokładne miejsce naprawy.</p><button className="primary-button" onClick={openCompanyGenerator}>Generuj plan</button></section>:
-          <section className="live-overview">
-            <div className="section-head"><div><p className="eyebrow">AKTYWNY WARIANT</p><h2>{data.plan.name} • v{data.plan.version}</h2></div><span className={`status-pill ${data.plan.status.toLowerCase()}`}>{planStatusLabels[data.plan.status]||data.plan.status}</span></div>
-            <div className="overview-grid"><div><small>Scenariusz</small><strong>{isOrtools?data.plan.scenario_code:scenarioLabels[data.plan.scenario_code]||data.plan.scenario_code}</strong></div><div><small>Optymalizacja</small><strong>{isOrtools?data.plan.optimization_mode:modeLabels[data.plan.optimization_mode]||data.plan.optimization_mode}</strong></div><div><small>Zmiany</small><strong>{data.shifts.length}</strong></div><div><small>Roboczogodziny</small><strong>{Math.round(totalMinutes/60)}</strong></div></div>
-            <div className="quick-actions"><button onClick={()=>setActive("grafik")}>Otwórz grafik <ChevronRight/></button><button onClick={()=>setActive("kadra")}>Pracownicy i archiwum <ChevronRight/></button><button onClick={()=>setActive("alerty")}>Rozwiąż alerty <ChevronRight/></button></div>
-          </section>}
-        </>}
-        {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} activeConfigurationVersion={complete?.activeMatrix?.version} draftConfigurationVersion={complete?.draftMatrix?.version} notify={notify} fail={setError} onPublished={async()=>{await load();setActive("grafik");}}/>}
-        {active==="generator"&&solverConfiguration?.engine==="ALPHA15"&&<section className="empty-engine"><AlertTriangle/><h2>Nowy generator czeka na kontrolowane przełączenie</h2><p>Interfejs Alpha 15 nie jest już rozwijany. Uruchamianie nowych wariantów zostanie odblokowane po wdrożeniu workera OR-Tools, sekretu gatewaya i zmianie flagi silnika.</p></section>}
-        {active==="scalanie"&&<section className="schedule-role-first-intro">
-          <span>ETAP 2 Z 3 • SCALANIE FIRMY</span>
-          <h2>Połącz zatwierdzone grafiki ról</h2>
-          <p>W tym miejscu właściciel sprawdza komplet zespołów, konflikty i koszty, a następnie tworzy jedną wspólną wersję bez ponownego generowania ról.</p>
-        </section>}
-        {active==="scalanie"&&solverConfiguration?.engine==="ORTOOLS_V2"&&user&&solverConfiguration.solverVersion?<RoleCompositePanel
-          engine={solverConfiguration.engine}
-          solverVersion={solverConfiguration.solverVersion}
-          userId={user.id}
-          month={selectedMonthDate}
-          timezone={activeTimezone}
-          scenarios={solverConfiguration.scenarios}
-          matrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined}
-          refreshKey={roleCompositeRefreshKey}
-          onPublished={async()=>{notify("Scalony grafik ról został opublikowany");await load();setActive("grafik");}}
-        />:active==="scalanie"?<section className="empty-engine"><AlertTriangle/><h2>Scalanie jest chwilowo niedostępne</h2><p>Dokończ odczyt opublikowanej konfiguracji firmy, a następnie wróć do tego etapu.</p></section>:null}
-        {active==="grafik"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
-        {active==="grafik"&&isOrtools&&!operationalWorkspace&&<section className="empty-engine"><CalendarDays/><h2>Brak opublikowanego grafiku operacyjnego</h2><p>W Generatorze wybierz gotowy wariant, przejrzyj analizę i opublikuj go jako osobną wersję operacyjną.</p><button className="primary-button" onClick={()=>setActive("generator")}>Otwórz Generator i warianty</button></section>}
-        {active==="grafik"&&!isOrtools&&<ScheduleView data={data} assignments={assignments} location={location} role={role} day={day} setLocation={setLocation} setRole={setRole} setDay={setDay} onShift={(s)=>{setSelectedShift(s);setModal("shift");}} onGenerate={()=>setActive("generator")} roleOptions={roleOptions} locationOptions={locationOptions} dynamic={false} timezone={activeTimezone} currency={activeCurrency}/>}
-        {active==="zespoly"&&<>
-          <section className="schedule-role-first-intro">
-            <span>ETAP 1 Z 3 • GRAFIKI KATEGORII</span>
-            <h2>Najpierw przygotuj i zatwierdź grafik każdego zespołu</h2>
-            <p>Każdy lider przegląda jedną kategorię wraz ze wszystkimi jej rolami i obowiązkami. Dopiero po akceptacji kategorii przejdź do scalenia grafiku firmy.</p>
-          </section>
-          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików kategorii jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverRoleCategories={solverConfiguration.roleCategories} solverRoles={solverConfiguration.roles} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
-        </>}
-        {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened} onOpenOperationalCalendar={()=>{setActive("zespoly");window.requestAnimationFrame(()=>document.querySelector(".operational-calendar-panel")?.scrollIntoView({behavior:"smooth",block:"start"}));}}/></>}
-        {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Konfiguracja firmy jest niedostępna</h2><p>Odśwież dane albo sprawdź migracje UAT. Aplikacja nie przełączy się po cichu na konkurencyjne źródło danych.</p></section>}
+        errors.push("Odczyt obowiązującego grafiku nie potwierdził aktywnego workspace O…5574 tokens truncated…ączy się po cichu na konkurencyjne źródło danych.</p></section>}
         {active==="kalendarz"&&<MonthView month={selectedMonth} data={data} events={workforceCalendar.events} standby={managerStandby} swaps={swapAnnouncements} timezone={activeTimezone} onDay={(d)=>{setDay(d);setActive("grafik");}}/>}
         {active==="kadra"&&matrixV2&&<WorkforceCatalog data={matrixV2} onEdit={openEmployeeProfile} onAdd={openNewEmployeeProfile}/>}
         {["hr","finanse"].includes(active)&&matrixV2&&<MatrixDestination section={active==="hr"?"dane kadrowe i ograniczenia":"stawki, dodatki i budżety"} open={()=>{setMatrixFocusEmployeeId(null);setActive("matrix");}}/>}
@@ -514,7 +311,8 @@ export default function GrafikPro() {
         {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>} 
         {active==="alerty"&&!isOrtools&&<IssuesView issues={data.issues} shifts={data.shifts} roleLabels={activeRoleLabels} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
         {active==="naprawy"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} notify={notify} fail={setError} reload={load}/>} 
-        {active==="budzet"&&<BudgetView cost={cost} budget={budget} assignments={data.assignments} currency={activeCurrency} dynamic={isOrtools}/>} 
+        {active==="wiadomosci"&&<MessageCenter notify={notify} fail={setError}/>} 
+        {active==="budzet"&&<AnalyticsDashboard data={data} matrix={matrixV2} currency={activeCurrency}/>} 
         </>}
       </div>}
     </section>
