@@ -75,6 +75,11 @@ on conflict(matrix_version_id,code) do update set
   name=excluded.name,description=excluded.description,color=excluded.color,
   sort_order=excluded.sort_order,active=true,updated_at=now();
 
+-- This is a one-time structural backfill. Published versions normally stay
+-- immutable, but their existing role rows must receive the new category FK.
+-- The guard is restored immediately after both deterministic backfills.
+drop trigger if exists matrix_v2_immutable_guard on public.matrix_roles_v2;
+
 update public.matrix_roles_v2 role_row set category_id=category.id
 from public.matrix_role_categories_v2 category
 where category.matrix_version_id=role_row.matrix_version_id
@@ -102,6 +107,10 @@ update public.matrix_roles_v2 role_row set category_id=category.id
 from public.matrix_role_categories_v2 category
 where category.matrix_version_id=role_row.matrix_version_id
   and category.code=role_row.code and role_row.category_id is null;
+
+create trigger matrix_v2_immutable_guard
+before insert or update or delete on public.matrix_roles_v2
+for each row execute function solver_private.guard_matrix_child_immutable_v2();
 
 -- matrix_v2_create_draft clones roles generically. Inherit their category at
 -- insert time so every later draft keeps exactly the same planning hierarchy.
