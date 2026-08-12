@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -430,8 +429,7 @@ export function ActiveModules({
   }, [fail, selectedMonthDate, supabase, view]);
   useEffect(() => { void loadOperationalContext(); }, [loadOperationalContext]);
 
-  async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: 
-string }) {
+  async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
     let publicationConflicts: Array<{ scheduleName?: string; publishedAt?: string; date?: string; shiftName?: string; locationName?: string }> = [];
     if (entry.kind === "CANNOT_WORK" && supabase) {
       // OR-Tools' published schedule payload intentionally contains only assignments
@@ -749,8 +747,7 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!startDate || !endDate || endDate < startDate || !title.trim() || !roleId) return;
-    if (kind 
-=== "EVENT" && (!locationId || !selectedTemplates.length)) return;
+    if (kind === "EVENT" && (!locationId || !selectedTemplates.length)) return;
     const ok = await save({ startDate, endDate, kind, title, description, locationId: kind === "EVENT" ? locationId : undefined, roleId, shiftTemplateIds: selectedTemplates, additionalCount: count, maximumHardUnavailable: limit });
     if (ok) { setTitle(""); setDescription(""); }
   };
@@ -859,8 +856,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
       <div className="employee-day-shifts">{selectedDayAssignments.map(assignment=>{
         const query=daySearch.trim().toLocaleLowerCase("pl-PL");
         const coworkers=(assignment.coworkers||[]).filter(coworker=>!query||`${coworker.name} ${roleNames[coworker.role]??coworker.role} ${assignment.location} ${portalShiftLabel(assignment)}`.toLocaleLowerCase("pl-PL").includes(query));
-        return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</s
-mall></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role,roleColors[coworker.role])} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
+        return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</small></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role,roleColors[coworker.role])} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
       })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany.</p>}</div>
     </section>}
     </>}
@@ -1014,8 +1010,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   const clickDay=(date:string)=>{
     onSelectDay?.(date);
     if(dayIsProtected(date)){fail("Ten dzień zawiera chroniony wpis pracodawcy, urlopu lub L4 i jest w portalu tylko do odczytu.");return;}
-    if(rangeAnchor){selectRa
-nge(rangeAnchor,date);return;}
+    if(rangeAnchor){selectRange(rangeAnchor,date);return;}
     if(selectedDays.length>1){
       setSelectedDays(current=>current.includes(date)?current.filter(item=>item!==date):[...current,date].sort());
       return;
@@ -1129,4 +1124,5 @@ function downloadCsv(name: string, rows: Record<string, unknown>[]) {
   anchor.href = URL.createObjectURL(blob);
   anchor.download = name;
   anchor.click();
-  URL.revokeObjectURL(anchor.href
+  URL.revokeObjectURL(anchor.href);
+}
