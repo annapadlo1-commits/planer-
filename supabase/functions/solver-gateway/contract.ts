@@ -411,6 +411,7 @@ function validateStageObjective(value: unknown): void {
       "costIncumbentGuard",
       "verifiedZeroIncumbent",
       "certificate",
+      "timeBudgetSeconds",
     ],
   );
   assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
@@ -436,6 +437,12 @@ function validateStageObjective(value: unknown): void {
   );
   if (Object.hasOwn(value, "bestBound")) {
     assertFiniteNumber(value.bestBound, "BEST_BOUND");
+  }
+  if (Object.hasOwn(value, "timeBudgetSeconds")) {
+    assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
+    if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
+      fail(400, "INVALID_TIME_BUDGET_SECONDS");
+    }
   }
   if (Object.hasOwn(value, "terms")) {
     assertArray(value.terms, "OBJECTIVE_TERMS", 100);

@@ -60,6 +60,7 @@ function normalizedVariant() {
       value: 0,
       status: "OPTIMAL",
       bestBound: 0,
+      timeBudgetSeconds: 180.0,
       tolerance: 0,
       frozenUpperBound: 0,
       costIncumbentGuard: 0,
@@ -216,6 +217,23 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
 
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
+});
+
+test("rejects invalid stage time budgets before invoking PostgreSQL", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  for (const timeBudgetSeconds of [Number.NaN, -1, 86_401, "180"]) {
+    const variant = normalizedVariant();
+    variant.stageObjectives[0].timeBudgetSeconds = timeBudgetSeconds;
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+  }
+  assert.equal(calls.length, 0);
 });
 
 test("accepts verified fairness diagnostics emitted by the worker", async () => {
