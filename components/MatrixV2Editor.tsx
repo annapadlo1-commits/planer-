@@ -13,7 +13,7 @@ import { configurationBlockerAction } from "@/lib/product-journey";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
-import { automaticShiftPeriod, equivalentShiftKey, parseTime24 } from "@/lib/uat006-workflows";
+import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
   type MatrixV2Budget, type MatrixV2Duty, type MatrixV2Location,
@@ -158,6 +158,7 @@ export function MatrixV2Editor({
   const [publicationDialog,setPublicationDialog]=useState<PublicationDialogState|null>(null);
   const [publicationError,setPublicationError]=useState<string|null>(null);
   const [shiftMergeDialog,setShiftMergeDialog]=useState<ShiftMergeDialogState|null>(null);
+  const [shiftMergeAvailability,setShiftMergeAvailability]=useState<{groups:number;duplicates:number}|null>(null);
   const [importOpen,setImportOpen]=useState(()=>typeof window!=="undefined"&&window.sessionStorage.getItem(importOpenStorageKey)==="true");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
@@ -167,6 +168,20 @@ export function MatrixV2Editor({
   useEffect(()=>{
     window.sessionStorage.setItem(importOpenStorageKey,importOpen?"true":"false");
   },[importOpen,importOpenStorageKey]);
+  useEffect(()=>{
+    let disposed=false;
+    setShiftMergeAvailability(null);
+    if(!supabase||!data.editable)return;
+    void supabase.rpc("matrix_v2_merge_equivalent_shifts_uat_v2",{p_apply:false}).then(result=>{
+      if(disposed||result.error)return;
+      const payload=result.data as {groups?:number;duplicates?:number;blockers?:unknown[]}|null;
+      const groups=Number(payload?.groups??0);
+      if(groups>0&&!payload?.blockers?.length){
+        setShiftMergeAvailability({groups,duplicates:Number(payload?.duplicates??0)});
+      }
+    });
+    return()=>{disposed=true;};
+  },[data.editable,data.matrixVersion.id,data.shiftTemplates,data.staffingRules,supabase]);
   const mixedCurrencyItems = data.financeVisible ? [
     ...(data.payRules ?? []),
     ...(data.scenarioBudgets ?? []),
@@ -197,6 +212,10 @@ export function MatrixV2Editor({
     const action=configurationBlockerAction(blocker,data,month);
     selectTab(action.section==="workforce"?"workforce":"structure");
     if(action.focus?.employeeId)setWorkforceFocusEmployeeId(action.focus.employeeId);
+    if(blocker.shiftTemplateId){
+      const shift=data.shiftTemplates.find(item=>item.id===blocker.shiftTemplateId);
+      if(shift){setEdit({kind:"SHIFT",item:shift});return;}
+    }
     const align=()=>{
       const target=document.getElementById(action.focus?.targetId??`configuration-step-${action.step}`);
       target?.scrollIntoView({behavior:"smooth",block:"center"});
@@ -317,6 +336,7 @@ export function MatrixV2Editor({
       return;
     }
     setShiftMergeDialog(null);
+    setShiftMergeAvailability(null);
     notify(`Scalono ${Number((result.data as {groups?:number}|null)?.groups??0)} logicznych zmian. Dni są teraz zapisane wspólnie.`);
     await reloadInPlace();
   }
@@ -664,7 +684,7 @@ export function MatrixV2Editor({
 
     {!data.editable && <div className="matrix-v2-readonly"><ShieldCheck/><span><strong>Oglądasz opublikowaną konfigurację</strong><small>Utwórz wersję roboczą, aby bezpiecznie wprowadzić zmiany bez wpływu na istniejące grafiki.</small></span></div>}
 
-    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts} createDraft={createDraft} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount} onOpenOperationalCalendar={onOpenOperationalCalendar}/>}
+    {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts} mergeAvailability={shiftMergeAvailability} createDraft={createDraft} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount} onOpenOperationalCalendar={onOpenOperationalCalendar}/>}
     {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding}/>}
     {tab === "strategies" && <StrategiesTab data={data} editable={data.editable} edit={setEdit} unlinkedScenarios={unlinkedScenarios} incompleteStrategies={incompleteStrategies}/>}
     {tab === "finance" && data.financeVisible && <FinanceTab data={data} editable={data.editable} edit={setEdit}/>}
@@ -838,7 +858,7 @@ function MatrixSettingsCard({
   </section>;
 }
 
-function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts,createDraft,bulkAdjust,defaultScenarioCount,onOpenOperationalCalendar}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>;createDraft:()=>Promise<void>;bulkAdjust:(input:{scenarioId:string;locationId:string|null;shiftPeriod:string|null;roleId:string|null;delta:number;visibleCount:number})=>Promise<boolean>;defaultScenarioCount:number;onOpenOperationalCalendar?:()=>void}) {
+function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts,mergeAvailability,createDraft,bulkAdjust,defaultScenarioCount,onOpenOperationalCalendar}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>;mergeAvailability:{groups:number;duplicates:number}|null;createDraft:()=>Promise<void>;bulkAdjust:(input:{scenarioId:string;locationId:string|null;shiftPeriod:string|null;roleId:string|null;delta:number;visibleCount:number})=>Promise<boolean>;defaultScenarioCount:number;onOpenOperationalCalendar?:()=>void}) {
   const [locationId,setLocationId]=useState("");
   const [query,setQuery]=useState("");
   const normalizedQuery=query.trim().toLocaleLowerCase("pl-PL");
@@ -851,10 +871,9 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
   const visibleLocations=data.locations.filter(location=>!locationId||location.id===locationId);
   const baseScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)
     ??data.scenarios.find(scenario=>scenario.active);
-  const equivalentGroups=[...data.shiftTemplates.filter(shift=>shift.active).reduce((groups,shift)=>{const key=equivalentShiftKey({locationId:shift.location_id,name:shift.name,startsAt:shift.starts_at,endsAt:shift.ends_at,endsNextDay:shift.ends_next_day});groups.set(key,[...(groups.get(key)??[]),shift]);return groups;},new Map<string,MatrixV2Shift[]>()).values()].filter(group=>group.length>1);
   return <div className="matrix-v2-tab-content">
     {periodMismatches.length>0&&<details className="matrix-v2-technical-repair"><summary><AlertTriangle/> System wykrył {periodMismatches.length} niespójnych danych zmian</summary><p>To pole techniczne jest wyliczane automatycznie z godziny rozpoczęcia i nie wymaga decyzji biznesowej.</p><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Napraw dane zmian":"Utwórz wersję roboczą i napraw"}</button></details>}
-    {equivalentGroups.length>0&&<details className="matrix-duplicate-cleanup"><summary><span><strong>Porządkowanie danych: {equivalentGroups.length} grup zmian można uprościć</strong><small>Nie blokuje grafiku • godziny i obsada pozostaną bez zmian</small></span></summary><div><p>Te same godziny zapisano osobno dla kilku dni. Możesz bezpiecznie połączyć je w czytelniejsze karty; historia zostanie zachowana.</p>{editable?<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Połącz powtarzające się zmiany</button>:<button className="secondary-button" disabled={busy} onClick={()=>void createDraft()}>Utwórz wersję roboczą, aby uporządkować</button>}</div></details>}
+    {mergeAvailability&&<details className="matrix-duplicate-cleanup"><summary><span><strong>Porządkowanie danych: {mergeAvailability.groups} grup zmian można uprościć</strong><small>Sprawdzone przez serwer • godziny i obsada pozostaną bez zmian</small></span></summary><div><p>Serwer potwierdził, że te wpisy mają identyczne reguły i można bezpiecznie połączyć ich dni w czytelniejsze karty. Historia zostanie zachowana.</p>{editable?<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Połącz powtarzające się zmiany</button>:<button className="secondary-button" disabled={busy} onClick={()=>void createDraft()}>Utwórz wersję roboczą, aby uporządkować</button>}</div></details>}
     <div className="matrix-v2-structure-overview">
       <RoleDutyOverview data={data} editable={editable} edit={edit}/>
       <EntityPanel title="Lokale" description="Miejsca, w których powstaje grafik" items={data.locations} editable={editable} add={() => edit({kind: "LOCATION"})} edit={item => edit({kind: "LOCATION", item})}/>
@@ -1754,7 +1773,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
-      {localError&&<div className="solver-v2-notice warning"><AlertTriangle/>{localError}</div>}
+      {localError&&<div className="solver-v2-notice warning"><AlertTriangle/><span className="matrix-import-error-text">{localError}</span></div>}
       {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
       {preview&&scope!=="FINANCE"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
