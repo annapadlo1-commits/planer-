@@ -33,7 +33,7 @@ import {
   type OperationalShift as Shift,
   type OperationalWorkspace as Workspace,
   type SolverConfiguration,
-  type SolverRole,
+  type SolverRoleCategory,
   type SolverManagerStandby,
   type SolverWorkspace,
 } from "@/lib/solver-v2";
@@ -52,7 +52,7 @@ import {
 } from "@/lib/product-journey";
 type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"budzet";
 type Modal = "plan"|"shift"|null;
-type PlanScope = {type:"COMPANY";role:null}|{type:"ROLE";role:SolverRole};
+type PlanScope = {type:"COMPANY";category:null}|{type:"CATEGORY";category:SolverRoleCategory};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
 type WorkforceCalendarContext = {events:WorkforceCalendarEvent[]};
 type ShiftSwapAnnouncement = {id:string;date:string;status:string;shiftName:string;locationName:string;roleName:string;proposerName:string};
@@ -133,7 +133,7 @@ export default function GrafikPro() {
   const [busy,setBusy]=useState(false);
   const [solverConfiguration,setSolverConfiguration]=useState<SolverConfiguration|null>(null);
   const [solverConfigurationError,setSolverConfigurationError]=useState("");
-  const [planScope,setPlanScope]=useState<PlanScope>({type:"COMPANY",role:null});
+  const [planScope,setPlanScope]=useState<PlanScope>({type:"COMPANY",category:null});
   const [solverPanelVersion,setSolverPanelVersion]=useState(0);
   const [roleCompositeRefreshKey,setRoleCompositeRefreshKey]=useState(0);
   const [error,setError]=useState("");
@@ -347,7 +347,7 @@ export default function GrafikPro() {
   },[employeeShell,primarySection]);
   useEffect(()=>{
     setDay("ALL");setModal(null);setSelectedShift(null);setSelectedEmployee("");
-    setPlanScope({type:"COMPANY",role:null});
+    setPlanScope({type:"COMPANY",category:null});
     setPlanForm(current=>({...current,name:`Plan operacyjny ${selectedMonth}`}));
   },[selectedMonth]);
   const previousSolverEngineRef=useRef<string|null>(null);
@@ -357,7 +357,7 @@ export default function GrafikPro() {
     const previousEngine=previousSolverEngineRef.current;
     previousSolverEngineRef.current=nextEngine;
     if(previousEngine&&previousEngine!==nextEngine){
-      setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",role:null});
+      setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",category:null});
     }
   },[solverConfiguration?.engine]);
   useEffect(()=>{
@@ -365,10 +365,10 @@ export default function GrafikPro() {
     try{
       const raw=window.sessionStorage.getItem(planPanelStorageKey);
       if(!raw)return;
-      const saved=JSON.parse(raw) as {month?:string;roleId?:string};
-      if(saved.month!==selectedMonth||!saved.roleId)return;
-      const savedRole=solverConfiguration.roles.find(item=>item.id===saved.roleId);
-      if(savedRole){setPlanScope({type:"ROLE",role:savedRole});setModal("plan");}
+      const saved=JSON.parse(raw) as {month?:string;categoryId?:string};
+      if(saved.month!==selectedMonth||!saved.categoryId)return;
+      const savedCategory=solverConfiguration.roleCategories.find(item=>item.id===saved.categoryId);
+      if(savedCategory){setPlanScope({type:"CATEGORY",category:savedCategory});setModal("plan");}
     }catch{window.sessionStorage.removeItem(planPanelStorageKey);}
   },[employeeShell,selectedMonth,solverConfiguration]);
   useEffect(()=>{
@@ -381,16 +381,16 @@ export default function GrafikPro() {
   const openCompanyGenerator=()=>{
     if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
     if(solverConfiguration.engine!=="ALPHA15"&&!solverConfiguration.solverVersion?.trim()){setError("Generator jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
-    setPlanScope({type:"COMPANY",role:null});setActive("generator");
+    setPlanScope({type:"COMPANY",category:null});setActive("generator");
   };
-  const openRoleGenerator=(requestedRole:SolverRole)=>{
+  const openRoleGenerator=(requestedCategory:SolverRoleCategory)=>{
     if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
-    if(!solverConfiguration.solverVersion?.trim()){setError("Generator roli jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
-    const dynamicRole=solverConfiguration.roles.find(item=>item.id===requestedRole.id||item.code===requestedRole.code);
-    if(!dynamicRole){setError("Ta rola nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
-    setPlanScope({type:"ROLE",role:dynamicRole});
-    setPlanForm(current=>({...current,name:`Grafik ${dynamicRole.name} • ${selectedMonth}`}));
-    window.sessionStorage.setItem(planPanelStorageKey,JSON.stringify({month:selectedMonth,roleId:dynamicRole.id}));
+    if(!solverConfiguration.solverVersion?.trim()){setError("Generator kategorii jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
+    const dynamicCategory=solverConfiguration.roleCategories.find(item=>item.id===requestedCategory.id||item.code===requestedCategory.code);
+    if(!dynamicCategory){setError("Ta kategoria nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
+    setPlanScope({type:"CATEGORY",category:dynamicCategory});
+    setPlanForm(current=>({...current,name:`Grafik ${dynamicCategory.name} • ${selectedMonth}`}));
+    window.sessionStorage.setItem(planPanelStorageKey,JSON.stringify({month:selectedMonth,categoryId:dynamicCategory.id}));
     setModal("plan");
   };
   const closeModal=()=>{window.sessionStorage.removeItem(planPanelStorageKey);setModal(null);};
@@ -497,11 +497,11 @@ export default function GrafikPro() {
         {active==="grafik"&&!isOrtools&&<ScheduleView data={data} assignments={assignments} location={location} role={role} day={day} setLocation={setLocation} setRole={setRole} setDay={setDay} onShift={(s)=>{setSelectedShift(s);setModal("shift");}} onGenerate={()=>setActive("generator")} roleOptions={roleOptions} locationOptions={locationOptions} dynamic={false} timezone={activeTimezone} currency={activeCurrency}/>}
         {active==="zespoly"&&<>
           <section className="schedule-role-first-intro">
-            <span>ETAP 1 Z 3 • GRAFIKI RÓL</span>
-            <h2>Najpierw przygotuj i zatwierdź grafik każdej roli</h2>
-            <p>Każdy lider przegląda swój grafik roli. Dopiero po akceptacji ról przejdź do etapu 2, aby scalić je w jeden grafik firmy i porównać warianty.</p>
+            <span>ETAP 1 Z 3 • GRAFIKI KATEGORII</span>
+            <h2>Najpierw przygotuj i zatwierdź grafik każdego zespołu</h2>
+            <p>Każdy lider przegląda jedną kategorię wraz ze wszystkimi jej rolami i obowiązkami. Dopiero po akceptacji kategorii przejdź do scalenia grafiku firmy.</p>
           </section>
-          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików ról jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverRoles={solverConfiguration.roles} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
+          {!solverConfiguration?<div className="empty-engine"><AlertTriangle/><p>Generator grafików kategorii jest zablokowany do czasu poprawnego odczytu konfiguracji.</p></div>:rolePlanningData&&<ActiveModules month={selectedMonth} view="rolePlans" data={rolePlanningData} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration.engine} solverVersion={solverConfiguration.solverVersion??undefined} solverMatrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined} solverRoleCategories={solverConfiguration.roleCategories} solverRoles={solverConfiguration.roles} timezone={activeTimezone} currency={activeCurrency} onOpenSolverV2={openRoleGenerator}/>} 
         </>}
         {active==="matrix"&&matrixV2&&<><ConfigurationJourney data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={openCompanyGenerator}/><MatrixV2Editor key={`${selectedMonthDate}:${matrixFocusEmployeeId??""}:${configurationStep}`} initialTab={configurationTab} month={selectedMonth} data={matrixV2} reload={load} notify={notify} fail={setError} focusEmployeeId={matrixFocusEmployeeId} createEmployeeRequest={matrixCreateEmployeeRequest} onCreateEmployeeOpened={markNewEmployeeProfileOpened} onOpenOperationalCalendar={()=>{setActive("zespoly");window.requestAnimationFrame(()=>document.querySelector(".operational-calendar-panel")?.scrollIntoView({behavior:"smooth",block:"start"}));}}/></>}
         {active==="matrix"&&!matrixV2&&<section className="empty-engine"><AlertTriangle/><h2>Konfiguracja firmy jest niedostępna</h2><p>Odśwież dane albo sprawdź migracje UAT. Aplikacja nie przełączy się po cichu na konkurencyjne źródło danych.</p></section>}
@@ -523,7 +523,7 @@ export default function GrafikPro() {
       {modal==="plan"&&<div className="drawer-content">
         {!solverConfiguration&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, dopóki konfiguracja nie zostanie poprawnie odczytana.</div>}
         {solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&solverConfiguration.solverVersion&&<SolverV2Panel
-          key={`${solverPanelVersion}:${solverConfiguration.solverVersion}:${selectedMonthDate}:${planForm.scenario}:${planScope.type}:${planScope.type==="ROLE"?planScope.role.id:"company"}`}
+          key={`${solverPanelVersion}:${solverConfiguration.solverVersion}:${selectedMonthDate}:${planForm.scenario}:${planScope.type}:${planScope.type==="CATEGORY"?planScope.category.id:"company"}`}
           engine={solverConfiguration.engine}
           solverVersion={solverConfiguration.solverVersion}
           userId={user.id}
@@ -532,16 +532,16 @@ export default function GrafikPro() {
           name={planForm.name}
           scenarioCode={planForm.scenario}
           scenarios={solverConfiguration.scenarios}
-          scopeType={planScope.type}
-          scopeRoleId={planScope.type==="ROLE"?planScope.role.id:null}
-          scopeLabel={planScope.type==="ROLE"?`Grafik roli: ${planScope.role.name}`:"Grafik całej firmy"}
+          scopeType={planScope.type==="CATEGORY"?"ROLE":"COMPANY"}
+          scopeRoleId={planScope.type==="CATEGORY"?planScope.category.anchorRoleId:null}
+          scopeLabel={planScope.type==="CATEGORY"?`Grafik kategorii: ${planScope.category.name} • ${planScope.category.roleNames.join(", ")}`:"Grafik całej firmy"}
           matrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom}
           activeConfigurationVersion={complete?.activeMatrix?.version}
           draftConfigurationVersion={complete?.draftMatrix?.version}
           allowStart={solverConfiguration.engine==="ORTOOLS_V2"||solverConfiguration.engine==="SHADOW"}
           onNameChange={value=>setPlanForm(current=>({...current,name:value}))}
           onScenarioChange={value=>setPlanForm(current=>({...current,scenario:value}))}
-          onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="ROLE")setRoleCompositeRefreshKey(current=>current+1);}}
+          onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="CATEGORY")setRoleCompositeRefreshKey(current=>current+1);}}
           onPublished={async()=>{await load();notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}
         />}
         {solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&!solverConfiguration.solverVersion&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, ponieważ konfiguracja nie wskazuje wersji solvera.</div>}
