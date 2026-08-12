@@ -24,6 +24,7 @@ import {
   type SolverEmployeeStandby,
   type SolverEngine,
   type SolverRole,
+  type SolverRoleCategory,
 } from "@/lib/solver-v2";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -218,6 +219,7 @@ export function ActiveModules({
   solverEngine,
   solverVersion,
   solverMatrixEffectiveFrom,
+  solverRoleCategories = [],
   solverRoles = [],
   timezone,
   onOpenSolverV2,
@@ -233,10 +235,11 @@ export function ActiveModules({
   solverEngine?: SolverEngine;
   solverVersion?: string;
   solverMatrixEffectiveFrom?: string;
+  solverRoleCategories?: SolverRoleCategory[];
   solverRoles?: SolverRole[];
   timezone: string;
   currency: string;
-  onOpenSolverV2?: (role: SolverRole) => void;
+  onOpenSolverV2?: (category: SolverRoleCategory) => void;
   portalSection?: EmployeePortalSection;
   allowUatMasterPersona?: boolean;
 }) {
@@ -611,17 +614,18 @@ export function ActiveModules({
   if (view === "rolePlans") return <>
     <PageHead
       eyebrow="PLANOWANIE ZESPOŁOWE"
-      title="Grafiki według roli"
-      subtitle="Lider wybiera scenariusz, porównuje trzy warianty i publikuje gotowy grafik swojego zespołu bez czekania na pozostałe role."
+      title="Grafiki zespołów według kategorii"
+      subtitle="Jeden generator obejmuje wszystkie role należące do zespołu. Przykładowo SALA planuje razem kelnerów, hostów i runnerów."
     />
     <div className="solver-v2-notice matrix-source-notice"><AlertTriangle/><span><strong>Grafiki ról korzystają wyłącznie z opublikowanej konfiguracji firmy{solverMatrixEffectiveFrom?` obowiązującej od ${solverMatrixEffectiveFrom}`:""}</strong><small>Zmiany zapisane tylko w wersji roboczej nie są jeszcze widoczne dla generatora.</small></span></div>
     {operationalContext && <OperationalCalendarPanel context={operationalContext} month={month} busy={busy} save={saveOperationalEvent} review={reviewAvailability} />}
-    <div className="role-plan-cards compact">{solverRoles.map((role) => <article key={role.id} style={roleCardStyle(role.id,role.color)}>
+    <div className="role-plan-cards compact">{solverRoleCategories.map((category) => <article key={category.id} style={roleCardStyle(category.id,category.color)}>
       <i />
-      <div><small>GRAFIK ROLI</small><h3>{role.name}</h3></div>
+      <div><small>KATEGORIA GRAFIKU</small><h3>{category.name}</h3><p>{category.roleNames.join(" • ")}</p></div>
       {solverEngine === "SHADOW"&&<span className="workflow-status empty">Test bez publikacji</span>}
-      <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(role)}><WandSparkles /> Otwórz generator</button></div>
+      <div className="card-actions"><button disabled={busy || !onOpenSolverV2} className="primary-button" onClick={() => onOpenSolverV2?.(category)}><WandSparkles /> Otwórz generator</button></div>
     </article>)}</div>
+    {!solverRoleCategories.length&&<div className="solver-v2-notice warning"><AlertTriangle/>Najpierw przypisz każdą aktywną rolę do kategorii grafiku w konfiguracji firmy.</div>}
     {solverEngine === "SHADOW" && <div className="solver-v2-notice warning"><ShieldCheck />Tryb SHADOW pozwala wygenerować i porównać trzy warianty każdej roli. Publikacja zespołu i wspólnego grafiku pozostaje zablokowana do kontrolowanego przełączenia.</div>}
   </>;
   return <>
