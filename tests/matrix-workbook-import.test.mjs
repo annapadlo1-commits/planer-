@@ -351,3 +351,20 @@ test("first-run workbook imports schedule categories, fallback roles, probation 
   assert.equal(parsed.adHocWorkers[0].baseRateMinor,"4550");
   assert.equal(parsed.adHocWorkers[0].availableFrom,"2026-09-01");
 });
+
+test("Excel-native serial dates from the downloaded quick-start workbook stay ISO calendar dates",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Pracownicy:[{
+      Imię:"Anna",Nazwisko:"Próbna","Kod roli":"KELNER",
+      "Koniec okresu próbnego":46294,"Rodzaj umowy":"ZLECENIE",
+    }],
+    "Pula ad-hoc":[{
+      "Imię i nazwisko":"Jan Adhoc","Kod roli":"BARMAN",
+      "Dostępny od":46266,"Dostępny do":46285,Aktywna:"TAK",
+    }],
+  }));
+
+  assert.equal(parsed.employees[0].probationEnd,"2026-09-29");
+  assert.equal(parsed.adHocWorkers[0].availableFrom,"2026-09-01");
+  assert.equal(parsed.adHocWorkers[0].availableTo,"2026-09-20");
+});
