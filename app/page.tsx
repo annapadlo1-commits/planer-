@@ -20,6 +20,7 @@ import {MatrixV2Editor} from "@/components/MatrixV2Editor";
 import {RecoveryCenter} from "@/components/RecoveryCenter";
 import {AnalyticsDashboard} from "@/components/AnalyticsDashboard";
 import {MessageCenter} from "@/components/MessageCenter";
+import {OperationalEventsCenter} from "@/components/OperationalEventsCenter";
 import {
   getOperationalSolverWorkspace,
   getManagerStandbyMonth,
@@ -53,7 +54,7 @@ import {
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
- type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet";
+ type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"wydarzenia"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";category:null}|{type:"CATEGORY";category:SolverRoleCategory};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
@@ -92,7 +93,7 @@ const productIcons: Record<ProductSection, LucideIcon> = {
 };
 const legacySection: Record<NavKey, ProductSection> = {
   centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
-  kalendarz:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",wiadomosci:"operations",
+  kalendarz:"operations",wydarzenia:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",wiadomosci:"operations",
   budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
 };
 
@@ -178,7 +179,7 @@ export default function GrafikPro() {
     if(sectionFromPath(pathname,employeeShell)!==section)router.push(`${pathForSection(section)}?month=${selectedMonth}`);
   },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
-    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
+    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(`${pathForSection(section)}?month=${selectedMonth}`);
   },[employeeShell,router,selectedMonth]);
@@ -349,7 +350,7 @@ export default function GrafikPro() {
   },[selectedMonth]);
   useEffect(()=>{
     if(employeeShell){setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
-    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"alerty",analytics:"budzet",settings:"matrix"};
+    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
   },[employeeShell,primarySection]);
   useEffect(()=>{
@@ -465,7 +466,7 @@ export default function GrafikPro() {
           {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
         {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["scalanie","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
-        {primarySection==="operations"&&<ContextTabs items={[["naprawy","Centrum napraw"],["alerty","Alerty"],["kalendarz","Kalendarz"],["wiadomosci","Wiadomości"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
+        {primarySection==="operations"&&<ContextTabs items={[["wydarzenia","Wydarzenia zespołu"],["naprawy","Centrum napraw"],["alerty","Alerty"],["kalendarz","Kalendarz"],["wiadomosci","Wiadomości"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
         {active==="centrum"&&<>
           {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")}/>} 
           <section className="kpi-grid">
@@ -521,6 +522,7 @@ export default function GrafikPro() {
         {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>} 
         {active==="alerty"&&!isOrtools&&<IssuesView issues={data.issues} shifts={data.shifts} roleLabels={activeRoleLabels} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
         {active==="naprawy"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} notify={notify} fail={setError} reload={load}/>} 
+        {active==="wydarzenia"&&<OperationalEventsCenter month={selectedMonth} notify={notify} fail={setError}/>} 
         {active==="wiadomosci"&&<MessageCenter notify={notify} fail={setError}/>} 
         {active==="budzet"&&<AnalyticsDashboard data={data} matrix={matrixV2} currency={activeCurrency}/>} 
         </>}
