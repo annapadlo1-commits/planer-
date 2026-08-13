@@ -252,14 +252,23 @@ test("a partial employee row does not overwrite preferences that are absent from
   assert.equal("shiftPeriodPreferences" in parsed.employees[0],false);
 });
 
-test("staffing defaults to SET while role-duty semantics stay empty when not stated",async()=>{
+test("staffing defaults to the base scenario and SET while role-duty semantics stay empty when not stated",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Obsada:[{"Kod zmiany":"S1","Kod roli":"BARMAN","Liczba osób":"2"}],
     "Role-Obowiązki":[{"Kod roli":"BARMAN","Kod obowiązku":"ZAMKNIECIE"}],
   }));
-  assert.equal(parsed.staffingRules[0].scenarioCode,"");
+  assert.equal(parsed.staffingRules[0].scenarioCode,"BASE");
   assert.equal(parsed.staffingRules[0].operation,"SET");
   assert.equal(parsed.roleDuties[0].assignmentMode,"");
+});
+
+test("quick-start staffing resolves a displayed scenario name to its canonical code",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Scenariusze:[],
+    Obsada:[{"Kod scenariusza":"Bazowy","Kod zmiany":"S1","Kod roli":"BARMAN","Liczba osób":"2"}],
+  }));
+  assert.equal(parsed.scenarios[0].code,"BASE");
+  assert.equal(parsed.staffingRules[0].scenarioCode,"BASE");
 });
 
 test("one company workbook parses every business input required for a clean restore",async()=>{
