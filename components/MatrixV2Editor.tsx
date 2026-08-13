@@ -1730,8 +1730,12 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       }
       const [configuration,finance]=await Promise.all([readMatrixWorkbook(file),readWorkforceFinanceWorkbook(file)]);
       if(!configuration.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
-      if(!configuration.roles.length||!configuration.locations.length||!configuration.duties.length||!configuration.scenarios.length||!configuration.strategies.length){
-        throw new Error("Plik wymaga arkuszy: Role, Lokale, Obowiązki, Scenariusze i Strategie. Pobierz świeży plik z aplikacji — ustawienia techniczne są w nim bezpiecznie ukryte.");
+      const missingStructure=[
+        !configuration.roles.length?"co najmniej jednej aktywnej roli w arkuszu „Role”":"",
+        !configuration.locations.length?"co najmniej jednego aktywnego lokalu w arkuszu „Lokale”":"",
+      ].filter(Boolean);
+      if(missingStructure.length){
+        throw new Error(`Nie można utworzyć firmy: plik nie zawiera ${missingStructure.join(" ani ")}. Arkusz „Obowiązki” może pozostać pusty, a ustawienia scenariuszy i strategii system uzupełnia automatycznie.`);
       }
       if(scope==="CONFIGURATION"&&!finance.payRates.length){
         throw new Error("Pełna baza firmy nie zawiera arkusza „Finanse pracowników” albo żadnej stawki. Dla wdrożenia dwuetapowego wybierz „Struktura i zespół”.");
