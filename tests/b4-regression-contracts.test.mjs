@@ -108,12 +108,14 @@ test("standby activation revalidates the full hard-rule set", async () => {
   assert.match(sql, /hardRulesRevalidated/);
 });
 
-test("new solver balances contract utilization instead of raw minutes", async () => {
+test("new solver balances contract utilization inside every role", async () => {
   const source = await readFile(new URL(
     "../solver/src/grafik_solver/cp_sat_engine.py",
     import.meta.url,
   ), "utf8");
-  assert.match(source, /LOAD_SPREAD_MINUTES": "LOAD_UTILIZATION_SPREAD_BPS/);
+  assert.match(source, /LOAD_SPREAD_MINUTES": "ROLE_LOAD_FAIRNESS_SCORE/);
+  assert.match(source, /ROLE_LOAD_FAIRNESS_ROLE_COUNT/);
+  assert.match(source, /STRATEGY_RESULT_DOMINATED/);
   assert.match(source, /add_division_equality/);
   assert.match(source, /LOAD_UTILIZATION_TARGET_COUNT/);
   assert.match(source, /fairnessIncumbentGuard/);
@@ -176,6 +178,8 @@ test("solver failure copy distinguishes an incomplete optimum proof from a worke
     readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8"),
   ]);
   assert.match(solverClient, /OPTIMIZATION_INCOMPLETE/);
+  assert.match(solverClient, /STRATEGY_RESULT_DOMINATED/);
+  assert.match(solverClient, /UNFILLED_NOT_PROVEN/);
   assert.match(solverClient, /STATUS=FEASIBLE/);
   assert.match(solverClient, /RUN_ALREADY_CLAIMED/);
   assert.doesNotMatch(solverClient, /normalized\.includes\("CONFLICT"\)/);
@@ -621,6 +625,26 @@ test("global feedback is dismissible and remains in the active workspace flow", 
   assert.match(styles,/\.toast\{position:fixed;z-index:5000/);
 });
 
+test("queued optimizer runs explain the worker queue instead of looking frozen", async () => {
+  const [panel,client,styles,migration]=await Promise.all([
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260813234500_uat_optimizer_queue_transparency.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(panel,/Zlecenie zapisano w kolejce/);
+  assert.match(panel,/To zadanie jest pierwsze w kolejce/);
+  assert.match(panel,/Przed tym grafikiem są jeszcze/);
+  assert.match(panel,/Worker układa teraz ten grafik/);
+  assert.match(client,/queuePosition\?:\s*number\s*\|\s*null/);
+  assert.match(client,/waitingSeconds\?:\s*number/);
+  assert.match(styles,/\.solver-v2-run-state\.queued/);
+  assert.match(styles,/\.solver-v2-run-state\.running/);
+  assert.match(migration,/'queuePosition'/);
+  assert.match(migration,/status='QUEUED'/);
+  assert.match(migration,/extract\(epoch from \(coalesce\(r\.started_at,now\(\)\)-r\.queued_at\)\)/);
+});
+
 test("duty-only shifts do not inherit unrelated role-wide duty minima", async () => {
   const migration=await readFile(new URL("../supabase/migrations/20260812194000_b4f_duty_only_shift_demand_fix.sql",import.meta.url),"utf8");
   assert.match(migration,/minimum_requirements as/);
@@ -628,3 +652,4 @@ test("duty-only shifts do not inherit unrelated role-wide duty minima", async ()
   assert.match(migration,/where ro\.generic_count>0/);
   assert.match(migration,/duty-only staffing rows remain independent demand slots/);
 });
+
