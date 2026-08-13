@@ -30,6 +30,10 @@ const categoryOrderFix = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260813150000_uat_team_import_category_order_fix.sql"),
   "utf8",
 );
+const categoryCodeResolution = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260813151000_uat_role_category_code_resolution.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -114,4 +118,12 @@ test("role categories are inserted before roles during full import", () => {
   assert.ok(categories >= 0, "migration must insert role categories");
   assert.ok(legacyPhase > categories, "role categories must exist before the wrapped importer creates roles");
   assert.match(categoryOrderFix, /ROLE_CATEGORY_NOT_FOUND/);
+});
+
+test("role save resolves a workbook category code before shared validation", () => {
+  const resolveCode = categoryCodeResolution.indexOf("v_category_code:=upper");
+  const wrappedSave = categoryCodeResolution.indexOf("matrix_v2_admin_save_before_categories_uat_v1(p_kind,p_id,v_payload)");
+  assert.ok(resolveCode >= 0, "role category code must be resolved");
+  assert.ok(wrappedSave > resolveCode, "category resolution must happen before the shared role save");
+  assert.match(categoryCodeResolution, /jsonb_build_object\('categoryId',v_category\)/);
 });
