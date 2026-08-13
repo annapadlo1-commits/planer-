@@ -470,8 +470,31 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       scenarioCode:String(scenario.code),strategyCode:String(strategy.code),sortOrder:String(index+1),objectiveOverrides:{},solverOverrides:{},active:true,
     }))):scenarioStrategies);
 
-  return {settings,roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:resolvedScenarioStrategies,
-    payRules,scenarioPayRuleOverrides,scenarioBudgets,employees,employeeDuties,employeeRoles,
-    employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules,roleDuties,adHocWorkers,
+  // Visible quick-start sheets use user-facing scenario names (for example
+  // „Bazowy”), while the hidden technical dictionary stores the stable code
+  // (for example BASE). Resolve both to the canonical code so a workbook
+  // downloaded from the application is always self-importable. A blank
+  // scenario means the active default.
+  const scenarioAliases=new Map<string,string>();
+  for(const scenario of resolvedScenarios){
+    const code=String(scenario.code??"");
+    for(const alias of [code,String(scenario.name??"")]){
+      if(alias.trim())scenarioAliases.set(importCode(alias),code);
+    }
+  }
+  const defaultScenarioCode=String(resolvedScenarios.find(scenario=>scenario.active&&scenario.isDefault)?.code
+    ??resolvedScenarios.find(scenario=>scenario.active)?.code??"");
+  const normalizeScenarioCode=(value:string)=>{
+    const alias=importCode(value);
+    return alias?(scenarioAliases.get(alias)??alias):defaultScenarioCode;
+  };
+  const resolvedStaffingRules=staffingRules.map(rule=>({...rule,scenarioCode:normalizeScenarioCode(String(rule.scenarioCode??""))}));
+  const normalizedScenarioStrategies=resolvedScenarioStrategies.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
+  const normalizedScenarioPayRuleOverrides=scenarioPayRuleOverrides.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
+  const normalizedScenarioBudgets=scenarioBudgets.map(budget=>({...budget,scenarioCode:normalizeScenarioCode(String(budget.scenarioCode??""))}));
+
+  return {settings,roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
+    payRules,scenarioPayRuleOverrides:normalizedScenarioPayRuleOverrides,scenarioBudgets:normalizedScenarioBudgets,employees,employeeDuties,employeeRoles,
+    employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties,adHocWorkers,
     _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
 }
