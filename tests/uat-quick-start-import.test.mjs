@@ -38,6 +38,10 @@ const previewSafeDelete = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260813170000_uat_quick_start_preview_safe_delete.sql"),
   "utf8",
 );
+const employeeRoleAuditColumns = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260813173000_uat_employee_role_audit_columns.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -135,4 +139,11 @@ test("role save resolves a workbook category code before shared validation", () 
 test("quick-start preview uses an explicit safe full-table replacement for the ad-hoc pool", () => {
   assert.match(previewSafeDelete, /delete from public\.recovery_ad_hoc_pool_v2 where true;/i);
   assert.doesNotMatch(previewSafeDelete, /delete from public\.recovery_ad_hoc_pool_v2\s*;/i);
+});
+
+test("backup-role import audit fields exist on the versioned employee-role table", () => {
+  assert.match(employeeRoleAuditColumns, /alter table public\.matrix_employee_roles_v2/i);
+  assert.match(employeeRoleAuditColumns, /add column if not exists created_by uuid/i);
+  assert.match(employeeRoleAuditColumns, /add column if not exists updated_by uuid/i);
+  assert.match(employeeRoleAuditColumns, /add column if not exists updated_at timestamptz not null default now\(\)/i);
 });
