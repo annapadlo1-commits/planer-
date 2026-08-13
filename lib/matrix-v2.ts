@@ -443,6 +443,9 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes('INVALID INPUT SYNTAX FOR TYPE INTEGER: ""')) {
     return "Importer utworzył pustą wartość techniczną w polu liczbowym. To błąd mapowania pliku, a nie komórka, którą użytkownik ma odgadnąć. Żadne dane nie zostały zastosowane.";
   }
+  if (value.includes("DELETE REQUIRES A WHERE CLAUSE")) {
+    return "Podgląd importu został zatrzymany przez zabezpieczenie bazy danych. Plik jest poprawny i żadne dane nie zostały zapisane. Przekaż administratorowi kod: IMPORT_PREVIEW_SAFE_DELETE.";
+  }
   if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł konfiguracji firmy. Sprawdź formularz.";
   return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";
 }
