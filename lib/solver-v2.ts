@@ -53,6 +53,13 @@ export type SolverRun = {
   scopeType?: SolverScope;
   scopeRoleId?: string | null;
   failureMessage?: string | null;
+  createdAt?: string;
+  queuedAt?: string;
+  startedAt?: string | null;
+  heartbeatAt?: string | null;
+  queuePosition?: number | null;
+  waitingSeconds?: number;
+  runningSeconds?: number | null;
   updatedAt?: string;
 };
 
@@ -920,6 +927,13 @@ function normalizeRun(value: unknown): SolverRun {
     scopeType: valueOf<SolverScope | undefined>(run, "scopeType", "scope_type", undefined),
     scopeRoleId: valueOf<string | null | undefined>(run, "scopeRoleId", "scope_role_id", undefined),
     failureMessage: valueOf<string | null | undefined>(run, "failureMessage", "failure_message", undefined),
+    createdAt: valueOf<string | undefined>(run, "createdAt", "created_at", undefined),
+    queuedAt: valueOf<string | undefined>(run, "queuedAt", "queued_at", undefined),
+    startedAt: valueOf<string | null | undefined>(run, "startedAt", "started_at", undefined),
+    heartbeatAt: valueOf<string | null | undefined>(run, "heartbeatAt", "heartbeat_at", undefined),
+    queuePosition: valueOf<number | null | undefined>(run, "queuePosition", "queue_position", undefined),
+    waitingSeconds: numberOf(run, "waitingSeconds", "waiting_seconds"),
+    runningSeconds: valueOf<number | null | undefined>(run, "runningSeconds", "running_seconds", undefined),
     updatedAt: valueOf<string | undefined>(run, "updatedAt", "updated_at", undefined),
   };
 }
