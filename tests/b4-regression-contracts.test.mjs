@@ -588,6 +588,26 @@ test("full UAT reset preserves only the owner and creates an empty first-run dra
   assert.match(migration,/'maximumShiftsPerDay',1/);
 });
 
+test("initial UAT company setup is effective from the first day of its planning month", async () => {
+  const [migration,categoryMigration,page]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260813221000_uat_initial_matrix_month_boundary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260813222000_uat_role_category_month_boundary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/normalize_initial_matrix_month_uat_v1/);
+  assert.match(migration,/new\.version=1/);
+  assert.match(migration,/date_trunc\('month',new\.effective_from\)::date/);
+  assert.match(migration,/matrix_covers_planning_month_uat_v1/);
+  assert.match(migration,/Published versions are immutable/);
+  assert.match(migration,/optimizer_configuration_v2/);
+  assert.match(migration,/optimizer_request_v2/);
+  assert.match(categoryMigration,/optimizer_role_categories_uat_v1/);
+  assert.match(categoryMigration,/matrix_covers_planning_month_uat_v1/);
+  assert.match(page,/Nie można jeszcze utworzyć grafiku na/);
+  assert.match(page,/solverConfigurationError/);
+  assert.match(page,/Przejdź do kontroli konfiguracji/);
+});
+
 test("global feedback is dismissible and remains in the active workspace flow", async () => {
   const [page,styles]=await Promise.all([
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
