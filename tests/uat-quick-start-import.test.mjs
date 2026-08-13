@@ -26,6 +26,10 @@ const selfImportDefaults = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260813143000_uat_quick_start_self_import_defaults.sql"),
   "utf8",
 );
+const categoryOrderFix = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260813150000_uat_team_import_category_order_fix.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -102,4 +106,12 @@ test("import UI explains errors and separates everyday setup from backup restore
   assert.match(editor, /Kod roli z tego wiersza nie występuje/);
   assert.match(editor, /Kod zmiany i lokal nie odpowiadają/);
   assert.match(editor, /Co zawiera pełna kopia i kiedy jej użyć/);
+});
+
+test("role categories are inserted before roles during full import", () => {
+  const categories = categoryOrderFix.indexOf("insert into public.matrix_role_categories_v2");
+  const legacyPhase = categoryOrderFix.indexOf("matrix_v2_full_import_phase_before_categories_uat_v1(p_configuration,p_phase)");
+  assert.ok(categories >= 0, "migration must insert role categories");
+  assert.ok(legacyPhase > categories, "role categories must exist before the wrapped importer creates roles");
+  assert.match(categoryOrderFix, /ROLE_CATEGORY_NOT_FOUND/);
 });
