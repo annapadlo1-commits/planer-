@@ -81,6 +81,51 @@ function automaticShiftPeriod(startsAt:string){
   return hour<12?"MORNING":hour<17?"MIDDLE":"EVENING";
 }
 
+const DEFAULT_SCENARIOS=[{
+  code:"BASE",name:"Bazowy",description:"Standardowe zapotrzebowanie",color:"#7457E8",
+  parentScenarioCode:"",isDefault:true,validFrom:"",validTo:"",settingsOverrides:{},sortOrder:"1",active:true,
+}];
+
+const DEFAULT_STRATEGIES=[
+  {code:"BALANCED",name:"Zrównoważony",description:"Kompromis kosztu, preferencji i równego obciążenia. Dobry wariant startowy, gdy żaden z tych celów nie ma bezwzględnego pierwszeństwa.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"1",active:true},
+  {code:"MIN_COST",name:"Minimalny koszt",description:"Po zapewnieniu najlepszej możliwej obsady wybiera najniższy łączny koszt. Nadgodziny i pozostałe kryteria rozstrzygają dopiero przy takim samym koszcie.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"2",active:true},
+  {code:"PREFERENCES",name:"Preferencje i równy podział",description:"Po uzupełnieniu wymaganej obsady najpierw respektuje prośby pracowników, następnie minimalizuje różnicę obciążenia i odchylenia od celu godzinowego. Koszt rozstrzyga dopiero później.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"3",active:true},
+];
+
+const DEFAULT_OBJECTIVE_WEIGHTS:Record<string,Record<string,number>>={
+  BALANCED:{UNFILLED:1_000_000,TOTAL_COST:1_000,PREFERENCE_VIOLATIONS:80_000,OVERTIME_MINUTES:250_000,NOMINAL_DEVIATION_MINUTES:30_000,LOAD_SPREAD_MINUTES:40_000,WEEKEND_SPREAD:25_000,HOME_LOCATION_VIOLATIONS:15_000,BASELINE_CHANGES:20_000},
+  MIN_COST:{UNFILLED:1_000_000,TOTAL_COST:10_000,PREFERENCE_VIOLATIONS:30_000,OVERTIME_MINUTES:500_000,NOMINAL_DEVIATION_MINUTES:20_000,LOAD_SPREAD_MINUTES:15_000,WEEKEND_SPREAD:10_000,HOME_LOCATION_VIOLATIONS:15_000,BASELINE_CHANGES:10_000},
+  PREFERENCES:{UNFILLED:1_000_000,TOTAL_COST:500,PREFERENCE_VIOLATIONS:250_000,OVERTIME_MINUTES:100_000,NOMINAL_DEVIATION_MINUTES:150_000,LOAD_SPREAD_MINUTES:200_000,WEEKEND_SPREAD:180_000,HOME_LOCATION_VIOLATIONS:15_000,BASELINE_CHANGES:10_000},
+};
+
+function defaultObjectiveTier(strategyCode:string,metricCode:string){
+  if(metricCode==="UNFILLED")return 1;
+  if(strategyCode==="MIN_COST"){
+    if(metricCode==="TOTAL_COST")return 2;
+    if(["OVERTIME_MINUTES","HOME_LOCATION_VIOLATIONS"].includes(metricCode))return 3;
+    if(metricCode==="PREFERENCE_VIOLATIONS")return 4;
+    if(["WEEKEND_SPREAD","LOAD_SPREAD_MINUTES","NOMINAL_DEVIATION_MINUTES"].includes(metricCode))return 5;
+    return 6;
+  }
+  if(strategyCode==="PREFERENCES"){
+    if(metricCode==="PREFERENCE_VIOLATIONS")return 2;
+    if(metricCode==="LOAD_SPREAD_MINUTES")return 3;
+    if(metricCode==="NOMINAL_DEVIATION_MINUTES")return 4;
+    if(metricCode==="WEEKEND_SPREAD")return 5;
+    if(["TOTAL_COST","HOME_LOCATION_VIOLATIONS"].includes(metricCode))return 6;
+    return 7;
+  }
+  return 2;
+}
+
+function defaultStrategyObjectives(){
+  const metricOrder=["UNFILLED","TOTAL_COST","PREFERENCE_VIOLATIONS","OVERTIME_MINUTES","NOMINAL_DEVIATION_MINUTES","LOAD_SPREAD_MINUTES","WEEKEND_SPREAD","HOME_LOCATION_VIOLATIONS","BASELINE_CHANGES"];
+  return DEFAULT_STRATEGIES.flatMap(strategy=>metricOrder.map((metricCode,index)=>({
+    strategyCode:strategy.code,tier:String(defaultObjectiveTier(strategy.code,metricCode)),sortOrder:String(index+1),
+    metricCode,direction:"MINIMIZE",weight:String(DEFAULT_OBJECTIVE_WEIGHTS[strategy.code][metricCode]),tolerance:"0",parameters:{},active:true,
+  })));
+}
+
 export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayload>{
   const XLSX=await import("xlsx");
   const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
@@ -411,7 +456,21 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     note:importCell(row,"Notatka","note"),active:importBoolean(importCell(row,"Aktywny","Aktywna","active"),true),
   }));
 
-  return {settings,roleCategories,roles,locations,duties,scenarios,strategies,strategyObjectives,scenarioStrategies,
+  // A fresh UAT reset intentionally starts with no business data.  The
+  // scenario and solver strategies are technical defaults, not fields the
+  // employer should have to reconstruct.  Therefore a freshly downloaded
+  // quick-start workbook with header-only hidden technical sheets must remain
+  // self-importable.
+  const resolvedScenarios=scenarios.length?scenarios:DEFAULT_SCENARIOS.map(item=>({...item}));
+  const resolvedStrategies=strategies.length?strategies:DEFAULT_STRATEGIES.map(item=>({...item}));
+  const resolvedObjectives=strategyObjectives.length?strategyObjectives:
+    (strategies.length?strategyObjectives:defaultStrategyObjectives());
+  const resolvedScenarioStrategies=scenarioStrategies.length?scenarioStrategies:
+    (!scenarios.length&&!strategies.length?resolvedScenarios.flatMap(scenario=>resolvedStrategies.map((strategy,index)=>({
+      scenarioCode:String(scenario.code),strategyCode:String(strategy.code),sortOrder:String(index+1),objectiveOverrides:{},solverOverrides:{},active:true,
+    }))):scenarioStrategies);
+
+  return {settings,roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:resolvedScenarioStrategies,
     payRules,scenarioPayRuleOverrides,scenarioBudgets,employees,employeeDuties,employeeRoles,
     employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules,roleDuties,adHocWorkers,
     _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
