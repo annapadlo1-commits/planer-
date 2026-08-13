@@ -22,6 +22,10 @@ const guidedImportOrderFix = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260810234500_uat_guided_onboarding_import_order_fix.sql"),
   "utf8",
 );
+const selfImportDefaults = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260813143000_uat_quick_start_self_import_defaults.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -30,6 +34,24 @@ test("quick start has separate team and finance stages without a fixed workforce
   assert.match(editor, /matrix_v2_team_import_preview_uat_v1/);
   assert.match(editor, /matrix_v2_team_import_apply_uat_v1/);
   assert.doesNotMatch(editor, /EXPECTED_ACTIVE_EMPLOYEES/);
+});
+
+test("quick start does not reject its own header-only technical sheets", () => {
+  assert.match(importer, /DEFAULT_SCENARIOS/);
+  assert.match(importer, /DEFAULT_STRATEGIES/);
+  assert.match(importer, /self-importable/);
+  assert.match(editor, /Arkusz „Obowiązki” może pozostać pusty/);
+  assert.doesNotMatch(editor, /!configuration\.duties\.length\|\|!configuration\.scenarios\.length\|\|!configuration\.strategies\.length/);
+});
+
+test("every future UAT reset seeds the system-owned scenario and solver defaults", () => {
+  assert.match(selfImportDefaults, /matrix_v2_seed_required_defaults_uat_v1/);
+  assert.match(selfImportDefaults, /'BASE','Bazowy'/);
+  assert.match(selfImportDefaults, /'BALANCED','Zrównoważony'/);
+  assert.match(selfImportDefaults, /'MIN_COST','Minimalny koszt'/);
+  assert.match(selfImportDefaults, /'PREFERENCES','Preferencje i równy podział'/);
+  assert.match(selfImportDefaults, /perform solver_private\.matrix_v2_seed_required_defaults_uat_v1\(v_draft\)/);
+  assert.match(selfImportDefaults, /ISOLATED_UAT_DESTRUCTIVE_TOOLS/);
 });
 
 test("quick workbook documents automatic identifiers and hides advanced sheets", () => {

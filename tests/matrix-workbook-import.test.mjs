@@ -150,6 +150,29 @@ test("quick-start shifts without an optional order never emit an empty integer",
   assert.ok(parsed.shifts.every(shift=>shift.sortOrder!==""));
 });
 
+test("a freshly downloaded quick-start workbook remains self-importable after an empty UAT reset",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Role:[{Kod:"KELNER",Nazwa:"Kelner",Aktywna:"TAK"}],
+    Lokale:[{Kod:"KRUCZA",Nazwa:"Krucza",Aktywna:"TAK"}],
+    Obowiązki:[],
+    Pracownicy:[{
+      "Numer pracownika":"","Imię":"Anna","Nazwisko":"Nowak",
+      "E-mail":"anna.nowak@example.test","Kod roli":"KELNER",
+      "Kody lokali":"KRUCZA","Rodzaj umowy":"ZLECENIE",Aktywna:"TAK",
+    }],
+    Scenariusze:[],
+    Strategie:[],
+    "Cele strategii":[],
+    "Strategie scenariuszy":[],
+  }));
+
+  assert.equal(parsed.duties.length,0,"obowiązki są opcjonalne i pusty arkusz nie może blokować pierwszego uruchomienia");
+  assert.deepEqual(parsed.scenarios.map(item=>item.code),["BASE"]);
+  assert.deepEqual(parsed.strategies.map(item=>item.code),["BALANCED","MIN_COST","PREFERENCES"]);
+  assert.equal(parsed.strategyObjectives.length,27);
+  assert.equal(parsed.scenarioStrategies.length,3);
+});
+
 test("overnight validation names every invalid Excel row before server publication",async()=>{
   await assert.rejects(
     readMatrixWorkbook(workbookFile({
