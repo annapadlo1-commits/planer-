@@ -132,7 +132,11 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const matchingSheetName=(names:string[])=>workbook.SheetNames.find(name=>names.some(expected=>name.toLocaleLowerCase("pl-PL")===expected.toLocaleLowerCase("pl-PL")));
   const rows=(names:string[])=>{
     const sheetName=matchingSheetName(names);
-    return sheetName?XLSX.utils.sheet_to_json<Record<string,unknown>>(workbook.Sheets[sheetName],{defval:"",raw:false,dateNF:"yyyy-mm-dd"}):[];
+    // Keep Excel-native numbers untouched. In particular, SheetJS formats
+    // serial dates incorrectly for this workbook when `raw:false` is combined
+    // with `dateNF` (2026-09-29 became 2026-29-09). The field normalizers below
+    // already understand Excel serial dates, numeric times and money values.
+    return sheetName?XLSX.utils.sheet_to_json<Record<string,unknown>>(workbook.Sheets[sheetName],{defval:"",raw:true}):[];
   };
   const splitName=(value:string)=>{const parts=value.trim().split(/\s+/);return {firstName:parts.shift()??"",lastName:parts.join(" ")};};
   const normalizeContract=(value:string)=>{
@@ -148,7 +152,17 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const normalizeDate=(value:string)=>{
     const trimmed=value.trim();
     if(!trimmed)return "";
-    if(/^\d{4}-\d{2}-\d{2}$/.test(trimmed))return trimmed;
+    const yearFirst=trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(yearFirst){
+      const year=Number(yearFirst[1]),month=Number(yearFirst[2]),day=Number(yearFirst[3]);
+      if(month>=1&&month<=12&&day>=1&&day<=31)return trimmed;
+      // Backward compatibility for workbooks downloaded before the raw-cell
+      // fix, where a formatted date could be persisted as yyyy-dd-mm.
+      if(day>=1&&day<=12&&month>=1&&month<=31){
+        return `${String(year).padStart(4,"0")}-${String(day).padStart(2,"0")}-${String(month).padStart(2,"0")}`;
+      }
+      return trimmed;
+    }
     if(/^\d{5}(?:\.\d+)?$/.test(trimmed)){
       const parsed=new Date(Date.UTC(1899,11,30)+Math.floor(Number(trimmed))*86_400_000);
       if(!Number.isNaN(parsed.valueOf()))return parsed.toISOString().slice(0,10);
