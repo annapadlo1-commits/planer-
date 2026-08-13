@@ -34,6 +34,10 @@ const categoryCodeResolution = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260813151000_uat_role_category_code_resolution.sql"),
   "utf8",
 );
+const previewSafeDelete = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260813170000_uat_quick_start_preview_safe_delete.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -126,4 +130,9 @@ test("role save resolves a workbook category code before shared validation", () 
   assert.ok(resolveCode >= 0, "role category code must be resolved");
   assert.ok(wrappedSave > resolveCode, "category resolution must happen before the shared role save");
   assert.match(categoryCodeResolution, /jsonb_build_object\('categoryId',v_category\)/);
+});
+
+test("quick-start preview uses an explicit safe full-table replacement for the ad-hoc pool", () => {
+  assert.match(previewSafeDelete, /delete from public\.recovery_ad_hoc_pool_v2 where true;/i);
+  assert.doesNotMatch(previewSafeDelete, /delete from public\.recovery_ad_hoc_pool_v2\s*;/i);
 });
