@@ -93,6 +93,14 @@ function variantCountLabel(value: number) {
   return `${value} wariantów`;
 }
 
+function elapsedLabel(seconds: number | null | undefined) {
+  const safeSeconds = Math.max(0, Math.floor(seconds ?? 0));
+  if (safeSeconds < 60) return `${safeSeconds} s`;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return remainder ? `${minutes} min ${remainder} s` : `${minutes} min`;
+}
+
 function aggregateVariantFingerprint(variant: SolverVariant) {
   const metrics = Object.entries(variant.metrics)
     .sort(([left], [right]) => left.localeCompare(right));
@@ -412,7 +420,7 @@ export function SolverV2Panel({
       setPublicationName(name.trim());
       setMessage(result.reused
         ? "Odzyskano rozpoczęte wcześniej generowanie."
-        : "Generator rozpoczął pracę. Możesz zamknąć tę kartę i wrócić później.");
+        : "Zlecenie zapisano w kolejce. Gdy worker rozpocznie obliczenia, status zmieni się automatycznie.");
     } catch (error) {
       setMessage(solverErrorMessage(errorText(error)));
     } finally {
@@ -715,6 +723,8 @@ export function SolverV2Panel({
         </div>)}
       </div>}
       {run.failureMessage && run.status!=="FAILED" && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
+      {run.status==="QUEUED"&&run.phase!=="RETRY_QUEUED"&&<div className="solver-v2-run-state queued"><RefreshCw className="spin"/><span><strong>{run.queuePosition&&run.queuePosition>1?`Przed tym grafikiem są jeszcze ${run.queuePosition-1} zadania`:`To zadanie jest pierwsze w kolejce`}</strong><small>Zlecenie jest zapisane i nie trzeba klikać ponownie. Oczekiwanie: {elapsedLabel(run.waitingSeconds)}. Obliczenia uruchomią się automatycznie po zwolnieniu workera.</small></span></div>}
+      {run.status==="RUNNING"&&<div className="solver-v2-run-state running"><RefreshCw className="spin"/><span><strong>Worker układa teraz ten grafik</strong><small>Czas obliczeń: {elapsedLabel(run.runningSeconds)}. Postęp i strategie są odświeżane automatycznie.</small></span></div>}
       {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
       {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>{run.failureMessage?solverErrorMessage(run.failureMessage):"Nie zapisano technicznej przyczyny awarii."} „Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}
       {run.status==="STALE_INPUT"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Dane zmieniły się w czasie obliczeń</strong><small>Uruchom nowe generowanie, aby policzyć grafik na aktualnej, spójnej konfiguracji firmy.</small></span></div>}
