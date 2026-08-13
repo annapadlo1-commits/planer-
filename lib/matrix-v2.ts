@@ -386,8 +386,16 @@ export function objectiveName(code: string) {
 
 export function matrixV2ErrorMessage(message: string) {
   const value = message.toUpperCase();
-  const correlatedImportError = message.match(/MATRIX_IMPORT_(?:PREVIEW|APPLY)_FAILED\|([^|]+)\|([^|]+)\|(.+)/i);
+  const correlatedImportError = message.match(/(?:MATRIX|TEAM)_IMPORT_(?:PREVIEW|APPLY)_FAILED\|([^|]+)\|([^|]+)\|(.+)/i);
   if (correlatedImportError) {
+    const [,identifier,sqlState,cause]=correlatedImportError;
+    if(sqlState==="57014"||/STATEMENT TIMEOUT|CANCELING STATEMENT/i.test(cause)){
+      return `Sprawdzenie pełnej bazy przekroczyło limit czasu UAT. Plik nie został częściowo zapisany. Spróbuj ponownie; jeśli problem wróci, przekaż administratorowi identyfikator ${identifier}.`;
+    }
+    if(/ROLE_NOT_FOUND\|/i.test(cause)){
+      const roleCode=cause.split("|").at(-1)?.trim();
+      return `Nie udało się połączyć pracownika z rolą${roleCode?` „${roleCode}”`:""}. Rola musi znajdować się w arkuszu „Role” tego samego pliku i być aktywna. Identyfikator: ${identifier}.`;
+    }
     return `Import nie został zapisany z powodu błędu systemowego. Identyfikator: ${correlatedImportError[1]}. Żadne dane z pliku nie zostały zastosowane.`;
   }
   if (value.includes("MATRIX_IMPORT_CONTRACT_INCOMPLETE") ||
@@ -449,6 +457,11 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("COLUMN") && value.includes("MATRIX_EMPLOYEE_ROLES_V2") && value.includes("DOES NOT EXIST")) {
     return "Podgląd importu został zatrzymany przez niezgodność wersji bazy UAT. Plik jest poprawny i żadne dane nie zostały zapisane. Przekaż administratorowi kod: IMPORT_EMPLOYEE_ROLE_SCHEMA.";
   }
-  if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł konfiguracji firmy. Sprawdź formularz.";
-  return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";
+  if (value.includes("CHECK CONSTRAINT")) {
+    const constraint=message.match(/constraint ["']?([^"'\s]+)["']?/i)?.[1];
+    return `Jedna z wartości narusza regułę bazy${constraint?` „${constraint}”`:""}. Żadne dane nie zostały częściowo zapisane; komunikat został zachowany dla administratora UAT.`;
+  }
+  if (value.includes("INVALID")) return `Jedna z wartości nie spełnia reguł konfiguracji firmy. Szczegół techniczny: ${message}`;
+  return `Nie udało się zapisać zmiany. Szczegół techniczny dla administratora UAT: ${message}`;
 }
+
