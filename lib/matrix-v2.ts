@@ -409,6 +409,7 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID_SHIFT_PERIOD") || value.includes("SHIFT_PERIOD_REQUIRED")) return "Wybierz okres zmiany: poranna, środek albo wieczorna.";
   if (value.includes("INVALID_SHIFT_PERIOD_PREFERENCES") || value.includes("INVALID_SHIFT_PREFERENCE_LEVEL")) return "Preferencje okresów zmian zawierają nieprawidłową wartość.";
   if (value.includes("MATRIX_IMPORT_HAS_ERRORS")) return "Import zawiera błędy. Wróć do podglądu i popraw wskazane wiersze.";
+  if (value.includes("ROLE_CATEGORY_NOT_FOUND")) return "Nie znaleziono kategorii grafiku wskazanej przy roli. Sprawdź arkusz „Kategorie grafików” oraz kolumnę „Kod kategorii” w arkuszu „Role”.";
   if (value.includes("INVALID_EMPLOYMENT_DATES")) return "Data zakończenia zatrudnienia nie może być wcześniejsza od daty rozpoczęcia.";
   if (value.includes("EMPLOYMENT_DATES_CONFLICT_PAY_RATES")) return "Nowy okres zatrudnienia jest sprzeczny z zapisaną historią stawek. Najpierw popraw daty odpowiednich okresów stawki.";
   if (value.includes("PAY_RATE_BEFORE_EMPLOYMENT")) return "Stawka nie może obowiązywać przed datą rozpoczęcia zatrudnienia.";
