@@ -15,6 +15,11 @@ const HIDDEN_METRICS = new Set([
   "LOAD_UTILIZATION_TARGET_COUNT",
   "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT",
   "LOAD_UTILIZATION_FALLBACK_COUNT",
+  "ROLE_LOAD_FAIRNESS_SCORE",
+  "ROLE_LOAD_SPREAD_SUM_BPS",
+  "ROLE_LOAD_FAIRNESS_ROLE_COUNT",
+  "ROLE_WEEKEND_FAIRNESS_SCORE",
+  "ROLE_WEEKEND_SPREAD_SUM",
 ]);
 
 const METRICS: Record<string, { label: string; explanation: string; unit?: "MINUTES" }> = {
@@ -38,12 +43,12 @@ const METRICS: Record<string, { label: string; explanation: string; unit?: "MINU
     unit: "MINUTES",
   },
   LOAD_UTILIZATION_SPREAD_BPS: {
-    label: "Różnica obciążenia zespołu",
-    explanation: "Różnica procentowa między najbardziej i najmniej obciążoną osobą. Dla osób z wymiarem jest liczona względem wymiaru, a dla umów elastycznych względem wspólnej bazy sprawiedliwego podziału. Mniej oznacza równiejszy podział.",
+    label: "Największa różnica obciążenia w jednej roli",
+    explanation: "Największa różnica procentowa między dwiema osobami wykonującymi tę samą rolę. Dla osób z wymiarem jest liczona względem wymiaru, a dla umów elastycznych względem wspólnej bazy sprawiedliwego podziału. Mniej oznacza równiejszy podział wewnątrz każdej roli.",
   },
   WEEKEND_SPREAD: {
-    label: "Różnica liczby weekendów",
-    explanation: "Różnica między największą i najmniejszą liczbą weekendowych przydziałów. Mniej oznacza równiejszy podział weekendów.",
+    label: "Największa różnica weekendów w jednej roli",
+    explanation: "Największa różnica liczby weekendowych przydziałów między osobami wykonującymi tę samą rolę. Mniej oznacza równiejszy podział weekendów wewnątrz każdej roli.",
   },
   BASELINE_CHANGES: {
     label: "Przydziały inne niż w grafiku bazowym",
@@ -95,3 +100,4 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
     return [{ code, label: definition.label, explanation, value }];
   });
 }
+
