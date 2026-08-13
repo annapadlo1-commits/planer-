@@ -446,6 +446,9 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("DELETE REQUIRES A WHERE CLAUSE")) {
     return "Podgląd importu został zatrzymany przez zabezpieczenie bazy danych. Plik jest poprawny i żadne dane nie zostały zapisane. Przekaż administratorowi kod: IMPORT_PREVIEW_SAFE_DELETE.";
   }
+  if (value.includes("COLUMN") && value.includes("MATRIX_EMPLOYEE_ROLES_V2") && value.includes("DOES NOT EXIST")) {
+    return "Podgląd importu został zatrzymany przez niezgodność wersji bazy UAT. Plik jest poprawny i żadne dane nie zostały zapisane. Przekaż administratorowi kod: IMPORT_EMPLOYEE_ROLE_SCHEMA.";
+  }
   if (value.includes("CHECK CONSTRAINT") || value.includes("INVALID")) return "Jedna z wartości nie spełnia reguł konfiguracji firmy. Sprawdź formularz.";
   return "Nie udało się zapisać zmiany. Sprawdź formularz i spróbuj ponownie.";
 }
