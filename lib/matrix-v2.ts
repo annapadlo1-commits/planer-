@@ -464,4 +464,3 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("INVALID")) return `Jedna z wartości nie spełnia reguł konfiguracji firmy. Szczegół techniczny: ${message}`;
   return `Nie udało się zapisać zmiany. Szczegół techniczny dla administratora UAT: ${message}`;
 }
-

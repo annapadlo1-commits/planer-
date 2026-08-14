@@ -100,4 +100,3 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
     return [{ code, label: definition.label, explanation, value }];
   });
 }
-
