@@ -652,4 +652,3 @@ test("duty-only shifts do not inherit unrelated role-wide duty minima", async ()
   assert.match(migration,/where ro\.generic_count>0/);
   assert.match(migration,/duty-only staffing rows remain independent demand slots/);
 });
-
