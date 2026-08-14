@@ -580,7 +580,1592 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("AVAILABILITY_WINDOW", result.reasons)
 
-    def test_shift_period_and_employee_period_rules_are_parsed(self) -> Non…15484 tokens truncated…,
+    def test_shift_period_and_employee_period_rules_are_parsed(self) -> None:
+        raw = load_raw()
+        raw["shiftTemplates"][0]["shiftPeriod"] = "MORNING"
+        raw["shiftTemplates"][1]["shiftPeriod"] = "EVENING"
+        raw["employees"][0]["preferredShiftTemplateIds"] = ["shift-morning"]
+        raw["employees"][0]["avoidedShiftTemplateIds"] = ["shift-evening"]
+        raw["employees"][0]["blockedShiftTemplateIds"] = []
+        snapshot = Snapshot.from_dict(raw)
+        self.assertEqual(snapshot.shift_templates[0].shift_period, "MORNING")
+        self.assertEqual(snapshot.shift_templates[1].shift_period, "EVENING")
+        self.assertEqual(
+            snapshot.employees[0].preferred_shift_template_ids,
+            ("shift-morning",),
+        )
+        self.assertEqual(
+            snapshot.employees[0].avoided_shift_template_ids,
+            ("shift-evening",),
+        )
+
+    def test_invalid_shift_period_is_rejected(self) -> None:
+        raw = load_raw()
+        raw["shiftTemplates"][0]["shiftPeriod"] = "LUNCH"
+        with self.assertRaisesRegex(SnapshotError, "shiftPeriod"):
+            Snapshot.from_dict(raw)
+
+    def test_manager_blocked_period_is_a_hard_eligibility_rule(self) -> None:
+        raw = load_raw()
+        raw["employees"][0]["blockedShiftTemplateIds"] = ["shift-morning"]
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(
+            item for item in snapshot.employees if item.id == "employee-alice"
+        )
+        slot = next(
+            item
+            for item in generate_slots(snapshot)
+            if item.shift_template_id == "shift-morning"
+        )
+        eligibility = EligibilityIndex(snapshot).evaluate(employee, slot)
+        self.assertFalse(eligibility.allowed)
+        self.assertIn("SHIFT_PERIOD_BLOCKED", eligibility.reasons)
+
+    def test_pay_quote_is_data_driven(self) -> None:
+        snapshot = Snapshot.from_dict(load_raw())
+        evening = generate_slots(snapshot)[1]
+        employee = next(
+            item for item in snapshot.employees if item.id == "employee-bob"
+        )
+        quote = quote_assignment(snapshot, employee, evening)
+        components = {
+            component.rule_id: component.cost_units for component in quote.components
+        }
+        self.assertEqual(components["BASE"], 2500 * 240)
+        self.assertEqual(components["pay-close-duty"], 1000 * 60)
+        self.assertEqual(components["pay-weekend"], 120000)
+
+    def test_hourly_pay_windows_charge_only_intersection_minutes(self) -> None:
+        expectations = {
+            "PER_HOUR": ({"rateMinorPerHour": 1000}, 1000 * 60),
+            "PERCENT_BASE": ({"percentBasisPoints": 2000}, 2500 * 60 * 20 // 100),
+            "MULTIPLIER": (
+                {"multiplierBasisPoints": 15000},
+                2500 * 60 * 50 // 100,
+            ),
+        }
+        for calculation, (values, expected) in expectations.items():
+            with self.subTest(calculation=calculation):
+                raw = load_raw()
+                for template in raw["shiftTemplates"]:
+                    if template["id"] == "shift-evening":
+                        template["endTime"] = "23:00"
+                for slot in raw["slots"]:
+                    if slot["shiftTemplateId"] == "shift-evening":
+                        slot["end"] = slot["end"].replace("T20:00:00", "T23:00:00")
+                        slot["durationMinutes"] = 420
+                raw["payRules"] = [
+                    {
+                        "id": f"pay-window-{calculation.lower()}",
+                        "calculationType": calculation,
+                        "values": values,
+                        "localStart": "22:00",
+                        "localEnd": "06:00",
+                        "conditions": [],
+                        "stackingGroup": "night-window",
+                        "stackingMode": "STACK",
+                        "priority": 0,
+                        "active": True,
+                    }
+                ]
+                snapshot = Snapshot.from_dict(raw)
+                employee = next(
+                    item for item in snapshot.employees if item.id == "employee-bob"
+                )
+                evening = generate_slots(snapshot)[1]
+                quote = quote_assignment(snapshot, employee, evening)
+                addition = next(
+                    component
+                    for component in quote.components
+                    if component.rule_id != "BASE"
+                )
+                self.assertEqual(addition.cost_units, expected)
+
+    def test_pay_window_intersection_is_dst_safe(self) -> None:
+        raw = load_raw()
+        raw["periodStart"] = "2026-10-24"
+        raw["periodEnd"] = "2026-10-24"
+        raw["shiftTemplates"] = [
+            {
+                "id": "shift-night",
+                "locationId": "location-rooftop",
+                "startTime": "22:00",
+                "endTime": "06:00",
+                "weekdays": [6],
+                "endsNextDay": True,
+            }
+        ]
+        raw["demand"] = [
+            {
+                "id": "demand-night",
+                "shiftTemplateId": "shift-night",
+                "roleId": "role-sommelier",
+                "dutyIds": ["duty-service"],
+                "requiredCount": 1,
+            }
+        ]
+        raw["slots"] = [
+            {
+                "slotId": (
+                    "2026-10-24|shift-night|role-sommelier|duty-service|demand-night|1"
+                ),
+                "demandId": "demand-night",
+                "occurrenceId": "2026-10-24|shift-night",
+                "seatIndex": 1,
+                "date": "2026-10-24",
+                "shiftTemplateId": "shift-night",
+                "locationId": "location-rooftop",
+                "roleId": "role-sommelier",
+                "dutyIds": ["duty-service"],
+                "start": "2026-10-24T22:00:00+02:00",
+                "end": "2026-10-25T06:00:00+01:00",
+                "durationMinutes": 540,
+            }
+        ]
+        raw["payRules"] = [
+            {
+                "id": "pay-dst-window",
+                "calculationType": "PER_HOUR",
+                "values": {"rateMinorPerHour": 100},
+                "localStart": "01:00",
+                "localEnd": "04:00",
+                "conditions": [],
+                "stackingGroup": "dst-window",
+                "stackingMode": "STACK",
+                "priority": 0,
+                "active": True,
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(
+            item for item in snapshot.employees if item.id == "employee-bob"
+        )
+        quote = quote_assignment(snapshot, employee, generate_slots(snapshot)[0])
+        addition = next(
+            component for component in quote.components if component.rule_id != "BASE"
+        )
+        self.assertEqual(addition.cost_units, 100 * 240)
+
+    def test_currency_is_required_and_must_be_iso_4217_uppercase(self) -> None:
+        missing = load_raw()
+        missing.pop("currency")
+        invalid_lowercase = load_raw()
+        invalid_lowercase["currency"] = "pln"
+        invalid_unknown = load_raw()
+        invalid_unknown["currency"] = "ZZZ"
+        for raw in (missing, invalid_lowercase, invalid_unknown):
+            with (
+                self.subTest(currency=raw.get("currency")),
+                self.assertRaises(SnapshotError),
+            ):
+                Snapshot.from_dict(raw)
+
+    def test_legacy_global_budget_is_preserved_as_fallback(self) -> None:
+        snapshot = Snapshot.from_dict(load_raw())
+        self.assertEqual(snapshot.currency, "PLN")
+        self.assertEqual(len(snapshot.budgets), 1)
+        self.assertEqual(snapshot.budgets[0].id, "legacy-global-budget")
+        self.assertEqual(snapshot.budgets[0].scope(), {})
+
+    def test_pay_condition_values_are_typed_before_solving(self) -> None:
+        invalid_conditions = (
+            {"field": "duty_ids", "operator": "CONTAINS", "value": {}},
+            {
+                "field": "duty_ids",
+                "operator": "CONTAINS_ANY",
+                "value": ["duty-close", {"nested": True}],
+            },
+            {"field": "role_id", "operator": "IN", "value": [123]},
+            {"field": "duration_minutes", "operator": "GTE", "value": 1.5},
+            {"field": "weekday", "operator": "EQ", "value": 8},
+        )
+        for condition in invalid_conditions:
+            raw = load_raw()
+            raw["payRules"][0]["conditions"] = [condition]
+            with (
+                self.subTest(condition=condition),
+                self.assertRaisesRegex(SnapshotError, "pay condition contract"),
+            ):
+                Snapshot.from_dict(raw)
+
+    def test_locked_assignment_cannot_reference_employee_outside_snapshot(self) -> None:
+        raw = load_raw()
+        raw["lockedAssignments"] = [
+            {
+                "slotId": raw["slots"][0]["slotId"],
+                "employeeId": "employee-not-in-snapshot",
+            }
+        ]
+        with self.assertRaisesRegex(SnapshotError, "Lock references missing employee"):
+            CpSatScheduleEngine._validate_snapshot_references(Snapshot.from_dict(raw))
+
+    def test_objective_tolerance_and_target_parameters_are_not_silent(self) -> None:
+        raw = load_raw()
+        term = raw["strategies"][0]["objectiveTerms"][0]
+        term["weight"] = 2
+        term["tolerance"] = 125
+        term["parameters"] = {"targetValue": 1000}
+        snapshot = Snapshot.from_dict(raw)
+        parsed = snapshot.strategies[0].objective_terms[0]
+        self.assertEqual(parsed.tolerance, 125)
+        self.assertEqual(parsed.parameters, {"targetValue": 1000})
+
+        unsupported = load_raw()
+        unsupported["strategies"][0]["objectiveTerms"][0]["parameters"] = {
+            "ignoredMagic": 1
+        }
+        with self.assertRaisesRegex(SnapshotError, "Unsupported objective"):
+            Snapshot.from_dict(unsupported)
+
+    def test_pull_worker_configuration_is_provider_neutral(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "SOLVER_GATEWAY_URL": (
+                    "https://example.supabase.co/functions/v1/solver-gateway"
+                ),
+                "SOLVER_GATEWAY_TOKEN": "g" * 64,
+                "WORKER_ID": "free-host-worker-test",
+                "SOLVER_VERSION": "ORTOOLS_V2_2026_08_02",
+                "WORKER_TASK_ATTEMPT": "2",
+                "POLL_INTERVAL_SECONDS": "7",
+                "MAX_RUNS": "3",
+                "IDLE_EXIT_SECONDS": "60",
+            },
+            clear=True,
+        ):
+            config = WorkerConfig.from_env()
+        self.assertEqual(config.worker_id.split(":", 1)[0], "free-host-worker-test")
+        self.assertEqual(config.task_attempt, 2)
+        self.assertEqual(config.poll_interval_seconds, 7)
+        self.assertEqual(config.max_runs, 3)
+        self.assertEqual(config.idle_exit_seconds, 60)
+
+
+class SolverTests(unittest.TestCase):
+    def test_fairness_is_role_aware_in_every_category(self) -> None:
+        """Every category uses the same per-role fairness contract.
+
+        These names intentionally include all current business categories and
+        an employer-defined one.  A regression therefore cannot pass merely by
+        special-casing BAR while leaving SALA, KUCHNIA or a future category on
+        the old category-wide min/max metric.
+        """
+        for category_code in (
+            "BAR",
+            "SALA",
+            "PIZZABAR",
+            "KUCHNIA",
+            "ZMYWAK",
+            "KATEGORIA_WLASNA",
+        ):
+            with self.subTest(category=category_code):
+                raw = load_raw()
+                raw.pop("slots")
+                raw["settings"]["missingAvailabilityMeansAvailable"] = True
+                raw["settings"]["requireOptimal"] = True
+                raw["periodEnd"] = "2026-08-08"
+                primary_role_id = f"role-{category_code.lower()}-primary"
+                secondary_role_id = f"role-{category_code.lower()}-secondary"
+                raw["roles"] = [
+                    {"id": primary_role_id, "code": f"{category_code}_PRIMARY"},
+                    {"id": secondary_role_id, "code": f"{category_code}_SECONDARY"},
+                ]
+                raw["shiftTemplates"][0]["weekdays"] = list(range(1, 8))
+                raw["shiftTemplates"][1]["weekdays"] = list(range(1, 8))
+                raw["demand"] = [
+                    {
+                        **raw["demand"][0],
+                        "id": f"demand-{category_code.lower()}-primary",
+                        "roleId": primary_role_id,
+                        "requiredCount": 1,
+                    },
+                    {
+                        **raw["demand"][0],
+                        "id": f"demand-{category_code.lower()}-secondary",
+                        "roleId": secondary_role_id,
+                        "requiredCount": 1,
+                    },
+                ]
+                raw["employees"] = [
+                    {
+                        **raw["employees"][0],
+                        "id": f"{category_code.lower()}-primary-one",
+                        "roleIds": [primary_role_id],
+                        "nominalMonthlyMinutes": 1_920,
+                    },
+                    {
+                        **raw["employees"][0],
+                        "id": f"{category_code.lower()}-primary-two",
+                        "roleIds": [primary_role_id],
+                        "nominalMonthlyMinutes": 1_920,
+                    },
+                    {
+                        **raw["employees"][0],
+                        "id": f"{category_code.lower()}-secondary-one",
+                        "roleIds": [secondary_role_id],
+                        "nominalMonthlyMinutes": 1_920,
+                    },
+                    {
+                        **raw["employees"][0],
+                        "id": f"{category_code.lower()}-secondary-two",
+                        "roleIds": [secondary_role_id],
+                        "nominalMonthlyMinutes": 1_920,
+                    },
+                ]
+                raw["availabilityWindows"] = []
+                raw["strategies"] = [
+                    {
+                        "id": f"strategy-{category_code.lower()}-fair",
+                        "code": f"{category_code}_FAIR",
+                        "label": f"{category_code} fair",
+                        "sortOrder": 0,
+                        "timeLimitSeconds": 30,
+                        "objectiveTerms": [
+                            {
+                                "tier": 1,
+                                "metric": "LOAD_SPREAD_MINUTES",
+                                "weight": 1,
+                                "direction": "MIN",
+                            }
+                        ],
+                    }
+                ]
+                raw["lockedAssignments"] = []
+                raw["baselineAssignments"] = []
+                raw["payRules"] = []
+                raw["budget"] = {"amountMinor": None, "hard": False}
+
+                snapshot = Snapshot.from_dict(raw)
+                variant = CpSatScheduleEngine(max_total_seconds=60).solve(snapshot)[0]
+                slots = {slot.id: slot for slot in generate_slots(snapshot)}
+                role_counts: dict[str, dict[str, int]] = {}
+                for assignment in variant.assignments:
+                    role_id = slots[assignment.slot_id].role_id
+                    employee_counts = role_counts.setdefault(role_id, {})
+                    employee_counts[assignment.employee_id] = (
+                        employee_counts.get(assignment.employee_id, 0) + 1
+                    )
+
+                self.assertEqual(len(variant.unfilled_slot_ids), 0)
+                for employee_counts in role_counts.values():
+                    values = list(employee_counts.values())
+                    self.assertLessEqual(max(values) - min(values), 1)
+                self.assertEqual(
+                    variant.metrics["LOAD_UTILIZATION_SPREAD_BPS"], 0
+                )
+                self.assertEqual(
+                    variant.metrics["ROLE_LOAD_FAIRNESS_ROLE_COUNT"], 2
+                )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = load_raw()
+        cls.snapshot = Snapshot.from_dict(cls.raw)
+        try:
+            cls.engine = CpSatScheduleEngine(
+                max_total_seconds=30, finalization_reserve_seconds=1
+            )
+        except SolverUnavailable as exc:
+            raise unittest.SkipTest(str(exc)) from exc
+        cls.variants = cls.engine.solve(cls.snapshot)
+
+    def test_dynamic_strategy_count_and_true_hard_validation(self) -> None:
+        self.assertEqual(len(self.variants), 2)
+        self.assertEqual(
+            {variant.strategy_id for variant in self.variants},
+            {"strategy-cost", "strategy-preference"},
+        )
+        for variant in self.variants:
+            report = validate_variant(self.snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+            self.assertEqual(report.unfilled_count, 0)
+            self.assertTrue(variant.optimal)
+            self.assertEqual(variant.stage_objectives[0]["name"], "UNFILLED")
+            # Explicit employer inputs are authoritative regardless of the
+            # contract label.
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 3
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 0)
+            self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
+            self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
+
+    def test_targetless_employee_still_participates_in_fairness(self) -> None:
+        raw = load_raw()
+        bob = next(employee for employee in raw["employees"] if employee["id"] == "employee-bob")
+        bob.pop("nominalMonthlyMinutes", None)
+        bob.pop("maximumMonthlyMinutes", None)
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)
+        for variant in variants:
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_TARGET_COUNT"], 3)
+            self.assertEqual(
+                variant.metrics["LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT"], 2
+            )
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_FALLBACK_COUNT"], 1)
+
+    def test_fairness_first_strategy_cannot_regress_prior_verified_incumbent(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        fairness_terms = [
+            {
+                "tier": 1,
+                "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                "weight": 2,
+                "direction": "MIN",
+            },
+            {
+                "tier": 1,
+                "metric": "NOMINAL_DEVIATION_MINUTES",
+                "weight": 1,
+                "direction": "MIN",
+            },
+        ]
+        raw["strategies"] = [
+            {
+                "id": "strategy-fair-baseline",
+                "code": "FAIR_BASELINE",
+                "label": "Fair baseline",
+                "sortOrder": 0,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": fairness_terms,
+            },
+            {
+                "id": "strategy-fair-business",
+                "code": "FAIR_BUSINESS",
+                "label": "Fair business",
+                "sortOrder": 1,
+                "timeLimitSeconds": 10,
+                "objectiveTerms": [
+                    *fairness_terms,
+                    {
+                        "tier": 2,
+                        "metric": "TOTAL_COST",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            },
+        ]
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))
+        by_strategy = {variant.strategy_id: variant for variant in variants}
+        baseline = by_strategy["strategy-fair-baseline"]
+        fair = by_strategy["strategy-fair-business"]
+        self.assertLessEqual(
+            fair.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+            baseline.metrics["LOAD_UTILIZATION_SPREAD_BPS"],
+        )
+        self.assertLessEqual(
+            fair.metrics["NOMINAL_DEVIATION_MINUTES"],
+            baseline.metrics["NOMINAL_DEVIATION_MINUTES"],
+        )
+        self.assertEqual(
+            fair.stage_objectives[0]["fairnessIncumbentGuard"],
+            {
+                "LOAD_UTILIZATION_SPREAD_BPS": baseline.metrics[
+                    "LOAD_UTILIZATION_SPREAD_BPS"
+                ],
+                "NOMINAL_DEVIATION_MINUTES": baseline.metrics[
+                    "NOMINAL_DEVIATION_MINUTES"
+                ],
+            },
+        )
+
+    def test_verified_zero_tier_does_not_consume_later_fairness_budget(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                "id": "strategy-zero-then-fair",
+                "code": "ZERO_THEN_FAIR",
+                "label": "Zero then fair",
+                "sortOrder": 0,
+                "timeLimitSeconds": 20,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "PREFERENCE_VIOLATIONS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                    {
+                        "tier": 2,
+                        "metric": "LOAD_UTILIZATION_SPREAD_BPS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            }
+        ]
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(Snapshot.from_dict(raw))[0]
+        zero_stage = next(
+            stage
+            for stage in variant.stage_objectives
+            if stage.get("name") == "TIER_1"
+        )
+        self.assertEqual(zero_stage["value"], 0)
+        self.assertEqual(zero_stage["status"], "OPTIMAL")
+        self.assertTrue(zero_stage["verifiedZeroIncumbent"])
+        self.assertTrue(
+            any(
+                stage.get("name") == "TIER_2"
+                for stage in variant.stage_objectives
+            )
+        )
+
+    def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
+        raw = load_raw()
+        raw["settings"]["standbyTiersPerRoleDay"] = 2
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30,
+            finalization_reserve_seconds=1,
+        ).solve(snapshot)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        for variant in variants:
+            assignments_by_employee_day: dict[tuple[str, str], int] = {}
+            for assignment in variant.assignments:
+                day = slots[assignment.slot_id].date.isoformat()
+                key = (assignment.employee_id, day)
+                assignments_by_employee_day[key] = (
+                    assignments_by_employee_day.get(key, 0) + 1
+                )
+            self.assertTrue(
+                all(count <= 1 for count in assignments_by_employee_day.values())
+            )
+            self.assertEqual(len(variant.unfilled_slot_ids), 0)
+
+    def _flexible_single_employee_sequence_snapshot(
+        self, locked_slot_ids: list[str], maximum_shifts_per_day: int = 1
+    ) -> Snapshot:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [raw["strategies"][0]]
+        raw["shiftTemplates"][0]["sequenceOrder"] = 1
+        raw["shiftTemplates"][1]["sequenceOrder"] = 2
+        employee = next(
+            item for item in raw["employees"] if item["id"] == "employee-bob"
+        )
+        employee.update(
+            {
+                "contractCode": "ZLECENIE",
+                "workTimePolicy": "CONTRACT_DEFAULT",
+                "maximumShiftsPerDay": maximum_shifts_per_day,
+                "minimumRestMinutes": 0,
+            }
+        )
+        raw["employees"] = [employee]
+        raw["availabilityWindows"] = []
+        raw["lockedAssignments"] = [
+            {"slotId": slot_id, "employeeId": employee["id"]}
+            for slot_id in locked_slot_ids
+        ]
+        return Snapshot.from_dict(raw)
+
+    def test_daily_limit_one_rejects_two_employee_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_daily_limit_two_allows_two_non_overlapping_shifts_per_day(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ],
+            maximum_shifts_per_day=2,
+        )
+        variant = self.engine.solve(snapshot)[0]
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        assignments_on_test_day = [
+            assignment
+            for assignment in variant.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        ]
+        self.assertEqual(len(assignments_on_test_day), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
+
+    def test_last_shift_cannot_be_followed_by_first_shift_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+                (
+                    "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+            ]
+        )
+        with self.assertRaises(OptimizationError):
+            self.engine.solve(snapshot)
+
+    def test_morning_can_be_followed_by_evening_on_the_next_day(self) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        variant = self.engine.solve(snapshot)[0]
+        self.assertEqual(len(variant.assignments), 2)
+        report = validate_variant(snapshot, variant)
+        self.assertTrue(report.valid, report.errors)
+
+    def test_independent_validator_rejects_daily_and_sequence_invariants(
+        self,
+    ) -> None:
+        snapshot = self._flexible_single_employee_sequence_snapshot(
+            [
+                (
+                    "2026-08-01|shift-morning|role-sommelier|duty-service|"
+                    "demand-morning|1"
+                ),
+                (
+                    "2026-08-02|shift-evening|role-sommelier|"
+                    "duty-close,duty-service|demand-evening|1"
+                ),
+            ]
+        )
+        valid = self.engine.solve(snapshot)[0]
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        morning_day_one = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-01"
+        )
+        evening_day_two = next(
+            assignment
+            for assignment in valid.assignments
+            if slots[assignment.slot_id].date.isoformat() == "2026-08-02"
+        )
+
+        same_day = replace(
+            valid,
+            assignments=(
+                morning_day_one,
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+            ),
+        )
+        same_day_report = validate_variant(snapshot, same_day)
+        self.assertTrue(
+            any(
+                error.startswith("DAILY_SHIFT_LIMIT:")
+                for error in same_day_report.errors
+            )
+        )
+
+        last_then_first = replace(
+            valid,
+            assignments=(
+                replace(
+                    morning_day_one,
+                    slot_id=(
+                        "2026-08-01|shift-evening|role-sommelier|"
+                        "duty-close,duty-service|demand-evening|1"
+                    ),
+                ),
+                replace(
+                    evening_day_two,
+                    slot_id=(
+                        "2026-08-02|shift-morning|role-sommelier|duty-service|"
+                        "demand-morning|1"
+                    ),
+                ),
+            ),
+        )
+        sequence_report = validate_variant(snapshot, last_then_first)
+        self.assertTrue(
+            any(
+                error.startswith("CONSECUTIVE_SHIFT_SEQUENCE:")
+                for error in sequence_report.errors
+            )
+        )
+
+    def test_strategy_reuses_coverage_solution_and_skips_fixed_tier(self) -> None:
+        raw = load_raw()
+        for strategy in raw["strategies"]:
+            for term in strategy["objectiveTerms"]:
+                term["tier"] += 1
+            strategy["objectiveTerms"].insert(
+                0,
+                {
+                    "tier": 1,
+                    "metric": "UNFILLED",
+                    "weight": 1_000,
+                    "direction": "MIN",
+                    "tolerance": 0,
+                    "parameters": {},
+                },
+            )
+        snapshot = Snapshot.from_dict(raw)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+        original_solve_model = engine._solve_model
+        strategy_stages: list[str] = []
+        initial_hint_counts: list[int] = []
+
+        def observe_stages(*args, **kwargs):
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if strategy is not None:
+                strategy_stages.append(stage_name)
+                if stage_name == "TIER_2":
+                    model = args[0]
+                    initial_hint_counts.append(len(model.proto.solution_hint.vars))
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), 2)
+        self.assertNotIn("TIER_1", strategy_stages)
+        self.assertTrue(initial_hint_counts)
+        self.assertTrue(all(count > 0 for count in initial_hint_counts))
+        for variant in variants:
+            fixed_tier = variant.stage_objectives[1]
+            self.assertEqual(fixed_tier["name"], "TIER_1")
+            self.assertEqual(fixed_tier["status"], "OPTIMAL")
+
+    def test_relaxed_strategy_completes_full_model_hint_before_tiers(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        warm_start_limits: list[float] = []
+        full_hint_counts: list[tuple[int, int]] = []
+        strategies_with_checked_hint: set[str] = set()
+
+        def observe_stages(*args, **kwargs):
+            model = args[0]
+            strategy = kwargs.get("strategy")
+            stage_name = kwargs["stage_name"]
+            if (
+                strategy is not None
+                and stage_name.startswith("TIER_")
+                and strategy.id not in strategies_with_checked_hint
+            ):
+                full_hint_counts.append(
+                    (
+                        len(model.proto.solution_hint.vars),
+                        len(model.proto.variables),
+                    )
+                )
+                strategies_with_checked_hint.add(strategy.id)
+            result = original_solve_model(*args, **kwargs)
+            if stage_name == "WARM_START":
+                self.assertFalse(kwargs.get("fix_hints", False))
+                self.assertIsNone(strategy)
+                warm_start_limits.append(kwargs["time_limit_seconds"])
+            return result
+
+        with patch.object(engine, "_solve_model", side_effect=observe_stages):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(warm_start_limits), 1)
+        self.assertTrue(all(limit <= 15.0 for limit in warm_start_limits))
+        self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
+        self.assertTrue(
+            all(
+                0 < hint_count < variable_count
+                for hint_count, variable_count in full_hint_counts
+            )
+        )
+        for variant in variants:
+            report = validate_variant(snapshot, variant)
+            self.assertTrue(report.valid, report.errors)
+
+    def test_fixed_warm_start_skips_redundant_full_model_presolve(self) -> None:
+        fixed = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+            fix_hints=True,
+        )
+        regular = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+        )
+
+        self.assertFalse(fixed.parameters.cp_model_presolve)
+        self.assertTrue(regular.parameters.cp_model_presolve)
+
+    def test_relaxed_strategy_rejects_dominated_fallback_comparison(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_solve_model = engine._solve_model
+        forced_unknown_stages: list[str] = []
+
+        def force_unknown(*args, **kwargs):
+            stage_name = kwargs["stage_name"]
+            if stage_name.startswith("TIER_"):
+                forced_unknown_stages.append(stage_name)
+                return object(), cp_model.UNKNOWN
+            return original_solve_model(*args, **kwargs)
+
+        with (
+            patch.object(engine, "_solve_model", side_effect=force_unknown),
+            self.assertRaises(OptimizationIncomplete) as raised,
+        ):
+            engine.solve(snapshot)
+
+        self.assertTrue(forced_unknown_stages)
+        self.assertIn("STRATEGY_RESULT_DOMINATED", str(raised.exception))
+
+    def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
+        class FeasibleSolver:
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+        relaxed = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        self.assertFalse(
+            self.engine._require_optimal(
+                FeasibleSolver(), cp_model.FEASIBLE, relaxed, "TEST"
+            )
+        )
+        with self.assertRaises(OptimizationIncomplete):
+            self.engine._require_optimal(
+                FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "TEST"
+            )
+
+    def test_incomplete_status_reports_solver_proof_diagnostics(self) -> None:
+        class FeasibleSolver:
+            objective_value = 7.0
+            best_objective_bound = 5.0
+            wall_time = 12.5
+            num_branches = 321
+            num_conflicts = 45
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+        with self.assertRaisesRegex(
+            OptimizationIncomplete,
+            r"status=FEASIBLE; objectiveValue=7; bestBound=5; "
+            r"absoluteGap=2; wallTimeSeconds=12.5; branches=321; conflicts=45",
+        ):
+            self.engine._require_optimal(
+                FeasibleSolver(), cp_model.FEASIBLE, self.snapshot, "UNFILLED"
+            )
+
+    def test_coverage_model_aggregates_interchangeable_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 1)
+        self.assertEqual(len(artifacts.unfilled), 1)
+        self.assertTrue(artifacts.complete_coverage_hint)
+        self.assertGreater(len(artifacts.model.proto.solution_hint.vars), 0)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
+
+    def test_aggregate_coverage_hint_accounts_for_unfilled_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 4,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        hint = dict(
+            zip(
+                artifacts.model.proto.solution_hint.vars,
+                artifacts.model.proto.solution_hint.values,
+                strict=True,
+            )
+        )
+        selected = sum(hint[variable.index] for variable in artifacts.x.values())
+        missing = next(iter(artifacts.unfilled.values()))
+        self.assertEqual(hint[missing.index], len(slots) - selected)
+        self.assertFalse(artifacts.complete_coverage_hint)
+
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        solver.parameters.fix_variables_to_their_hinted_value = True
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(
+            solver.value(artifacts.metrics["UNFILLED"]),
+            len(slots) - selected,
+        )
+
+    def test_relaxed_coverage_stage_uses_matrix_derived_uat_budget(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+            strategies=tuple(
+                replace(strategy, time_limit_seconds=120)
+                for strategy in self.snapshot.strategies
+            ),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=900,
+            finalization_reserve_seconds=30,
+        )
+        original_solve_model = engine._solve_model
+        observed_limit: list[float] = []
+
+        def observe_limit(*args, **kwargs):
+            if kwargs["stage_name"] == "UNFILLED":
+                observed_limit.append(kwargs["time_limit_seconds"])
+            return original_solve_model(*args, **kwargs)
+
+        with patch.object(engine, "_solve_model", side_effect=observe_limit):
+            engine.solve(snapshot)
+
+        self.assertEqual(observed_limit, [240.0])
+
+    def test_relaxed_identical_strategies_receive_distinct_tied_rosters(
+        self,
+    ) -> None:
+        raw = load_raw()
+        template = raw["strategies"][0]
+        raw["settings"]["requireOptimal"] = False
+        raw["strategies"] = [
+            {
+                **template,
+                "id": f"strategy-tied-{index}",
+                "code": f"TIED_{index}",
+                "label": f"Tied {index}",
+                "sortOrder": index,
+            }
+            for index in range(2)
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        variants = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        ).solve(snapshot)
+
+        self.assertEqual(len({item.solution_hash for item in variants}), 2)
+        self.assertIsNone(variants[0].equivalent_to_strategy_id)
+        for variant in variants[1:]:
+            self.assertIsNone(variant.equivalent_to_strategy_id)
+            diversity = variant.stage_objectives[-1]
+            self.assertEqual(diversity["name"], "DIVERSIFY")
+            self.assertTrue(diversity["businessObjectiveBoundsPreserved"])
+            self.assertTrue(diversity["excludedEquivalentStrategies"])
+            self.assertTrue(validate_variant(snapshot, variant).valid)
+
+    def test_full_model_is_built_once_and_cloned_for_all_strategies(self) -> None:
+        snapshot = replace(
+            self.snapshot,
+            settings=replace(self.snapshot.settings, require_optimal=False),
+        )
+        engine = CpSatScheduleEngine(
+            max_total_seconds=120,
+            finalization_reserve_seconds=5,
+        )
+        original_build_model = engine._build_model
+        full_model_builds = 0
+
+        def observe_build(*args, **kwargs):
+            nonlocal full_model_builds
+            if not kwargs.get("coverage_only", False):
+                full_model_builds += 1
+            return original_build_model(*args, **kwargs)
+
+        with patch.object(engine, "_build_model", side_effect=observe_build):
+            variants = engine.solve(snapshot)
+
+        self.assertEqual(len(variants), len(snapshot.strategies))
+        self.assertEqual(full_model_builds, 1)
+
+    def test_coverage_aggregation_keeps_distinct_demand_groups(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        first = {
+            **raw["demand"][0],
+            "dates": ["2026-08-01"],
+            "requiredCount": 1,
+        }
+        raw["demand"] = [first, {**first, "id": "demand-second"}]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(len({slot.occurrence_id for slot in slots}), 1)
+        self.assertEqual(len(artifacts.unfilled), 2)
+        self.assertEqual(artifacts.coverage_aggregated_seats, 0)
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 0)
+
+    def test_weekly_certificate_is_exact_lower_bound_across_rest_boundary(
+        self,
+    ) -> None:
+        snapshot = Snapshot.from_dict(
+            decomposed_certificate_snapshot_raw(required_count=2)
+        )
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            certificate = engine._coverage_certificate(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                engine._clock() + 29,
+            )
+
+        self.assertIsNotNone(certificate)
+        assert certificate is not None
+        self.assertEqual(certificate.lower_bound, 3)
+        self.assertEqual(len(certificate.blocks), 2)
+        self.assertEqual(len(certificate.boundary_partitions), 2)
+        self.assertTrue(certificate.all_weeks_optimal)
+
+        artifacts = engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+        artifacts.model.minimize(artifacts.metrics["UNFILLED"])
+        solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 1
+        status = solver.solve(artifacts.model)
+        self.assertEqual(status, cp_model.OPTIMAL)
+        self.assertEqual(solver.value(artifacts.metrics["UNFILLED"]), 3)
+        self.assertLessEqual(
+            certificate.lower_bound,
+            solver.value(artifacts.metrics["UNFILLED"]),
+        )
+
+    def test_solver_records_exact_weekly_certificate(self) -> None:
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch("grafik_solver.cp_sat_engine.MIN_DECOMPOSED_PROOF_SLOTS", 0):
+            result = engine.solve(snapshot)[0]
+
+        certificate = result.stage_objectives[0]["certificate"]
+        self.assertEqual(certificate["kind"], "BOUNDARY_AWARE_PERIOD_DECOMPOSITION")
+        self.assertEqual(certificate["lowerBound"], 1)
+        self.assertEqual(len(certificate["blocks"]), 2)
+        self.assertEqual(len(certificate["boundaryPartitions"]), 2)
+        self.assertTrue(certificate["allWeeksOptimal"])
+        self.assertEqual(result.metrics["UNFILLED"], 1)
+        self.assertTrue(result.optimal)
+
+    def test_incomplete_period_subproblem_keeps_proven_integer_bound(self) -> None:
+        class FeasibleSolver:
+            best_objective_bound = 1.2
+
+            @staticmethod
+            def status_name(_status):
+                return "FEASIBLE"
+
+            @staticmethod
+            def value(_expression):
+                return 3
+
+        snapshot = Snapshot.from_dict(decomposed_certificate_snapshot_raw())
+        slots = generate_slots(snapshot)
+        engine = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        )
+
+        with patch.object(
+            engine,
+            "_solve_model",
+            return_value=(FeasibleSolver(), cp_model.FEASIBLE),
+        ):
+            proof = engine._solve_coverage_subproblem(
+                snapshot,
+                slots,
+                EligibilityIndex(snapshot),
+                stage_name="TEST_PERIOD_BOUND",
+                time_limit_seconds=1,
+            )
+
+        self.assertEqual(proof.status, "FEASIBLE")
+        self.assertFalse(proof.optimal)
+        self.assertEqual(proof.incumbent, 3)
+        self.assertEqual(proof.lower_bound, 2)
+
+    def test_coverage_symmetry_skips_groups_with_locked_seats(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodEnd"] = "2026-08-01"
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": ["2026-08-01"],
+                "requiredCount": 2,
+            }
+        ]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["lockedAssignments"] = [
+            {
+                "slotId": (
+                    "2026-08-01|shift-morning|role-sommelier|"
+                    "duty-service|demand-morning|2"
+                ),
+                "employeeId": "employee-alice",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        artifacts = self.engine._build_model(
+            snapshot,
+            slots,
+            EligibilityIndex(snapshot),
+            coverage_only=True,
+        )
+
+        self.assertEqual(artifacts.coverage_symmetry_constraints, 0)
+
+    def test_objective_target_and_tolerance_are_applied_and_reported(self) -> None:
+        raw = load_raw()
+        raw["strategies"] = [
+            {
+                "id": "strategy-target",
+                "code": "TARGET",
+                "label": "Target",
+                "sortOrder": 0,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "TOTAL_COST",
+                        "weight": 2,
+                        "direction": "MIN",
+                        "tolerance": 125,
+                        "parameters": {"targetValue": 0},
+                    }
+                ],
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        variant = self.engine.solve(snapshot)[0]
+        stage = variant.stage_objectives[1]
+        coefficient = stage["terms"][0]["normalizationCoefficient"]
+        self.assertEqual(stage["tolerance"], coefficient * 125)
+        self.assertEqual(
+            stage["frozenUpperBound"],
+            stage["value"] + coefficient * 125,
+        )
+        self.assertEqual(stage["terms"][0]["parameters"], {"targetValue": 0})
+        self.assertEqual(stage["terms"][0]["tolerance"], 125)
+        self.assertGreater(coefficient, 0)
+        self.assertTrue(validate_variant(snapshot, variant).valid)
+
+    def test_zero_weight_objective_is_accepted_and_omitted(self) -> None:
+        raw = load_raw()
+        raw["strategies"] = [
+            {
+                "id": "strategy-disabled-cost",
+                "code": "DISABLED_COST",
+                "label": "Disabled cost",
+                "sortOrder": 0,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 7,
+                        "metric": "TOTAL_COST",
+                        "weight": 0,
+                        "direction": "MIN",
+                        "tolerance": 125,
+                        "parameters": {"targetValue": 0},
+                    }
+                ],
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        self.assertEqual(snapshot.strategies[0].objective_terms[0].weight, 0)
+        variant = self.engine.solve(snapshot)[0]
+        self.assertEqual([stage["tier"] for stage in variant.stage_objectives], [0])
+        self.assertTrue(validate_variant(snapshot, variant).valid)
+
+    def test_strategies_can_produce_independent_solutions(self) -> None:
+        by_strategy = {variant.strategy_id: variant for variant in self.variants}
+        self.assertNotEqual(
+            by_strategy["strategy-cost"].solution_hash,
+            by_strategy["strategy-preference"].solution_hash,
+        )
+        self.assertLessEqual(
+            by_strategy["strategy-cost"].metrics["TOTAL_COST"],
+            by_strategy["strategy-preference"].metrics["TOTAL_COST"],
+        )
+        self.assertLessEqual(
+            by_strategy["strategy-preference"].metrics["PREFERENCE_VIOLATIONS"],
+            by_strategy["strategy-cost"].metrics["PREFERENCE_VIOLATIONS"],
+        )
+
+    def test_avoided_shift_period_is_counted_as_a_soft_preference(self) -> None:
+        raw = load_raw()
+        for employee in raw["employees"]:
+            employee["avoidedShiftTemplateIds"] = ["shift-morning"]
+        variants = self.engine.solve(Snapshot.from_dict(raw))
+        baseline = {
+            variant.strategy_id: variant.metrics["PREFERENCE_VIOLATIONS"]
+            for variant in self.variants
+        }
+        for variant in variants:
+            self.assertEqual(
+                variant.metrics["PREFERENCE_VIOLATIONS"],
+                baseline[variant.strategy_id] + 2,
+            )
+
+    def test_home_location_marker_is_not_an_objective_anymore(self) -> None:
+        for variant in self.variants:
+            self.assertEqual(variant.metrics["HOME_LOCATION_VIOLATIONS"], 0)
+
+    def test_unknown_or_conflicting_period_template_ids_are_rejected(self) -> None:
+        unknown = load_raw()
+        unknown["employees"][0]["blockedShiftTemplateIds"] = ["missing-shift"]
+        with self.assertRaisesRegex(SnapshotError, "missing templates"):
+            self.engine.solve(Snapshot.from_dict(unknown))
+
+        conflicting = load_raw()
+        conflicting["employees"][0]["preferredShiftTemplateIds"] = ["shift-morning"]
+        conflicting["employees"][0]["blockedShiftTemplateIds"] = ["shift-morning"]
+        with self.assertRaisesRegex(SnapshotError, "prefer and block"):
+            self.engine.solve(Snapshot.from_dict(conflicting))
+
+    def test_independent_validator_rejects_rest_violation(self) -> None:
+        variant = self.variants[0]
+        slots = {slot.id: slot for slot in generate_slots(self.snapshot)}
+        assignments = list(variant.assignments)
+        evening = next(
+            item
+            for item in assignments
+            if slots[item.slot_id].date.isoformat() == "2026-08-01"
+            and slots[item.slot_id].shift_template_id == "shift-evening"
+        )
+        morning_index = next(
+            index
+            for index, item in enumerate(assignments)
+            if slots[item.slot_id].date.isoformat() == "2026-08-01"
+            and slots[item.slot_id].shift_template_id == "shift-morning"
+        )
+        assignments[morning_index] = Assignment(
+            slot_id=assignments[morning_index].slot_id,
+            employee_id=evening.employee_id,
+            cost_units=assignments[morning_index].cost_units,
+            cost_components=assignments[morning_index].cost_components,
+        )
+        invalid = replace(variant, assignments=tuple(assignments))
+        report = validate_variant(self.snapshot, invalid)
+        self.assertFalse(report.valid)
+        self.assertTrue(
+            any(
+                error.startswith(("OVERLAP_OR_REST:", "DAILY_SHIFT_LIMIT:"))
+                for error in report.errors
+            )
+        )
+
+    def test_worker_lifecycle_claims_validates_saves_and_finalizes(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=_FakeEngine(self.variants),
+        )
+        self.assertEqual(runtime.run(), 0)
+        self.assertEqual(len(rpc.saved), 2)
+        self.assertTrue(rpc.finalized)
+        self.assertFalse(rpc.failed)
+        self.assertEqual(rpc.claim_requests[0]["worker_id"], "test-worker")
+        self.assertEqual(
+            rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
+        )
+
+    def test_worker_treats_structured_finalization_failure_as_failed_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.finalization_value = {
+            "status": "FAILED",
+            "errorCode": "RUN_VARIANTS_INCOMPLETE",
+            "readyVariantCount": 2,
+            "expectedVariantCount": 3,
+        }
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        with self.assertLogs("grafik_solver.lifecycle", level="ERROR") as logs:
+            self.assertEqual(runtime.run_once(), 1)
+
+        self.assertTrue(rpc.finalized)
+        self.assertFalse(rpc.failed)
+        self.assertIn("RUN_VARIANTS_INCOMPLETE", "\n".join(logs.output))
+
+    def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(config, rpc=rpc, engine=_FakeEngine(self.variants))
+
+        runtime._solver_progress(
+            {
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+                "slotCount": 1362,
+                "eligibleDecisionPairs": 21048,
+                "coverageSymmetryConstraints": 798,
+                "solverStatus": "OPTIMAL",
+                "solverBestBound": None,
+            }
+        )
+
+        self.assertEqual(
+            runtime._progress_snapshot(),
+            {
+                "schemaVersion": 2,
+                "phase": "SOLVING",
+                "progress": 10,
+                "strategyCount": 2,
+            },
+        )
+
+    def test_solver_stage_boundary_renews_starved_heartbeat(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 0)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertTrue(rpc.finalized)
+
+    def test_solver_stage_boundary_stops_after_lease_loss(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_value = Heartbeat(cancel_requested=False, lease_valid=False)
+        clock_values = iter((100.0, 161.0, 161.0))
+        engine = _StageBoundaryEngine(self.variants)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=engine,
+            clock=lambda: next(clock_values),
+        )
+
+        self.assertEqual(runtime.run_once(), 1)
+        self.assertEqual(rpc.heartbeat_calls, 1)
+        self.assertFalse(rpc.finalized)
+        self.assertEqual(rpc.interrupt_reason, None)
+
+    def test_retryable_heartbeat_response_error_does_not_stop_run(self) -> None:
+        rpc = _FakeRpc(self.raw)
+        rpc.heartbeat_errors = [
+            RpcError(
+                "Gateway action solver_heartbeat_v2 returned invalid JSON",
+                retryable=True,
+            )
+        ]
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
             idle_exit_seconds=0,
             rpc_timeout_seconds=1,
             heartbeat_seconds=60,
@@ -1116,4 +2701,3 @@ class _FakeRpc:
 
 if __name__ == "__main__":
     unittest.main()
-
