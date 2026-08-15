@@ -19,7 +19,7 @@ declare global {
 
 let gisPromise: Promise<void> | null = null;
 
-function loadGoogleIdentityServices() {
+export function preloadGoogleIdentityServices() {
   if (window.google?.accounts.oauth2) return Promise.resolve();
   if (gisPromise) return gisPromise;
   gisPromise = new Promise<void>((resolve, reject) => {
@@ -40,8 +40,8 @@ function loadGoogleIdentityServices() {
   return gisPromise;
 }
 
-async function requestDriveFileToken() {
-  await loadGoogleIdentityServices();
+export async function authorizeGoogleDriveFile() {
+  await preloadGoogleIdentityServices();
   return new Promise<string>((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
@@ -55,17 +55,8 @@ async function requestDriveFileToken() {
   });
 }
 
-export function prepareGoogleSheetsWindow() {
-  const target = window.open("", "_blank");
-  if (!target) throw new Error("Przeglądarka zablokowała nowe okno. Zezwól na wyskakujące okna i spróbuj ponownie.");
-  target.document.title = "GRAFIK PRO — Google Sheets";
-  target.document.body.textContent = "Logowanie do Google i przygotowanie arkusza…";
-  return target;
-}
-
-export async function openWorkbookInGoogleSheets(bytes: ArrayBuffer | Uint8Array, fileName: string, target = prepareGoogleSheetsWindow()) {
+export async function uploadWorkbookToGoogleSheets(bytes: ArrayBuffer | Uint8Array, fileName: string, token: string) {
   try {
-    const token = await requestDriveFileToken();
     const boundary = `grafik_pro_${crypto.randomUUID()}`;
     const name = fileName.replace(/\.xlsx$/i, "");
     const metadata = JSON.stringify({ name, mimeType: "application/vnd.google-apps.spreadsheet" });
@@ -87,10 +78,8 @@ export async function openWorkbookInGoogleSheets(bytes: ArrayBuffer | Uint8Array
     }
     const result = await response.json() as { id?: string };
     if (!result.id) throw new Error("Google nie zwrócił identyfikatora utworzonego arkusza.");
-    target.opener = null;
-    target.location.replace(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(result.id)}/edit`);
+    return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(result.id)}/edit`;
   } catch (error) {
-    target.close();
     throw error;
   }
 }

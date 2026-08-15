@@ -23,3 +23,10 @@ test("configuration and access exports retain both Google Sheets and Excel actio
   assert.match(editor, /Pobierz plik Excel/);
   assert.match(editor, /Pobierz prosty plik Excel/);
 });
+
+test("Google authorization happens before workbook generation and does not consume a second popup", () => {
+  assert.doesNotMatch(integration, /window\.open/);
+  assert.match(integration, /export async function authorizeGoogleDriveFile/);
+  assert.match(editor, /const token=toGoogle\?await authorizeGoogleDriveFile\(\):null;[\s\S]{0,250}await build/);
+  assert.match(editor, /window\.location\.assign\(await uploadWorkbookToGoogleSheets/);
+});

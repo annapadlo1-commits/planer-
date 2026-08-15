@@ -14,7 +14,7 @@ import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
-import { openWorkbookInGoogleSheets, prepareGoogleSheetsWindow } from "@/lib/google-sheets-export";
+import { authorizeGoogleDriveFile, preloadGoogleIdentityServices, uploadWorkbookToGoogleSheets } from "@/lib/google-sheets-export";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
   type MatrixV2Budget, type MatrixV2Duty, type MatrixV2Location,
@@ -780,6 +780,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   const [directory,setDirectory]=useState<AccessDirectoryPayload|null>(null);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
+  useEffect(()=>{void preloadGoogleIdentityServices().catch(()=>undefined);},[]);
   const [form,setForm]=useState({email:"",appRole:"EMPLOYEE",roleId:"",locationId:""});
   const [importPreview,setImportPreview]=useState<AccessImportPreview|null>(null);
   const accessFileRef=useRef<HTMLInputElement|null>(null);
@@ -858,18 +859,16 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
 
   async function exportAccessWorkbook(toGoogle=false){
     if(!directory)return;
-    let googleWindow:Window|null=null;
-    try{if(toGoogle)googleWindow=prepareGoogleSheetsWindow();}
-    catch(error){fail(error instanceof Error?error.message:"Nie udało się otworzyć nowego okna.");return;}
     setSaving(true);
     try{
+      const token=toGoogle?await authorizeGoogleDriveFile():null;
       const artifact=await buildAccessWorkbook();
-      if(googleWindow)await openWorkbookInGoogleSheets(artifact.bytes,artifact.fileName,googleWindow);
+      if(token)window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
       else{
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
-    }catch(error){googleWindow?.close();fail(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    }catch(error){fail(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
     finally{setSaving(false);}
   }
 
@@ -1838,6 +1837,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"TEAM");
   const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
   const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
+  useEffect(()=>{void preloadGoogleIdentityServices().catch(()=>undefined);},[]);
   useEffect(()=>{
     if(payload&&preview)window.sessionStorage.setItem(importDraftKey,JSON.stringify({scope,mode,payload,preview}));
   },[importDraftKey,mode,payload,preview,scope]);
@@ -1847,20 +1847,18 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
   }
   async function exportTemplate(toGoogle=false){
-    let googleWindow:Window|null=null;
-    try{if(toGoogle)googleWindow=prepareGoogleSheetsWindow();}
-    catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się otworzyć nowego okna.");return;}
     setBusy(true);setLocalError("");
     try{
+      const token=toGoogle?await authorizeGoogleDriveFile():null;
       const artifact=scope==="FINANCE"
         ?await buildWorkforceFinanceTemplate(data)
         :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL");
-      if(googleWindow)await openWorkbookInGoogleSheets(artifact.bytes,artifact.fileName,googleWindow);
+      if(token)window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
       else{
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
-    }catch(error){googleWindow?.close();setLocalError(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
     finally{setBusy(false);}
   }
   async function inspect(){
