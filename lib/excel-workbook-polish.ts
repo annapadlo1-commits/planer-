@@ -159,7 +159,19 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
 }
 
 async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
-  const workbook=new Workbook();await workbook.xlsx.load(input as ArrayBuffer);
+  // Rebuild the SheetJS export in a fresh ExcelJS package. Loading and then
+  // rewriting the same OOXML package produces files accepted by tolerant
+  // readers but rejected by some desktop Excel builds (error 1004). Copying
+  // the cell grid into a clean package avoids carrying incompatible metadata.
+  const XLSX=await import("xlsx");
+  const source=XLSX.read(input,{type:"array",cellDates:false});
+  const workbook=new Workbook();
+  for(const name of source.SheetNames){
+    const sourceSheet=source.Sheets[name];
+    const rows=XLSX.utils.sheet_to_json<unknown[]>(sourceSheet,{header:1,raw:true,defval:null});
+    const sheet=workbook.addWorksheet(name);
+    if(rows.length)sheet.addRows(rows);
+  }
   const instruction=workbook.getWorksheet("Instrukcja");if(instruction)formatInstruction(instruction,kind);
   const adHoc=workbook.getWorksheet("Pula ad-hoc");if(adHoc)splitAdHocNames(adHoc);
   let lists=workbook.getWorksheet("_LISTY");if(lists)workbook.removeWorksheet(lists.id);lists=workbook.addWorksheet("_LISTY",{state:"hidden"});
