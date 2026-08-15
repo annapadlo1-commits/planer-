@@ -16,15 +16,19 @@ export type WorkforceFinanceWorkbookPayload = {
 };
 
 function cell(row: Record<string, unknown>, ...names: string[]) {
+  const normalizeHeader = (value: string) => value.trim()
+    .replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|SYSTEM)\s*$/iu, "")
+    .toLocaleLowerCase("pl-PL");
   const key = Object.keys(row).find(candidate => names.some(name =>
-    candidate.trim().toLocaleLowerCase("pl-PL") === name.toLocaleLowerCase("pl-PL"),
+    normalizeHeader(candidate) === normalizeHeader(name),
   ));
   return key === undefined ? "" : String(row[key] ?? "").trim();
 }
 
 function booleanCell(value: string, defaultValue = true) {
   if (!value) return defaultValue;
-  return ["1", "tak", "true", "yes", "x"].includes(value.toLocaleLowerCase("pl-PL"));
+  const normalized = value.replace(/[☑☐✓✔]/gu, "").trim().toLocaleLowerCase("pl-PL");
+  return ["1", "tak", "true", "yes", "x"].includes(normalized);
 }
 
 function normalizeContract(value: string) {

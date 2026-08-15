@@ -850,7 +850,9 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     dictionaries["!autofilter"]={ref:`A1:C${dictionaries.length}`};
     dictionaries["!cols"]=[{wch:24},{wch:28},{wch:88}];
     XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
-    XLSX.writeFile(workbook,"grafik-pro-dostepy-do-aplikacji.xlsx");
+    const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
+    const {downloadWorkbook,polishAccessWorkbook}=await import("@/lib/excel-workbook-polish");
+    downloadWorkbook(await polishAccessWorkbook(raw),"grafik-pro-dostepy-do-aplikacji.xlsx");
   }
 
   async function inspectAccessWorkbook(file:File){
@@ -863,24 +865,29 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
       const raw=XLSX.utils.sheet_to_json<Record<string,unknown>>(sheet,{defval:""});
       const rows:AccessImportRow[]=[];const errors:string[]=[];
       const normalize=(value:unknown)=>String(value??"").trim();
+      const header=(value:string)=>value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|SYSTEM)\s*$/iu,"");
+      const value=(source:Record<string,unknown>,...names:string[])=>{
+        const key=Object.keys(source).find(candidate=>names.some(name=>header(candidate).toLocaleLowerCase("pl-PL")===name.toLocaleLowerCase("pl-PL")));
+        return normalize(key===undefined?"":source[key]);
+      };
       const roleByValue=new Map<string,string>();
       Object.entries(accessRoleLabels).forEach(([code,label])=>{roleByValue.set(code.toLocaleUpperCase("pl-PL"),code);roleByValue.set(label.toLocaleUpperCase("pl-PL"),code);});
       raw.forEach((source,index)=>{
         const row=index+2;
-        const email=normalize(source["Adres e-mail"]??source.email).toLocaleLowerCase("pl-PL");
-        const accessValue=normalize(source["Rodzaj dostępu"]??source.appRole).toLocaleUpperCase("pl-PL");
+        const email=value(source,"Adres e-mail","email").toLocaleLowerCase("pl-PL");
+        const accessValue=value(source,"Rodzaj dostępu","appRole").toLocaleUpperCase("pl-PL");
         const appRole=roleByValue.get(accessValue)??"";
-        const roleValue=normalize(source["Zakres roli"]??source.role).toLocaleUpperCase("pl-PL");
-        const locationValue=normalize(source["Zakres lokalu"]??source.location).toLocaleUpperCase("pl-PL");
+        const roleValue=value(source,"Zakres roli","role").toLocaleUpperCase("pl-PL");
+        const locationValue=value(source,"Zakres lokalu","location").toLocaleUpperCase("pl-PL");
         const role=directory.roles.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===roleValue));
         const location=directory.locations.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===locationValue));
-        const activeValue=normalize(source.Aktywny??source.active).toLocaleUpperCase("pl-PL");
+        const activeValue=value(source,"Aktywny","active").replace(/[☑☐✓✔]/gu,"").trim().toLocaleUpperCase("pl-PL");
         if(!email&&!accessValue&&!roleValue&&!locationValue)return;
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))errors.push(`Wiersz ${row}: podaj prawidłowy adres e-mail.`);
         if(!appRole)errors.push(`Wiersz ${row}: nieznany rodzaj dostępu „${accessValue||"(pusty)"}”.`);
         if(appRole==="ROLE_MANAGER"&&!role)errors.push(`Wiersz ${row}: lider roli wymaga prawidłowego kodu w kolumnie „Zakres roli”.`);
         if(appRole==="LOCATION_MANAGER"&&!location)errors.push(`Wiersz ${row}: lider lokalu wymaga prawidłowego kodu w kolumnie „Zakres lokalu”.`);
-        if(activeValue&&!['TAK','NIE','TRUE','FALSE','1','0'].includes(activeValue))errors.push(`Wiersz ${row}: Aktywny musi mieć wartość TAK albo NIE.`);
+        if(activeValue&&!['TAK','NIE','TRUE','FALSE','1','0'].includes(activeValue))errors.push(`Dostępy • wiersz ${row} • kolumna „Aktywny”: wybierz ☐ Nie albo ☑ Tak.`);
         rows.push({row,email,appRole,roleId:role?.rowId??null,locationId:location?.rowId??null,active:!['NIE','FALSE','0'].includes(activeValue)});
       });
       if(!rows.length)errors.push("Arkusz „Dostępy” nie zawiera żadnego wiersza do zapisania.");
@@ -1742,7 +1749,9 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUI
     const hidden=new Set(["Scenariusze","Strategie","Kryteria strategii","Warianty scenariuszy","Role pracowników","Lokale pracowników","Kompetencje pracowników","Dostępność","Zasady płacowe","Dodatki scenariuszy","Budżety scenariuszy","Finanse pracowników"]);
     workbook.Workbook={...(workbook.Workbook??{}),Sheets:workbook.SheetNames.map(name=>({Hidden:hidden.has(name)?1:0}))};
   }
-  XLSX.writeFile(workbook,variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
+  const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
+  const {downloadWorkbook,polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
+  downloadWorkbook(await polishMatrixWorkbook(raw,variant),variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
 }
 
 async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
@@ -1788,7 +1797,9 @@ async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
   ]);
   dictionaries["!cols"]=[{wch:24},{wch:24},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
-  XLSX.writeFile(workbook,`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`);
+  const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
+  const {downloadWorkbook,polishFinanceWorkbook}=await import("@/lib/excel-workbook-polish");
+  downloadWorkbook(await polishFinanceWorkbook(raw),`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`);
 }
 
 function readStoredMatrixImport(matrixVersionId:string){

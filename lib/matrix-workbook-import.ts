@@ -24,18 +24,23 @@ export type MatrixWorkbookPayload = {
   _sourceLayout: "APPS_SCRIPT_BASE" | "GRAFIK_PRO_TEMPLATE";
 };
 
+function normalizeImportHeader(value:string){
+  return value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|SYSTEM)\s*$/iu,"").toLocaleLowerCase("pl-PL");
+}
+
 function importCell(row:Record<string,unknown>,...names:string[]){
-  const key=Object.keys(row).find(candidate=>names.some(name=>candidate.trim().toLocaleLowerCase("pl-PL")===name.toLocaleLowerCase("pl-PL")));
+  const key=Object.keys(row).find(candidate=>names.some(name=>normalizeImportHeader(candidate)===normalizeImportHeader(name)));
   return key===undefined?"":String(row[key]??"").trim();
 }
 
 function hasImportColumn(row:Record<string,unknown>,...names:string[]){
-  return Object.keys(row).some(candidate=>names.some(name=>candidate.trim().toLocaleLowerCase("pl-PL")===name.toLocaleLowerCase("pl-PL")));
+  return Object.keys(row).some(candidate=>names.some(name=>normalizeImportHeader(candidate)===normalizeImportHeader(name)));
 }
 
 function importBoolean(value:string,defaultValue=false){
   if(!value)return defaultValue;
-  return ["1","tak","true","yes","x"].includes(value.toLocaleLowerCase("pl-PL"));
+  const normalized=value.replace(/[☑☐✓✔]/gu,"").trim().toLocaleLowerCase("pl-PL");
+  return ["1","tak","true","yes","x"].includes(normalized);
 }
 
 function importList(value:string){return value.split(/[;,|]/).map(item=>item.trim()).filter(Boolean);}
@@ -144,7 +149,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     if(!key)return "";
     if(["UMOWAOPRACĘ","UMOWAOPRACE","UOP"].includes(key))return "UMOWA_O_PRACE";
     if(["UMOWAZLECENIE","ZLECENIE","UZ"].includes(key))return "ZLECENIE";
-    if(["CZĘŚĆETATU","CZESCETATU"].includes(key))return "CZESC_ETATU";
+    if(["CZĘŚĆETATU","CZESCETATU","UMOWAOPRACĘCZĘŚĆETATU","UMOWAOPRACECZESCETATU"].includes(key))return "CZESC_ETATU";
     if(key==="B2B")return "B2B";
     if(["INNE","OTHER"].includes(key))return "INNE";
     return "";
@@ -221,16 +226,17 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       return true;
     });
   };
+  const normalizeColor=(value:string)=>/#[0-9A-F]{6}/i.exec(value)?.[0].toUpperCase()??value;
   const namedRows=(sheetNames:string[],entityName:string)=>validatedDictionaryRows(sheetNames,entityName).map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
-    description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
+    description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
   const roleCategories=namedRows(["Kategorie grafików","Kategorie grafikow","Role categories"],"kategorii grafiku");
   const roles=validatedDictionaryRows(["Role","Roles"],"roli").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     categoryCode:importCode(importCell(row,"Kod kategorii","Kategoria","categoryCode")),
-    description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
+    description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
   const roleAliases=new Map<string,string>();
@@ -253,7 +259,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const duties=namedRows(["Obowiązki","Obowiazki","Duties"],"obowiązku");
   const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
     code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
-    description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
+    description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     parentScenarioCode:importCell(row,"Kod nadrzędnego","parentScenarioCode").toUpperCase(),
     isDefault:importBoolean(importCell(row,"Domyślny","isDefault")),validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),
     validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),settingsOverrides:importJson(importCell(row,"Ustawienia JSON","settingsOverrides")),
@@ -313,7 +319,15 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     ...dictionaryRows.filter(row=>importCell(row,"TYP").toLocaleUpperCase("pl-PL")==="OBOWIĄZEK").map(row=>importCell(row,"KOD")),
   ].filter(Boolean))];
   const sourceEmployeeLayout=employeeRows.some(row=>Boolean(importCell(row,"PRACOWNIK_ID*","IMIĘ_I_NAZWISKO*")));
-  const employees=employeeRows.map(row=>{
+  const normalizeEmploymentStage=(value:string,sourceRow:number)=>{
+    const key=(value||"REGULAR").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/Ł/g,"L").replace(/ł/g,"l")
+      .toLocaleUpperCase("pl-PL").replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+    if(["REGULAR","STALA_WSPOLPRACA"].includes(key))return "REGULAR";
+    if(["PROBATION","OKRES_PROBNY"].includes(key))return "PROBATION";
+    if(["NOTICE","OKRES_WYPOWIEDZENIA"].includes(key))return "NOTICE";
+    throw new Error(`Pracownicy • wiersz ${sourceRow} • kolumna „Etap zatrudnienia”: wartość „${value}” jest nieprawidłowa. Wybierz: Stała współpraca, Okres próbny albo Okres wypowiedzenia.`);
+  };
+  const employees=employeeRows.map((row,index)=>{
     const combinedName=splitName(importCell(row,"IMIĘ_I_NAZWISKO*","IMIĘ_I_NAZWISKO"));
     const sourceEmployeeNo=importCell(row,"PRACOWNIK_ID*","PRACOWNIK_ID");
     const locationColumns=Object.keys(row).filter(key=>/(?:_STANDARD|_NADGODZINY)$/i.test(key));
@@ -347,7 +361,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       dutyCodes,
       employmentFraction:importCell(row,"ETAT*","ETAT","employmentFraction"),
       workTimePolicy:importCell(row,"Polityka czasu pracy","workTimePolicy","POLITYKA_CZASU_PRACY").toUpperCase(),
-      employmentStage:(importCell(row,"Etap zatrudnienia","employmentStage")||"REGULAR").toUpperCase(),
+      employmentStage:normalizeEmploymentStage(importCell(row,"Etap zatrudnienia","employmentStage"),index+2),
       probationEnd:normalizeDate(importCell(row,"Koniec okresu próbnego","probationEnd")),
       backupRoles:importList(importCell(row,"Role rezerwowe (kolejność)","Role rezerwowe","backupRoles")).map((entry,index)=>{
         const [roleCode,priorityText]=entry.split(":").map(item=>item.trim());
@@ -449,8 +463,8 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     assignmentMode:(importCell(row,"Sposób użycia","assignmentMode")||"STANDARD").toUpperCase(),
     backupPriority:importCell(row,"Priorytet rezerwowy","backupPriority")||"100",
   }));
-  const adHocWorkers=rows(["Pula ad-hoc","Pula ad hoc","Ad hoc pool"]).map(row=>({
-    displayName:importCell(row,"Imię i nazwisko","Nazwa","displayName"),
+  const adHocWorkers=rows(["Pula ad-hoc","Pula ad hoc","Ad hoc pool"]).map((row,index)=>({
+    displayName:[importCell(row,"Imię","firstName"),importCell(row,"Nazwisko","lastName")].filter(Boolean).join(" ")||importCell(row,"Imię i nazwisko","Nazwa","displayName"),
     email:importCell(row,"E-mail","Email","email"),phone:importCell(row,"Telefon","phone"),
     roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
     contractType:normalizeContract(importCell(row,"Rodzaj współpracy","Rodzaj umowy","contractType"))||"ZLECENIE",
@@ -458,8 +472,12 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     currency:(importCell(row,"Waluta","currency")||"PLN").toUpperCase(),
     availableFrom:normalizeDate(importCell(row,"Dostępny od","availableFrom")),
     availableTo:normalizeDate(importCell(row,"Dostępny do","availableTo")),
-    notes:importCell(row,"Notatki","notes"),active:importBoolean(importCell(row,"Aktywna","active"),true),
+    notes:importCell(row,"Notatki","notes"),active:importBoolean(importCell(row,"Aktywna","active"),true),sourceRow:index+2,
   })).filter(row=>row.displayName||row.email||row.phone);
+  const adHocWorkerWithoutRole=adHocWorkers.find(row=>!row.roleCode);
+  if(adHocWorkerWithoutRole){
+    throw new Error(`Pula ad-hoc • wiersz ${adHocWorkerWithoutRole.sourceRow} • kolumna „Kod roli”: wybierz rolę z arkusza „Role” albo usuń ten niepełny wiersz.`);
+  }
   const employeeLocationsDetailed=rows(["Lokale pracowników","Lokale pracownikow","Employee Locations"]).map(row=>({
     employeeNo:importCell(row,"Numer pracownika","employeeNo"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),
     standardAllowed:importBoolean(importCell(row,"Zwykła praca","standardAllowed")),overtimeAllowed:importBoolean(importCell(row,"Dodatkowa praca","overtimeAllowed")),

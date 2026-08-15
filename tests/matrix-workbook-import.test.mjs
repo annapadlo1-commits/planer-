@@ -406,3 +406,44 @@ test("Excel-native serial dates from the downloaded quick-start workbook stay IS
   assert.equal(parsed.adHocWorkers[0].availableFrom,"2026-09-01");
   assert.equal(parsed.adHocWorkers[0].availableTo,"2026-09-20");
 });
+
+test("an ad-hoc worker without a role points to the exact workbook sheet, row and column",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({
+      "Pula ad-hoc":[
+        {"Imię i nazwisko":"Jan Poprawny","Kod roli":"BARMAN",Aktywna:"TAK"},
+        {"Imię i nazwisko":"Jerzy","Kod roli":"",Aktywna:"TAK"},
+      ],
+    })),
+    /Pula ad-hoc • wiersz 3 • kolumna „Kod roli”: wybierz rolę z arkusza „Role” albo usuń ten niepełny wiersz/,
+  );
+});
+
+test("polished Google Sheets-ready labels import without silent semantic changes",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    "Kategorie grafików":[{"Nazwa\nWYMAGANE":"Sala","Kolor\nOPCJONALNE":"Fioletowy — #7257D8","Aktywna\nWYMAGANE":"☑ Tak"}],
+    Pracownicy:[{
+      "Imię\nWYMAGANE":"Anna","Nazwisko\nWYMAGANE":"Próbna","Kod roli\nWYMAGANE":"KELNER",
+      "Etap zatrudnienia\nWYMAGANE":"Okres próbny","Rodzaj umowy\nWYMAGANE":"Umowa o pracę — część etatu",
+      "Bez weekendów\nOPCJONALNE":"☐ Nie","Aktywny\nWYMAGANE":"☑ Tak",
+    }],
+    "Pula ad-hoc":[{"Imię\nWYMAGANE":"Jan","Nazwisko\nWYMAGANE":"Kowalski","Kod roli\nWYMAGANE":"BARMAN","Aktywna\nWYMAGANE":"☑ Tak"}],
+  }));
+
+  assert.equal(parsed.roleCategories[0].color,"#7257D8");
+  assert.equal(parsed.employees[0].employmentStage,"PROBATION");
+  assert.equal(parsed.employees[0].contractType,"CZESC_ETATU");
+  assert.equal(parsed.employees[0].active,true);
+  assert.equal(parsed.employees[0].noWeekends,false);
+  assert.equal(parsed.adHocWorkers[0].displayName,"Jan Kowalski");
+});
+
+test("unknown employment stage points to the exact sheet row and column",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({Pracownicy:[
+      {Imię:"Anna",Nazwisko:"Poprawna","Etap zatrudnienia":"Stała współpraca"},
+      {Imię:"Ewa",Nazwisko:"Błędna","Etap zatrudnienia":"OKRES TESTOWY"},
+    ]})),
+    /Pracownicy • wiersz 3 • kolumna „Etap zatrudnienia”: wartość „OKRES TESTOWY” jest nieprawidłowa/,
+  );
+});
