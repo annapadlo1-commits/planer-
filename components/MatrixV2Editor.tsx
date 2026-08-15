@@ -58,6 +58,8 @@ type ShiftMergeDialogState={
 type AccessDirectoryEntry={id:string;email:string;appRole:string;active:boolean;authUserId?:string|null;status:"ACTIVE"|"PENDING";roleLogicalId?:string|null;roleName?:string|null;locationLogicalId?:string|null;locationName?:string|null};
 type AccessDirectoryOption={rowId:string;logicalId:string;name:string;code:string};
 type AccessDirectoryPayload={entries:AccessDirectoryEntry[];roles:AccessDirectoryOption[];locations:AccessDirectoryOption[]};
+type AccessImportRow={row:number;email:string;appRole:string;roleId:string|null;locationId:string|null;active:boolean};
+type AccessImportPreview={rows:AccessImportRow[];errors:string[];fileName:string};
 
 const assignmentModeLabel: Record<string, string> = {
   REQUIRED: "Wymagany", OPTIONAL: "Opcjonalny", EXTRA: "Dodatkowy",
@@ -285,6 +287,19 @@ export function MatrixV2Editor({
     await reloadInPlace();
   }
 
+  async function discardDraft() {
+    if (!supabase || !data.editable) return;
+    if (!window.confirm("Anulować tę wersję roboczą? Wszystkie zmiany tej wersji zostaną usunięte. Opublikowana konfiguracja i istniejące grafiki pozostaną bez zmian.")) return;
+    setBusy(true);
+    const result = await supabase.rpc("matrix_v2_discard_draft_uat_v1", {
+      p_matrix_version_id: data.matrixVersion.id,
+    });
+    setBusy(false);
+    if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
+    notify("Wersja robocza została anulowana. Ponownie używana jest ostatnia opublikowana konfiguracja.");
+    await reload();
+  }
+
   async function normalizeShiftPeriods() {
     if (!supabase) return;
     const mismatches=data.shiftTemplates.filter(shift=>{
@@ -409,7 +424,7 @@ export function MatrixV2Editor({
       ?[String(payload.shiftTemplateId)]
       :shiftTemplateIds;
     const result = unifiedStaffing
-      ?await supabase.rpc("matrix_v2_shift_staffing_save_uat_v3",{
+      ?await supabase.rpc("matrix_v2_shift_staffing_save_uat_v4",{
         p_scenario_id:String(payload.scenarioId),
         p_shift_template_ids:staffingShiftIds,
         p_role_id:String(payload.roleId),
@@ -418,6 +433,7 @@ export function MatrixV2Editor({
         p_count_value:payload.countValue as number|null,
         p_multiplier_basis_points:payload.multiplierBasisPoints as number|null,
         p_active:Boolean(payload.active),
+        p_source_metadata:payload.sourceMetadata as Record<string,unknown>,
       })
       :await supabase.rpc("matrix_v2_admin_save_alpha16", {
         p_kind: kind, p_id: id, p_data: payload,
@@ -655,7 +671,7 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>setUatResetDialog({confirmation:""})}><Trash2/> Wyczyść całe UAT</button>}<button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>setUatResetDialog({confirmation:""})}><Trash2/> Wyczyść całe UAT</button>}<button className="secondary-button danger" disabled={busy} onClick={()=>void discardDraft()}><X/> Anuluj wersję roboczą</button><button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
@@ -767,6 +783,8 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [form,setForm]=useState({email:"",appRole:"EMPLOYEE",roleId:"",locationId:""});
+  const [importPreview,setImportPreview]=useState<AccessImportPreview|null>(null);
+  const accessFileRef=useRef<HTMLInputElement|null>(null);
 
   async function loadDirectory(){
     if(!supabase)return;
@@ -799,9 +817,95 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     await loadDirectory();
   }
 
+  async function exportAccessWorkbook(){
+    if(!directory)return;
+    const XLSX=await import("xlsx");
+    const workbook=XLSX.utils.book_new();
+    const instructions=XLSX.utils.aoa_to_sheet([
+      ["GRAFIK PRO — zbiorcze dostępy do aplikacji","Zasada"],
+      ["Jedna osoba — wiele funkcji","Powtórz adres e-mail w osobnych wierszach, jeśli ta sama osoba ma kilka rodzajów dostępu."],
+      ["Zakres roli","Wymagany wyłącznie dla dostępu „Lider roli” (kod ROLE_MANAGER). Użyj kodu z arkusza Słowniki."],
+      ["Zakres lokalu","Wymagany wyłącznie dla dostępu „Lider lokalu” (kod LOCATION_MANAGER). Użyj kodu z arkusza Słowniki."],
+      ["Aktywny","TAK nadaje lub utrzymuje dostęp; NIE wyłącza dokładnie wskazaną funkcję."],
+      ["Bezpieczeństwo","Najpierw zobaczysz podgląd. Cały plik zapisuje się atomowo — jeden błąd zatrzyma wszystkie wiersze."],
+    ]);
+    instructions["!cols"]=[{wch:34},{wch:110}];
+    XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
+    const headers=["Adres e-mail","Rodzaj dostępu","Zakres roli","Zakres lokalu","Aktywny"];
+    const rows=directory.entries.map(entry=>[
+      entry.email,entry.appRole,
+      directory.roles.find(item=>item.logicalId===entry.roleLogicalId)?.code??"",
+      directory.locations.find(item=>item.logicalId===entry.locationLogicalId)?.code??"",
+      entry.active?"TAK":"NIE",
+    ]);
+    const sheet=XLSX.utils.aoa_to_sheet([headers,...rows]);
+    sheet["!autofilter"]={ref:`A1:E${Math.max(2,rows.length+1)}`};
+    sheet["!freeze"]={xSplit:0,ySplit:1};
+    sheet["!cols"]=[{wch:38},{wch:24},{wch:24},{wch:24},{wch:12}];
+    XLSX.utils.book_append_sheet(workbook,sheet,"Dostępy");
+    const dictionaries=XLSX.utils.aoa_to_sheet([
+      ["TYP","KOD","NAZWA / OPIS"],
+      ...Object.entries(accessRoleLabels).map(([code,label])=>["RODZAJ DOSTĘPU",code,`${label} — ${accessRoleDescriptions[code]}`]),
+      ...directory.roles.map(item=>["ROLA",item.code,item.name]),
+      ...directory.locations.map(item=>["LOKAL",item.code,item.name]),
+      ["AKTYWNY","TAK","Dostęp aktywny"],["AKTYWNY","NIE","Dostęp wyłączony"],
+    ]);
+    dictionaries["!autofilter"]={ref:`A1:C${dictionaries.length}`};
+    dictionaries["!cols"]=[{wch:24},{wch:28},{wch:88}];
+    XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
+    XLSX.writeFile(workbook,"grafik-pro-dostepy-do-aplikacji.xlsx");
+  }
+
+  async function inspectAccessWorkbook(file:File){
+    if(!directory)return;
+    try{
+      const XLSX=await import("xlsx");
+      const workbook=XLSX.read(await file.arrayBuffer(),{type:"array"});
+      const sheet=workbook.Sheets["Dostępy"];
+      if(!sheet)throw new Error("Brakuje arkusza „Dostępy”. Pobierz świeży plik z aplikacji.");
+      const raw=XLSX.utils.sheet_to_json<Record<string,unknown>>(sheet,{defval:""});
+      const rows:AccessImportRow[]=[];const errors:string[]=[];
+      const normalize=(value:unknown)=>String(value??"").trim();
+      const roleByValue=new Map<string,string>();
+      Object.entries(accessRoleLabels).forEach(([code,label])=>{roleByValue.set(code.toLocaleUpperCase("pl-PL"),code);roleByValue.set(label.toLocaleUpperCase("pl-PL"),code);});
+      raw.forEach((source,index)=>{
+        const row=index+2;
+        const email=normalize(source["Adres e-mail"]??source.email).toLocaleLowerCase("pl-PL");
+        const accessValue=normalize(source["Rodzaj dostępu"]??source.appRole).toLocaleUpperCase("pl-PL");
+        const appRole=roleByValue.get(accessValue)??"";
+        const roleValue=normalize(source["Zakres roli"]??source.role).toLocaleUpperCase("pl-PL");
+        const locationValue=normalize(source["Zakres lokalu"]??source.location).toLocaleUpperCase("pl-PL");
+        const role=directory.roles.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===roleValue));
+        const location=directory.locations.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===locationValue));
+        const activeValue=normalize(source.Aktywny??source.active).toLocaleUpperCase("pl-PL");
+        if(!email&&!accessValue&&!roleValue&&!locationValue)return;
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))errors.push(`Wiersz ${row}: podaj prawidłowy adres e-mail.`);
+        if(!appRole)errors.push(`Wiersz ${row}: nieznany rodzaj dostępu „${accessValue||"(pusty)"}”.`);
+        if(appRole==="ROLE_MANAGER"&&!role)errors.push(`Wiersz ${row}: lider roli wymaga prawidłowego kodu w kolumnie „Zakres roli”.`);
+        if(appRole==="LOCATION_MANAGER"&&!location)errors.push(`Wiersz ${row}: lider lokalu wymaga prawidłowego kodu w kolumnie „Zakres lokalu”.`);
+        if(activeValue&&!['TAK','NIE','TRUE','FALSE','1','0'].includes(activeValue))errors.push(`Wiersz ${row}: Aktywny musi mieć wartość TAK albo NIE.`);
+        rows.push({row,email,appRole,roleId:role?.rowId??null,locationId:location?.rowId??null,active:!['NIE','FALSE','0'].includes(activeValue)});
+      });
+      if(!rows.length)errors.push("Arkusz „Dostępy” nie zawiera żadnego wiersza do zapisania.");
+      setImportPreview({rows,errors,fileName:file.name});
+    }catch(error){setImportPreview(null);fail(error instanceof Error?error.message:"Nie udało się odczytać pliku dostępów.");}
+  }
+
+  async function applyAccessWorkbook(){
+    if(!supabase||!importPreview||importPreview.errors.length)return;
+    setSaving(true);
+    const result=await supabase.rpc("application_access_bulk_apply_uat_v1",{p_rows:importPreview.rows.map(row=>({email:row.email,appRole:row.appRole,roleId:row.roleId,locationId:row.locationId,active:row.active}))});
+    setSaving(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    notify(`Zapisano atomowo ${plural(importPreview.rows.length,"dostęp","dostępy","dostępów")}.`);
+    setImportPreview(null);if(accessFileRef.current)accessFileRef.current.value="";await loadDirectory();
+  }
+
   return <section className="access-management">
     <div className="matrix-v2-section-head"><div><h3>Dostępy do aplikacji</h3><p>Uprawnienia są niezależne od składu grafiku i działają od razu. Osoba z finansów lub administrator nie musi być pracownikiem planowanym na zmianach.</p></div></div>
     <div className="access-explainer"><ShieldCheck/><span><strong>Jedna osoba może mieć kilka funkcji</strong><small>Przykład: pracownik może mieć portal pracownika i jednocześnie dostęp lidera do grafiku roli Barman. Lider roli i lider lokalu otrzymują wyłącznie wskazany zakres.</small></span></div>
+    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym plikiem Excel.</small></span><button type="button" className="secondary-button" disabled={loading||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Eksportuj Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj Excel</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
+    {importPreview&&<section className={`access-import-preview ${importPreview.errors.length?"invalid":"valid"}`}><header><span><strong>{importPreview.errors.length?"Plik wymaga poprawy":"Plik gotowy do zapisu"}</strong><small>{importPreview.fileName} • {plural(importPreview.rows.length,"wiersz","wiersze","wierszy")}</small></span><button type="button" className="icon-button" onClick={()=>setImportPreview(null)}><X/></button></header>{importPreview.errors.length?<ul>{importPreview.errors.map(error=><li key={error}>{error}</li>)}</ul>:<><p>System zapisze wszystkie wiersze w jednej transakcji. Jeżeli serwer odrzuci choć jeden dostęp, żaden nie zostanie zmieniony.</p><button type="button" className="primary-button" disabled={saving} onClick={()=>void applyAccessWorkbook()}><Check/> {saving?"Zapisuję…":`Zastosuj ${plural(importPreview.rows.length,"dostęp","dostępy","dostępów")}`}</button></>}</section>}
     <form className="access-form" onSubmit={event=>{event.preventDefault();void saveAccess();}}>
       <label>Adres e-mail<input required type="email" value={form.email} onChange={event=>setForm({...form,email:event.target.value})} placeholder="np. finanse@firma.pl"/></label>
       <label>Rodzaj dostępu<select value={form.appRole} onChange={event=>setForm({...form,appRole:event.target.value,roleId:"",locationId:""})}>{Object.entries(accessRoleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><small>{accessRoleDescriptions[form.appRole]}</small></label>
@@ -900,7 +1004,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
                 </header>
                 <div className="guided-staffing-list">
                   {shiftRules.map(rule=><button type="button" className={`guided-staffing-row ${editable?"editable":""}`} key={rule.id} onClick={()=>editable&&edit({kind:"STAFFING_RULE",item:rule})}>
-                    <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Kompetencja: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu kompetencji"}</small></span>
+                    <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Kompetencja: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu kompetencji"}</small>{staffingModeNote(rule)&&<small>{staffingModeNote(rule)}</small>}</span>
                     <strong>{staffingValue(rule)}</strong><em>{baseScenario?.name??"Scenariusz bazowy"}</em>{editable&&<Edit3/>}
                   </button>)}
                   {!shiftRules.length&&<div className="guided-empty-staffing"><span><strong>Ta zmiana nie ma jeszcze wymaganej obsady</strong><small>Dodaj rolę, opcjonalną kompetencję i liczbę osób bez opuszczania karty.</small></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"STAFFING_RULE",item:{scenario_id:baseScenario?.id,shift_template_id:shift.id,location_id:location.id} as Record<string,unknown>})}>Uzupełnij obsadę <ChevronRight/></button>}</div>}
@@ -1178,7 +1282,7 @@ function StaffingTab({data, editable, busy, edit, bulkAdjust, defaultScenarioCou
               return <details key={shift.id}>
                 <summary><span><Clock3/><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span><strong>{plural(shiftRules.length,"wymaganie","wymagania","wymagań")}</strong></summary>
                 <div className="matrix-v2-staffing-rule-rows">{shiftRules.map(rule=><button key={rule.id} onClick={()=>editable&&edit({kind:"STAFFING_RULE",item:rule})}>
-                  <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Wymagany obowiązek: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu obowiązku — liczy się rola"}</small></span>
+                  <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Wymagany obowiązek: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu obowiązku — liczy się rola"}</small>{staffingModeNote(rule)&&<small>{staffingModeNote(rule)}</small>}</span>
                   <strong>{staffingValue(rule)}</strong>
                   <em className={rule.active?"on":"off"}>{rule.active?"Aktywna":"Wyłączona"}</em>
                   {editable&&<Edit3/>}
@@ -1198,6 +1302,12 @@ function staffingValue(rule: MatrixV2StaffingRule) {
   if (rule.operation === "MULTIPLY") return `× ${Number(rule.multiplier_basis_points ?? 0) / 10000}`;
   if (rule.operation === "ADD") return `+ ${rule.count_value ?? 0} os.`;
   return `${rule.count_value ?? 0} os.`;
+}
+
+function staffingModeNote(rule:MatrixV2StaffingRule){
+  const metadata=asRecord(rule.source_metadata);
+  if(String(metadata.coverageMode??"").toUpperCase()!=="SHARED_ROTATION")return "";
+  return `Wspólna obsada między lokalami • ${String(metadata.sharedCoverageGroup??"grupa bez kodu")}`;
 }
 
 function businessObjectiveLabel(code:string) {
@@ -1583,9 +1693,10 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUI
   const locationGrantHeaders=activeLocations.flatMap(location=>[`${location.code}_STANDARD`,`${location.code}_NADGODZINY`]);
   add("Pracownicy",["Numer pracownika","Aktywny","Imię","Nazwisko","E-mail","Kod roli","Role rezerwowe (kolejność)","Etap zatrudnienia","Koniec okresu próbnego","Kody lokali","Lokal bazowy",...locationGrantHeaders,"Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Bez weekendów","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy",...activeDutyCodes],employeeRows);
   add("Zmiany",["Kod","Nazwa","Kod lokalu","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.sort_order,shift.active?"TAK":"NIE"]));
-  add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Aktywna"],data.staffingRules.map(rule=>{
+  add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Sposób obsady","Kod wspólnej obsady","Aktywna"],data.staffingRules.map(rule=>{
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
-    return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
+    const metadata=asRecord(rule.source_metadata),shared=String(metadata.coverageMode??"").toUpperCase()==="SHARED_ROTATION";
+    return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",shared?"WSPÓŁDZIELONA":"NIEZALEŻNA",shared?String(metadata.sharedCoverageGroup??""):"",rule.active?"TAK":"NIE"];
   }));
   add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.active?"TAK":"NIE"]));
   add("Role pracowników",["Numer pracownika","Kod roli","Podstawowa","Sposób użycia","Priorytet rezerwowy","Może zatwierdzać","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeRoles.map(link=>[
@@ -1924,6 +2035,8 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
   const [staffingDutyId,setStaffingDutyId]=useState(String(item?.duty_id??""));
   const staffingScenario=data.scenarios.find(scenario=>scenario.id===staffingScenarioId);
   const baseStaffingScenario=!staffingScenario?.parent_scenario_id;
+  const staffingMetadata=asRecord(item?.source_metadata);
+  const sharedCoverage=String(staffingMetadata.coverageMode??"")==="SHARED_ROTATION";
   useEffect(()=>{
     if(kind==="STAFFING_RULE"&&!item?.id&&baseStaffingScenario&&operation!=="SET")setOperation("SET");
   },[baseStaffingScenario,item?.id,kind,operation,setOperation]);
@@ -2000,6 +2113,12 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     {baseStaffingScenario
       ?<label>Wymagana liczba osób<input name="countValue" type="number" min="1" step="1" required defaultValue={Number(item?.count_value??1)}/><small>Co najmniej jedna osoba na każdej wybranej zmianie.</small></label>
       :<OperationSelector operation={operation} setOperation={setOperation} currency={currency} staffing baseStaffingScenario={false} item={item}/>}
+    <fieldset className="matrix-v2-override-group">
+      <legend>Obsada współdzielona między lokalami</legend>
+      <label className="check-label"><input name="sharedCoverage" type="checkbox" defaultChecked={sharedCoverage}/> Jedna osoba rotacyjnie obsługuje wszystkie wybrane zmiany</label>
+      <label>Kod wspólnej obsady<input name="sharedCoverageGroup" defaultValue={String(staffingMetadata.sharedCoverageGroup??"")} placeholder="np. BARBACK_PLUS_WIECZOR"/><small>Użyj tego samego kodu dla zmian w obu lokalach, które ma pokryć jedna osoba. Zmiany muszą mieć ten sam dzień i godziny; liczba osób zostanie policzona tylko raz.</small></label>
+      <p className="matrix-v2-form-hint">Przykład: BARBACK z obowiązkiem BARBACK PLUS na Kruczej i w Pawilonach. Pracownik musi mieć tę rolę, obowiązek i dostęp do obu lokali.</p>
+    </fieldset>
     <ActiveToggle item={item}/>
   </>;
   if (kind === "OBJECTIVE") return <>
@@ -2258,7 +2377,11 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
     if(!scenarioId||!roleId)throw new Error("Wybierz scenariusz i rolę.");
     const countValue=["SET","ADD"].includes(operation)?requiredNumber(formText(form,"countValue")):null;
     if(operation==="SET"&&countValue!==null&&countValue<1)throw new Error("Wymagana liczba osób musi wynosić co najmniej 1.");
-    return{scenarioId,shiftTemplateId:formText(form,"shiftTemplateId"),shiftTemplateIds,roleId,dutyId:formText(form,"dutyId")||null,operation,countValue,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,active:checked(form,"active"),sourceMetadata:item?.source_metadata??{}};
+    const shared=checked(form,"sharedCoverage");
+    const sharedCoverageGroup=formText(form,"sharedCoverageGroup");
+    if(shared&&!sharedCoverageGroup)throw new Error("Podaj kod wspólnej obsady, aby system wiedział, które zmiany ma policzyć jako jeden dyżur.");
+    const priorMetadata=asRecord(item?.source_metadata);
+    return{scenarioId,shiftTemplateId:formText(form,"shiftTemplateId"),shiftTemplateIds,roleId,dutyId:formText(form,"dutyId")||null,operation,countValue,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,active:checked(form,"active"),sourceMetadata:{...priorMetadata,source:"UNIFIED_SHIFT_STAFFING_UI",coverageMode:shared?"SHARED_ROTATION":"INDEPENDENT",sharedCoverageGroup:shared?sharedCoverageGroup:null}};
   }
   if(kind==="OBJECTIVE")return{strategyId:formText(form,"strategyId"),tier:requiredNumber(formText(form,"tier")),metricCode:formText(form,"metricCode"),direction:formText(form,"direction"),weight:requiredNumber(formText(form,"weight")),tolerance:requiredNumber(formText(form,"tolerance")),sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),parameters:item?.parameters??{},active:checked(form,"active")};
   if(kind==="SCENARIO_STRATEGY"){const strategyId=formText(form,"strategyId");if(!strategyId)throw new Error("Wybierz strategię wariantu.");return{scenarioId:formText(form,"scenarioId"),strategyId,sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),active:checked(form,"active"),objectiveOverrides:objectiveOverridesFromForm(form,workspace,strategyId),solverOverrides:solverOverridesFromForm(form)};}
