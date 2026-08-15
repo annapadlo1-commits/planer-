@@ -733,6 +733,7 @@ export function SolverV2Panel({
         {active && <button className="secondary-button" disabled={busy || run.status === "CANCEL_REQUESTED"} onClick={() => void cancel()}><Square/> Zatrzymaj bezpiecznie</button>}
         <button className="secondary-button" disabled={busy||refreshing} onClick={() => void refreshStatus(run.id)}><RefreshCw className={refreshing?"spin":""}/> {refreshing?"Sprawdzam…":"Odśwież status"}</button>
         {lastStatusCheck&&<small className="solver-v2-last-check">Ostatnie ręczne sprawdzenie: {lastStatusCheck}</small>}
+          {run.status==="FAILED"&&<a className="primary-button" href={`/settings?month=${month.slice(0,7)}#configuration-step-readiness`}>Przejdź do kontroli gotowości</a>}
         {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>{["FAILED","STALE_INPUT"].includes(run.status)?"Spróbuj ponownie":"Nowe generowanie"}</button>}
       </div>
     </div>}
