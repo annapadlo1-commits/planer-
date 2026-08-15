@@ -38,6 +38,14 @@ const sharedCoverageRollbackUrl = new URL(
   "../supabase/migrations/20260815190000_uat_revert_unapproved_shared_coverage.sql",
   import.meta.url,
 );
+const draftCascadeGuardFixUrl = new URL(
+  "../supabase/migrations/20260815193000_uat_matrix_draft_cascade_guard_fix.sql",
+  import.meta.url,
+);
+const workforceDraftCascadeGuardFixUrl = new URL(
+  "../supabase/migrations/20260815194000_uat_matrix_workforce_draft_cascade_guard_fix.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -222,6 +230,23 @@ test("bulk access and idempotent draft cancellation remain explicit UAT contract
   assert.doesNotMatch(sql,/SHARED_DEMAND_V2|SHARED_ROTATION|sharedCoverageGroup/);
   assert.match(rollback,/drop function if exists public\.matrix_v2_shift_staffing_save_uat_v4/);
   assert.match(rollback,/No cross-location demand collapsing is applied/);
+});
+
+test("draft cancellation permits only the FK cascade child-delete path", async () => {
+  const sql=await readFile(draftCascadeGuardFixUrl,"utf8");
+  assert.match(sql,/if tg_op='DELETE' then return old; end if;\s*raise exception 'MATRIX_VERSION_NOT_FOUND'/);
+  assert.match(sql,/if v_status<>'DRAFT' then raise exception 'MATRIX_VERSION_IMMUTABLE'/);
+  assert.match(sql,/Direct orphaning remains impossible by/);
+  assert.doesNotMatch(sql,/session_replication_role|disable trigger/i);
+});
+
+test("draft cancellation also permits the workforce-profile cascade path", async () => {
+  const sql=await readFile(workforceDraftCascadeGuardFixUrl,"utf8");
+  assert.match(sql,/guard_matrix_employee_profile_v2/);
+  assert.match(sql,/if tg_op='DELETE' then return old; end if;\s*raise exception 'MATRIX_WORKFORCE_VERSION_NOT_FOUND'/);
+  assert.match(sql,/if v_status<>'DRAFT' then\s*raise exception 'MATRIX_WORKFORCE_VERSION_IMMUTABLE'/);
+  assert.match(sql,/Foreign keys still prevent a direct orphan/);
+  assert.doesNotMatch(sql,/session_replication_role|disable trigger/i);
 });
 
 test("leader corrections explain the rejected hard rule instead of reporting a connection failure", async () => {
