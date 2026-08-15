@@ -652,3 +652,19 @@ test("duty-only shifts do not inherit unrelated role-wide duty minima", async ()
   assert.match(migration,/where ro\.generic_count>0/);
   assert.match(migration,/duty-only staffing rows remain independent demand slots/);
 });
+
+test("operational event creator never loses the active company catalog", async () => {
+  const [page,events]=await Promise.all([
+    readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../components/OperationalEventsCenter.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(page,/catalog=\{matrixV2\?\{/);
+  assert.match(page,/categories:\(matrixV2\.roleCategories\?\?\[\]\)\.filter\(item=>item\.active\)/);
+  assert.match(page,/roles:matrixV2\.roles\.filter\(item=>item\.active\)/);
+  assert.match(page,/locations:matrixV2\.locations\.filter\(item=>item\.active\)/);
+  assert.match(events,/workspace\?\.categories\.length\?workspace\.categories:\(catalog\?\.categories\?\?\[\]\)/);
+  assert.match(events,/workspace\?\.roles\.length\?workspace\.roles:\(catalog\?\.roles\?\?\[\]\)/);
+  assert.match(events,/workspace\?\.locations\.length\?workspace\.locations:\(catalog\?\.locations\?\?\[\]\)/);
+  assert.match(events,/\{locations\.map\(item=>/);
+  assert.match(events,/\{categories\.map\(item=>/);
+});
