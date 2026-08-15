@@ -444,8 +444,6 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("NO_MATRIX_V2_DRAFT")) return "Nie ma wersji roboczej do opublikowania.";
   if (value.includes("DRAFT_ALREADY_USED_BY_GENERATOR")) return "Tej wersji roboczej nie można już anulować, ponieważ uruchomiono na niej generator. Otwórz historię wersji i utwórz nową wersję roboczą z opublikowanej konfiguracji.";
   if (value.includes("ONLY_DRAFT_CAN_BE_DISCARDED")) return "Anulować można wyłącznie nieopublikowaną wersję roboczą.";
-  if (value.includes("SHARED_COVERAGE_GROUP_REQUIRED")) return "Dla wspólnej obsady podaj jeden czytelny kod grupy, np. BARBACK_PLUS_WIECZOR. Ten sam kod połączy równoległe zmiany w różnych lokalach w jedno miejsce do obsadzenia.";
-  if (value.includes("SHARED_COVERAGE_REQUIRES_MATCHING_HOURS")) return "Wspólna obsada może połączyć tylko zmiany o identycznych godzinach i tym samym oznaczeniu następnego dnia.";
   if (value.includes("INVALID_COVERAGE_MODE")) return "Sposób liczenia obsady jest nieprawidłowy. Wybierz niezależną obsadę albo wspólną rotację między lokalami.";
   if (value.includes("ACCESS_ROWS_COUNT_OUT_OF_RANGE")) return "Plik dostępów musi zawierać od 1 do 1000 wierszy.";
   if (value.includes("ACCESS_ROWS_MUST_BE_ARRAY")) return "Nie udało się odczytać wierszy dostępów. Pobierz świeży szablon i spróbuj ponownie.";
