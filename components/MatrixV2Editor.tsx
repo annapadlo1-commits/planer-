@@ -291,9 +291,7 @@ export function MatrixV2Editor({
     if (!supabase || !data.editable) return;
     if (!window.confirm("Anulować tę wersję roboczą? Wszystkie zmiany tej wersji zostaną usunięte. Opublikowana konfiguracja i istniejące grafiki pozostaną bez zmian.")) return;
     setBusy(true);
-    const result = await supabase.rpc("matrix_v2_discard_draft_uat_v1", {
-      p_matrix_version_id: data.matrixVersion.id,
-    });
+    const result = await supabase.rpc("matrix_v2_discard_current_draft_uat_v2");
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
     notify("Wersja robocza została anulowana. Ponownie używana jest ostatnia opublikowana konfiguracja.");
@@ -424,7 +422,7 @@ export function MatrixV2Editor({
       ?[String(payload.shiftTemplateId)]
       :shiftTemplateIds;
     const result = unifiedStaffing
-      ?await supabase.rpc("matrix_v2_shift_staffing_save_uat_v4",{
+      ?await supabase.rpc("matrix_v2_shift_staffing_save_uat_v3",{
         p_scenario_id:String(payload.scenarioId),
         p_shift_template_ids:staffingShiftIds,
         p_role_id:String(payload.roleId),
@@ -433,7 +431,6 @@ export function MatrixV2Editor({
         p_count_value:payload.countValue as number|null,
         p_multiplier_basis_points:payload.multiplierBasisPoints as number|null,
         p_active:Boolean(payload.active),
-        p_source_metadata:payload.sourceMetadata as Record<string,unknown>,
       })
       :await supabase.rpc("matrix_v2_admin_save_alpha16", {
         p_kind: kind, p_id: id, p_data: payload,
@@ -1004,7 +1001,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
                 </header>
                 <div className="guided-staffing-list">
                   {shiftRules.map(rule=><button type="button" className={`guided-staffing-row ${editable?"editable":""}`} key={rule.id} onClick={()=>editable&&edit({kind:"STAFFING_RULE",item:rule})}>
-                    <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Kompetencja: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu kompetencji"}</small>{staffingModeNote(rule)&&<small>{staffingModeNote(rule)}</small>}</span>
+                    <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Kompetencja: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu kompetencji"}</small></span>
                     <strong>{staffingValue(rule)}</strong><em>{baseScenario?.name??"Scenariusz bazowy"}</em>{editable&&<Edit3/>}
                   </button>)}
                   {!shiftRules.length&&<div className="guided-empty-staffing"><span><strong>Ta zmiana nie ma jeszcze wymaganej obsady</strong><small>Dodaj rolę, opcjonalną kompetencję i liczbę osób bez opuszczania karty.</small></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"STAFFING_RULE",item:{scenario_id:baseScenario?.id,shift_template_id:shift.id,location_id:location.id} as Record<string,unknown>})}>Uzupełnij obsadę <ChevronRight/></button>}</div>}
@@ -1282,7 +1279,7 @@ function StaffingTab({data, editable, busy, edit, bulkAdjust, defaultScenarioCou
               return <details key={shift.id}>
                 <summary><span><Clock3/><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span><strong>{plural(shiftRules.length,"wymaganie","wymagania","wymagań")}</strong></summary>
                 <div className="matrix-v2-staffing-rule-rows">{shiftRules.map(rule=><button key={rule.id} onClick={()=>editable&&edit({kind:"STAFFING_RULE",item:rule})}>
-                  <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Wymagany obowiązek: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu obowiązku — liczy się rola"}</small>{staffingModeNote(rule)&&<small>{staffingModeNote(rule)}</small>}</span>
+                  <span><b>{itemName(data.roles,rule.role_id)}</b><small>{rule.duty_id?`Wymagany obowiązek: ${itemName(data.duties,rule.duty_id)}`:"Bez dodatkowego wymogu obowiązku — liczy się rola"}</small></span>
                   <strong>{staffingValue(rule)}</strong>
                   <em className={rule.active?"on":"off"}>{rule.active?"Aktywna":"Wyłączona"}</em>
                   {editable&&<Edit3/>}
@@ -1302,12 +1299,6 @@ function staffingValue(rule: MatrixV2StaffingRule) {
   if (rule.operation === "MULTIPLY") return `× ${Number(rule.multiplier_basis_points ?? 0) / 10000}`;
   if (rule.operation === "ADD") return `+ ${rule.count_value ?? 0} os.`;
   return `${rule.count_value ?? 0} os.`;
-}
-
-function staffingModeNote(rule:MatrixV2StaffingRule){
-  const metadata=asRecord(rule.source_metadata);
-  if(String(metadata.coverageMode??"").toUpperCase()!=="SHARED_ROTATION")return "";
-  return `Wspólna obsada między lokalami • ${String(metadata.sharedCoverageGroup??"grupa bez kodu")}`;
 }
 
 function businessObjectiveLabel(code:string) {
@@ -1693,10 +1684,9 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUI
   const locationGrantHeaders=activeLocations.flatMap(location=>[`${location.code}_STANDARD`,`${location.code}_NADGODZINY`]);
   add("Pracownicy",["Numer pracownika","Aktywny","Imię","Nazwisko","E-mail","Kod roli","Role rezerwowe (kolejność)","Etap zatrudnienia","Koniec okresu próbnego","Kody lokali","Lokal bazowy",...locationGrantHeaders,"Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Bez weekendów","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy",...activeDutyCodes],employeeRows);
   add("Zmiany",["Kod","Nazwa","Kod lokalu","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.sort_order,shift.active?"TAK":"NIE"]));
-  add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Sposób obsady","Kod wspólnej obsady","Aktywna"],data.staffingRules.map(rule=>{
+  add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Aktywna"],data.staffingRules.map(rule=>{
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
-    const metadata=asRecord(rule.source_metadata),shared=String(metadata.coverageMode??"").toUpperCase()==="SHARED_ROTATION";
-    return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",shared?"WSPÓŁDZIELONA":"NIEZALEŻNA",shared?String(metadata.sharedCoverageGroup??""):"",rule.active?"TAK":"NIE"];
+    return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
   }));
   add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.active?"TAK":"NIE"]));
   add("Role pracowników",["Numer pracownika","Kod roli","Podstawowa","Sposób użycia","Priorytet rezerwowy","Może zatwierdzać","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeRoles.map(link=>[
@@ -2035,8 +2025,6 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
   const [staffingDutyId,setStaffingDutyId]=useState(String(item?.duty_id??""));
   const staffingScenario=data.scenarios.find(scenario=>scenario.id===staffingScenarioId);
   const baseStaffingScenario=!staffingScenario?.parent_scenario_id;
-  const staffingMetadata=asRecord(item?.source_metadata);
-  const sharedCoverage=String(staffingMetadata.coverageMode??"")==="SHARED_ROTATION";
   useEffect(()=>{
     if(kind==="STAFFING_RULE"&&!item?.id&&baseStaffingScenario&&operation!=="SET")setOperation("SET");
   },[baseStaffingScenario,item?.id,kind,operation,setOperation]);
@@ -2113,12 +2101,6 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     {baseStaffingScenario
       ?<label>Wymagana liczba osób<input name="countValue" type="number" min="1" step="1" required defaultValue={Number(item?.count_value??1)}/><small>Co najmniej jedna osoba na każdej wybranej zmianie.</small></label>
       :<OperationSelector operation={operation} setOperation={setOperation} currency={currency} staffing baseStaffingScenario={false} item={item}/>}
-    <fieldset className="matrix-v2-override-group">
-      <legend>Obsada współdzielona między lokalami</legend>
-      <label className="check-label"><input name="sharedCoverage" type="checkbox" defaultChecked={sharedCoverage}/> Jedna osoba rotacyjnie obsługuje wszystkie wybrane zmiany</label>
-      <label>Kod wspólnej obsady<input name="sharedCoverageGroup" defaultValue={String(staffingMetadata.sharedCoverageGroup??"")} placeholder="np. BARBACK_PLUS_WIECZOR"/><small>Użyj tego samego kodu dla zmian w obu lokalach, które ma pokryć jedna osoba. Zmiany muszą mieć ten sam dzień i godziny; liczba osób zostanie policzona tylko raz.</small></label>
-      <p className="matrix-v2-form-hint">Przykład: BARBACK z obowiązkiem BARBACK PLUS na Kruczej i w Pawilonach. Pracownik musi mieć tę rolę, obowiązek i dostęp do obu lokali.</p>
-    </fieldset>
     <ActiveToggle item={item}/>
   </>;
   if (kind === "OBJECTIVE") return <>
@@ -2377,11 +2359,7 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
     if(!scenarioId||!roleId)throw new Error("Wybierz scenariusz i rolę.");
     const countValue=["SET","ADD"].includes(operation)?requiredNumber(formText(form,"countValue")):null;
     if(operation==="SET"&&countValue!==null&&countValue<1)throw new Error("Wymagana liczba osób musi wynosić co najmniej 1.");
-    const shared=checked(form,"sharedCoverage");
-    const sharedCoverageGroup=formText(form,"sharedCoverageGroup");
-    if(shared&&!sharedCoverageGroup)throw new Error("Podaj kod wspólnej obsady, aby system wiedział, które zmiany ma policzyć jako jeden dyżur.");
-    const priorMetadata=asRecord(item?.source_metadata);
-    return{scenarioId,shiftTemplateId:formText(form,"shiftTemplateId"),shiftTemplateIds,roleId,dutyId:formText(form,"dutyId")||null,operation,countValue,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,active:checked(form,"active"),sourceMetadata:{...priorMetadata,source:"UNIFIED_SHIFT_STAFFING_UI",coverageMode:shared?"SHARED_ROTATION":"INDEPENDENT",sharedCoverageGroup:shared?sharedCoverageGroup:null}};
+    return{scenarioId,shiftTemplateId:formText(form,"shiftTemplateId"),shiftTemplateIds,roleId,dutyId:formText(form,"dutyId")||null,operation,countValue,multiplierBasisPoints:operation==="MULTIPLY"?requiredNumber(formText(form,"multiplierPercent"),100):null,active:checked(form,"active")};
   }
   if(kind==="OBJECTIVE")return{strategyId:formText(form,"strategyId"),tier:requiredNumber(formText(form,"tier")),metricCode:formText(form,"metricCode"),direction:formText(form,"direction"),weight:requiredNumber(formText(form,"weight")),tolerance:requiredNumber(formText(form,"tolerance")),sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),parameters:item?.parameters??{},active:checked(form,"active")};
   if(kind==="SCENARIO_STRATEGY"){const strategyId=formText(form,"strategyId");if(!strategyId)throw new Error("Wybierz strategię wariantu.");return{scenarioId:formText(form,"scenarioId"),strategyId,sortOrder:requiredNumber(formText(form,"sortOrder")||String(item?.sort_order??0)),active:checked(form,"active"),objectiveOverrides:objectiveOverridesFromForm(form,workspace,strategyId),solverOverrides:solverOverridesFromForm(form)};}

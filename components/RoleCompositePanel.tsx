@@ -261,6 +261,19 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   }, [candidates, defaultScenarioId, loading, publishedScenarioGroups, scenarioId]);
 
   useEffect(() => {
+    if (!candidates || loading || candidates.roles.length > 0 || publishedScenarioGroups.length === 0) return;
+    const publishedScenario = [...publishedScenarioGroups]
+      .sort((left, right) => right.roleIds.size - left.roleIds.size)[0];
+    if (!publishedScenario || publishedScenario.id === scenarioId) return;
+    const currentScenarioName=configuredScenarios.find(item=>item.id===scenarioId)?.name??"wybrany";
+    setMessage(
+      `Scenariusz „${currentScenarioName}” nie zawiera zespołów do scalenia. `
+      + `Pokazuję istniejące publikacje dla scenariusza „${publishedScenario.name}”.`,
+    );
+    setScenarioId(publishedScenario.id);
+  }, [candidates, configuredScenarios, loading, publishedScenarioGroups, scenarioId]);
+
+  useEffect(() => {
     setPublishedWorkspace(null);
     if (!supabase || engine !== "ORTOOLS_V2" || !expectedSolverVersion) return;
     let disposed = false;
