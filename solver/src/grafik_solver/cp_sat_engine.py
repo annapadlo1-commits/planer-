@@ -568,7 +568,17 @@ class CpSatScheduleEngine:
             common_status == cp_model.OPTIMAL
             or minimum_unfilled == proven_coverage_lower_bound
         )
-        if minimum_unfilled > 0 and not coverage_minimum_proven:
+        # A formal proof that no additional seat can be covered is an audit
+        # requirement, not a prerequisite for everyday planning.  In normal
+        # mode we must return the best feasible roster found in the configured
+        # time limit and expose its vacancies to the leader.  Otherwise a
+        # perfectly valid, actionable schedule is incorrectly turned into the
+        # fatal UNFILLED_NOT_PROVEN error and blocks the whole UAT workflow.
+        if (
+            snapshot.settings.require_optimal
+            and minimum_unfilled > 0
+            and not coverage_minimum_proven
+        ):
             raise OptimizationIncomplete(
                 "UNFILLED_NOT_PROVEN: silnik znalazł niepełny grafik, ale nie "
                 "udowodnił, że wakatów nie da się jeszcze usunąć. Wynik nie "
