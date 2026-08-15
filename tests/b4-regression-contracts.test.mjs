@@ -46,6 +46,10 @@ const workforceDraftCascadeGuardFixUrl = new URL(
   "../supabase/migrations/20260815194000_uat_matrix_workforce_draft_cascade_guard_fix.sql",
   import.meta.url,
 );
+const discardDraftAdHocFixUrl = new URL(
+  "../supabase/migrations/20260815212630_uat_discard_draft_ad_hoc_fk_fix.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -246,6 +250,17 @@ test("draft cancellation also permits the workforce-profile cascade path", async
   assert.match(sql,/if tg_op='DELETE' then return old; end if;\s*raise exception 'MATRIX_WORKFORCE_VERSION_NOT_FOUND'/);
   assert.match(sql,/if v_status<>'DRAFT' then\s*raise exception 'MATRIX_WORKFORCE_VERSION_IMMUTABLE'/);
   assert.match(sql,/Foreign keys still prevent a direct orphan/);
+  assert.doesNotMatch(sql,/session_replication_role|disable trigger/i);
+});
+
+test("draft cancellation reconnects ad-hoc rows before deleting draft roles", async () => {
+  const sql=await readFile(discardDraftAdHocFixUrl,"utf8");
+  const reconnect=sql.indexOf("update public.recovery_ad_hoc_pool_v2");
+  const cleanup=sql.indexOf("delete from public.recovery_ad_hoc_pool_v2");
+  const discard=sql.indexOf("delete from public.matrix_versions");
+  assert.ok(reconnect>=0&&cleanup>reconnect&&discard>cleanup);
+  assert.match(sql,/active_role\.logical_id=draft_role\.logical_id/);
+  assert.match(sql,/'adHocRowsReconnected',v_ad_hoc_reconnected/);
   assert.doesNotMatch(sql,/session_replication_role|disable trigger/i);
 });
 

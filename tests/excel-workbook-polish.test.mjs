@@ -35,6 +35,7 @@ test("configuration workbook gets guided instructions, portable lists and separa
   assert.equal(workbook.getWorksheet("Pracownicy").getCell("E2").value,"Okres próbny");
   assert.match(String(workbook.getWorksheet("Pracownicy").getCell("B1").value),/WYMAGANE/);
   assert.equal(workbook.getWorksheet("Pracownicy").getCell("E2").dataValidation.type,"list");
+  assert.equal(workbook.getWorksheet("Pracownicy").getCell("A1").note,undefined);
   assert.equal(workbook.getWorksheet("Pula ad-hoc").getCell("A1").value,"Imię\nWYMAGANE");
   assert.equal(workbook.getWorksheet("Pula ad-hoc").getCell("A2").value,"Jan");
   assert.equal(workbook.getWorksheet("Pula ad-hoc").getCell("B2").value,"Kowalski");

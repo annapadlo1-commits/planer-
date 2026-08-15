@@ -52,7 +52,9 @@ function styleSheet(sheet:Worksheet){
     cell.alignment={vertical:"middle",horizontal:"left",wrapText:true};
     cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(kind==="required"?BRAND.required:kind==="system"?BRAND.system:BRAND.optional)}};
     cell.border={bottom:{style:"medium",color:{argb:argb(BRAND.purple)}}};
-    cell.note=kind==="required"?"Pole wymagane. Brak lub nieprawidłowa wartość zatrzyma import i wskaże tę komórkę.":kind==="system"?"Pole systemowe. Nie zmieniaj go podczas aktualizacji istniejącego rekordu.":"Pole opcjonalne — pozostaw puste, jeśli nie dotyczy.";
+    // Guidance stays visible in the header. Do not add ExcelJS comments here:
+    // their VML parts may be rejected by desktop Excel after SheetJS output is
+    // loaded and rewritten.
     const column=sheet.getColumn(col);column.width=Math.min(34,Math.max(14,plain.length+3));
   }
   for(let row=2;row<=rows;row++){
