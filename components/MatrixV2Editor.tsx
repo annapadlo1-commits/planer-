@@ -14,6 +14,7 @@ import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
+import { openWorkbookInGoogleSheets, prepareGoogleSheetsWindow } from "@/lib/google-sheets-export";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
   type MatrixV2Budget, type MatrixV2Duty, type MatrixV2Location,
@@ -814,8 +815,8 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     await loadDirectory();
   }
 
-  async function exportAccessWorkbook(){
-    if(!directory)return;
+  async function buildAccessWorkbook(){
+    if(!directory)throw new Error("Nie udało się pobrać słowników dostępów. Odśwież stronę i spróbuj ponownie.");
     const XLSX=await import("xlsx");
     const workbook=XLSX.utils.book_new();
     const instructions=XLSX.utils.aoa_to_sheet([
@@ -851,8 +852,25 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     dictionaries["!cols"]=[{wch:24},{wch:28},{wch:88}];
     XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
     const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
-    const {downloadWorkbook,polishAccessWorkbook}=await import("@/lib/excel-workbook-polish");
-    downloadWorkbook(await polishAccessWorkbook(raw),"grafik-pro-dostepy-do-aplikacji.xlsx");
+    const {polishAccessWorkbook}=await import("@/lib/excel-workbook-polish");
+    return {bytes:await polishAccessWorkbook(raw),fileName:"grafik-pro-dostepy-do-aplikacji.xlsx"};
+  }
+
+  async function exportAccessWorkbook(toGoogle=false){
+    if(!directory)return;
+    let googleWindow:Window|null=null;
+    try{if(toGoogle)googleWindow=prepareGoogleSheetsWindow();}
+    catch(error){fail(error instanceof Error?error.message:"Nie udało się otworzyć nowego okna.");return;}
+    setSaving(true);
+    try{
+      const artifact=await buildAccessWorkbook();
+      if(googleWindow)await openWorkbookInGoogleSheets(artifact.bytes,artifact.fileName,googleWindow);
+      else{
+        const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
+        downloadWorkbook(artifact.bytes,artifact.fileName);
+      }
+    }catch(error){googleWindow?.close();fail(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    finally{setSaving(false);}
   }
 
   async function inspectAccessWorkbook(file:File){
@@ -908,7 +926,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   return <section className="access-management">
     <div className="matrix-v2-section-head"><div><h3>Dostępy do aplikacji</h3><p>Uprawnienia są niezależne od składu grafiku i działają od razu. Osoba z finansów lub administrator nie musi być pracownikiem planowanym na zmianach.</p></div></div>
     <div className="access-explainer"><ShieldCheck/><span><strong>Jedna osoba może mieć kilka funkcji</strong><small>Przykład: pracownik może mieć portal pracownika i jednocześnie dostęp lidera do grafiku roli Barman. Lider roli i lider lokalu otrzymują wyłącznie wskazany zakres.</small></span></div>
-    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym plikiem Excel.</small></span><button type="button" className="secondary-button" disabled={loading||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Eksportuj Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj Excel</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
+    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
     {importPreview&&<section className={`access-import-preview ${importPreview.errors.length?"invalid":"valid"}`}><header><span><strong>{importPreview.errors.length?"Plik wymaga poprawy":"Plik gotowy do zapisu"}</strong><small>{importPreview.fileName} • {plural(importPreview.rows.length,"wiersz","wiersze","wierszy")}</small></span><button type="button" className="icon-button" onClick={()=>setImportPreview(null)}><X/></button></header>{importPreview.errors.length?<ul>{importPreview.errors.map(error=><li key={error}>{error}</li>)}</ul>:<><p>System zapisze wszystkie wiersze w jednej transakcji. Jeżeli serwer odrzuci choć jeden dostęp, żaden nie zostanie zmieniony.</p><button type="button" className="primary-button" disabled={saving} onClick={()=>void applyAccessWorkbook()}><Check/> {saving?"Zapisuję…":`Zastosuj ${plural(importPreview.rows.length,"dostęp","dostępy","dostępów")}`}</button></>}</section>}
     <form className="access-form" onSubmit={event=>{event.preventDefault();void saveAccess();}}>
       <label>Adres e-mail<input required type="email" value={form.email} onChange={event=>setForm({...form,email:event.target.value})} placeholder="np. finanse@firma.pl"/></label>
@@ -1608,7 +1626,7 @@ type FullImportPreview={
   };
 };
 
-async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
+async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const add=(name:string,headers:string[],rows:(string|number|boolean|null)[][]=[])=>{
@@ -1750,11 +1768,11 @@ async function downloadMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUI
     workbook.Workbook={...(workbook.Workbook??{}),Sheets:workbook.SheetNames.map(name=>({Hidden:hidden.has(name)?1:0}))};
   }
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
-  const {downloadWorkbook,polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
-  downloadWorkbook(await polishMatrixWorkbook(raw,variant),variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`);
+  const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
+  return {bytes:await polishMatrixWorkbook(raw,variant),fileName:variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`};
 }
 
-async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
+async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const instructions=XLSX.utils.aoa_to_sheet([
@@ -1798,8 +1816,8 @@ async function downloadWorkforceFinanceTemplate(data:MatrixV2Workspace){
   dictionaries["!cols"]=[{wch:24},{wch:24},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
-  const {downloadWorkbook,polishFinanceWorkbook}=await import("@/lib/excel-workbook-polish");
-  downloadWorkbook(await polishFinanceWorkbook(raw),`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`);
+  const {polishFinanceWorkbook}=await import("@/lib/excel-workbook-polish");
+  return {bytes:await polishFinanceWorkbook(raw),fileName:`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`};
 }
 
 function readStoredMatrixImport(matrixVersionId:string){
@@ -1827,6 +1845,23 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   function resetImport(nextScope=scope){
     clearPersistedImport();
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
+  }
+  async function exportTemplate(toGoogle=false){
+    let googleWindow:Window|null=null;
+    try{if(toGoogle)googleWindow=prepareGoogleSheetsWindow();}
+    catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się otworzyć nowego okna.");return;}
+    setBusy(true);setLocalError("");
+    try{
+      const artifact=scope==="FINANCE"
+        ?await buildWorkforceFinanceTemplate(data)
+        :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL");
+      if(googleWindow)await openWorkbookInGoogleSheets(artifact.bytes,artifact.fileName,googleWindow);
+      else{
+        const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
+        downloadWorkbook(artifact.bytes,artifact.fileName);
+      }
+    }catch(error){googleWindow?.close();setLocalError(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    finally{setBusy(false);}
   }
   async function inspect(){
     if(!file||!supabase)return;
@@ -1895,7 +1930,8 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
       <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":scope==="TEAM"?"System najpierw tworzy nowe role, lokale i obowiązki, potem przypisuje zespół. Nowa osoba może mieć pusty numer; istniejący e-mail zostanie bezpiecznie podpięty do zachowanej historii.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
       {scope==="CONFIGURATION"&&<details className="matrix-import-advanced-guide"><summary>Co zawiera pełna kopia i kiedy jej użyć?</summary><div><article><strong>Dane codzienne</strong><p>Firma, role, lokale, obowiązki, pracownicy, zmiany i wymagana obsada.</p></article><article><strong>Dane dodatkowe</strong><p>Scenariusze, strategie, budżety, reguły płacowe oraz dostępność.</p></article><article><strong>Kiedy użyć</strong><p>Do kopii bezpieczeństwa, migracji albo pełnego odtworzenia. Pierwszą konfigurację zacznij od kroków 1 i 2.</p></article></div></details>}
-      <button className="secondary-button full" type="button" onClick={()=>void (scope==="FINANCE"?downloadWorkforceFinanceTemplate(data):downloadMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL"))}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy z nadanymi numerami":scope==="TEAM"?"Pobierz prosty plik startowy":"Pobierz pełną bazę firmy"}</button>
+      <button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":"Otwórz w Google Sheets"}</button>
+      <button className="secondary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate()}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy Excel":scope==="TEAM"?"Pobierz prosty plik Excel":"Pobierz pełną bazę Excel"}</button>
       {scope!=="FINANCE"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej. Liczba osób nie jest zaszyta w kodzie.</small></button></fieldset>}
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
       <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
