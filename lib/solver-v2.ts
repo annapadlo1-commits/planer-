@@ -2344,7 +2344,7 @@ export function solverPhaseLabel(phase: string) {
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
   if (normalized.includes("STRATEGY_RESULT_DOMINATED")) return "Generator odrzucił wariant, ponieważ inny wynik był od niego lepszy we wszystkich celach tej strategii. Żaden mylący wariant nie został udostępniony. Uruchom generowanie ponownie; jeśli problem wróci, przekaż kod STRATEGY_RESULT_DOMINATED administratorowi UAT.";
-  if (normalized.includes("UNFILLED_NOT_PROVEN")) return "Generator znalazł nieobsadzone miejsca, ale nie potwierdził jeszcze matematycznie, że nie da się ich obsadzić. Wynik nie został pokazany jako gotowy. Spróbuj ponownie; jeśli problem wróci, przekaż kod UNFILLED_NOT_PROVEN administratorowi UAT.";
+  if (normalized.includes("UNFILLED_NOT_PROVEN")) return "W konfiguracji jest włączony tryb audytowy, a generator nie zdążył formalnie udowodnić minimalnej liczby braków. Przejdź do Ustawienia → Zaawansowane ustawienia silnika, wyłącz wymaganie matematycznego dowodu optimum dla zwykłego planowania, opublikuj konfigurację i uruchom nowe generowanie.";
   if (normalized.includes("OPTIMIZATION_INCOMPLETE")
     || (normalized.includes("ENDED INCOMPLETE") && normalized.includes("STATUS=FEASIBLE"))) {
     return "Silnik znalazł poprawny grafik, ale nie zdążył matematycznie potwierdzić, że nie istnieje lepszy układ. Konfiguracja użyta przez ten przebieg miała włączony tryb audytowy, dlatego wynik nie został zapisany. Do zwykłego planowania wyłącz „Tryb audytowy: wymagaj matematycznego dowodu optimum”, opublikuj konfigurację firmy i uruchom nowe generowanie.";
