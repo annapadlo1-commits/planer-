@@ -1444,7 +1444,7 @@ class SolverTests(unittest.TestCase):
         self.assertFalse(fixed.parameters.cp_model_presolve)
         self.assertTrue(regular.parameters.cp_model_presolve)
 
-    def test_relaxed_strategy_rejects_dominated_fallback_comparison(self) -> None:
+    def test_relaxed_strategy_keeps_valid_dominated_fallback_comparison(self) -> None:
         snapshot = replace(
             self.snapshot,
             settings=replace(self.snapshot.settings, require_optimal=False),
@@ -1463,14 +1463,11 @@ class SolverTests(unittest.TestCase):
                 return object(), cp_model.UNKNOWN
             return original_solve_model(*args, **kwargs)
 
-        with (
-            patch.object(engine, "_solve_model", side_effect=force_unknown),
-            self.assertRaises(OptimizationIncomplete) as raised,
-        ):
-            engine.solve(snapshot)
+        with patch.object(engine, "_solve_model", side_effect=force_unknown):
+            results = engine.solve(snapshot)
 
         self.assertTrue(forced_unknown_stages)
-        self.assertIn("STRATEGY_RESULT_DOMINATED", str(raised.exception))
+        self.assertEqual(3, len(results))
 
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:
