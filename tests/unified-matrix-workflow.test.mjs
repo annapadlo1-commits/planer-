@@ -38,6 +38,7 @@ test("role duty editor no longer asks for a broad time-of-day bucket",()=>{
 
 test("unified RPC links duties and writes staffing under one transaction lock",()=>{
   assert.match(component,/matrix_v2_shift_staffing_save_uat_v3/);
+  assert.doesNotMatch(component,/matrix_v2_shift_staffing_save_uat_v4/);
   assert.match(migration,/pg_advisory_xact_lock\(hashtext\('matrix-v2-lifecycle'\)\)/);
   assert.match(migration,/insert into public\.matrix_role_duties_v2/);
   assert.match(migration,/perform public\.matrix_v2_admin_save_alpha16/);

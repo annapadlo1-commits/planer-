@@ -30,6 +30,14 @@ const solverSemanticsMigrationUrl = new URL(
   "../supabase/migrations/20260806230000_b4_solver_semantics_standby_and_diagnostics.sql",
   import.meta.url,
 );
+const accessAndDraftMigrationUrl = new URL(
+  "../supabase/migrations/20260815170000_uat_access_draft_shared_coverage_and_solver_release.sql",
+  import.meta.url,
+);
+const sharedCoverageRollbackUrl = new URL(
+  "../supabase/migrations/20260815190000_uat_revert_unapproved_shared_coverage.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -185,6 +193,35 @@ test("solver failure copy distinguishes an incomplete optimum proof from a worke
   assert.doesNotMatch(solverClient, /normalized\.includes\("CONFLICT"\)/);
   assert.match(panel, /run\.failureMessage && run\.status!=="FAILED"/);
   assert.match(panel, /run\.failureMessage\?solverErrorMessage\(run\.failureMessage\)/);
+});
+
+test("ordinary planning accepts the best feasible schedule while audit mode stays strict", async () => {
+  const [engine,panel]=await Promise.all([
+    readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(engine,/snapshot\.settings\.require_optimal[\s\S]*minimum_unfilled > 0[\s\S]*not coverage_minimum_proven/);
+  assert.match(panel,/#configuration-step-readiness/);
+  assert.match(panel,/Przejdź do kontroli gotowości/);
+});
+
+test("bulk access and idempotent draft cancellation remain explicit UAT contracts", async () => {
+  const [editor,sql,rollback]=await Promise.all([
+    readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
+    readFile(accessAndDraftMigrationUrl,"utf8"),
+    readFile(sharedCoverageRollbackUrl,"utf8"),
+  ]);
+  assert.match(editor,/grafik-pro-dostepy-do-aplikacji\.xlsx/);
+  assert.match(editor,/application_access_bulk_apply_uat_v1/);
+  assert.match(editor,/matrix_v2_discard_current_draft_uat_v2/);
+  assert.match(editor,/Anuluj wersję roboczą/);
+  assert.match(editor,/matrix_v2_shift_staffing_save_uat_v3/);
+  assert.doesNotMatch(editor,/matrix_v2_shift_staffing_save_uat_v4/);
+  assert.match(sql,/create or replace function public\.application_access_bulk_apply_uat_v1/);
+  assert.match(sql,/create or replace function public\.matrix_v2_discard_draft_uat_v1/);
+  assert.doesNotMatch(sql,/SHARED_DEMAND_V2|SHARED_ROTATION|sharedCoverageGroup/);
+  assert.match(rollback,/drop function if exists public\.matrix_v2_shift_staffing_save_uat_v4/);
+  assert.match(rollback,/No cross-location demand collapsing is applied/);
 });
 
 test("leader corrections explain the rejected hard rule instead of reporting a connection failure", async () => {
@@ -511,6 +548,28 @@ test("merged company publication is preflighted, auditable and available on UAT"
   assert.match(continuitySql,/'select-v2:' \|\| v_source_run_id::text/);
   assert.match(continuitySql,/v_temporarily_deselected/);
   assert.match(continuitySql,/leaderSelectionRestored/);
+});
+
+test("merged company publication recovers category teams from durable publications", async () => {
+  const [panel,migration]=await Promise.all([
+    readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260815192000_uat_role_composite_category_fallback.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(panel,/candidates\.roles\.length > 0/);
+  assert.match(panel,/publishedScenarioGroups\.length === 0/);
+  assert.match(panel,/Pokazuję istniejące publikacje dla scenariusza/);
+  assert.match(migration,/optimizer_role_publication_overview_uat_v2/);
+  assert.match(migration,/item\.value->'scenario'->>'id'=p_scenario_id::text/);
+  assert.match(migration,/'\{missingRoleIds\}','\[\]'::jsonb/);
+});
+
+test("selecting a calendar day never forces the page to jump", async () => {
+  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  assert.match(modules,/onClick=\{\(\)=>setSelectedDay\(date\)\}/);
+  assert.match(modules,/onClick=\{\(\) => setSelectedDate\(date\)\}/);
+  assert.doesNotMatch(modules,/employeeDayRef/);
+  assert.doesNotMatch(modules,/detailRef/);
+  assert.doesNotMatch(modules,/scrollIntoView\(\{behavior:"smooth",block:"start"\}\)/);
 });
 
 test("operational events and absence limits accept one audited date range", async () => {

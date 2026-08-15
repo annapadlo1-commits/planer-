@@ -42,6 +42,10 @@ const employeeRoleAuditColumns = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260813173000_uat_employee_role_audit_columns.sql"),
   "utf8",
 );
+const explicitRoleOrderFix = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260815191000_uat_full_import_explicit_role_order.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -146,4 +150,15 @@ test("backup-role import audit fields exist on the versioned employee-role table
   assert.match(employeeRoleAuditColumns, /add column if not exists created_by uuid/i);
   assert.match(employeeRoleAuditColumns, /add column if not exists updated_by uuid/i);
   assert.match(employeeRoleAuditColumns, /add column if not exists updated_at timestamptz not null default now\(\)/i);
+});
+
+test("full import writes workbook roles before resolving employees", () => {
+  const categoryWrite=explicitRoleOrderFix.indexOf("insert into public.matrix_role_categories_v2");
+  const roleWrite=explicitRoleOrderFix.indexOf("matrix_v2_admin_save_alpha16('ROLE'");
+  const employeePhase=explicitRoleOrderFix.indexOf("matrix_v2_full_import_phase_before_explicit_roles_uat_v1",roleWrite);
+  assert.ok(categoryWrite>=0);
+  assert.ok(roleWrite>categoryWrite);
+  assert.ok(employeePhase>roleWrite);
+  assert.match(explicitRoleOrderFix,/jsonb_set\(v_configuration,'\{roleCategories\}','\[\]'::jsonb,true\)/);
+  assert.match(explicitRoleOrderFix,/rolesAppliedBeforeEmployees/);
 });
