@@ -124,7 +124,6 @@ function splitAdHocNames(sheet:Worksheet){
   }
 }
 function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
-  sheet.spliceRows(1,sheet.rowCount);
   const rows=kind==="ACCESS"?[
     ["1","Otwórz zakładkę „Dostępy”","Każdy wiersz nadaje lub wyłącza jedną funkcję dla jednego adresu e-mail."],
     ["2","Wpisz adres e-mail","To pole jest wymagane i identyfikuje konto. Jedna osoba może wystąpić w kilku wierszach."],
@@ -142,11 +141,15 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
     ["7","Sprawdzenie pliku","Zapisz plik jako .xlsx. Możesz edytować go w Excelu albo Google Sheets i ponownie pobrać jako Microsoft Excel (.xlsx)."],
     ["8","Podgląd przed zapisem","W GRAFIK PRO wybierz „Sprawdź plik”. Błąd wskaże zakładkę, wiersz, kolumnę, błędną wartość i sposób poprawy."],
   ];
+  const content=[
+    [kind==="ACCESS"?"GRAFIK PRO — dostępy do aplikacji":"GRAFIK PRO — konfiguracja firmy krok po kroku","", ""],
+    ["KROK","GDZIE PRZEJŚĆ","CO ZROBIĆ"],
+    ...rows,
+    ["Legenda","WYMAGANE = pole musi być uzupełnione • OPCJONALNE = wypełnij, jeśli dotyczy • SYSTEM = nie zmieniaj","Wartości wybieraj z list. Nieznana wartość nigdy nie zostanie cicho zastąpiona inną."],
+  ];
+  sheet.spliceRows(1,Math.max(sheet.rowCount,content.length),...content);
   sheet.mergeCells("A1:C1");sheet.getCell("A1").value=kind==="ACCESS"?"GRAFIK PRO — dostępy do aplikacji":"GRAFIK PRO — konfiguracja firmy krok po kroku";
   sheet.getCell("A1").font={name:"Aptos Display",size:20,bold:true,color:{argb:"FFFFFFFF"}};sheet.getCell("A1").fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.purple)}};sheet.getCell("A1").alignment={vertical:"middle"};sheet.getRow(1).height=38;
-  sheet.addRow(["KROK","GDZIE PRZEJŚĆ","CO ZROBIĆ"]);
-  for(const row of rows)sheet.addRow(row);
-  sheet.addRow(["Legenda","WYMAGANE = pole musi być uzupełnione • OPCJONALNE = wypełnij, jeśli dotyczy • SYSTEM = nie zmieniaj","Wartości wybieraj z list. Nieznana wartość nigdy nie zostanie cicho zastąpiona inną."]);
   sheet.getColumn(1).width=14;sheet.getColumn(2).width=36;sheet.getColumn(3).width=100;
   sheet.views=[{state:"frozen",ySplit:2,showGridLines:false}];
   const header=sheet.getRow(2);header.height=28;header.eachCell(cell=>{cell.font={name:"Aptos",size:10,bold:true,color:{argb:"FFFFFFFF"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.purpleDark)}};cell.alignment={vertical:"middle"};});

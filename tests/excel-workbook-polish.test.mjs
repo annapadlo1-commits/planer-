@@ -29,6 +29,8 @@ test("configuration workbook gets guided instructions, portable lists and separa
   }),"QUICK");
   const workbook=await load(polished);
   assert.match(String(workbook.getWorksheet("Instrukcja").getCell("A1").value),/konfiguracja firmy krok po kroku/i);
+  assert.equal(workbook.getWorksheet("Instrukcja").getCell("A2").value,"KROK");
+  assert.doesNotMatch(workbook.getWorksheet("Instrukcja").getColumn(1).values.join("\n"),/Co uzupełnić/);
   assert.equal(workbook.getWorksheet("_LISTY").state,"hidden");
   assert.equal(workbook.getWorksheet("Pracownicy").getCell("E2").value,"Okres próbny");
   assert.match(String(workbook.getWorksheet("Pracownicy").getCell("B1").value),/WYMAGANE/);
