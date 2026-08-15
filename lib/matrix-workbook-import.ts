@@ -401,6 +401,9 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const staffingRules=staffingRows.map(row=>{
     const group=importCell(row,"GRUPA_DNI");
     const sourceShift=importCell(row,"ZMIANA_ID");
+    const coverageLabel=importCell(row,"Sposób obsady","Tryb obsady","coverageMode").toLocaleUpperCase("pl-PL");
+    const sharedCoverage=["WSPÓŁDZIELONA","WSPOLDZIELONA","ROTACYJNA","SHARED_ROTATION"].includes(coverageLabel);
+    const sharedCoverageGroup=importCell(row,"Kod wspólnej obsady","Grupa wspólnej obsady","sharedCoverageGroup");
     return {
       scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
       roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA")),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),
@@ -409,6 +412,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       // brak oznacza bezpieczne i intuicyjne SET zamiast blokować cały plik.
       operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase()||"SET",
       countValue:importCell(row,"Liczba osób","countValue","OPTYMALNIE_OSÓB","MIN_OSÓB"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
+      sourceMetadata:{source:"MATRIX_WORKBOOK_IMPORT",coverageMode:sharedCoverage?"SHARED_ROTATION":"INDEPENDENT",sharedCoverageGroup:sharedCoverage?sharedCoverageGroup:null},
     };
   });
   const roleDuties=functionRows.length?functionRows.filter(row=>importBoolean(importCell(row,"AKTYWNA"),true)&&!["DOWOLNA",""].includes(importCell(row,"ROLA_WYMAGANA"))).map(row=>{
