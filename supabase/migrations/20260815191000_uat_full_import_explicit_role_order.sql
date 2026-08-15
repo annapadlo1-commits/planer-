@@ -21,8 +21,42 @@ declare
   v_role uuid;
   v_payload jsonb;
   v_configuration jsonb:=coalesce(p_configuration,'{}'::jsonb);
+  v_key text;
+  v_sheet text;
+  v_invalid jsonb;
 begin
   if upper(trim(coalesce(p_phase,'')))='PRE' then
+    -- Keep clean migration replays equivalent to the live UAT guard migration.
+    foreach v_key in array array['roleCategories','roles','locations','duties'] loop
+      v_sheet:=case v_key
+        when 'roleCategories' then 'Kategorie grafików'
+        when 'roles' then 'Role'
+        when 'locations' then 'Lokale'
+        else 'Obowiązki'
+      end;
+      select item.value into v_invalid
+      from jsonb_array_elements(coalesce(v_configuration->v_key,'[]'::jsonb)) item(value)
+      where nullif(trim(item.value->>'code'),'') is not null
+        and nullif(trim(item.value->>'name'),'') is null
+      limit 1;
+      if v_invalid is not null then
+        raise exception 'FULL_IMPORT_DICTIONARY_VALUE_REQUIRED|%|%|Nazwa',
+          v_sheet,coalesce(nullif(v_invalid->>'sourceRow',''),'nieznany');
+      end if;
+      v_configuration:=jsonb_set(
+        v_configuration,
+        array[v_key],
+        coalesce((
+          select jsonb_agg(item.value order by item.ordinality)
+          from jsonb_array_elements(coalesce(v_configuration->v_key,'[]'::jsonb))
+            with ordinality item(value,ordinality)
+          where nullif(trim(item.value->>'code'),'') is not null
+             or nullif(trim(item.value->>'name'),'') is not null
+        ),'[]'::jsonb),
+        true
+      );
+    end loop;
+
     select id into v_matrix from public.matrix_versions
     where status='DRAFT' and schema_version>=2
     order by version desc limit 1;

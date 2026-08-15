@@ -44,3 +44,10 @@ test("management navigation follows application roles and scoped managers can re
   assert.match(page, /"ROLE_MANAGER","LOCATION_MANAGER"/);
   assert.match(page, /scheduleWriteAllowed/);
 });
+
+test("the application shell has a safe navigation label before access roles load", () => {
+  const page = read("app/page.tsx");
+  assert.match(page, /productNavigation\[0\]\?\?\{/);
+  assert.match(page, /label:"Ładowanie aplikacji"/);
+  assert.match(page, /description:"Sprawdzamy Twój zakres dostępu"/);
+});

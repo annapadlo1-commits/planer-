@@ -206,17 +206,32 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
     requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
   };
-  const namedRows=(sheetNames:string[])=>rows(sheetNames).map((row,index)=>({
+  const validatedDictionaryRows=(sheetNames:string[],entityName:string)=>{
+    const sheetName=matchingSheetName(sheetNames)??sheetNames[0];
+    return rows(sheetNames).map((row,index)=>({row,sourceRow:index+2})).filter(({row,sourceRow})=>{
+      const suppliedCode=importCell(row,"Kod","code");
+      const suppliedName=importCell(row,"Nazwa","name");
+      // Exported templates can retain technical defaults (colour, order or
+      // activity) in an otherwise empty row. Such a row is not a business
+      // record and must never become an active dictionary item with code="".
+      if(!suppliedCode&&!suppliedName)return false;
+      if(suppliedCode&&!suppliedName){
+        throw new Error(`${sheetName} • wiersz ${sourceRow} • kolumna „Nazwa”: uzupełnij nazwę ${entityName}.`);
+      }
+      return true;
+    });
+  };
+  const namedRows=(sheetNames:string[],entityName:string)=>validatedDictionaryRows(sheetNames,entityName).map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
-    sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+    sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
-  const roleCategories=namedRows(["Kategorie grafików","Kategorie grafikow","Role categories"]);
-  const roles=rows(["Role","Roles"]).map((row,index)=>({
+  const roleCategories=namedRows(["Kategorie grafików","Kategorie grafikow","Role categories"],"kategorii grafiku");
+  const roles=validatedDictionaryRows(["Role","Roles"],"roli").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     categoryCode:importCode(importCell(row,"Kod kategorii","Kategoria","categoryCode")),
     description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),
-    sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+    sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
   const roleAliases=new Map<string,string>();
   for(const role of roles){
@@ -224,10 +239,10 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     for(const alias of [code,String(role.name??"")])if(alias.trim())roleAliases.set(importCode(alias),code);
   }
   const normalizeRoleCode=(value:string)=>roleAliases.get(importCode(value))??importCode(value);
-  const locations=rows(["Lokale","Locations"]).map((row,index)=>({
+  const locations=validatedDictionaryRows(["Lokale","Locations"],"lokalu").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     timezone:importCell(row,"Strefa czasowa","timezone"),sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),
-    active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),
+    active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
   const locationAliases=new Map<string,string>();
   for(const location of locations){
@@ -235,7 +250,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     for(const alias of [code,String(location.name??"")])if(alias.trim())locationAliases.set(importCode(alias),code);
   }
   const normalizeLocationCode=(value:string)=>locationAliases.get(importCode(value))??importCode(value);
-  const duties=namedRows(["Obowiązki","Obowiazki","Duties"]);
+  const duties=namedRows(["Obowiązki","Obowiazki","Duties"],"obowiązku");
   const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
     code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:importCell(row,"Kolor","color"),

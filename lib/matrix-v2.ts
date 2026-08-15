@@ -386,6 +386,11 @@ export function objectiveName(code: string) {
 
 export function matrixV2ErrorMessage(message: string) {
   const value = message.toUpperCase();
+  const dictionaryValueError=message.match(/FULL_IMPORT_DICTIONARY_VALUE_REQUIRED\|([^|]+)\|([^|]+)\|([^|]+)/i);
+  if(dictionaryValueError){
+    const [,sheet,row,column]=dictionaryValueError;
+    return `Arkusz „${sheet}”, wiersz ${row}, kolumna „${column}”: uzupełnij nazwę albo usuń ten niepełny wiersz. Żadne dane nie zostały zastosowane.`;
+  }
   const correlatedImportError = message.match(/(?:MATRIX|TEAM)_IMPORT_(?:PREVIEW|APPLY)_FAILED\|([^|]+)\|([^|]+)\|(.+)/i);
   if (correlatedImportError) {
     const [,identifier,sqlState,cause]=correlatedImportError;

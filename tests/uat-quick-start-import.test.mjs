@@ -46,6 +46,10 @@ const explicitRoleOrderFix = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260815191000_uat_full_import_explicit_role_order.sql"),
   "utf8",
 );
+const emptyDictionaryRowsFix = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260815133914_uat_full_import_empty_dictionary_rows.sql"),
+  "utf8",
+);
 
 test("quick start has separate team and finance stages without a fixed workforce size", () => {
   assert.match(editor, /type MatrixImportScope\s*=\s*"TEAM"\s*\|\s*"FINANCE"\s*\|\s*"CONFIGURATION"/);
@@ -161,4 +165,11 @@ test("full import writes workbook roles before resolving employees", () => {
   assert.ok(employeePhase>roleWrite);
   assert.match(explicitRoleOrderFix,/jsonb_set\(v_configuration,'\{roleCategories\}','\[\]'::jsonb,true\)/);
   assert.match(explicitRoleOrderFix,/rolesAppliedBeforeEmployees/);
+});
+
+test("full import ignores technical blank dictionary rows before role resolution", () => {
+  assert.match(emptyDictionaryRowsFix,/array\['roleCategories','roles','locations','duties'\]/);
+  assert.match(emptyDictionaryRowsFix,/FULL_IMPORT_DICTIONARY_VALUE_REQUIRED/);
+  assert.match(emptyDictionaryRowsFix,/nullif\(trim\(item\.value->>'code'\),'\s*'\) is not null/);
+  assert.match(emptyDictionaryRowsFix,/emptyDictionaryRowsIgnored/);
 });

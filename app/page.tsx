@@ -426,7 +426,11 @@ export default function GrafikPro() {
   const budget=Number(data.budget?.amount||0);
   const coverage=data.shifts.length?Math.round(100*(1-Math.min(data.issues.filter(i=>i.issue_type==="SHORTAGE"||i.issue_type==="CAPABILITY_MISSING").length/data.shifts.length,1))):0;
 
-  const activeNavigation=productNavigation.find(item=>item.key===primarySection)??productNavigation[0];
+  const activeNavigation=productNavigation.find(item=>item.key===primarySection)??productNavigation[0]??{
+    key:"start" as const,
+    label:"Ładowanie aplikacji",
+    description:"Sprawdzamy Twój zakres dostępu",
+  };
   const employeePortalSection=primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>

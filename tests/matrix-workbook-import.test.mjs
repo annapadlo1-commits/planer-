@@ -207,6 +207,44 @@ test("new role and location may be entered by name and receive stable codes in t
   assert.deepEqual(parsed.employees[0].locationCodes,["NOWY_LOKAL"]);
 });
 
+test("technical blank dictionary rows do not become empty active roles or locations",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    "Kategorie grafików":[
+      {Kod:"SALA",Nazwa:"Sala",Aktywna:"TAK"},
+      {Kod:"",Nazwa:"",Kolor:"#7257D8",Kolejność:"2",Aktywna:"TAK"},
+    ],
+    Role:[
+      {Kod:"KELNER",Nazwa:"Kelner","Kod kategorii":"SALA",Aktywna:"TAK"},
+      {Kod:"",Nazwa:"","Kod kategorii":"",Kolor:"#7257D8",Kolejność:"2",Aktywna:"TAK"},
+    ],
+    Lokale:[
+      {Kod:"KRUCZA",Nazwa:"Krucza",Aktywna:"TAK"},
+      {Kod:"",Nazwa:"","Strefa czasowa":"",Kolejność:"2",Aktywna:"TAK"},
+    ],
+    Obowiązki:[
+      {Kod:"RUNNER",Nazwa:"Runner",Aktywna:"TAK"},
+      {Kod:"",Nazwa:"",Kolor:"#4A8D78",Kolejność:"2",Aktywna:"TAK"},
+    ],
+  }));
+
+  assert.deepEqual(parsed.roleCategories.map(item=>item.code),["SALA"]);
+  assert.deepEqual(parsed.roles.map(item=>item.code),["KELNER"]);
+  assert.deepEqual(parsed.locations.map(item=>item.code),["KRUCZA"]);
+  assert.deepEqual(parsed.duties.map(item=>item.code),["RUNNER"]);
+});
+
+test("a named dictionary row without a required value points to the exact sheet row and columns",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({
+      Role:[
+        {Kod:"KELNER",Nazwa:"Kelner",Aktywna:"TAK"},
+        {Kod:"BARMAN",Nazwa:"",Aktywna:"TAK"},
+      ],
+    })),
+    /Role • wiersz 3 • kolumna „Nazwa”: uzupełnij nazwę roli/,
+  );
+});
+
 test("Apps Script Sunday code ND and duty column aliases are preserved",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     BAZA_PRACOWNIKÓW:[{
