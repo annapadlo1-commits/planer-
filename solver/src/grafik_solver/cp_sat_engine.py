@@ -1285,12 +1285,14 @@ class CpSatScheduleEngine:
             )
             self._ensure_deadline(global_deadline, "GLOBAL")
         # A card is a business promise, not merely the last incumbent produced
-        # before a timer expired.  If another displayed solution is no worse
-        # for every active objective of a strategy and strictly better for at
-        # least one, that strategy result is objectively dominated.  Reject the
-        # run instead of showing a misleading "fair", "balanced" or "lowest
-        # cost" label.  This audit uses Matrix objectives and therefore applies
-        # to every category, including employer-defined ones.
+        # before a timer expired.  In the strict mathematical-audit mode an
+        # objectively dominated strategy is therefore still a hard failure.
+        # Ordinary planning is intentionally different: the leader must receive
+        # every technically valid incumbent that was found, even when a time-
+        # limited strategy did not beat another card on its own active goals.
+        # Rejecting the whole run here made a usable BAR schedule disappear and
+        # blocked the operational workflow.  The UI can compare the persisted
+        # metrics; only an explicitly requested proof mode may reject them.
         strategies_by_id = {
             strategy.id: strategy for strategy in ordered_strategies
         }
@@ -1299,7 +1301,10 @@ class CpSatScheduleEngine:
             for candidate in results:
                 if candidate.strategy_id == result.strategy_id:
                     continue
-                if self._dominates_for_strategy(candidate, result, strategy):
+                if (
+                    snapshot.settings.require_optimal
+                    and self._dominates_for_strategy(candidate, result, strategy)
+                ):
                     candidate_strategy = strategies_by_id[candidate.strategy_id]
                     raise OptimizationIncomplete(
                         "STRATEGY_RESULT_DOMINATED: wariant "
