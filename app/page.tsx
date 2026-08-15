@@ -522,7 +522,11 @@ export default function GrafikPro() {
         {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>} 
         {active==="alerty"&&!isOrtools&&<IssuesView issues={data.issues} shifts={data.shifts} roleLabels={activeRoleLabels} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
         {active==="naprawy"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} notify={notify} fail={setError} reload={load}/>} 
-        {active==="wydarzenia"&&<OperationalEventsCenter month={selectedMonth} notify={notify} fail={setError}/>} 
+        {active==="wydarzenia"&&<OperationalEventsCenter month={selectedMonth} notify={notify} fail={setError} catalog={matrixV2?{
+          categories:(matrixV2.roleCategories??[]).filter(item=>item.active),
+          roles:matrixV2.roles.filter(item=>item.active).map(item=>({...item,categoryId:item.category_id})),
+          locations:matrixV2.locations.filter(item=>item.active),
+        }:undefined}/>} 
         {active==="wiadomosci"&&<MessageCenter notify={notify} fail={setError}/>} 
         {active==="budzet"&&<AnalyticsDashboard data={data} matrix={matrixV2} currency={activeCurrency}/>} 
         </>}
