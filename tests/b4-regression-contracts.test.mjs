@@ -589,12 +589,20 @@ test("merged company publication recovers category teams from durable publicatio
 });
 
 test("selecting a calendar day never forces the page to jump", async () => {
-  const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
+  const [modules,page]=await Promise.all([
+    readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
+  ]);
   assert.match(modules,/onClick=\{\(\)=>setSelectedDay\(date\)\}/);
   assert.match(modules,/onClick=\{\(\) => setSelectedDate\(date\)\}/);
   assert.doesNotMatch(modules,/employeeDayRef/);
   assert.doesNotMatch(modules,/detailRef/);
   assert.doesNotMatch(modules,/scrollIntoView\(\{behavior:"smooth",block:"start"\}\)/);
+  assert.match(page,/selectedDay=\{day\} onDay=\{setDay\}/);
+  assert.match(page,/manager-day-summary/);
+  assert.doesNotMatch(page,/onDay=\{\(d\)=>\{setDay\(d\);setActive\("grafik"\);\}\}/);
+  const combinedCalendar=modules.slice(modules.indexOf("availabilityWorkspace&&<AvailabilityCalendarDrawer embedded"),modules.indexOf("<section className=\"employee-calendar-card\""));
+  assert.doesNotMatch(combinedCalendar,/onSelectDay=\{setSelectedDay\}/);
 });
 
 test("operational events and absence limits accept one audited date range", async () => {

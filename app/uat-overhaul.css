@@ -302,6 +302,18 @@
 .manager-calendar-event { display: block; margin-top: 5px; padding: 4px 6px; border-radius: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; color: #315b9d; background: #eef4ff; }
 .manager-calendar-event b { margin-right: 5px; font-size: 8px; }
 .manager-calendar-event.hot_day { color: #9a5511; background: #fff0db; }
+.manager-day-summary { display: grid; grid-template-columns: minmax(180px,.65fr) minmax(280px,1.35fr) auto; align-items: end; gap: 12px; min-height: 76px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid #ddd5e8; border-radius: 14px; background: #faf9fc; }
+.manager-day-summary > div { display: grid; gap: 2px; }
+.manager-day-summary > div small { color: #6848d8; font-size: 9px; font-weight: 900; }
+.manager-day-summary > div strong { font-size: 18px; }
+.manager-day-summary > div span { color: #71677b; font-size: 11px; }
+.manager-day-summary label { display: grid; gap: 5px; font-size: 10px; font-weight: 800; }
+.manager-day-summary input { height: 40px; min-width: 0; padding: 0 11px; border: 1px solid #ded7e5; border-radius: 10px; background: #fff; }
+.manager-day-assignment-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 8px; margin-top: 14px; }
+.manager-day-assignment-list article { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 11px 12px; border: 1px solid #e4dfea; border-radius: 12px; background: #faf9fc; }
+.manager-day-assignment-list article span { display: grid; gap: 2px; }
+.manager-day-assignment-list article small,.manager-day-assignment-list > p { color: #71677b; font-size: 10px; }
+@media(max-width:820px){.manager-day-summary{grid-template-columns:1fr}.manager-day-assignment-list article{grid-template-columns:1fr}}
 .availability-daily-summary { margin-top: 18px; padding: 16px; border: 1px solid #e8e0f7; border-radius: 14px; background: #fbf9ff; }
 .availability-daily-summary > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
 .availability-daily-summary > div { display: grid; gap: 7px; }
@@ -1203,6 +1215,16 @@
 .solver-v2-run-state.retry {
   background: #fff4df;
   color: #80571d;
+}
+
+.solver-v2-run-state.queued {
+  background: #eef4ff;
+  color: #345b91;
+}
+
+.solver-v2-run-state.running {
+  background: #eaf7f1;
+  color: #1f6d50;
 }
 
 .solver-v2-run-state.failed {
