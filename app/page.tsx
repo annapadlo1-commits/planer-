@@ -148,6 +148,7 @@ export default function GrafikPro() {
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
   const [active,setActiveState]=useState<NavKey>("centrum");
+  const pendingSubsectionRef=useRef<NavKey|null>(null);
   const [configurationTab,setConfigurationTab]=useState<SetupSection>("structure");
   const [configurationStep,setConfigurationStep]=useState<SetupStepKey>("company");
   const [modal,setModal]=useState<Modal>(null);
@@ -177,11 +178,14 @@ export default function GrafikPro() {
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
   const selectedMonthLabel=monthLabel(selectedMonth);
   const setActive=useCallback((next:NavKey)=>{
-    setActiveState(next);
     const section=legacySection[next];
-    if(sectionFromPath(pathname,employeeShell)!==section)router.push(`${pathForSection(section)}?month=${selectedMonth}`);
+    const navigatesToAnotherSection=sectionFromPath(pathname,employeeShell)!==section;
+    pendingSubsectionRef.current=navigatesToAnotherSection?next:null;
+    setActiveState(next);
+    if(navigatesToAnotherSection)router.push(`${pathForSection(section)}?month=${selectedMonth}`);
   },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
+    pendingSubsectionRef.current=null;
     const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(`${pathForSection(section)}?month=${selectedMonth}`);
@@ -352,7 +356,14 @@ export default function GrafikPro() {
     if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
   },[selectedMonth]);
   useEffect(()=>{
-    if(employeeShell){setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
+    if(employeeShell){pendingSubsectionRef.current=null;setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
+    const pending=pendingSubsectionRef.current;
+    if(pending){
+      if(legacySection[pending]!==primarySection)return;
+      pendingSubsectionRef.current=null;
+      setActiveState(pending);
+      return;
+    }
     const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
   },[employeeShell,primarySection]);

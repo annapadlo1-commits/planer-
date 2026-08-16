@@ -653,6 +653,14 @@ test("one browser client and synchronous month context prevent transient duplica
   assert.match(workspace,/setLeaderEmployeeId\(candidate\.employeeId\);setLeaderFeedback\(""\);setLeaderLimitWarning\(""\)/);
 });
 
+test("cross-section actions preserve their exact destination subtab", async () => {
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(page,/const pendingSubsectionRef=useRef<NavKey\|null>\(null\)/);
+  assert.match(page,/pendingSubsectionRef\.current=navigatesToAnotherSection\?next:null/);
+  assert.match(page,/if\(pending\)\{\s*if\(legacySection\[pending\]!==primarySection\)return;/);
+  assert.match(page,/setRecoveryFocus\(context\);closeModal\(\);setActive\("naprawy"\)/);
+});
+
 test("configuration publication uses the company day and keeps failures inside the drawer", async () => {
   const [editor,migration]=await Promise.all([
     readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
