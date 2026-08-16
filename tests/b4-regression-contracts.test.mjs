@@ -655,10 +655,12 @@ test("one browser client and synchronous month context prevent transient duplica
 
 test("cross-section actions preserve their exact destination subtab", async () => {
   const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
-  assert.match(page,/const pendingSubsectionRef=useRef<NavKey\|null>\(null\)/);
-  assert.match(page,/pendingSubsectionRef\.current=navigatesToAnotherSection\?next:null/);
-  assert.match(page,/if\(pending\)\{\s*if\(legacySection\[pending\]!==primarySection\)return;/);
-  assert.match(page,/setRecoveryFocus\(context\);closeModal\(\);setActive\("naprawy"\)/);
+  assert.match(page,/const searchParams=useSearchParams\(\)/);
+  assert.match(page,/router\.push\(`\$\{pathForSection\(section\)\}\?month=\$\{selectedMonth\}&view=\$\{next\}`\)/);
+  assert.match(page,/requestedSubsection&&legacySection\[requestedSubsection\]===primarySection/);
+  assert.match(page,/new URLSearchParams\(\{month:selectedMonth,view:"naprawy"\}\)/);
+  assert.match(page,/params\.set\("roleId",context\.roleId\)/);
+  assert.match(page,/params\.set\("date",context\.date\)/);
 });
 
 test("configuration publication uses the company day and keeps failures inside the drawer", async () => {

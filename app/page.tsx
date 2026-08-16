@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAppAuth } from "@/components/AppAuthProvider";
 import { ConfigurationJourney } from "@/components/ConfigurationJourney";
 import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProjectRef } from "@/lib/supabase/client";
@@ -118,6 +118,7 @@ export default function GrafikPro() {
   const { user, access, connected, summary, refresh, signOut }=useAppAuth();
   const router=useRouter();
   const pathname=usePathname();
+  const searchParams=useSearchParams();
   const employeeShell=isEmployeePersona(access?.roles);
   const productNavigation=employeeShell?employeeNavigation:managementNavigationForRoles(access?.roles);
   const requestedPrimarySection=sectionFromPath(pathname,employeeShell);
@@ -148,7 +149,6 @@ export default function GrafikPro() {
   const [error,setError]=useState("");
   const [toast,setToast]=useState("");
   const [active,setActiveState]=useState<NavKey>("centrum");
-  const pendingSubsectionRef=useRef<NavKey|null>(null);
   const [configurationTab,setConfigurationTab]=useState<SetupSection>("structure");
   const [configurationStep,setConfigurationStep]=useState<SetupStepKey>("company");
   const [modal,setModal]=useState<Modal>(null);
@@ -177,15 +177,16 @@ export default function GrafikPro() {
   const activeCurrency=isOrtools?solverConfiguration?.currency??"": "PLN";
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
   const selectedMonthLabel=monthLabel(selectedMonth);
+  const requestedSubsection=searchParams.get("view") as NavKey|null;
+  const requestedRecoveryRoleId=searchParams.get("roleId");
+  const requestedRecoveryDate=searchParams.get("date");
   const setActive=useCallback((next:NavKey)=>{
     const section=legacySection[next];
     const navigatesToAnotherSection=sectionFromPath(pathname,employeeShell)!==section;
-    pendingSubsectionRef.current=navigatesToAnotherSection?next:null;
     setActiveState(next);
-    if(navigatesToAnotherSection)router.push(`${pathForSection(section)}?month=${selectedMonth}`);
+    if(navigatesToAnotherSection)router.push(`${pathForSection(section)}?month=${selectedMonth}&view=${next}`);
   },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
-    pendingSubsectionRef.current=null;
     const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(`${pathForSection(section)}?month=${selectedMonth}`);
@@ -356,18 +357,19 @@ export default function GrafikPro() {
     if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
   },[selectedMonth]);
   useEffect(()=>{
-    if(employeeShell){pendingSubsectionRef.current=null;setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
-    const pending=pendingSubsectionRef.current;
-    if(pending){
-      if(legacySection[pending]!==primarySection)return;
-      pendingSubsectionRef.current=null;
-      setActiveState(pending);
+    if(employeeShell){setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
+    if(requestedSubsection&&legacySection[requestedSubsection]===primarySection){
+      setActiveState(requestedSubsection);
+      if(requestedSubsection==="naprawy")setRecoveryFocus({
+        roleId:requestedRecoveryRoleId||null,
+        date:requestedRecoveryDate&&/^\d{4}-\d{2}-\d{2}$/.test(requestedRecoveryDate)?requestedRecoveryDate:null,
+      });
       return;
     }
     const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
-  },[employeeShell,primarySection]);
-  useEffect(()=>{if(active!=="naprawy")setRecoveryFocus(null);},[active]);
+  },[employeeShell,primarySection,requestedRecoveryDate,requestedRecoveryRoleId,requestedSubsection]);
+  useEffect(()=>{if(active!=="naprawy"&&requestedSubsection!=="naprawy")setRecoveryFocus(null);},[active,requestedSubsection]);
   useEffect(()=>{
     setDay("ALL");setModal(null);setSelectedShift(null);setSelectedEmployee("");
     setPlanScope({type:"COMPANY",category:null});
@@ -576,7 +578,13 @@ export default function GrafikPro() {
           allowStart={solverConfiguration.engine==="ORTOOLS_V2"||solverConfiguration.engine==="SHADOW"}
           onNameChange={value=>setPlanForm(current=>({...current,name:value}))}
           onScenarioChange={value=>setPlanForm(current=>({...current,scenario:value}))}
-          onOpenAdHoc={context=>{setRecoveryFocus(context);closeModal();setActive("naprawy");}}
+          onOpenAdHoc={context=>{
+            setRecoveryFocus(context);closeModal();
+            const params=new URLSearchParams({month:selectedMonth,view:"naprawy"});
+            if(context.roleId)params.set("roleId",context.roleId);
+            if(context.date)params.set("date",context.date);
+            router.push(`${pathForSection("operations")}?${params.toString()}`);
+          }}
           onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="CATEGORY")setRoleCompositeRefreshKey(current=>current+1);}}
           onPublished={async()=>{await load();notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}
         />}
