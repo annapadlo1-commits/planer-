@@ -151,6 +151,7 @@ export default function GrafikPro() {
   const [configurationTab,setConfigurationTab]=useState<SetupSection>("structure");
   const [configurationStep,setConfigurationStep]=useState<SetupStepKey>("company");
   const [modal,setModal]=useState<Modal>(null);
+  const [mobileNavigationOpen,setMobileNavigationOpen]=useState(false);
   const [monthlyBudgetOpen,setMonthlyBudgetOpen]=useState(false);
   const [recoveryFocus,setRecoveryFocus]=useState<{roleId:string|null;date:string|null}|null>(null);
   const [selectedShift,setSelectedShift]=useState<Shift|null>(null);
@@ -375,6 +376,12 @@ export default function GrafikPro() {
     setPlanScope({type:"COMPANY",category:null});
     setPlanForm(current=>({...current,name:`Plan operacyjny ${selectedMonth}`}));
   },[selectedMonth]);
+  useEffect(()=>{
+    if(!mobileNavigationOpen)return;
+    const closeOnEscape=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobileNavigationOpen(false);};
+    window.addEventListener("keydown",closeOnEscape);
+    return()=>window.removeEventListener("keydown",closeOnEscape);
+  },[mobileNavigationOpen]);
   const previousSolverEngineRef=useRef<string|null>(null);
   useEffect(()=>{
     const nextEngine=solverConfiguration?.engine;
@@ -451,18 +458,19 @@ export default function GrafikPro() {
   const employeePortalSection=primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
-    <aside className="sidebar product-sidebar">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>PLANOWANIE I OPERACJE</small></div></div>
+    <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
+      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>PLANOWANIE I OPERACJE</small></div><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
       <div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>
-      <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>openProductSection(item.key)}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
+      <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>{setMobileNavigationOpen(false);openProductSection(item.key);}}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
       <div className="sidebar-footer">
         <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{({OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Kadry i finanse",ROLE_MANAGER:"Menadżer roli",LOCATION_MANAGER:"Menadżer lokalu",VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik"} as Record<string,string>)[access?.roles?.[0]?.app_role||""]||"Użytkownik"}</small></div></div>
         <button className="sidebar-signout" onClick={()=>void signOut()}><LogOut size={15}/> Wyloguj się</button>
       </div>
     </aside>
+    {mobileNavigationOpen&&<button type="button" className="scrim product-navigation-scrim" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}/>}
     <section className="workspace">
       <header className="topbar">
-        <button className="icon-button menu-button"><Menu size={20}/></button>
+        <button type="button" className="icon-button menu-button" aria-label="Otwórz menu" aria-controls="product-navigation" aria-expanded={mobileNavigationOpen} onClick={()=>setMobileNavigationOpen(true)}><Menu size={20}/></button>
         <div className="product-topbar-copy"><p className="eyebrow">{employeeShell?"MOJE SPRAWY":"ZARZĄDZANIE"} / {selectedMonthLabel.toLocaleUpperCase("pl-PL")}</p><h1>{activeNavigation.label}</h1><small>{activeNavigation.description}</small></div>
         <div className="topbar-actions">
           <button className={`live-status environment-status ${connected?"online":""}`} onClick={()=>{void refresh();void load();}} title={`Projekt Supabase: ${projectRef}`}><Wifi size={15}/><span><b>{environmentLabel}</b><small>{projectRef} • konfiguracja {matrixV2?`v${matrixV2.matrixVersion.version} ${matrixV2.editable?"robocza":"aktywna"}`:"niedostępna"} • {matrixV2?.workforceCounts?.active??summary?.employees??0} osób</small></span></button>
