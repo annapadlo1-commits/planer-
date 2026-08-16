@@ -298,6 +298,10 @@ export function ActiveModules({
     const requestedMonth = selectedMonthDate;
     if (!supabase || view !== "portal" || portalMonthRef.current !== requestedMonth) return;
     const token = ++portalLoadToken.current;
+    if (allowUatMasterPersona && !uatMasterEmployeeId) {
+      setPortal(null);
+      return;
+    }
     if (uatMasterEmployeeId) {
       const [contextResult, calendarResult] = await Promise.all([
         supabase.rpc("uat_master_employee_portal_context_v2", {
@@ -405,7 +409,7 @@ export function ActiveModules({
       swapBoard,
       companyCalendar,
     });
-  }, [fail, selectedMonthDate, solverEngine, supabase, timezone, uatMasterEmployeeId, view]);
+  }, [allowUatMasterPersona, fail, selectedMonthDate, solverEngine, supabase, timezone, uatMasterEmployeeId, view]);
 
   useEffect(() => {
     setPortal(null);
@@ -662,7 +666,7 @@ export function ActiveModules({
       locations={data.locations}
       saveAvailability={saveTimeConstraint}
       fail={fail}
-    /> : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
+    /> : allowUatMasterPersona && uatMaster ? null : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
     {availabilityOpen && portal?.timeConstraints && <AvailabilityCalendarDrawer
       workspace={portal.timeConstraints}
       month={month}

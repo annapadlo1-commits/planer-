@@ -545,6 +545,8 @@ test("employee portal never calls the owner-only UAT MASTER persona preview", as
   const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
   assert.match(modules,/allowUatMasterPersona = false/);
   assert.match(modules,/view !== "portal" \|\| !allowUatMasterPersona/);
+  assert.match(modules,/allowUatMasterPersona && !uatMasterEmployeeId/);
+  assert.match(modules,/allowUatMasterPersona && uatMaster \? null/);
   assert.match(page,/view="portal" allowUatMasterPersona/);
   assert.doesNotMatch(page,/portalSection=\{employeePortalSection\}[^\n]+allowUatMasterPersona/);
 });
@@ -651,6 +653,22 @@ test("one browser client and synchronous month context prevent transient duplica
   assert.match(page,/\[selectedMonth,setSelectedMonth\]=useState\(\(\)=>/);
   assert.match(page,/const fromUrl=new URLSearchParams\(window\.location\.search\)\.get\("month"\)/);
   assert.match(workspace,/setLeaderEmployeeId\(candidate\.employeeId\);setLeaderFeedback\(""\);setLeaderLimitWarning\(""\)/);
+});
+
+test("company publication accepts complete disjoint category variants", async () => {
+  const [migration,guard]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260816065000_b4f_category_composite_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260816070500_b4f_category_composite_consistency_guard.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/optimization_snapshots_v2 run_snapshot/);
+  assert.match(migration,/run_snapshot\.snapshot->'scope'->'roleIds'/);
+  assert.match(migration,/ALL_DEMANDED_ROLES_REQUIRED/);
+  assert.match(migration,/OVERLAPPING_CATEGORY_VARIANTS/);
+  assert.match(migration,/'categoryAware',true/);
+  assert.doesNotMatch(migration,/except\s+select r\.scope_role_id::text/);
+  assert.match(guard,/role_composite_consistency_guard_v2/);
+  assert.match(guard,/covered_role\.role_id=demanded\.role_id::text/);
+  assert.match(guard,/ROLE_COMPOSITE_REQUIRES_EVERY_DEMANDED_ROLE/);
 });
 
 test("cross-section actions preserve their exact destination subtab", async () => {
