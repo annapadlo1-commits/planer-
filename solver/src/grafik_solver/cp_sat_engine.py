@@ -919,6 +919,10 @@ class CpSatScheduleEngine:
                         strategy=strategy,
                         stage_name="OVERTIME_GATE",
                         time_limit_seconds=overtime_time_budget,
+                        disable_presolve=(
+                            not snapshot.settings.require_optimal
+                            and feasible_fallback_solver is not None
+                        ),
                     )
                     if (
                         overtime_status == cp_model.UNKNOWN
@@ -1072,6 +1076,10 @@ class CpSatScheduleEngine:
                             if feasible_fallback_solver is not None
                             else 0.0
                         ),
+                    ),
+                    disable_presolve=(
+                        not snapshot.settings.require_optimal
+                        and feasible_fallback_solver is not None
                     ),
                 )
                 if (
@@ -1235,6 +1243,16 @@ class CpSatScheduleEngine:
                         strategy=strategy,
                         stage_name=f"TIER_{tier}",
                         time_limit_seconds=tier_time_budget,
+                        # A verified full-model incumbent already exists in
+                        # relaxed planning mode.  On large monthly instances
+                        # CP-SAT presolve can run past max_time_in_seconds and
+                        # consume the shared deadline before the next strategy
+                        # receives any time.  Search the hinted model directly;
+                        # UNKNOWN still falls back to the verified incumbent.
+                        disable_presolve=(
+                            not snapshot.settings.require_optimal
+                            and feasible_fallback_solver is not None
+                        ),
                     )
                     used_fallback = False
                     if (
@@ -1351,6 +1369,7 @@ class CpSatScheduleEngine:
                             MAX_RELAXED_DIVERSITY_SECONDS,
                             max(0.001, remaining - 0.01),
                         ),
+                        disable_presolve=True,
                     )
                     if diversity_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
                         diversity_stages = [
@@ -1761,6 +1780,7 @@ class CpSatScheduleEngine:
         time_limit_seconds: float,
         *,
         fix_hints: bool = False,
+        disable_presolve: bool = False,
     ) -> Any:
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = max(0.001, time_limit_seconds)
@@ -1772,11 +1792,11 @@ class CpSatScheduleEngine:
         )
         solver.parameters.log_search_progress = False
         solver.parameters.fix_variables_to_their_hinted_value = fix_hints
-        if fix_hints:
-            # The coverage assignment is already fixed. Presolving the whole
-            # dynamic pay model can take far longer than evaluating its
-            # dependent variables and is not bounded reliably by CP-SAT's
-            # search timer on large monthly instances.
+        if fix_hints or disable_presolve:
+            # A verified full-model assignment is already fixed or supplied as
+            # a feasible hint. Presolving the whole dynamic pay model can take
+            # far longer than evaluating/searching from that assignment and is
+            # not bounded reliably by CP-SAT's timer on large monthly instances.
             solver.parameters.cp_model_presolve = False
         return solver
 
@@ -1788,6 +1808,7 @@ class CpSatScheduleEngine:
         stage_name: str,
         time_limit_seconds: float,
         fix_hints: bool = False,
+        disable_presolve: bool = False,
     ) -> tuple[Any, Any]:
         if self._cancel_event.is_set():
             raise OptimizationCancelled("Optimization was cancelled")
@@ -1797,7 +1818,11 @@ class CpSatScheduleEngine:
                 f"Invalid CP-SAT model at {stage_name}: {validation_error}"
             )
         solver = self._new_solver(
-            snapshot, strategy, time_limit_seconds, fix_hints=fix_hints
+            snapshot,
+            strategy,
+            time_limit_seconds,
+            fix_hints=fix_hints,
+            disable_presolve=disable_presolve,
         )
         with self._solver_lock:
             self._current_solver = solver

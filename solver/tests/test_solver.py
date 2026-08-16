@@ -1401,6 +1401,7 @@ class SolverTests(unittest.TestCase):
         original_solve_model = engine._solve_model
         warm_start_limits: list[float] = []
         full_hint_counts: list[tuple[int, int]] = []
+        tier_presolve_flags: list[bool] = []
         strategies_with_checked_hint: set[str] = set()
 
         def observe_stages(*args, **kwargs):
@@ -1419,6 +1420,8 @@ class SolverTests(unittest.TestCase):
                     )
                 )
                 strategies_with_checked_hint.add(strategy.id)
+            if strategy is not None and stage_name.startswith("TIER_"):
+                tier_presolve_flags.append(kwargs.get("disable_presolve", False))
             result = original_solve_model(*args, **kwargs)
             if stage_name == "WARM_START":
                 self.assertTrue(kwargs.get("fix_hints", False))
@@ -1432,6 +1435,8 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(len(warm_start_limits), 1)
         self.assertTrue(all(limit <= 15.0 for limit in warm_start_limits))
         self.assertEqual(len(full_hint_counts), len(snapshot.strategies))
+        self.assertTrue(tier_presolve_flags)
+        self.assertTrue(all(tier_presolve_flags))
         self.assertTrue(
             all(
                 0 < hint_count < variable_count
@@ -1454,8 +1459,15 @@ class SolverTests(unittest.TestCase):
             self.snapshot.strategies[0],
             1.0,
         )
+        bounded = self.engine._new_solver(
+            self.snapshot,
+            self.snapshot.strategies[0],
+            1.0,
+            disable_presolve=True,
+        )
 
         self.assertFalse(fixed.parameters.cp_model_presolve)
+        self.assertFalse(bounded.parameters.cp_model_presolve)
         self.assertTrue(regular.parameters.cp_model_presolve)
 
     def test_relaxed_strategy_keeps_valid_dominated_fallback_comparison(self) -> None:
