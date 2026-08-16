@@ -18,11 +18,12 @@ test("merge fallback keeps the publication action visible with a durable variant
 });
 
 test("automatic generation honors global overtime consent and prices the individual nominal", async () => {
-  const [model,engine,pricing,migration,editor]=await Promise.all([
+  const [model,engine,pricing,migration,approvalMigration,editor,workspace,client]=await Promise.all([
     read("solver/src/grafik_solver/models.py"),read("solver/src/grafik_solver/cp_sat_engine.py"),
     read("solver/src/grafik_solver/pay_rules.py"),
     read("supabase/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
-    read("components/MatrixV2Editor.tsx"),
+    read("supabase/migrations/20260816004500_leader_overtime_approval_uat.sql"),
+    read("components/MatrixV2Editor.tsx"),read("components/SolverV2Workspace.tsx"),read("lib/solver-v2.ts"),
   ]);
   assert.match(model,/overtime_policy: str = "NEVER"/);
   assert.match(engine,/employee\.overtime_policy != "ALLOWED"/);
@@ -32,6 +33,13 @@ test("automatic generation honors global overtime consent and prices the individ
   assert.match(migration,/matrix_v2_employee_save_alpha16\(p_employee_id, p_data\)/);
   assert.doesNotMatch(migration,/matrix_v2_employee_save_uat_v2\(p_employee_id, p_data\)/);
   assert.match(editor,/TYLKO PO ZATWIERDZENIU/);
+  assert.match(approvalMigration,/LEADER_OVERTIME_NOT_ALLOWED/);
+  assert.match(approvalMigration,/LEADER_OVERTIME_APPROVAL_REQUIRED/);
+  assert.match(approvalMigration,/requote_variant_payload_v2/);
+  assert.match(approvalMigration,/'APPROVE_OVERTIME'/);
+  assert.match(workspace,/Zatwierdź nadgodziny/);
+  assert.match(workspace,/Pełny koszt po zmianie/);
+  assert.match(client,/optimizer_leader_assignment_save_uat_v3/);
 });
 
 test("monthly planning budgets are cumulative, revisioned and enforce HARD TARGET or MONITORING", async () => {
@@ -61,12 +69,39 @@ test("workbooks contain a per-sheet field dictionary and explicit overtime choic
   assert.match(polish,/Opis pól/);
   assert.match(polish,/OVERTIME_VALUES/);
   assert.match(editor,/Zgoda na nadgodziny/);
+  assert.match(editor,/Grupy rezerwy/);
   assert.match(parser,/normalizeOvertimePolicy/);
+  assert.match(parser,/standbyGroups/);
 });
 
-test("standby never reserves a person against an uncovered role day", async () => {
-  const migration=await read("supabase/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql");
-  assert.match(migration,/generate_standby_before_shortage_guard_uat_v1/);
+test("standby is configured as category groups and never consumes shortage capacity", async () => {
+  const [migration,editor,workspace,client]=await Promise.all([
+    read("supabase/migrations/20260816010000_configurable_category_standby_groups_uat.sql"),
+    read("components/MatrixV2Editor.tsx"),read("components/SolverV2Workspace.tsx"),read("lib/solver-v2.ts"),
+  ]);
+  assert.match(migration,/standbyGroups/);
+  assert.match(migration,/STANDBY_ROLE_USED_IN_MULTIPLE_GROUPS/);
   assert.match(migration,/issue\.issue_code='UNFILLED_SLOT'/);
-  assert.match(migration,/status='SUPERSEDED'/);
+  assert.match(migration,/issue\.role_id=any\(v_role_ids\)/);
+  assert.match(migration,/eligible_role_ids/);
+  assert.match(migration,/standby_activate_uat_v3/);
+  assert.match(editor,/Rezerwa per kategoria/);
+  assert.match(editor,/Role nieuwzględnione w żadnej grupie/);
+  assert.match(workspace,/standbyAction\.eligibleRoleIds\.includes/);
+  assert.match(client,/manager_standby_month_uat_v3/);
+  assert.match(client,/optimizer_variant_standby_preview_uat_v2/);
+});
+
+test("a leader shortage opens the ad-hoc pool with the exact role and date", async () => {
+  const [workspace,panel,recovery,page]=await Promise.all([
+    read("components/SolverV2Workspace.tsx"),read("components/SolverV2Panel.tsx"),
+    read("components/RecoveryCenter.tsx"),read("app/page.tsx"),
+  ]);
+  assert.match(workspace,/Sprawdź pulę ad-hoc/);
+  assert.match(workspace,/roleId:issue\.role\?\.id/);
+  assert.match(panel,/onOpenAdHoc=\{onOpenAdHoc\}/);
+  assert.match(page,/initialTab=\{recoveryFocus\?"AD_HOC":"SHORTAGES"\}/);
+  assert.match(recovery,/Brak w wersji lidera/);
+  assert.match(recovery,/Utwórz pełny profil pracownika/);
+  assert.match(recovery,/opublikuj konfigurację i wygeneruj kategorię ponownie/);
 });

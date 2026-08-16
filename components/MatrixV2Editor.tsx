@@ -24,7 +24,7 @@ import {
   type MatrixV2NamedItem, type MatrixV2Objective, type MatrixV2PayRule,
   type MatrixV2Role, type MatrixV2RoleDuty, type MatrixV2SaveKind,
   type MatrixV2Scenario, type MatrixV2ScenarioPayRule,
-  type MatrixV2Settings,
+  type MatrixV2Settings, type MatrixV2StandbyGroup,
   type MatrixV2ScenarioStrategy, type MatrixV2Shift,
   type MatrixV2StaffingRule, type MatrixV2Strategy, type MatrixV2Workspace,
   type MatrixV2PublicationBlocker,
@@ -453,20 +453,33 @@ export function MatrixV2Editor({
       if (!timezone) throw new Error("Podaj strefę czasową firmy.");
       const minimumRestMinutes = requiredNumber(formText(form, "minimumRestMinutes"));
       const maximumShiftsPerDay = requiredNumber(formText(form, "maximumShiftsPerDay"));
-      const standbyTiersPerRoleDay = requiredNumber(formText(form, "standbyTiersPerRoleDay"));
+      const standbyGroups=JSON.parse(formText(form,"standbyGroups")||"[]") as MatrixV2StandbyGroup[];
       if (minimumRestMinutes < 0) throw new Error("Minimalny odpoczynek nie może być ujemny.");
       if (!Number.isInteger(maximumShiftsPerDay) || maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) {
         throw new Error("Podaj maksymalną liczbę zmian jednego pracownika na dobę od 1 do 24.");
       }
-      if (!Number.isInteger(standbyTiersPerRoleDay) || standbyTiersPerRoleDay < 0 || standbyTiersPerRoleDay > 2) {
-        throw new Error("Podaj od 0 do 2 poziomów rezerwy stand-by na rolę i dzień.");
+      if(!Array.isArray(standbyGroups))throw new Error("Konfiguracja grup rezerwy jest nieprawidłowa.");
+      const usedRoles=new Set<string>();
+      for(const [index,group] of standbyGroups.entries()){
+        if(!group.code?.trim()||!group.name?.trim()||!group.categoryCode?.trim()||!Array.isArray(group.roleCodes)||!group.roleCodes.length||![1,2].includes(Number(group.tiers))){
+          throw new Error(`Grupa rezerwy ${index+1}: uzupełnij nazwę, kategorię, co najmniej jedną rolę i liczbę poziomów.`);
+        }
+        const category=(data.roleCategories??[]).find(item=>item.code.toUpperCase()===group.categoryCode.toUpperCase()&&item.active);
+        if(!category)throw new Error(`Grupa „${group.name}”: wybrana kategoria nie istnieje w tej wersji konfiguracji.`);
+        for(const roleCode of group.roleCodes){
+          const role=data.roles.find(item=>item.code.toUpperCase()===roleCode.toUpperCase()&&item.active&&item.category_id===category.id);
+          if(!role)throw new Error(`Grupa „${group.name}”: rola ${roleCode} nie należy do wybranej kategorii.`);
+          if(usedRoles.has(role.code.toUpperCase()))throw new Error(`Rola ${role.name} jest już użyta w innej grupie rezerwy. Jedna rola może należeć tylko do jednej grupy.`);
+          usedRoles.add(role.code.toUpperCase());
+        }
       }
       await save("MATRIX_SETTINGS", null, {
         currency,
         timezone,
         minimumRestMinutes,
         maximumShiftsPerDay,
-        standbyTiersPerRoleDay,
+        standbyTiersPerRoleDay:0,
+        standbyGroups,
         missingAvailabilityMeansAvailable: checked(form, "missingAvailabilityMeansAvailable"),
         requireOptimal: checked(form, "requireOptimal"),
       });
@@ -948,20 +961,31 @@ function SectionHead({title, description, editable, add, disabled}: {title: stri
 }
 
 function MatrixSettingsCard({
-  settings, editable, busy, save,
+  settings, data, editable, busy, save,
 }: {
   settings: MatrixV2Settings;
+  data: Pick<MatrixV2Workspace,"roleCategories"|"roles">;
   editable: boolean;
   busy: boolean;
   save: (form: HTMLFormElement) => Promise<void>;
 }) {
+  const [standbyGroups,setStandbyGroups]=useState<MatrixV2StandbyGroup[]>(settings.standbyGroups);
+  const roleCategories=data.roleCategories??[];
+  const standbyIdentity=JSON.stringify(settings.standbyGroups);
+  useEffect(()=>setStandbyGroups(settings.standbyGroups),[standbyIdentity]);
+  const addStandbyGroup=()=>{
+    const firstCategory=roleCategories.find(category=>category.active);
+    const sequence=standbyGroups.length+1;
+    setStandbyGroups([...standbyGroups,{code:`REZERWA_${sequence}`,name:`Grupa rezerwy ${sequence}`,categoryCode:firstCategory?.code??"",roleCodes:[],tiers:1}]);
+  };
   return <section className="matrix-v2-settings-card">
     <div className="matrix-v2-settings-head">
       <Settings/>
       <span><strong>Podstawowe ustawienia firmy</strong><small>Waluta i strefa czasowa. Limity czasu pracy ustawiasz przy pracowniku zgodnie z jego umową.</small></span>
       <em>{settings.currency}</em>
     </div>
-    <form key={`${settings.currency}:${settings.timezone}:${settings.minimumRestMinutes}:${settings.maximumShiftsPerDay}:${settings.standbyTiersPerRoleDay}:${settings.missingAvailabilityMeansAvailable}:${settings.requireOptimal}`} onSubmit={event=>{event.preventDefault();void save(event.currentTarget);}}>
+    <form key={`${settings.currency}:${settings.timezone}:${settings.minimumRestMinutes}:${settings.maximumShiftsPerDay}:${standbyIdentity}:${settings.missingAvailabilityMeansAvailable}:${settings.requireOptimal}`} onSubmit={event=>{event.preventDefault();void save(event.currentTarget);}}>
+      <input type="hidden" name="standbyGroups" value={JSON.stringify(standbyGroups)}/>
       <label>Waluta rozliczeniowa
         <input name="currency" required minLength={3} maxLength={3} pattern="[A-Za-z]{3}" disabled={!editable} defaultValue={settings.currency} onChange={event=>{event.currentTarget.value=event.currentTarget.value.toUpperCase();}}/>
         <small>Trzyliterowy kod, np. PLN, EUR lub USD.</small>
@@ -970,11 +994,26 @@ function MatrixSettingsCard({
         <input name="timezone" required list="matrix-timezones" disabled={!editable} defaultValue={settings.timezone}/>
         <datalist id="matrix-timezones"><option value="Europe/Warsaw"/><option value="Europe/London"/><option value="Europe/Berlin"/><option value="UTC"/></datalist>
       </label>
+      <section className="standby-groups-editor">
+        <header><span><strong>Rezerwa per kategoria</strong><small>Tworzysz wyłącznie potrzebne grupy. Role nieuwzględnione w żadnej grupie — np. BARBACK — nie trafią do rezerwy.</small></span>{editable&&<button type="button" className="secondary-button" onClick={addStandbyGroup}><Plus/> Dodaj grupę</button>}</header>
+        {!standbyGroups.length&&<div className="matrix-v2-empty"><ShieldCheck/><span><strong>Rezerwa jest wyłączona</strong><small>Dodaj grupę, aby wskazać kategorie i role, dla których system ma szukać jednej lub dwóch osób gotowości.</small></span></div>}
+        <div>{standbyGroups.map((group,index)=>{
+          const category=roleCategories.find(item=>item.code.toUpperCase()===group.categoryCode.toUpperCase());
+          const roles=data.roles.filter(role=>role.active&&role.category_id===category?.id);
+          return <article key={`${group.code}:${index}`}>
+            <header><strong>{group.name||`Grupa ${index+1}`}</strong>{editable&&<button type="button" className="icon-button danger" aria-label="Usuń grupę rezerwy" onClick={()=>setStandbyGroups(standbyGroups.filter((_,itemIndex)=>itemIndex!==index))}><Trash2/></button>}</header>
+            <label>Nazwa grupy<input disabled={!editable} value={group.name} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value,code:item.code||codeFrom(event.target.value)}:item))}/></label>
+            <label>Kategoria<select disabled={!editable} value={group.categoryCode} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,categoryCode:event.target.value,roleCodes:[]}:item))}><option value="">Wybierz kategorię</option>{roleCategories.filter(item=>item.active).map(item=><option value={item.code} key={item.id}>{item.name}</option>)}</select></label>
+            <label>Poziomy gotowości<select disabled={!editable} value={group.tiers} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,tiers:Number(event.target.value) as 1|2}:item))}><option value="1">1 osoba</option><option value="2">2 osoby</option></select></label>
+            <fieldset><legend>Role obsługiwane wspólnie</legend>{roles.map(role=><label className="check-label" key={role.id}><input type="checkbox" disabled={!editable} checked={group.roleCodes.includes(role.code)} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,roleCodes:event.target.checked?[...item.roleCodes,role.code]:item.roleCodes.filter(code=>code!==role.code)}:item))}/>{role.name}</label>)}</fieldset>
+            <small>Na dzień powstaje jedna wspólna rezerwa dla tej grupy. Kandydat musi móc zastąpić co najmniej jedną z wybranych ról; przy aktywacji system ponownie sprawdza dokładną rolę, obowiązki, lokal i czas pracy. Jeżeli w grupie jest brak obsady, rezerwa nie zostanie utworzona kosztem tego braku.</small>
+          </article>;
+        })}</div>
+      </section>
       <details className="matrix-v2-advanced-settings"><summary>Zaawansowane ustawienia silnika</summary>
         <p className="matrix-v2-form-hint">Te wartości są technicznym zabezpieczeniem. Umowa i indywidualne ustalenia pracownika mają pierwszeństwo.</p>
         <label>Domyślny odpoczynek dla umów pracowniczych (minuty)<input name="minimumRestMinutes" type="number" min="0" step="15" required disabled={!editable} defaultValue={settings.minimumRestMinutes}/></label>
         <label>Maksymalna liczba zmian jednego pracownika na dobę<input name="maximumShiftsPerDay" type="number" min="1" max="24" step="1" required disabled={!editable} defaultValue={settings.maximumShiftsPerDay}/><small>Silnik stosuje tę wartość przy generowaniu, ręcznym uzupełnianiu i publikacji grafiku. Nadal nie dopuści zmian nakładających się ani naruszających minimalny odpoczynek.</small></label>
-        <label>Poziomy rezerwy stand-by na rolę i dzień<input name="standbyTiersPerRoleDay" type="number" min="0" max="2" step="1" required disabled={!editable} defaultValue={settings.standbyTiersPerRoleDay}/><small>0 wyłącza rezerwę, 1 tworzy pierwszą osobę rezerwową, a 2 tworzy dwa sprawiedliwie rotowane poziomy. Pełna obsada zawsze ma pierwszeństwo.</small></label>
         <label className="check-label"><input name="missingAvailabilityMeansAvailable" type="checkbox" disabled={!editable} defaultChecked={settings.missingAvailabilityMeansAvailable}/> Dla umów pracowniczych brak deklaracji oznacza dostępność</label>
         <label className="check-label"><input name="requireOptimal" type="checkbox" disabled={!editable} defaultChecked={settings.requireOptimal}/> Tryb audytowy: wymagaj matematycznego dowodu optimum<small>Ta opcja nie ulepsza automatycznie grafiku — blokuje zapis, dopóki solver formalnie nie udowodni, że nie istnieje lepszy układ. Przy pełnym grafiku miesiąca dowód może nie powstać w limicie czasu, mimo że znaleziony grafik jest poprawny. Do codziennego planowania pozostaw wyłączoną; używaj tylko do małych testów i audytu silnika.</small></label>
       </details>
@@ -1040,7 +1079,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
     </section>
     <section className="matrix-demand-profile-guide"><Target/><div><small>DWA POZIOMY ZAPOTRZEBOWANIA</small><h3>Okres sezonowy albo wyjątek w konkretnym dniu</h3><p>Profil okresowy zmienia bazową obsadę przez wskazany zakres dat, np. całe wakacje. Koncert, weekend z wysokim ruchem lub jednorazowa akcja nie jest osobnym grafikiem — dodajesz ją w kalendarzu do konkretnych dni, lokali, ról i zmian. Dzięki temu grafiki wszystkich ról nadal można scalić.</p></div>{onOpenOperationalCalendar&&<button className="primary-button" onClick={onOpenOperationalCalendar}><CalendarDays/> Dodaj wyjątek dzienny</button>}</section>
     {data.scenarios.filter(scenario=>scenario.active).length>1&&<details className="matrix-v2-company-settings"><summary><Target/> Profile obsady na dłuższy okres</summary><p>Profil bazowy edytujesz na kartach zmian. Profil dodatkowy pojawi się w generatorze dopiero po ustawieniu dat obowiązywania; po tym okresie system automatycznie wróci do bazy.</p><StaffingTab embedded data={data} editable={editable} busy={busy} edit={edit} bulkAdjust={bulkAdjust} defaultScenarioCount={defaultScenarioCount}/></details>}
-    <details id="configuration-step-company" className="matrix-v2-company-settings"><summary><Settings/> Ustawienia firmy i zaawansowane zabezpieczenia silnika</summary><MatrixSettingsCard settings={settings} editable={editable} busy={busy} save={saveSettings}/></details>
+    <details id="configuration-step-company" className="matrix-v2-company-settings"><summary><Settings/> Ustawienia firmy, rezerwa i zaawansowane zabezpieczenia silnika</summary><MatrixSettingsCard settings={settings} data={data} editable={editable} busy={busy} save={saveSettings}/></details>
   </div>;
 }
 
@@ -1658,16 +1697,17 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
     ["Godziny zmian","Podaj dokładne godziny Od i Do. Techniczna klasyfikacja czasu jest obliczana automatycznie i nie jest polem użytkownika."],
     ["Limit zmian na dobę","Pole „Maks. zmian jednego pracownika na dobę” steruje silnikiem. Standardowo wpisz 1. Większa wartość pozwala rozważyć kolejną nienakładającą się zmianę tylko wtedy, gdy zachowany jest minimalny odpoczynek i pozostałe reguły."],
-    ["Rezerwa stand-by","Pole „Poziomy rezerwy stand-by na rolę i dzień” przyjmuje 0, 1 albo 2. Wartość jest częścią konfiguracji firmy, eksportu i importu; silnik oraz publikacja czytają dokładnie tę samą wartość."],
+    ["Rezerwa stand-by","W arkuszu Grupy rezerwy wskaż kategorię, role obsługiwane wspólnie i 1 albo 2 poziomy. Rola pominięta w tym arkuszu nie trafi do rezerwy. Brak obsady w grupie ma pierwszeństwo przed gotowością."],
     ["Bezpieczeństwo","Najpierw użyj Podglądu. Zapis wszystkich arkuszy odbywa się atomowo w jednej transakcji."],
   ]);
   instructions["!cols"]=[{wch:30},{wch:100}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
   const json=(value:unknown)=>JSON.stringify(value??{});
   const settings=matrixV2Settings(data.matrixVersion);
-  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian jednego pracownika na dobę","Poziomy rezerwy stand-by na rolę i dzień","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
-    [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.standbyTiersPerRoleDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
+  add("Firma",["Waluta","Strefa czasowa","Minimalny odpoczynek (min)","Maks. zmian jednego pracownika na dobę","Brak dostępności oznacza dostępność","Wymagaj wyniku optymalnego"],[
+    [settings.currency,settings.timezone,settings.minimumRestMinutes,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE",settings.requireOptimal?"TAK":"NIE"],
   ]);
+  add("Grupy rezerwy",["Kod","Nazwa","Kod kategorii","Kody ról","Poziomy"],settings.standbyGroups.map(group=>[group.code,group.name,group.categoryCode,group.roleCodes.join(","),group.tiers]));
   add("Kategorie grafików",["Kod","Nazwa","Opis","Kolor","Kolejność","Aktywna"],(data.roleCategories??[]).map(item=>[item.code,item.name,item.description??"",item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
   add("Role",["Kod","Nazwa","Kod kategorii","Kolor","Kolejność","Aktywna"],data.roles.map(item=>[item.code,item.name,(data.roleCategories??[]).find(category=>category.id===item.category_id)?.code??"",item.color??"",item.sort_order,item.active?"TAK":"NIE"]));
   add("Lokale",["Kod","Nazwa","Strefa czasowa","Kolejność","Aktywna"],data.locations.map(item=>[item.code,item.name,item.timezone,item.sort_order,item.active?"TAK":"NIE"]));

@@ -152,6 +152,7 @@ export default function GrafikPro() {
   const [configurationStep,setConfigurationStep]=useState<SetupStepKey>("company");
   const [modal,setModal]=useState<Modal>(null);
   const [monthlyBudgetOpen,setMonthlyBudgetOpen]=useState(false);
+  const [recoveryFocus,setRecoveryFocus]=useState<{roleId:string|null;date:string|null}|null>(null);
   const [selectedShift,setSelectedShift]=useState<Shift|null>(null);
   const [selectedEmployee,setSelectedEmployee]=useState("");
   const [location,setLocation]=useState("ALL");
@@ -355,6 +356,7 @@ export default function GrafikPro() {
     const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
   },[employeeShell,primarySection]);
+  useEffect(()=>{if(active!=="naprawy")setRecoveryFocus(null);},[active]);
   useEffect(()=>{
     setDay("ALL");setModal(null);setSelectedShift(null);setSelectedEmployee("");
     setPlanScope({type:"COMPANY",category:null});
@@ -528,7 +530,7 @@ export default function GrafikPro() {
         {active==="integracje"&&complete&&<ActiveModules month={selectedMonth} view="integracje" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
         {active==="alerty"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>} 
         {active==="alerty"&&!isOrtools&&<IssuesView issues={data.issues} shifts={data.shifts} roleLabels={activeRoleLabels} onOpen={(s)=>{setSelectedShift(s);setModal("shift");}}/>}
-        {active==="naprawy"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} notify={notify} fail={setError} reload={load}/>} 
+        {active==="naprawy"&&complete&&<RecoveryCenter key={`${selectedMonth}:${recoveryFocus?.roleId??"all"}:${recoveryFocus?.date??"all"}`} month={selectedMonth} employees={complete.employees} currency={activeCurrency} initialTab={recoveryFocus?"AD_HOC":"SHORTAGES"} focusRoleId={recoveryFocus?.roleId} focusDate={recoveryFocus?.date} onCreateFullEmployee={openNewEmployeeProfile} notify={notify} fail={setError} reload={load}/>}
         {active==="wydarzenia"&&<OperationalEventsCenter month={selectedMonth} notify={notify} fail={setError} catalog={matrixV2?{
           categories:(matrixV2.roleCategories??[]).filter(item=>item.active),
           roles:matrixV2.roles.filter(item=>item.active).map(item=>({...item,categoryId:item.category_id})),
@@ -563,6 +565,7 @@ export default function GrafikPro() {
           allowStart={solverConfiguration.engine==="ORTOOLS_V2"||solverConfiguration.engine==="SHADOW"}
           onNameChange={value=>setPlanForm(current=>({...current,name:value}))}
           onScenarioChange={value=>setPlanForm(current=>({...current,scenario:value}))}
+          onOpenAdHoc={context=>{setRecoveryFocus(context);closeModal();setActive("naprawy");}}
           onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="CATEGORY")setRoleCompositeRefreshKey(current=>current+1);}}
           onPublished={async()=>{await load();notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}
         />}

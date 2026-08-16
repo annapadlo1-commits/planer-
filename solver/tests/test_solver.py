@@ -1924,6 +1924,114 @@ class SolverTests(unittest.TestCase):
             by_strategy["strategy-cost"].metrics["PREFERENCE_VIOLATIONS"],
         )
 
+    def test_cost_strategy_uses_available_nominal_capacity_before_overtime(self) -> None:
+        raw = load_raw()
+        raw.pop("slots", None)
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        raw["availabilityWindows"] = []
+        raw["demand"] = [copy.deepcopy(raw["demand"][0])]
+        raw["strategies"] = [copy.deepcopy(raw["strategies"][0])]
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["payRules"] = [
+            {
+                "id": "overtime-by-employee-nominal",
+                "calculationType": "MONTHLY_THRESHOLD_PER_HOUR",
+                "values": {
+                    "thresholdSource": "EMPLOYEE_NOMINAL",
+                    "thresholdMinutes": 0,
+                    "rateMinorPerHour": 1,
+                },
+                "conditions": [],
+                "stackingGroup": "overtime",
+                "stackingMode": "STACK",
+                "priority": 0,
+                "active": True,
+            }
+        ]
+        cheap = copy.deepcopy(raw["employees"][2])
+        cheap.update(
+            {
+                "id": "employee-cheap-overtime",
+                "baseHourlyRateMinor": 100,
+                "nominalMonthlyMinutes": 240,
+                "maximumMonthlyMinutes": 480,
+                "maximumWeeklyMinutes": 480,
+                "overtimePolicy": "ALLOWED",
+            }
+        )
+        expensive = copy.deepcopy(cheap)
+        expensive.update(
+            {
+                "id": "employee-expensive-nominal",
+                "baseHourlyRateMinor": 1000,
+                "maximumMonthlyMinutes": 240,
+                "maximumWeeklyMinutes": 240,
+                "overtimePolicy": "NEVER",
+            }
+        )
+        raw["employees"] = [cheap, expensive]
+
+        snapshot = Snapshot.from_dict(raw)
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)[0]
+
+        self.assertEqual(variant.metrics["UNFILLED"], 0)
+        self.assertEqual(variant.metrics["OVERTIME_MINUTES"], 0)
+        self.assertEqual(
+            {assignment.employee_id for assignment in variant.assignments},
+            {"employee-cheap-overtime", "employee-expensive-nominal"},
+        )
+        self.assertEqual(variant.stage_objectives[0]["overtimeMinimum"], 0)
+
+    def test_overtime_is_used_only_when_needed_for_best_coverage(self) -> None:
+        raw = load_raw()
+        raw.pop("slots", None)
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        raw["availabilityWindows"] = []
+        raw["demand"] = [copy.deepcopy(raw["demand"][0])]
+        raw["strategies"] = [copy.deepcopy(raw["strategies"][0])]
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["payRules"] = [
+            {
+                "id": "overtime-by-employee-nominal",
+                "calculationType": "MONTHLY_THRESHOLD_PER_HOUR",
+                "values": {
+                    "thresholdSource": "EMPLOYEE_NOMINAL",
+                    "thresholdMinutes": 0,
+                    "rateMinorPerHour": 5000,
+                },
+                "conditions": [],
+                "stackingGroup": "overtime",
+                "stackingMode": "STACK",
+                "priority": 0,
+                "active": True,
+            }
+        ]
+        employee = copy.deepcopy(raw["employees"][2])
+        employee.update(
+            {
+                "id": "employee-only-available",
+                "nominalMonthlyMinutes": 240,
+                "maximumMonthlyMinutes": 480,
+                "maximumWeeklyMinutes": 480,
+                "overtimePolicy": "ALLOWED",
+            }
+        )
+        raw["employees"] = [employee]
+
+        snapshot = Snapshot.from_dict(raw)
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)[0]
+
+        self.assertEqual(variant.metrics["UNFILLED"], 0)
+        self.assertEqual(variant.metrics["OVERTIME_MINUTES"], 240)
+        self.assertEqual(variant.stage_objectives[0]["overtimeMinimum"], 240)
+        self.assertEqual(len(variant.assignments), 2)
+
     def test_avoided_shift_period_is_counted_as_a_soft_preference(self) -> None:
         raw = load_raw()
         for employee in raw["employees"]:
@@ -2384,7 +2492,9 @@ class SolverTests(unittest.TestCase):
 
         def consume_budget(*args, **kwargs):
             observed_limits.append(kwargs["time_limit_seconds"])
-            fake_clock.advance(3)
+            # Coverage, the mandatory overtime gate and the configured
+            # strategy tier all consume the same global budget.
+            fake_clock.advance(2.5)
             return original_solve_model(*args, **kwargs)
 
         with (
@@ -2394,8 +2504,8 @@ class SolverTests(unittest.TestCase):
             engine.solve(snapshot)
 
         self.assertEqual(len(completed), 1)
-        self.assertEqual(len(observed_limits), 3)
-        self.assertEqual(observed_limits, [8.0, 5.0, 2.0])
+        self.assertEqual(len(observed_limits), 4)
+        self.assertEqual(observed_limits, [8.0, 5.5, 3.0, 0.5])
         self.assertTrue(snapshot.settings.require_optimal)
 
     def test_solver_status_is_reported_before_wall_clock_overrun(self) -> None:

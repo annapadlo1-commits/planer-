@@ -9,12 +9,21 @@ export type MatrixV2Version = {
   settings?: Partial<MatrixV2Settings> & { maxShiftsPerDay?: number };
 };
 
+export type MatrixV2StandbyGroup = {
+  code: string;
+  name: string;
+  categoryCode: string;
+  roleCodes: string[];
+  tiers: 1 | 2;
+};
+
 export type MatrixV2Settings = {
   currency: string;
   timezone: string;
   minimumRestMinutes: number;
   maximumShiftsPerDay: number;
   standbyTiersPerRoleDay: number;
+  standbyGroups: MatrixV2StandbyGroup[];
   missingAvailabilityMeansAvailable: boolean;
   requireOptimal: boolean;
 };
@@ -361,6 +370,16 @@ export function matrixV2Settings(version: MatrixV2Version): MatrixV2Settings {
   const minimumRestMinutes = Number(source.minimumRestMinutes);
   const maximumShiftsPerDay = Number(source.maximumShiftsPerDay ?? source.maxShiftsPerDay);
   const standbyTiersPerRoleDay = Number(source.standbyTiersPerRoleDay ?? 0);
+  const standbyGroups:MatrixV2StandbyGroup[]=Array.isArray(source.standbyGroups)?source.standbyGroups.map((value,index)=>{
+    const item=value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
+    const code=String(item.code??"").trim().toUpperCase();
+    const name=String(item.name??"").trim();
+    const categoryCode=String(item.categoryCode??"").trim().toUpperCase();
+    const roleCodes=Array.isArray(item.roleCodes)?[...new Set(item.roleCodes.map(role=>String(role).trim().toUpperCase()).filter(Boolean))]:[];
+    const tiers=Number(item.tiers);
+    if(!code||!name||!categoryCode||!roleCodes.length||!(tiers===1||tiers===2))throw new Error(`INVALID_STANDBY_GROUP:${index+1}`);
+    return{code,name,categoryCode,roleCodes,tiers:tiers as 1|2};
+  }):[];
   if (!Number.isInteger(minimumRestMinutes) || minimumRestMinutes < 0) throw new Error("INVALID_MATRIX_SETTINGS");
   if (!Number.isInteger(maximumShiftsPerDay) || maximumShiftsPerDay < 1 || maximumShiftsPerDay > 24) throw new Error("INVALID_MATRIX_SETTINGS");
   if (!Number.isInteger(standbyTiersPerRoleDay) || standbyTiersPerRoleDay < 0 || standbyTiersPerRoleDay > 2) throw new Error("INVALID_MATRIX_SETTINGS");
@@ -373,6 +392,7 @@ export function matrixV2Settings(version: MatrixV2Version): MatrixV2Settings {
     minimumRestMinutes,
     maximumShiftsPerDay,
     standbyTiersPerRoleDay,
+    standbyGroups,
     missingAvailabilityMeansAvailable: source.missingAvailabilityMeansAvailable,
     requireOptimal: source.requireOptimal,
   };

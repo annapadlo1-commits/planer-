@@ -850,6 +850,126 @@ class CpSatScheduleEngine:
                 )
                 feasible_fallback_solver = seed_solver
 
+            # Overtime is a product-level gate, not a configurable strategy
+            # preference.  Once the best possible coverage has been frozen,
+            # every strategy must first minimize overtime and only then apply
+            # its Matrix-defined cost, preference and fairness tiers.  Without
+            # this gate a cost-first strategy could deliberately overload the
+            # cheapest employee even when another eligible employee could cover
+            # the same slot inside their nominal time.
+            overtime_expression = artifacts.metrics["OVERTIME_MINUTES"]
+            overtime_bound = artifacts.metric_bounds["OVERTIME_MINUTES"]
+            if overtime_bound > 0:
+                configured_tier_count = len(
+                    {
+                        term.tier
+                        for term in strategy.objective_terms
+                        if term.weight != 0
+                    }
+                )
+                fallback_overtime = (
+                    None
+                    if feasible_fallback_solver is None
+                    else int(
+                        feasible_fallback_solver.value(
+                            artifacts.metrics["OVERTIME_MINUTES"]
+                        )
+                    )
+                )
+                overtime_solver = feasible_fallback_solver
+                overtime_status = cp_model.OPTIMAL if fallback_overtime == 0 else None
+                overtime_value = 0 if fallback_overtime == 0 else None
+                used_overtime_fallback = False
+                overtime_time_budget = 0.0
+
+                if overtime_value is None:
+                    artifacts.model.clear_objective()
+                    artifacts.model.minimize(overtime_expression)
+                    remaining_overtime_budget = self._remaining_seconds(
+                        strategy_deadline, f"{strategy.code}:OVERTIME_GATE:BUDGET"
+                    )
+                    if snapshot.settings.require_optimal:
+                        overtime_time_budget = remaining_overtime_budget
+                    else:
+                        usable_overtime_budget = max(
+                            0.001,
+                            remaining_overtime_budget
+                            - (
+                                RELAXED_STRATEGY_FINAL_RESERVE_SECONDS
+                                if feasible_fallback_solver is not None
+                                else 0.0
+                            ),
+                        )
+                        overtime_time_budget = max(
+                            0.001,
+                            usable_overtime_budget
+                            / max(1, configured_tier_count + 1),
+                        )
+                    overtime_solver, overtime_status = self._solve_model(
+                        artifacts.model,
+                        snapshot,
+                        strategy=strategy,
+                        stage_name="OVERTIME_GATE",
+                        time_limit_seconds=overtime_time_budget,
+                    )
+                    if (
+                        overtime_status == cp_model.UNKNOWN
+                        and feasible_fallback_solver is not None
+                    ):
+                        LOGGER.warning(
+                            "Strategy %s overtime gate ended UNKNOWN; using the "
+                            "verified full-model warm start/incumbent",
+                            strategy.code,
+                        )
+                        overtime_solver = feasible_fallback_solver
+                        overtime_status = cp_model.FEASIBLE
+                        used_overtime_fallback = True
+                    assert overtime_solver is not None and overtime_status is not None
+                    overtime_value = int(overtime_solver.value(overtime_expression))
+                    # Zero is the mathematical lower bound, even when CP-SAT
+                    # returns FEASIBLE at the time boundary before promoting the
+                    # status to OPTIMAL.
+                    overtime_optimal = (
+                        overtime_value == 0 or overtime_status == cp_model.OPTIMAL
+                    )
+                    if not overtime_optimal:
+                        self._require_optimal(
+                            overtime_solver,
+                            overtime_status,
+                            snapshot,
+                            f"{strategy.code}:OVERTIME_GATE",
+                        )
+                    all_stages_optimal &= overtime_optimal
+                    incumbent = {
+                        variable.index: int(overtime_solver.value(variable))
+                        for variable in artifacts.hint_variables
+                    }
+                    feasible_fallback_solver = overtime_solver
+
+                assert overtime_value is not None
+                artifacts.model.add(overtime_expression <= overtime_value)
+                stage_results[0].update(
+                    {
+                        "overtimeMinimum": overtime_value,
+                        "overtimeStatus": (
+                            "OPTIMAL"
+                            if overtime_value == 0
+                            else overtime_solver.status_name(overtime_status)
+                        ),
+                        "overtimeFrozenUpperBound": overtime_value,
+                        **(
+                            {"overtimeTimeBudgetSeconds": round(overtime_time_budget, 3)}
+                            if overtime_time_budget > 0
+                            else {"overtimeVerifiedZeroIncumbent": True}
+                        ),
+                        **(
+                            {"overtimeUsedFallback": True}
+                            if used_overtime_fallback
+                            else {}
+                        ),
+                    }
+                )
+
             tiers: dict[int, list[Any]] = defaultdict(list)
             tier_tolerances: dict[int, int] = defaultdict(int)
             tier_upper_bounds: dict[int, int] = defaultdict(int)
@@ -1184,6 +1304,14 @@ class CpSatScheduleEngine:
                         completedStrategies=strategy_index,
                     )
 
+            # A zero-valued tier can be frozen from the verified incumbent
+            # without another CP-SAT call.  When every configured tier follows
+            # that fast path, the incumbent is also the final roster.
+            if final_solver is None and feasible_fallback_solver is not None:
+                final_solver = feasible_fallback_solver
+                final_status = (
+                    cp_model.OPTIMAL if all_stages_optimal else cp_model.FEASIBLE
+                )
             assert final_solver is not None and final_status is not None
             result = self._extract_result(
                 snapshot,

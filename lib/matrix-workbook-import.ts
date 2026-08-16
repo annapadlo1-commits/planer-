@@ -247,6 +247,13 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
+  const standbyGroups=validatedDictionaryRows(["Grupy rezerwy","Standby groups"],"grupy rezerwy").map(({row,sourceRow},index)=>({
+    code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),
+    name:importCell(row,"Nazwa","name"),
+    categoryCode:importCode(importCell(row,"Kod kategorii","categoryCode")),
+    roleCodes:importList(importCell(row,"Kody ról","roleCodes")).map(importCode),
+    tiers:Number(importCell(row,"Poziomy","tiers")||"1"),sourceRow,index:index+1,
+  }));
   const roleAliases=new Map<string,string>();
   for(const role of roles){
     const code=String(role.code??"");
@@ -550,7 +557,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const normalizedScenarioPayRuleOverrides=scenarioPayRuleOverrides.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
   const normalizedScenarioBudgets=scenarioBudgets.map(budget=>({...budget,scenarioCode:normalizeScenarioCode(String(budget.scenarioCode??""))}));
 
-  return {settings,roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
+  return {settings:{...settings,standbyTiersPerRoleDay:0,standbyGroups},roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
     payRules,scenarioPayRuleOverrides:normalizedScenarioPayRuleOverrides,scenarioBudgets:normalizedScenarioBudgets,employees,employeeDuties,employeeRoles,
     employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties,adHocWorkers,
     _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};

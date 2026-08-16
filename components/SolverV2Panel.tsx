@@ -67,6 +67,7 @@ type Props = {
   onNameChange: (value: string) => void;
   onScenarioChange: (value: string) => void;
   onVariantSelected?: (variant: SolverVariant) => void | Promise<void>;
+  onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void;
   onPublished?: (scheduleId: string) => void | Promise<void>;
   initialRunId?: string | null;
   skipRecovery?: boolean;
@@ -158,6 +159,7 @@ export function SolverV2Panel({
   onNameChange,
   onScenarioChange,
   onVariantSelected,
+  onOpenAdHoc,
   onPublished,
   initialRunId,
   skipRecovery = false,
@@ -788,7 +790,7 @@ export function SolverV2Panel({
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="solver-leader-workspace">
       <header><span><Edit3/><div><small>KROK 3 • WERSJA LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
-      <SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} notify={setMessage} fail={setMessage}/>
+      <SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/>
     </section>}
 
     {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace key={`preview:${previewWorkspace.context.runId??previewWorkspace.context.scheduleId??previewWorkspace.variants[0]?.id??"workspace"}`} workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}

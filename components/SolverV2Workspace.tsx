@@ -16,6 +16,7 @@ type Props = {
   fail?:(message:string)=>void;
   leaderEditable?:boolean;
   onLeaderChanged?:()=>void|Promise<void>;
+  onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void;
 };
 
 function money(value: number | null, currency: string) {
@@ -181,7 +182,7 @@ function preferenceLevelLabel(value:string){
   return ({PREFERRED:"preferowana",NEUTRAL:"neutralna",AVOIDED:"unikać",BLOCKED:"zablokowana"} as Record<string,string>)[value]??value;
 }
 
-function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void}){
+function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader,onOpenAdHoc}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void;onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void}){
   const shift=issue.shift;
   const shiftTimezone=shift?.location.timezone??timezone;
   const required=issue.requiredCount;
@@ -195,10 +196,11 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
     {operational&&published&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>inspect(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Dlaczego nikt nie został przypisany?</button>}
     {!operational&&previewAvailable&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>explainPreview(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Co blokowało kandydatów?</button>}
     {leaderEditable&&issue.code==="UNFILLED_SLOT"&&<button className="primary-button" disabled={busy} onClick={()=>editLeader(issue.id)}><Plus/> Uzupełnij w wersji lidera</button>}
+    {leaderEditable&&issue.code==="UNFILLED_SLOT"&&onOpenAdHoc&&<button className="secondary-button" disabled={busy} onClick={()=>onOpenAdHoc({roleId:issue.role?.id??null,date:issue.shift?.date??null})}><Users/> Sprawdź pulę ad-hoc</button>}
   </article>;
 }
 
-export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged }: Props) {
+export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
   const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
@@ -217,6 +219,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderReason,setLeaderReason]=useState("");
   const [leaderFeedback,setLeaderFeedback]=useState("");
   const [leaderLimitWarning,setLeaderLimitWarning]=useState("");
+  const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderBusy,setLeaderBusy]=useState(false);
   const [workspaceView,setWorkspaceView]=useState<WorkspaceView>("CALENDAR");
   const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
@@ -406,7 +409,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   async function activateStandby(){
     if(!supabase||!standbyAction||!standbyTargetAssignmentId||standbyReason.trim().length<3)return;
     setDiagnosticsLoading(true);
-    const result=await supabase.rpc("standby_activate_uat_v2",{
+    const result=await supabase.rpc("standby_activate_uat_v3",{
       p_standby_id:standbyAction.id,p_original_assignment_id:standbyTargetAssignmentId,
       p_reason:standbyReason.trim(),
     });
@@ -422,7 +425,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   async function openLeaderEdit(input:{assignmentId?:string;issueId?:string;preferredEmployeeId?:string}){
     const variantId=workspace.variants[0]?.id;
     if(!supabase||!leaderEditable||!variantId)return;
-    setLeaderBusy(true);setLeaderContext(null);setLeaderReason("");setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");
+    setLeaderBusy(true);setLeaderContext(null);setLeaderReason("");setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);
     try{
       const {preferredEmployeeId,...contextInput}=input;
       const context=await getLeaderAssignmentContext(supabase,{variantId,...contextInput});
@@ -432,7 +435,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
-  async function saveLeaderEdit(allowLimitOverride=false){
+  async function saveLeaderEdit(allowLimitOverride=false,approveOvertime=false){
     if(!supabase||!leaderContext)return;
     if(!leaderEmployeeId){setLeaderFeedback("Wybierz pracownika z listy kandydatów.");return;}
     const selectedCandidate=leaderContext.candidates.find(candidate=>candidate.employeeId===leaderEmployeeId);
@@ -444,11 +447,17 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       await saveLeaderAssignment(supabase,{variantId:leaderContext.variantId,
         assignmentId:leaderContext.assignmentId,issueId:leaderContext.issueId,
         employeeId:leaderEmployeeId,reason:leaderReason.trim(),allowLimitOverride,
-        dutyTransferAssignmentId:selectedCandidate.dutyTransferAssignmentId});
-      notify?.(allowLimitOverride?"Zmiana została przypisana jako świadomy wyjątek od limitu. Powód i ryzyko zapisano w audycie.":"Zmiana przeszła pełną kontrolę reguł i została zapisana wyłącznie w wersji lidera.");
+        dutyTransferAssignmentId:selectedCandidate.dutyTransferAssignmentId,approveOvertime});
+      notify?.(approveOvertime?"Nadgodziny zostały zatwierdzone w wersji lidera. Zakres, wycena i powód zapisano w audycie.":allowLimitOverride?"Zmiana została przypisana jako świadomy wyjątek od limitu. Powód i ryzyko zapisano w audycie.":"Zmiana przeszła pełną kontrolę reguł i została zapisana wyłącznie w wersji lidera.");
       setLeaderContext(null);await onLeaderChanged?.();await openWorkload(true);
     }catch(error){
       const raw=error instanceof Error?error.message:String(error);
+      if(raw.toUpperCase().includes("LEADER_OVERTIME_APPROVAL_REQUIRED")){
+        setLeaderOvertimeWarning(true);setLeaderFeedback("Ta osoba ma ustawienie „tylko po zatwierdzeniu”. Sprawdź liczbę godzin i pełną wycenę poniżej, a następnie podejmij osobną decyzję.");return;
+      }
+      if(raw.toUpperCase().includes("LEADER_OVERTIME_NOT_ALLOWED")){
+        setLeaderFeedback("Pracownik ma twarde „NIE” dla nadgodzin. Wybierz inną osobę albo najpierw zmień zgodę i uzupełnij wymagane reguły płacowe w konfiguracji firmy.");return;
+      }
       if(raw.toUpperCase().includes("LEADER_LIMIT_OVERRIDE_REQUIRED")){
         const detail=raw.split("LEADER_LIMIT_OVERRIDE_REQUIRED:")[1]?.split("\n")[0]?.trim()??"Przypisanie przekroczy twardy limit godzin.";
         setLeaderLimitWarning(detail);setLeaderFeedback("Automatyczny grafik nie może przekroczyć limitu. Jako lider możesz świadomie zapisać ten wyjątek, ponieważ podałeś powód zmiany.");return;
@@ -477,6 +486,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   ].filter(Boolean).join(" ").toLocaleLowerCase("pl-PL").includes(normalizedLeaderSearch));
   const eligibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>candidate.suggestionEligible).length;
   const blockedLeaderCandidates=(leaderContext?.candidates??[]).length-eligibleLeaderCandidates;
+  const selectedLeaderCandidate=(leaderContext?.candidates??[]).find(candidate=>candidate.employeeId===leaderEmployeeId)??null;
   const employeeDetailWorkload=(workloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
   const employeeDetail=scheduleEmployees.find(employee=>employee.id===employeeDetailId)??(
     employeeDetailSeed?.id===employeeDetailId
@@ -537,7 +547,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {visibleIssues.length === 0
         ? <p>{locationFilter?"Brak braków i uwag dla wybranego lokalu.":"Nie zgłoszono braków ani uwag do tego wariantu."}</p>
         : <div>
-          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})}/>)}
+          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})} onOpenAdHoc={onOpenAdHoc}/>)}
         </div>}
     </details>
     </>}
@@ -581,14 +591,14 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
 
     {workspaceView==="ISSUES" && <details className="solver-workspace-standby" open>
       <summary><span><ShieldCheck/><strong>{published?"Opublikowana rezerwa bezpieczeństwa":"Podgląd rezerwy przed publikacją"}</strong></span><small>{standby.length} dyżurów gotowości</small></summary>
-      <p className="solver-workspace-empty">Pełna obsada ma pierwszeństwo. Rezerwa 1 i 2 jest osobną warstwą — nie zabiera miejsc wymaganej obsadzie i nie jest liczona do godzin pracy.</p>
+      <p className="solver-workspace-empty">Pełna obsada każdej roli w skonfigurowanej grupie ma pierwszeństwo. Rezerwa 1 i 2 jest osobną warstwą — nie zabiera miejsc wymaganej obsadzie i nie jest liczona do godzin pracy.</p>
       {standbyError ? <p className="solver-workspace-empty">Nie udało się pobrać rezerwy: {standbyError}</p>
-        : standby.length===0 ? <p className="solver-workspace-empty">Dla tego wariantu nie ma bezpiecznej rezerwy. Sprawdź ustawienie liczby poziomów stand-by w konfiguracji albo zwiększ pulę dostępnych osób.</p>
+        : standby.length===0 ? <p className="solver-workspace-empty">Dla tego wariantu nie ma bezpiecznej rezerwy. Sprawdź grupy rezerwy w konfiguracji firmy albo uzupełnij braki i dostępność zespołu.</p>
         : <div className="solver-standby-days">{[...new Map(standby.map(item=>[item.date,standby.filter(row=>row.date===item.date)]))].map(([date,rows])=><article key={date}>
           <header><CalendarDays/><strong>{dateLabel(date)}</strong></header>
-          {(rows as SolverManagerStandby[]).map(entry=><div key={entry.id}><span><b>{entry.roleName}</b><small>{entry.employeeName} • {entry.employeeNo}</small></span><em className={`tier-${entry.tier}`}>Rezerwa {entry.tier}{entry.status==="PREVIEW"?" • po publikacji":entry.status==="ACTIVATED"?" • aktywowana":entry.status==="DECLINED"?" • odrzucona":""}</em>{entry.status==="PLANNED"&&<button className="secondary-button" disabled={diagnosticsLoading} onClick={()=>{setStandbyAction(entry);setStandbyTargetAssignmentId("");setStandbyReason("");}}>Aktywuj</button>}</div>)}
+          {(rows as SolverManagerStandby[]).map(entry=><div key={entry.id}><span><b>{entry.groupName??entry.roleName}</b><small>{entry.employeeName} • {entry.employeeNo}{entry.eligibleRoleNames.length?` • może zastąpić: ${entry.eligibleRoleNames.join(", ")}`:""}</small></span><em className={`tier-${entry.tier}`}>Rezerwa {entry.tier}{entry.status==="PREVIEW"?" • po publikacji":entry.status==="ACTIVATED"?" • aktywowana":entry.status==="DECLINED"?" • odrzucona":""}</em>{entry.status==="PLANNED"&&<button className="secondary-button" disabled={diagnosticsLoading} onClick={()=>{setStandbyAction(entry);setStandbyTargetAssignmentId("");setStandbyReason("");}}>Aktywuj</button>}</div>)}
         </article>)}</div>}
-      {standbyAction&&<form className="standby-activation-form" onSubmit={event=>{event.preventDefault();void activateStandby();}}><div><strong>Aktywuj {standbyAction.employeeName} • rezerwa {standbyAction.tier}</strong><small>{standbyAction.date} • {standbyAction.roleName}. Wybierz osobę, której opublikowany przydział ma zostać zastąpiony. System ponownie sprawdzi wszystkie twarde reguły.</small></div><label>Zastępowany przydział<select required value={standbyTargetAssignmentId} onChange={event=>setStandbyTargetAssignmentId(event.target.value)}><option value="">Wybierz przydział</option>{workspace.shifts.filter(shift=>shift.date===standbyAction.date).flatMap(shift=>shift.assignments.filter(assignment=>assignment.role.id===standbyAction.roleId&&assignment.employee.id!==standbyAction.employeeId).map(assignment=><option key={assignment.id} value={assignment.id}>{assignment.employee.firstName} {assignment.employee.lastName} • {shift.shiftTemplate.name} • {timeLabel(shift.startsAt,shift.location.timezone??timezone)}</option>))}</select></label><label>Powód aktywacji<textarea required minLength={3} value={standbyReason} onChange={event=>setStandbyReason(event.target.value)} placeholder="np. potwierdzona nieobecność pracownika"/></label><div><button type="button" className="secondary-button" onClick={()=>setStandbyAction(null)}>Anuluj</button><button className="primary-button" disabled={diagnosticsLoading||!standbyTargetAssignmentId||standbyReason.trim().length<3}>Potwierdź aktywację</button></div></form>}
+      {standbyAction&&<form className="standby-activation-form" onSubmit={event=>{event.preventDefault();void activateStandby();}}><div><strong>Aktywuj {standbyAction.employeeName} • rezerwa {standbyAction.tier}</strong><small>{standbyAction.date} • grupa {standbyAction.groupName??standbyAction.roleName}. Wybierz osobę z jednej z dozwolonych ról: {standbyAction.eligibleRoleNames.join(", ")||standbyAction.roleName}. System ponownie sprawdzi wszystkie twarde reguły.</small></div><label>Zastępowany przydział<select required value={standbyTargetAssignmentId} onChange={event=>setStandbyTargetAssignmentId(event.target.value)}><option value="">Wybierz przydział</option>{workspace.shifts.filter(shift=>shift.date===standbyAction.date).flatMap(shift=>shift.assignments.filter(assignment=>(standbyAction.eligibleRoleIds.length?standbyAction.eligibleRoleIds.includes(assignment.role.id):assignment.role.id===standbyAction.roleId)&&assignment.employee.id!==standbyAction.employeeId).map(assignment=><option key={assignment.id} value={assignment.id}>{assignment.employee.firstName} {assignment.employee.lastName} • {assignment.role.name} • {shift.shiftTemplate.name} • {timeLabel(shift.startsAt,shift.location.timezone??timezone)}</option>))}</select></label><label>Powód aktywacji<textarea required minLength={3} value={standbyReason} onChange={event=>setStandbyReason(event.target.value)} placeholder="np. potwierdzona nieobecność pracownika"/></label><div><button type="button" className="secondary-button" onClick={()=>setStandbyAction(null)}>Anuluj</button><button className="primary-button" disabled={diagnosticsLoading||!standbyTargetAssignmentId||standbyReason.trim().length<3}>Potwierdź aktywację</button></div></form>}
     </details>}
 
     {workspaceView==="CALENDAR"&&<section className="solver-weekly-workspace">
@@ -632,11 +642,25 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <div className="drawer-head"><div><p className="eyebrow">WERSJA LIDERA • EDYCJA PRZED PUBLIKACJĄ</p><h2>{leaderContext.shift.date} • {leaderContext.shift.shiftName}</h2><small>{leaderContext.shift.locationName} • {leaderContext.role.name} • {timeLabel(leaderContext.shift.startsAt,timezone)}–{timeLabel(leaderContext.shift.endsAt,timezone)}</small></div><button className="icon-button" onClick={()=>setLeaderContext(null)}><X/></button></div>
       <div className="drawer-content">
         <div className="solver-v2-notice"><ShieldCheck/><span><strong>Oryginalne warianty nie zostaną zmienione</strong><small>Ta korekta dotyczy tylko kopii lidera. Przed zapisem serwer ponownie sprawdzi cały miesiąc, wszystkie twarde reguły oraz koszty.</small></span></div>
-        <div className="leader-candidate-picker"><label>Znajdź pracownika<input value={leaderSearch} onChange={event=>setLeaderSearch(event.target.value)} placeholder="Wpisz nazwisko, numer, rolę, lokal lub obowiązek"/></label><div className="leader-candidate-summary"><span><b>{eligibleLeaderCandidates}</b> można bezpiecznie sprawdzić</span><span><b>{blockedLeaderCandidates}</b> ma blokadę lub brak pokrycia obowiązku</span></div><div>{visibleLeaderCandidates.map(candidate=><button type="button" disabled={!candidate.suggestionEligible} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");}} key={candidate.employeeId}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}{candidate.current?" • obecnie":""} • {availabilityLabel(candidate.availabilityStatus)}</small><em>{candidate.dutyCoverageMode==="DIRECT"?(leaderContext.duty?`Ma obowiązek: ${leaderContext.duty.name}`:"Rola i lokal pasują"):candidate.dutyCoverageMode==="TRANSFER"?`${candidate.dutyTransferEmployeeName} przejmie obowiązek „${leaderContext.duty?.name}”`:`Brak pokrycia obowiązku „${leaderContext.duty?.name}”`}</em></span>{leaderEmployeeId===candidate.employeeId&&<Check/>}</button>)}</div>{!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie.</p>}<small>Lista pokazuje cały zespół, a nie czterech „aktywnych” pracowników: zielone osoby można sprawdzić i zapisać, wyszarzone mają podany konkretny powód blokady. Przy zamianie trójstronnej serwer może przenieść obowiązek, a na końcu kontroluje cały miesiąc.</small></div>
+        <div className="leader-candidate-picker">
+          <label>Znajdź pracownika<input value={leaderSearch} onChange={event=>setLeaderSearch(event.target.value)} placeholder="Wpisz nazwisko, numer, rolę, lokal lub obowiązek"/></label>
+          <div className="leader-candidate-summary"><span><b>{eligibleLeaderCandidates}</b> można bezpiecznie sprawdzić</span><span><b>{blockedLeaderCandidates}</b> ma blokadę lub brak pokrycia obowiązku</span></div>
+          <div>{visibleLeaderCandidates.map(candidate=><button type="button" disabled={!candidate.suggestionEligible} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);}} key={candidate.employeeId}>
+            <span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}{candidate.current?" • obecnie":""} • {availabilityLabel(candidate.availabilityStatus)}</small><em>{candidate.dutyCoverageMode==="DIRECT"?(leaderContext.duty?`Ma obowiązek: ${leaderContext.duty.name}`:"Rola i lokal pasują"):candidate.dutyCoverageMode==="TRANSFER"?`${candidate.dutyTransferEmployeeName} przejmie obowiązek „${leaderContext.duty?.name}”`:`Brak pokrycia obowiązku „${leaderContext.duty?.name}”`}</em>{candidate.addedOvertimeMinutes>0&&<em className={candidate.overtimeBlocked?"overtime-blocked":candidate.overtimeApprovalRequired?"overtime-approval":"overtime-allowed"}>{candidate.overtimeBlocked?"Nadgodziny niedozwolone":candidate.overtimeApprovalRequired?"Nadgodziny wymagają decyzji lidera":"Nadgodziny dozwolone przez pracownika"} • +{workloadHours(candidate.addedOvertimeMinutes)}</em>}</span>
+            {leaderEmployeeId===candidate.employeeId&&<Check/>}
+          </button>)}</div>
+          {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie.</p>}
+          <small>Lista pokazuje cały zespół, a nie czterech „aktywnych” pracowników: zielone osoby można sprawdzić i zapisać, wyszarzone mają podany konkretny powód blokady. Przy zamianie trójstronnej serwer może przenieść obowiązek, a na końcu kontroluje cały miesiąc.</small>
+        </div>
         <label>Powód zmiany<textarea required minLength={3} value={leaderReason} onChange={event=>setLeaderReason(event.target.value)} placeholder="np. uzgodniona zamiana w zespole"/></label>
+        {selectedLeaderCandidate&&selectedLeaderCandidate.addedOvertimeMinutes>0&&<div className={`leader-overtime-quote ${selectedLeaderCandidate.overtimeBlocked?"blocked":selectedLeaderCandidate.overtimeApprovalRequired?"approval":"allowed"}`}>
+          <header><CircleDollarSign/><span><strong>{selectedLeaderCandidate.overtimeBlocked?"Ta osoba nie może mieć nadgodzin":selectedLeaderCandidate.overtimeApprovalRequired?"Propozycja nadgodzin do zatwierdzenia":"Nadgodziny dozwolone przez pracownika"}</strong><small>Wycena obejmuje cały wariant po tej zmianie, w tym reguły zależne od umowy, dnia i pory.</small></span></header>
+          <div><span><small>Przed zmianą</small><b>{workloadHours(selectedLeaderCandidate.currentMonthlyMinutes)}</b></span><span><small>Po zmianie</small><b>{workloadHours(selectedLeaderCandidate.projectedMonthlyMinutes)}</b></span><span><small>Nominał</small><b>{workloadHours(selectedLeaderCandidate.nominalMonthlyMinutes)}</b></span><span><small>Nowe nadgodziny</small><b>+{workloadHours(selectedLeaderCandidate.addedOvertimeMinutes)}</b></span><span><small>Zmiana kosztu grafiku</small><b>{selectedLeaderCandidate.addedCostMinor>=0?"+":""}{money(selectedLeaderCandidate.addedCostMinor,selectedLeaderCandidate.currency)}</b></span><span><small>Pełny koszt po zmianie</small><b>{money(selectedLeaderCandidate.projectedTotalCostMinor,selectedLeaderCandidate.currency)}</b></span></div>
+          {selectedLeaderCandidate.overtimeBlocked&&<p>Ustawienie „NIE” jest twardą blokadą. Zwykły zapis ani wyjątek od limitu nie mogą jej ominąć.</p>}
+        </div>}
         {leaderFeedback&&<div className="solver-v2-notice warning" role="status"><AlertTriangle/><span><strong>Status zapisu</strong><small>{leaderFeedback}</small></span></div>}
         {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Ręczny wyjątek będzie widoczny w audycie wraz z podanym wyżej powodem.</small></span></div>}
-        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}{leaderLimitWarning&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit(true)}><AlertTriangle/> Przypisz mimo limitu</button>}<button className="primary-button" disabled={leaderBusy} onClick={()=>void saveLeaderEdit()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Sprawdź i zapisz</button></div>
+        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}{leaderOvertimeWarning&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit(Boolean(leaderLimitWarning),true)}><AlertTriangle/> {leaderLimitWarning?"Zatwierdź nadgodziny i przekroczenie limitu":"Zatwierdź nadgodziny"}</button>}{leaderLimitWarning&&!leaderOvertimeWarning&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit(true)}><AlertTriangle/> Przypisz mimo limitu</button>}<button className="primary-button" disabled={leaderBusy||Boolean(selectedLeaderCandidate?.overtimeBlocked)} onClick={()=>void saveLeaderEdit()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Sprawdź i zapisz</button></div>
       </div>
     </aside></>}
 

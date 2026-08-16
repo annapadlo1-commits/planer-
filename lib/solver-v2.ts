@@ -272,6 +272,19 @@ export type SolverLeaderAssignmentContext = {
     dutyTransferEmployeeName: string|null;
     availabilityStatus: "AVAILABLE"|"SOFT_AVOID"|"HARD_UNAVAILABLE"|"SHIFT_CONFLICT"|"OUTSIDE_AVAILABLE_WINDOW"|string;
     suggestionEligible: boolean;
+    overtimePolicy: "NEVER"|"APPROVAL_REQUIRED"|"ALLOWED";
+    nominalMonthlyMinutes: number;
+    currentMonthlyMinutes: number;
+    projectedMonthlyMinutes: number;
+    overtimeBeforeMinutes: number;
+    overtimeAfterMinutes: number;
+    addedOvertimeMinutes: number;
+    currentTotalCostMinor: number;
+    projectedTotalCostMinor: number;
+    addedCostMinor: number;
+    currency: string;
+    overtimeApprovalRequired: boolean;
+    overtimeBlocked: boolean;
   }[];
 };
 
@@ -282,6 +295,10 @@ export type SolverManagerStandby = {
   status: "PREVIEW" | "PLANNED" | "ACTIVATED" | "DECLINED";
   roleId: string;
   roleName: string;
+  groupCode: string | null;
+  groupName: string | null;
+  eligibleRoleIds: string[];
+  eligibleRoleNames: string[];
   employeeId: string;
   employeeNo: string;
   employeeName: string;
@@ -298,7 +315,7 @@ export async function getManagerStandbyMonth(
   month: string,
   scopeRoleId?: string | null,
 ): Promise<SolverManagerStandby[]> {
-  const value = await rpc(client, "manager_standby_month_uat_v2", {
+  const value = await rpc(client, "manager_standby_month_uat_v3", {
     p_month: month,
     p_scope_role_id: scopeRoleId ?? null,
   });
@@ -309,6 +326,10 @@ export async function getManagerStandbyMonth(
       id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
       status: String(row.status) as SolverManagerStandby["status"],
       roleId: String(row.roleId), roleName: String(row.roleName),
+      groupCode: row.groupCode ? String(row.groupCode) : null,
+      groupName: row.groupName ? String(row.groupName) : null,
+      eligibleRoleIds: Array.isArray(row.eligibleRoleIds) ? row.eligibleRoleIds.map(String) : [],
+      eligibleRoleNames: Array.isArray(row.eligibleRoleNames) ? row.eligibleRoleNames.map(String) : [],
       employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
       employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
       activatedShiftId: row.activatedShiftId ? String(row.activatedShiftId) : null,
@@ -320,7 +341,7 @@ export async function getVariantStandbyPreview(
   client: SupabaseClient,
   variantId: string,
 ): Promise<SolverManagerStandby[]> {
-  const value = await rpc(client, "optimizer_variant_standby_preview_uat_v1", {
+  const value = await rpc(client, "optimizer_variant_standby_preview_uat_v2", {
     p_variant_id: variantId,
   });
   if (!Array.isArray(value)) return [];
@@ -330,6 +351,10 @@ export async function getVariantStandbyPreview(
       id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
       status: "PREVIEW" as const,
       roleId: String(row.roleId), roleName: String(row.roleName),
+      groupCode: row.groupCode ? String(row.groupCode) : null,
+      groupName: row.groupName ? String(row.groupName) : null,
+      eligibleRoleIds: Array.isArray(row.eligibleRoleIds) ? row.eligibleRoleIds.map(String) : [],
+      eligibleRoleNames: Array.isArray(row.eligibleRoleNames) ? row.eligibleRoleNames.map(String) : [],
       employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
       employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
       activatedShiftId: null,
@@ -1904,7 +1929,7 @@ export async function getLeaderAssignmentContext(
   client: SupabaseClient,
   input: { variantId: string; assignmentId?: string | null; issueId?: string | null },
 ): Promise<SolverLeaderAssignmentContext> {
-  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v2", {
+  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v3", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
@@ -1941,6 +1966,19 @@ export async function getLeaderAssignmentContext(
         dutyTransferEmployeeName: candidate.dutyTransferEmployeeName?String(candidate.dutyTransferEmployeeName):null,
         availabilityStatus: String(candidate.availabilityStatus??"UNKNOWN"),
         suggestionEligible: Boolean(candidate.suggestionEligible),
+        overtimePolicy: String(candidate.overtimePolicy??"NEVER") as "NEVER"|"APPROVAL_REQUIRED"|"ALLOWED",
+        nominalMonthlyMinutes: numberOf(candidate,"nominalMonthlyMinutes","nominal_monthly_minutes"),
+        currentMonthlyMinutes: numberOf(candidate,"currentMonthlyMinutes","current_monthly_minutes"),
+        projectedMonthlyMinutes: numberOf(candidate,"projectedMonthlyMinutes","projected_monthly_minutes"),
+        overtimeBeforeMinutes: numberOf(candidate,"overtimeBeforeMinutes","overtime_before_minutes"),
+        overtimeAfterMinutes: numberOf(candidate,"overtimeAfterMinutes","overtime_after_minutes"),
+        addedOvertimeMinutes: numberOf(candidate,"addedOvertimeMinutes","added_overtime_minutes"),
+        currentTotalCostMinor: numberOf(candidate,"currentTotalCostMinor","current_total_cost_minor"),
+        projectedTotalCostMinor: numberOf(candidate,"projectedTotalCostMinor","projected_total_cost_minor"),
+        addedCostMinor: numberOf(candidate,"addedCostMinor","added_cost_minor"),
+        currency: String(candidate.currency??"PLN"),
+        overtimeApprovalRequired: Boolean(candidate.overtimeApprovalRequired),
+        overtimeBlocked: Boolean(candidate.overtimeBlocked),
       };
     }) : [],
   };
@@ -1965,9 +2003,10 @@ export async function saveLeaderAssignment(
     variantId: string; assignmentId?: string | null; issueId?: string | null;
     employeeId: string; reason: string; allowLimitOverride?: boolean;
     dutyTransferAssignmentId?: string|null;
+    approveOvertime?: boolean;
   },
 ) {
-  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v2", {
+  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v3", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
@@ -1975,6 +2014,7 @@ export async function saveLeaderAssignment(
     p_reason: input.reason,
     p_allow_limit_override: input.allowLimitOverride ?? false,
     p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
+    p_approve_overtime: input.approveOvertime ?? false,
   }));
 }
 

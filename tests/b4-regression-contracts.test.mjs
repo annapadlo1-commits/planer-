@@ -46,6 +46,10 @@ const workforceDraftCascadeGuardFixUrl = new URL(
   "../supabase/migrations/20260815194000_uat_matrix_workforce_draft_cascade_guard_fix.sql",
   import.meta.url,
 );
+const configurableStandbyMigrationUrl = new URL(
+  "../supabase/migrations/20260816010000_configurable_category_standby_groups_uat.sql",
+  import.meta.url,
+);
 const discardDraftAdHocFixUrl = new URL(
   "../supabase/migrations/20260815212630_uat_discard_draft_ad_hoc_fk_fix.sql",
   import.meta.url,
@@ -96,12 +100,13 @@ test("B4 full preview accepts dedicated finance rows without false missing-rate 
 });
 
 test("standby exhaustion cannot block a required schedule publication", async () => {
-  const sql = await readFile(migrationUrl, "utf8");
+  const sql = await readFile(configurableStandbyMigrationUrl, "utf8");
   const repairedFunction = sql.slice(sql.lastIndexOf(
     "create or replace function solver_private.generate_standby_for_variant_uat_v2",
   ));
-  assert.match(repairedFunction, /standbyTiersPerRoleDay/);
-  assert.match(repairedFunction, /if v_employee is null then\s+exit;/);
+  assert.match(repairedFunction, /standbyGroups/);
+  assert.match(repairedFunction, /if v_candidate\.employee_id is null then exit;/);
+  assert.match(repairedFunction, /issue\.issue_code='UNFILLED_SLOT'/);
   assert.doesNotMatch(repairedFunction, /STANDBY_COVERAGE_INSUFFICIENT/);
 });
 
@@ -184,7 +189,7 @@ test("daily employee shift limit has one configurable source across UI, solver a
     readFile(new URL("../supabase/migrations/20260805010000_diagnostic_hard_rules_and_actions.sql", import.meta.url), "utf8"),
   ]);
   assert.match(editor, /name="maximumShiftsPerDay"/);
-  assert.match(editor, /name="standbyTiersPerRoleDay"/);
+  assert.match(editor, /Rezerwa per kategoria/);
   assert.doesNotMatch(editor, /const maximumShiftsPerDay = 1;/);
   assert.match(engine, /employee\.maximum_shifts_per_day/);
   assert.match(validator, /count > employee\.maximum_shifts_per_day/);
@@ -503,7 +508,7 @@ test("swap discovery starts on the first employee and validates availability plu
   assert.match(workspace,/suggestionEligible/);
   assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
   assert.match(workspace,/DAILY_LIMIT:\"Osiągnięty dzienny limit zmian\"/);
-  assert.match(client,/optimizer_leader_assignment_context_uat_v2/);
+  assert.match(client,/optimizer_leader_assignment_context_uat_v3/);
   assert.match(client,/p_duty_transfer_assignment_id/);
   assert.match(migration,/optimizer_employee_availability_month_uat_v1/);
   assert.match(migration,/'date',day_value\.day_date::date/);

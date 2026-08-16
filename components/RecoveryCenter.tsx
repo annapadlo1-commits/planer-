@@ -26,6 +26,10 @@ type Props = {
   notify: (message: string) => void;
   fail: (message: string) => void;
   reload?: () => Promise<void> | void;
+  initialTab?: "SHORTAGES" | "INCIDENTS" | "AD_HOC" | "BUDGET";
+  focusRoleId?: string | null;
+  focusDate?: string | null;
+  onCreateFullEmployee?:()=>void;
 };
 
 const modeCopy: Record<RecoveryMode, { label: string; description: string; icon: typeof Sparkles }> = {
@@ -59,20 +63,20 @@ function roleStyle(color?: string | null): CSSProperties {
   return { "--recovery-role": accent } as CSSProperties;
 }
 
-export function RecoveryCenter({ month, employees = [], currency = "PLN", employeeMode = false, notify, fail, reload }: Props) {
+export function RecoveryCenter({ month, employees = [], currency = "PLN", employeeMode = false, notify, fail, reload, initialTab="SHORTAGES", focusRoleId=null, focusDate=null, onCreateFullEmployee }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient()!, []);
   const [workspace, setWorkspace] = useState<RecoveryWorkspace | null>(null);
   const [offers, setOffers] = useState<RecoveryOffer[]>([]);
   const [detail, setDetail] = useState<RecoveryIncidentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"SHORTAGES" | "INCIDENTS" | "AD_HOC" | "BUDGET">("SHORTAGES");
+  const [activeTab, setActiveTab] = useState<"SHORTAGES" | "INCIDENTS" | "AD_HOC" | "BUDGET">(initialTab);
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [incidentForm, setIncidentForm] = useState({
     employeeId: "", roleId: "", locationId: "", type: "SICKNESS", startsOn: `${month}-01`, endsOn: `${month}-01`,
     title: "", notes: "", mode: "PROPOSE" as RecoveryMode,
   });
-  const [adHocForm, setAdHocForm] = useState({ name: "", email: "", phone: "", roleId: "", contractType: "ZLECENIE", rate: "", availableFrom: `${month}-01`, availableTo: `${month}-01`, notes: "" });
+  const [adHocForm, setAdHocForm] = useState({ name: "", email: "", phone: "", roleId: focusRoleId??"", contractType: "ZLECENIE", rate: "", availableFrom: focusDate??`${month}-01`, availableTo: focusDate??`${month}-01`, notes: "" });
   const [budgetForm, setBudgetForm] = useState({ amount: "0", warningPercent: "90", hardLimit: false });
   const [overrideForm, setOverrideForm] = useState({ type: "BUDGET_DELTA", value: "", justification: "", acknowledged: false, complianceConfirmed: false });
 
@@ -208,6 +212,10 @@ export function RecoveryCenter({ month, employees = [], currency = "PLN", employ
 
   if (!workspace) return <section className="recovery-center empty"><AlertTriangle/><h2>Centrum napraw jest niedostępne</h2><button className="secondary-button" onClick={() => void load()}><RefreshCw/> Odśwież</button></section>;
 
+  const focusRoleName=workspace.roleScopes.find(role=>role.roleId===focusRoleId)?.roleName??"wskazana rola";
+  const visibleAdHoc=workspace.adHocPool.filter(worker=>(!focusRoleId||worker.roleId===focusRoleId)
+    &&(!focusDate||(!worker.availableFrom||worker.availableFrom<=focusDate)&&(!worker.availableTo||worker.availableTo>=focusDate)));
+
   const incidentRoleNames = new Set([
     ...(detail?.actions.map(action => action.roleName).filter(Boolean) ?? []),
     ...(detail?.roleId ? workspace.shortages.filter(shortage => shortage.roleId === detail.roleId).map(shortage => shortage.roleName) : []),
@@ -252,7 +260,7 @@ export function RecoveryCenter({ month, employees = [], currency = "PLN", employ
     </div>}
 
     {activeTab === "AD_HOC" && <div className="recovery-ad-hoc-layout">
-      <section><h3>Pula pracowników awaryjnych</h3><p>Te osoby nie trafiają do standardowego generatora. System pokazuje je dopiero przy brakach i incydentach.</p><div className="recovery-ad-hoc-list">{workspace.adHocPool.map(worker => <article key={worker.id} style={roleStyle(worker.roleColor)}><i/><span><b>{worker.name}</b><small>{worker.roleName} • {contractLabels[worker.contractType] ?? worker.contractType}</small><em>{money(worker.rateMinor, worker.currency)} • {worker.availableFrom || "bez daty"}–{worker.availableTo || "bez końca"}</em></span></article>)}</div></section>
+      <section>{focusRoleId&&<div className="recovery-notice warning"><UserPlus/><span><strong>Brak w wersji lidera: {focusRoleName}{focusDate?` • ${focusDate}`:""}</strong><small>1. Sprawdź zgodną osobę poniżej. 2. Potwierdź kontakt, stawkę i warunki współpracy. 3. Utwórz pełny profil pracownika, opublikuj konfigurację i wygeneruj kategorię ponownie. Osoba ad-hoc nie jest automatycznie dopisywana do nieopublikowanego wariantu.</small></span></div>}<h3>Pula pracowników awaryjnych</h3><p>Te osoby nie trafiają do standardowego generatora. System pokazuje je dopiero przy brakach i incydentach.</p><div className="recovery-ad-hoc-list">{visibleAdHoc.map(worker => <article key={worker.id} style={roleStyle(worker.roleColor)}><i/><span><b>{worker.name}</b><small>{worker.roleName} • {contractLabels[worker.contractType] ?? worker.contractType}</small><em>{money(worker.rateMinor, worker.currency)} • {worker.availableFrom || "bez daty"}–{worker.availableTo || "bez końca"}</em></span></article>)}{!visibleAdHoc.length&&<p>Brak osoby ad-hoc zgodnej z rolą i terminem. Dodaj ją formularzem obok albo podejmij inną decyzję kadrową.</p>}</div>{focusRoleId&&onCreateFullEmployee&&<button type="button" className="primary-button" onClick={onCreateFullEmployee}><UserPlus/> Utwórz pełny profil pracownika</button>}</section>
       <form onSubmit={event => { event.preventDefault(); void saveAdHoc(); }}><h3>Dodaj skrócony profil ad-hoc</h3><label>Imię i nazwisko<input required value={adHocForm.name} onChange={event => setAdHocForm({...adHocForm,name:event.target.value})}/></label><div className="recovery-form-grid"><label>E-mail<input type="email" value={adHocForm.email} onChange={event => setAdHocForm({...adHocForm,email:event.target.value})}/></label><label>Telefon<input value={adHocForm.phone} onChange={event => setAdHocForm({...adHocForm,phone:event.target.value})}/></label></div><label>Rola<select required value={adHocForm.roleId} onChange={event => setAdHocForm({...adHocForm,roleId:event.target.value})}><option value="">Wybierz rolę</option>{workspace.roleScopes.filter(role => role.canManage).map(role => <option key={role.roleId} value={role.roleId}>{role.roleName}</option>)}</select></label><div className="recovery-form-grid"><label>Rodzaj współpracy<select value={adHocForm.contractType} onChange={event => setAdHocForm({...adHocForm,contractType:event.target.value})}><option value="ZLECENIE">Umowa zlecenie</option><option value="B2B">B2B</option><option value="UMOWA_O_PRACE">Umowa o pracę</option><option value="CZESC_ETATU">Część etatu</option><option value="INNE">Inna forma — wymaga weryfikacji</option></select></label><label>Stawka godzinowa<input type="number" min="0" step="0.01" value={adHocForm.rate} onChange={event => setAdHocForm({...adHocForm,rate:event.target.value})}/></label></div><div className="recovery-form-grid"><label>Dostępny od<input type="date" value={adHocForm.availableFrom} onChange={event => setAdHocForm({...adHocForm,availableFrom:event.target.value})}/></label><label>Dostępny do<input type="date" value={adHocForm.availableTo} onChange={event => setAdHocForm({...adHocForm,availableTo:event.target.value})}/></label></div><label>Ustalenia<textarea value={adHocForm.notes} onChange={event => setAdHocForm({...adHocForm,notes:event.target.value})}/></label><div className="recovery-legal-note"><ShieldAlert/><span><b>Profil skrócony nie zastępuje formalności</b><small>Przed przypisaniem wymagane są potwierdzone warunki współpracy, stawka i końcowa kontrola obowiązków. Zwykłej pracy zmianowej nie opisujemy jako umowy o dzieło.</small></span></div><button className="primary-button" disabled={busy}><UserPlus/> Dodaj do puli ad-hoc</button></form>
     </div>}
 
