@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAppAuth } from "@/components/AppAuthProvider";
 import { ConfigurationJourney } from "@/components/ConfigurationJourney";
 import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProjectRef } from "@/lib/supabase/client";
@@ -118,7 +118,6 @@ export default function GrafikPro() {
   const { user, access, connected, summary, refresh, signOut }=useAppAuth();
   const router=useRouter();
   const pathname=usePathname();
-  const searchParams=useSearchParams();
   const employeeShell=isEmployeePersona(access?.roles);
   const productNavigation=employeeShell?employeeNavigation:managementNavigationForRoles(access?.roles);
   const requestedPrimarySection=sectionFromPath(pathname,employeeShell);
@@ -177,16 +176,15 @@ export default function GrafikPro() {
   const activeCurrency=isOrtools?solverConfiguration?.currency??"": "PLN";
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
   const selectedMonthLabel=monthLabel(selectedMonth);
-  const requestedSubsection=searchParams.get("view") as NavKey|null;
-  const requestedRecoveryRoleId=searchParams.get("roleId");
-  const requestedRecoveryDate=searchParams.get("date");
   const setActive=useCallback((next:NavKey)=>{
     const section=legacySection[next];
     const navigatesToAnotherSection=sectionFromPath(pathname,employeeShell)!==section;
+    if(next!=="naprawy")setRecoveryFocus(null);
     setActiveState(next);
     if(navigatesToAnotherSection)router.push(`${pathForSection(section)}?month=${selectedMonth}&view=${next}`);
   },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
+    setRecoveryFocus(null);
     const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(`${pathForSection(section)}?month=${selectedMonth}`);
@@ -358,18 +356,20 @@ export default function GrafikPro() {
   },[selectedMonth]);
   useEffect(()=>{
     if(employeeShell){setActiveState(primarySection==="swaps"?"naprawy":"portal");return;}
+    const routeParams=new URLSearchParams(window.location.search);
+    const requestedSubsection=routeParams.get("view") as NavKey|null;
     if(requestedSubsection&&legacySection[requestedSubsection]===primarySection){
       setActiveState(requestedSubsection);
       if(requestedSubsection==="naprawy")setRecoveryFocus({
-        roleId:requestedRecoveryRoleId||null,
-        date:requestedRecoveryDate&&/^\d{4}-\d{2}-\d{2}$/.test(requestedRecoveryDate)?requestedRecoveryDate:null,
+        roleId:routeParams.get("roleId")||null,
+        date:/^\d{4}-\d{2}-\d{2}$/.test(routeParams.get("date")||"")?routeParams.get("date"):null,
       });
       return;
     }
+    setRecoveryFocus(null);
     const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
-  },[employeeShell,primarySection,requestedRecoveryDate,requestedRecoveryRoleId,requestedSubsection]);
-  useEffect(()=>{if(active!=="naprawy"&&requestedSubsection!=="naprawy")setRecoveryFocus(null);},[active,requestedSubsection]);
+  },[employeeShell,pathname,primarySection]);
   useEffect(()=>{
     setDay("ALL");setModal(null);setSelectedShift(null);setSelectedEmployee("");
     setPlanScope({type:"COMPANY",category:null});
