@@ -585,6 +585,7 @@ export default function GrafikPro() {
             if(context.date)params.set("date",context.date);
             router.push(`${pathForSection("operations")}?${params.toString()}`);
           }}
+          onOpenReadiness={()=>{closeModal();openSetupStep("structure","readiness");}}
           onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="CATEGORY")setRoleCompositeRefreshKey(current=>current+1);}}
           onPublished={async()=>{await load();notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}
         />}

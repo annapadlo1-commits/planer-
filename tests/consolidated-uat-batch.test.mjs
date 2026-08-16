@@ -131,3 +131,35 @@ test("merge summary filters and opens the metric-specific detail in place", asyn
   assert.match(panel,/initialView=\{inspectedRoleInitialView\}/);
   assert.match(workspace,/initialView\?:WorkspaceView/);
 });
+
+test("category snapshots keep every employee reference inside the retained workforce", async () => {
+  const [migration,panel,page,client]=await Promise.all([
+    read("supabase/migrations/20260816080000_uat_category_snapshot_employee_reference_guard.sql"),
+    read("components/SolverV2Panel.tsx"),
+    read("app/page.tsx"),
+    read("lib/solver-v2.ts"),
+  ]);
+  for(const key of ["availabilityWindows","hardBlocks","externalAssignments","lockedAssignments","baselineAssignments"]){
+    assert.match(migration,new RegExp(`'${key}'`));
+  }
+  assert.match(migration,/item\.value->>'employeeId'/);
+  assert.match(migration,/jsonb_array_elements_text\(v_employee_ids\)/);
+  assert.match(panel,/onOpenReadiness\?:\(\)=>void/);
+  assert.match(panel,/onClick=\{onOpenReadiness\}/);
+  assert.match(page,/closeModal\(\);openSetupStep\("structure","readiness"\)/);
+  assert.match(client,/CONSTRAINT REFERENCES MISSING EMPLOYEE/);
+});
+
+test("daily shift validation ignores external assignments outside the selected month", async () => {
+  const migration=await read(
+    "supabase/migrations/20260816083000_uat_variant_daily_limit_period_guard.sql",
+  );
+  assert.match(migration,/v_period_start date:=\(p_snapshot->>'periodStart'\)::date/);
+  assert.match(migration,/v_period_end date:=\(p_snapshot->>'periodEnd'\)::date/);
+  assert.match(migration,/between v_period_start and v_period_end/);
+  assert.match(migration,/validate_variant_before_primary_shift_invariants_v2/);
+  assert.doesNotMatch(
+    migration,
+    /return solver_private\.validate_variant_before_daily_limit_period_guard_uat_v1/,
+  );
+});

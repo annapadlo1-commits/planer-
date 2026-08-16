@@ -69,6 +69,7 @@ type Props = {
   onScenarioChange: (value: string) => void;
   onVariantSelected?: (variant: SolverVariant) => void | Promise<void>;
   onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void;
+  onOpenReadiness?:()=>void;
   onPublished?: (scheduleId: string) => void | Promise<void>;
   initialRunId?: string | null;
   skipRecovery?: boolean;
@@ -161,6 +162,7 @@ export function SolverV2Panel({
   onScenarioChange,
   onVariantSelected,
   onOpenAdHoc,
+  onOpenReadiness,
   onPublished,
   initialRunId,
   skipRecovery = false,
@@ -736,7 +738,7 @@ export function SolverV2Panel({
         {active && <button className="secondary-button" disabled={busy || run.status === "CANCEL_REQUESTED"} onClick={() => void cancel()}><Square/> Zatrzymaj bezpiecznie</button>}
         <button className="secondary-button" disabled={busy||refreshing} onClick={() => void refreshStatus(run.id)}><RefreshCw className={refreshing?"spin":""}/> {refreshing?"Sprawdzam…":"Odśwież status"}</button>
         {lastStatusCheck&&<small className="solver-v2-last-check">Ostatnie ręczne sprawdzenie: {lastStatusCheck}</small>}
-          {run.status==="FAILED"&&<a className="primary-button" href={`/settings?month=${month.slice(0,7)}#configuration-step-readiness`}>Przejdź do kontroli gotowości</a>}
+        {run.status==="FAILED"&&<button type="button" className="primary-button" onClick={onOpenReadiness}>Przejdź do kontroli gotowości</button>}
         {isSolverRunTerminal(run.status) && <button className="secondary-button" disabled={busy} onClick={startAnother}>{["FAILED","STALE_INPUT"].includes(run.status)?"Spróbuj ponownie":"Nowe generowanie"}</button>}
       </div>
     </div>}

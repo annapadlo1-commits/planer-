@@ -2388,6 +2388,7 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("CONSTRAINT REFERENCES MISSING EMPLOYEE")) return "Generator wykrył niespójność danych wejściowych kategorii: ograniczenie pracownika znalazło się poza listą osób tego grafiku. Ten przebieg nie zmienił żadnych danych. Odśwież aplikację po wdrożeniu poprawki i uruchom nowe generowanie.";
   if (normalized.includes("OVERTIME_PAY_RULE_MISSING")) return "Co najmniej jedna osoba ma zgodę „TAK” lub „TYLKO PO ZATWIERDZENIU”, ale nie ustawiono reguły dodatku po indywidualnym nominale. Przejdź do Ustawienia → Reguły płacowe, dodaj regułę miesięczną z progiem „Indywidualny nominał pracownika” i dopiero potem uruchom grafik.";
   if (normalized.includes("STRATEGY_RESULT_DOMINATED")) return "Generator odrzucił wariant, ponieważ inny wynik był od niego lepszy we wszystkich celach tej strategii. Żaden mylący wariant nie został udostępniony. Uruchom generowanie ponownie; jeśli problem wróci, przekaż kod STRATEGY_RESULT_DOMINATED administratorowi UAT.";
   if (normalized.includes("UNFILLED_NOT_PROVEN")) return "W konfiguracji jest włączony tryb audytowy, a generator nie zdążył formalnie udowodnić minimalnej liczby braków. Przejdź do Ustawienia → Zaawansowane ustawienia silnika, wyłącz wymaganie matematycznego dowodu optimum dla zwykłego planowania, opublikuj konfigurację i uruchom nowe generowanie.";

@@ -218,7 +218,7 @@ test("ordinary planning accepts the best feasible schedule while audit mode stay
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
   ]);
   assert.match(engine,/snapshot\.settings\.require_optimal[\s\S]*minimum_unfilled > 0[\s\S]*not coverage_minimum_proven/);
-  assert.match(panel,/#configuration-step-readiness/);
+  assert.match(panel,/onClick=\{onOpenReadiness\}/);
   assert.match(panel,/Przejdź do kontroli gotowości/);
 });
 

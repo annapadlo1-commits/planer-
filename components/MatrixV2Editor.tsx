@@ -14,7 +14,17 @@ import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
-import { authorizeGoogleDriveFile, preloadGoogleIdentityServices, uploadWorkbookToGoogleSheets } from "@/lib/google-sheets-export";
+import {
+  authorizeGoogleDriveFile,
+  beginGoogleDriveRedirectAuthorization,
+  clearGoogleDriveRedirectStatus,
+  googleDriveRedirectMessage,
+  googleDriveRedirectStatus,
+  isGoogleSheetsExportError,
+  preloadGoogleIdentityServices,
+  uploadWorkbookToGoogleSheets,
+  uploadWorkbookToGoogleSheetsViaServer,
+} from "@/lib/google-sheets-export";
 import {
   OBJECTIVE_METRICS, WEEKDAYS, itemName, matrixV2AdHocRoleCode, matrixV2ErrorMessage, matrixV2Settings, objectiveName,
   type MatrixV2Budget, type MatrixV2Duty, type MatrixV2Location,
@@ -793,7 +803,24 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   const [directory,setDirectory]=useState<AccessDirectoryPayload|null>(null);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
-  useEffect(()=>{void preloadGoogleIdentityServices().catch(()=>undefined);},[]);
+  const [googleServerReady,setGoogleServerReady]=useState(false);
+  const [googleFallback,setGoogleFallback]=useState(false);
+  const [googleStatusMessage,setGoogleStatusMessage]=useState("");
+  useEffect(()=>{
+    const status=googleDriveRedirectStatus();
+    if(status==="ready"){
+      setGoogleServerReady(true);setGoogleFallback(false);setGoogleStatusMessage("");
+      notify("Konto Google zostało połączone. Kliknij teraz „Utwórz arkusz na Dysku Google”.");
+      clearGoogleDriveRedirectStatus();
+      return;
+    }
+    const redirectMessage=googleDriveRedirectMessage(status);
+    if(redirectMessage){setGoogleFallback(true);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();}
+    void preloadGoogleIdentityServices().catch(error=>{
+      setGoogleFallback(true);
+      setGoogleStatusMessage(error instanceof Error?error.message:"Przeglądarka zablokowała moduł logowania Google.");
+    });
+  },[]);
   const [form,setForm]=useState({email:"",appRole:"EMPLOYEE",roleId:"",locationId:""});
   const [importPreview,setImportPreview]=useState<AccessImportPreview|null>(null);
   const accessFileRef=useRef<HTMLInputElement|null>(null);
@@ -874,14 +901,28 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     if(!directory)return;
     setSaving(true);
     try{
-      const token=toGoogle?await authorizeGoogleDriveFile():null;
-      const artifact=await buildAccessWorkbook();
-      if(token)window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
-      else{
+      if(toGoogle){
+        if(googleServerReady){
+          const artifact=await buildAccessWorkbook();
+          window.location.assign(await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
+          return;
+        }
+        const token=await authorizeGoogleDriveFile();
+        const artifact=await buildAccessWorkbook();
+        window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
+      }else{
+        const artifact=await buildAccessWorkbook();
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
-    }catch(error){fail(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    }catch(error){
+      if(isGoogleSheetsExportError(error)){
+        if(["GIS_BLOCKED","GIS_TIMEOUT","GOOGLE_POPUP_BLOCKED","GOOGLE_LOGIN_CANCELLED","GOOGLE_AUTH_REQUIRED"].includes(error.code))setGoogleFallback(true);
+        if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleServerReady(false);
+        setGoogleStatusMessage(error.message);
+      }
+      fail(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");
+    }
     finally{setSaving(false);}
   }
 
@@ -938,7 +979,9 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   return <section className="access-management">
     <div className="matrix-v2-section-head"><div><h3>Dostępy do aplikacji</h3><p>Uprawnienia są niezależne od składu grafiku i działają od razu. Osoba z finansów lub administrator nie musi być pracownikiem planowanym na zmianach.</p></div></div>
     <div className="access-explainer"><ShieldCheck/><span><strong>Jedna osoba może mieć kilka funkcji</strong><small>Przykład: pracownik może mieć portal pracownika i jednocześnie dostęp lidera do grafiku roli Barman. Lider roli i lider lokalu otrzymują wyłącznie wskazany zakres.</small></span></div>
-    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
+    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
+    {googleServerReady&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Konto Google jest połączone</strong><small>Arkusz nie powstał jeszcze automatycznie. Kliknij „Utwórz arkusz na Dysku Google”, aby świadomie wysłać ten plik.</small></span></div>}
+    {googleFallback&&!googleServerReady&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Użyj bezpiecznego przekierowania Google</strong><small>{googleStatusMessage||"Logowanie w małym oknie jest blokowane przez przeglądarkę. Połącz konto przez pełną stronę Google, a potem wrócisz tutaj."}</small></span><button type="button" className="secondary-button" onClick={beginGoogleDriveRedirectAuthorization}>Połącz konto Google</button></div>}
     {importPreview&&<section className={`access-import-preview ${importPreview.errors.length?"invalid":"valid"}`}><header><span><strong>{importPreview.errors.length?"Plik wymaga poprawy":"Plik gotowy do zapisu"}</strong><small>{importPreview.fileName} • {plural(importPreview.rows.length,"wiersz","wiersze","wierszy")}</small></span><button type="button" className="icon-button" onClick={()=>setImportPreview(null)}><X/></button></header>{importPreview.errors.length?<ul>{importPreview.errors.map(error=><li key={error}>{error}</li>)}</ul>:<><p>System zapisze wszystkie wiersze w jednej transakcji. Jeżeli serwer odrzuci choć jeden dostęp, żaden nie zostanie zmieniony.</p><button type="button" className="primary-button" disabled={saving} onClick={()=>void applyAccessWorkbook()}><Check/> {saving?"Zapisuję…":`Zastosuj ${plural(importPreview.rows.length,"dostęp","dostępy","dostępów")}`}</button></>}</section>}
     <form className="access-form" onSubmit={event=>{event.preventDefault();void saveAccess();}}>
       <label>Adres e-mail<input required type="email" value={form.email} onChange={event=>setForm({...form,email:event.target.value})} placeholder="np. finanse@firma.pl"/></label>
@@ -1877,7 +1920,24 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"TEAM");
   const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
   const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
-  useEffect(()=>{void preloadGoogleIdentityServices().catch(()=>undefined);},[]);
+  const [googleServerReady,setGoogleServerReady]=useState(false);
+  const [googleFallback,setGoogleFallback]=useState(false);
+  const [googleStatusMessage,setGoogleStatusMessage]=useState("");
+  useEffect(()=>{
+    const status=googleDriveRedirectStatus();
+    if(status==="ready"){
+      setGoogleServerReady(true);setGoogleFallback(false);setGoogleStatusMessage("");
+      notify("Konto Google zostało połączone. Kliknij teraz „Utwórz arkusz na Dysku Google”.");
+      clearGoogleDriveRedirectStatus();
+      return;
+    }
+    const redirectMessage=googleDriveRedirectMessage(status);
+    if(redirectMessage){setGoogleFallback(true);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();}
+    void preloadGoogleIdentityServices().catch(error=>{
+      setGoogleFallback(true);
+      setGoogleStatusMessage(error instanceof Error?error.message:"Przeglądarka zablokowała moduł logowania Google.");
+    });
+  },[]);
   useEffect(()=>{
     if(payload&&preview)window.sessionStorage.setItem(importDraftKey,JSON.stringify({scope,mode,payload,preview}));
   },[importDraftKey,mode,payload,preview,scope]);
@@ -1889,16 +1949,28 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   async function exportTemplate(toGoogle=false){
     setBusy(true);setLocalError("");
     try{
-      const token=toGoogle?await authorizeGoogleDriveFile():null;
+      const token=toGoogle&&!googleServerReady?await authorizeGoogleDriveFile():null;
       const artifact=scope==="FINANCE"
         ?await buildWorkforceFinanceTemplate(data)
         :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL");
-      if(token)window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
-      else{
+      if(toGoogle){
+        if(googleServerReady){
+          window.location.assign(await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
+          return;
+        }
+        window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token!));
+      }else{
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
-    }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");}
+    }catch(error){
+      if(isGoogleSheetsExportError(error)){
+        if(["GIS_BLOCKED","GIS_TIMEOUT","GOOGLE_POPUP_BLOCKED","GOOGLE_LOGIN_CANCELLED","GOOGLE_AUTH_REQUIRED"].includes(error.code))setGoogleFallback(true);
+        if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleServerReady(false);
+        setGoogleStatusMessage(error.message);
+      }
+      setLocalError(error instanceof Error?error.message:"Nie udało się przygotować arkusza.");
+    }
     finally{setBusy(false);}
   }
   async function inspect(){
@@ -1968,7 +2040,9 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
       <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":scope==="TEAM"?"System najpierw tworzy nowe role, lokale i obowiązki, potem przypisuje zespół. Nowa osoba może mieć pusty numer; istniejący e-mail zostanie bezpiecznie podpięty do zachowanej historii.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
       {scope==="CONFIGURATION"&&<details className="matrix-import-advanced-guide"><summary>Co zawiera pełna kopia i kiedy jej użyć?</summary><div><article><strong>Dane codzienne</strong><p>Firma, role, lokale, obowiązki, pracownicy, zmiany i wymagana obsada.</p></article><article><strong>Dane dodatkowe</strong><p>Scenariusze, strategie, budżety, reguły płacowe oraz dostępność.</p></article><article><strong>Kiedy użyć</strong><p>Do kopii bezpieczeństwa, migracji albo pełnego odtworzenia. Pierwszą konfigurację zacznij od kroków 1 i 2.</p></article></div></details>}
-      <button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":"Otwórz w Google Sheets"}</button>
+      <button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button>
+      {googleServerReady&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Konto Google jest połączone</strong><small>Arkusz nie powstał jeszcze automatycznie. Kliknij „Utwórz arkusz na Dysku Google”, aby świadomie wysłać przygotowany plik.</small></span></div>}
+      {googleFallback&&!googleServerReady&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Użyj bezpiecznego przekierowania Google</strong><small>{googleStatusMessage||"Logowanie w małym oknie jest blokowane przez przeglądarkę. Połącz konto przez pełną stronę Google, a potem wrócisz do tego importu."}</small></span><button type="button" className="secondary-button" onClick={beginGoogleDriveRedirectAuthorization}>Połącz konto Google</button></div>}
       <button className="secondary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate()}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy Excel":scope==="TEAM"?"Pobierz prosty plik Excel":"Pobierz pełną bazę Excel"}</button>
       {scope!=="FINANCE"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej. Liczba osób nie jest zaszyta w kodzie.</small></button></fieldset>}
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
