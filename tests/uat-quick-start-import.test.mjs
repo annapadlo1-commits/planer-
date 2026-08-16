@@ -78,11 +78,19 @@ test("every future UAT reset seeds the system-owned scenario and solver defaults
   assert.match(selfImportDefaults, /ISOLATED_UAT_DESTRUCTIVE_TOOLS/);
 });
 
-test("quick workbook documents automatic identifiers and hides advanced sheets", () => {
+test("quick workbook documents automatic identifiers and physically excludes advanced sheets", () => {
+  const quickBuilder=editor.slice(editor.indexOf("async function buildQuickMatrixTemplate"),editor.indexOf("async function buildMatrixTemplate"));
   assert.match(editor, /System nada kolejny wolny numer GP-### automatycznie/);
-  assert.match(editor, /grafik-pro-szybki-start-v/);
-  assert.match(editor, /const hidden=new Set/);
-  assert.match(editor, /\["KOLOR","#7257D8"/);
+  assert.match(quickBuilder, /grafik-pro-prosta-konfiguracja-v/);
+  assert.match(quickBuilder, /QUICK_WORKBOOK_SHEETS/);
+  assert.doesNotMatch(quickBuilder, /const hidden=new Set/);
+  assert.doesNotMatch(quickBuilder, /Role pracowników|Lokale pracowników|Kompetencje pracowników|Kryteria strategii/);
+});
+
+test("finance workbook does not duplicate the employee contract type", () => {
+  const financeBuilder=editor.slice(editor.indexOf("async function buildWorkforceFinanceTemplate"),editor.indexOf("async function buildAccessTemplate"));
+  assert.match(financeBuilder,/const headers=\["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Aktywna"\]/);
+  assert.doesNotMatch(financeBuilder,/const headers=.*Rodzaj umowy/);
 });
 
 test("UAT import reconnects preserved global identities and gates public RPCs", () => {

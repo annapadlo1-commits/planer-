@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
-import { polishAccessWorkbook, polishMatrixWorkbook } from "../lib/excel-workbook-polish.ts";
+import { polishAccessWorkbook, polishFinanceWorkbook, polishMatrixWorkbook } from "../lib/excel-workbook-polish.ts";
 import { readMatrixWorkbook } from "../lib/matrix-workbook-import.ts";
 
 function rawWorkbook(sheets){
@@ -23,7 +23,7 @@ test("configuration workbook gets guided instructions, portable lists and separa
     "Kategorie grafików":[["Kod","Nazwa","Kolor","Aktywna"],["SALA","Sala","#7257D8","TAK"]],
     Role:[["Kod","Nazwa","Kod kategorii","Aktywna"],["KELNER","Kelner","SALA","TAK"]],
     Lokale:[["Kod","Nazwa","Aktywna"],["KRUCZA","Krucza","TAK"]],
-    Pracownicy:[["Numer pracownika","Imię","Nazwisko","Kod roli","Etap zatrudnienia","Rodzaj umowy","Aktywny"],["","Anna","Nowak","KELNER","PROBATION","ZLECENIE","TAK"]],
+    Pracownicy:[["Numer pracownika","Imię","Nazwisko","Kod roli","Etap zatrudnienia","Koniec okresu próbnego","Rodzaj umowy","Aktywny"],["","Anna","Nowak","KELNER","PROBATION","2026-09-30","ZLECENIE","TAK"]],
     "Pula ad-hoc":[["Imię i nazwisko","Telefon","Kod roli","Rodzaj współpracy","Aktywna"],["Jan Kowalski","500600700","KELNER","ZLECENIE","TAK"]],
     Słowniki:[["TYP","KOD","NAZWA"],["ROLA","KELNER","Kelner"],["LOKAL","KRUCZA","Krucza"],["KATEGORIA GRAFIKU","SALA","Sala"]],
   }),"QUICK");
@@ -53,7 +53,31 @@ test("access workbook exports user-facing access labels and checkbox values",asy
   }));
   const workbook=await load(polished),sheet=workbook.getWorksheet("Dostępy");
   assert.equal(sheet.getCell("B2").value,"Lider roli");
+  assert.equal(sheet.getCell("C2").value,"Kelner [KELNER]");
   assert.equal(sheet.getCell("E2").value,"☑ Tak");
   assert.equal(sheet.getCell("B2").dataValidation.type,"list");
+  assert.equal(sheet.getCell("C2").dataValidation.type,"list");
   assert.match(String(sheet.getCell("A1").value),/WYMAGANE/);
+  assert.equal(workbook.getWorksheet("Słowniki").state,"hidden");
+  const fieldGuide=workbook.getWorksheet("Opis pól");
+  assert.match(fieldGuide.getColumn(2).values.join("\n"),/Nadaje, ogranicza albo wyłącza dostęp/);
+  assert.doesNotMatch(fieldGuide.getColumn(6).values.join("\n"),/zgodnie z celem zakładki/i);
+});
+
+test("finance workbook keeps employment type in one authoritative employee profile",async()=>{
+  const polished=await polishFinanceWorkbook(rawWorkbook({
+    Instrukcja:[["stara instrukcja"]],
+    "Finanse pracowników":[
+      ["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Aktywna"],
+      ["","GP-067","Anna Nowak","2026-08-01","","2026-08-01","",32.5,"PLN","TAK"],
+    ],
+    Słowniki:[["POLE","WARTOŚĆ","OPIS"],["Aktywna","TAK","Wpis obowiązuje"]],
+  }));
+  const workbook=await load(polished),sheet=workbook.getWorksheet("Finanse pracowników");
+  assert.equal(sheet.getRow(1).values.some(value=>/Rodzaj umowy/u.test(String(value??""))),false);
+  assert.equal(sheet.getCell("J2").value,"☑ Tak");
+  assert.equal(workbook.getWorksheet("Słowniki").state,"hidden");
+  const fieldGuide=workbook.getWorksheet("Opis pól");
+  assert.match(fieldGuide.getColumn(2).values.join("\n"),/Aktualizuje okresy stawek godzinowych/u);
+  assert.doesNotMatch(fieldGuide.getColumn(6).values.join("\n"),/zgodnie z celem zakładki/i);
 });

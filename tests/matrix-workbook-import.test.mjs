@@ -376,7 +376,7 @@ test("first-run workbook imports schedule categories, fallback roles, probation 
       {"Numer pracownika":"GP-201","Kod roli":"HOST",Podstawowa:"NIE","Sposób użycia":"BACKUP","Priorytet rezerwowy":"1",Aktywna:"TAK"},
     ],
     "Pula ad-hoc":[{
-      "Imię i nazwisko":"Jan Adhoc","E-mail":"jan.adhoc@example.test","Kod roli":"BARMAN",
+      "Imię i nazwisko":"Jan Adhoc","E-mail":"jan.adhoc@example.test",Telefon:"500600700","Kod roli":"BARMAN",
       "Rodzaj współpracy":"Umowa zlecenie","Stawka godzinowa":"45,50",Waluta:"PLN",
       "Dostępny od":"2026-09-01","Dostępny do":"2026-09-30",Aktywna:"TAK",
     }],
@@ -400,7 +400,7 @@ test("Excel-native serial dates from the downloaded quick-start workbook stay IS
       "Koniec okresu próbnego":46294,"Rodzaj umowy":"ZLECENIE",
     }],
     "Pula ad-hoc":[{
-      "Imię i nazwisko":"Jan Adhoc","Kod roli":"BARMAN",
+      "Imię i nazwisko":"Jan Adhoc",Telefon:"500600700","Kod roli":"BARMAN",
       "Dostępny od":46266,"Dostępny do":46285,Aktywna:"TAK",
     }],
   }));
@@ -414,11 +414,11 @@ test("an ad-hoc worker without a role points to the exact workbook sheet, row an
   await assert.rejects(
     readMatrixWorkbook(workbookFile({
       "Pula ad-hoc":[
-        {"Imię i nazwisko":"Jan Poprawny","Kod roli":"BARMAN",Aktywna:"TAK"},
+        {"Imię i nazwisko":"Jan Poprawny",Telefon:"500600700","Kod roli":"BARMAN",Aktywna:"TAK"},
         {"Imię i nazwisko":"Jerzy","Kod roli":"",Aktywna:"TAK"},
       ],
     })),
-    /Pula ad-hoc • wiersz 3 • kolumna „Kod roli”: wybierz rolę z arkusza „Role” albo usuń ten niepełny wiersz/,
+    /Pula ad-hoc • wiersz 3 • kolumna „Rola”: wybierz rolę z zakładki „Role” albo usuń ten niepełny wiersz/,
   );
 });
 
@@ -428,9 +428,9 @@ test("polished Google Sheets-ready labels import without silent semantic changes
     Pracownicy:[{
       "Imię\nWYMAGANE":"Anna","Nazwisko\nWYMAGANE":"Próbna","Kod roli\nWYMAGANE":"KELNER",
       "Etap zatrudnienia\nWYMAGANE":"Okres próbny","Rodzaj umowy\nWYMAGANE":"Umowa o pracę — część etatu",
-      "Bez weekendów\nOPCJONALNE":"☐ Nie","Aktywny\nWYMAGANE":"☑ Tak",
+      "Koniec okresu próbnego\nWARUNKOWE":"2026-09-30","Bez weekendów\nOPCJONALNE":"☐ Nie","Aktywny\nWYMAGANE":"☑ Tak",
     }],
-    "Pula ad-hoc":[{"Imię\nWYMAGANE":"Jan","Nazwisko\nWYMAGANE":"Kowalski","Kod roli\nWYMAGANE":"BARMAN","Aktywna\nWYMAGANE":"☑ Tak"}],
+    "Pula ad-hoc":[{"Imię\nWYMAGANE":"Jan","Nazwisko\nWYMAGANE":"Kowalski","Telefon\nWYMAGANE":"500600700","Kod roli\nWYMAGANE":"BARMAN","Aktywna\nWYMAGANE":"☑ Tak"}],
   }));
 
   assert.equal(parsed.roleCategories[0].color,"#7257D8");
@@ -441,6 +441,17 @@ test("polished Google Sheets-ready labels import without silent semantic changes
   assert.equal(parsed.adHocWorkers[0].displayName,"Jan Kowalski");
 });
 
+test("probation and ad-hoc errors identify the exact field that must be completed",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({Pracownicy:[{Imię:"Anna",Nazwisko:"Próbna","Rola podstawowa":"Kelner [KELNER]","Etap zatrudnienia":"Okres próbny"}]})),
+    /Pracownicy • wiersz 2 • kolumna „Koniec okresu próbnego”/,
+  );
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({"Pula ad-hoc":[{Imię:"Jan",Nazwisko:"Adhoc",Rola:"Barman [BARMAN]"}]})),
+    /Pula ad-hoc • wiersz 2 • kolumna „Telefon”/,
+  );
+});
+
 test("unknown employment stage points to the exact sheet row and column",async()=>{
   await assert.rejects(
     readMatrixWorkbook(workbookFile({Pracownicy:[
@@ -449,4 +460,46 @@ test("unknown employment stage points to the exact sheet row and column",async()
     ]})),
     /Pracownicy • wiersz 3 • kolumna „Etap zatrudnienia”: wartość „OKRES TESTOWY” jest nieprawidłowa/,
   );
+});
+
+test("simplified workbook keeps one employee source and makes every additional role fallback",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Firma:[{"Waluta":"PLN","Strefa czasowa":"Europe/Warsaw","Minimalny odpoczynek (godz.)":"11","Maks. zmian jednego pracownika na dobę":"1","Brak wpisanej dostępności oznacza dostępność":"TAK"}],
+    "Kategorie grafików":[{Kod:"SALA",Nazwa:"Sala",Aktywna:"TAK"}],
+    Role:[
+      {Kod:"KELNER",Nazwa:"Kelner","Kategoria grafiku":"Sala [SALA]",Aktywna:"TAK"},
+      {Kod:"HOST",Nazwa:"Host","Kategoria grafiku":"Sala [SALA]",Aktywna:"TAK"},
+    ],
+    Lokale:[{Kod:"KRUCZA",Nazwa:"Krucza","Strefa czasowa":"Europe/Warsaw",Aktywna:"TAK"}],
+    Obowiązki:[{Kod:"KASA",Nazwa:"Obsługa kasy",Aktywna:"TAK"}],
+    Pracownicy:[{
+      "Numer pracownika":"GP-067",Aktywny:"TAK",Imię:"Tejlor",Nazwisko:"Słift",
+      "Rola podstawowa":"Kelner [KELNER]","Rola dodatkowa 1":"Host [HOST]",
+      "Lokal pracy 1":"Krucza [KRUCZA]","Kompetencja dodatkowa 1":"Obsługa kasy [KASA]",
+      "Etap zatrudnienia":"Stała współpraca","Zatrudniony od":"2026-01-01",
+      "Miesięczny cel godzin":"180","Twardy limit miesięczny godzin":"220","Limit tygodniowy godzin":"48",
+      "Maks. kolejnych dni":"6","Rodzaj umowy":"Umowa o pracę","Zgoda na nadgodziny":"NIE",
+    }],
+    Zmiany:[{Kod:"KRUCZA_WIECZOR",Nazwa:"Wieczór",Lokal:"Krucza [KRUCZA]",Od:"18:00",Do:"03:00","Kończy się następnego dnia":"TAK","Dni tygodnia":"1,2",Aktywna:"TAK"}],
+    Obsada:[{Zmiana:"Wieczór [KRUCZA_WIECZOR]",Rola:"Host [HOST]","Obowiązek (opcjonalnie)":"Obsługa kasy [KASA]","Liczba osób":"1",Aktywna:"TAK"}],
+  }));
+
+  assert.equal(parsed.settings.minimumRestMinutes,"660");
+  assert.equal(parsed.roles[0].categoryCode,"SALA");
+  assert.equal(parsed.employees[0].primaryRoleCode,"KELNER");
+  assert.deepEqual(parsed.employees[0].backupRoles,[{roleCode:"HOST",priority:1}]);
+  assert.deepEqual(parsed.employees[0].locationCodes,["KRUCZA"]);
+  assert.deepEqual(parsed.employees[0].dutyCodes,["KASA"]);
+  assert.equal(parsed.staffingRules[0].shiftCode,"KRUCZA_WIECZOR");
+  assert.equal(parsed.staffingRules[0].roleCode,"HOST");
+  assert.equal(parsed.staffingRules[0].dutyCode,"KASA");
+});
+
+test("legacy technical non-primary STANDARD role is canonicalized to BACKUP",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Role:[{Kod:"KELNER",Nazwa:"Kelner"},{Kod:"HOST",Nazwa:"Host"}],
+    "Role pracowników":[{"Numer pracownika":"GP-067","Kod roli":"HOST",Podstawowa:"NIE","Sposób użycia":"STANDARD","Priorytet rezerwowy":"7",Aktywna:"TAK"}],
+  }));
+  assert.equal(parsed.employeeRoles[0].assignmentMode,"BACKUP");
+  assert.equal(parsed.employeeRoles[0].backupPriority,"7");
 });

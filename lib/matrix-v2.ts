@@ -499,6 +499,9 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("COLUMN") && value.includes("MATRIX_EMPLOYEE_ROLES_V2") && value.includes("DOES NOT EXIST")) {
     return "Podgląd importu został zatrzymany przez niezgodność wersji bazy UAT. Plik jest poprawny i żadne dane nie zostały zapisane. Przekaż administratorowi kod: IMPORT_EMPLOYEE_ROLE_SCHEMA.";
   }
+  if (value.includes("MATRIX_EMPLOYEE_ROLES_V2_PRIMARY_OR_FALLBACK_CHECK")) {
+    return "Rola podstawowa jest używana standardowo, a każda rola dodatkowa wyłącznie awaryjnie. Wróć do Zespół → Role i usuń sprzeczne przypisanie.";
+  }
   if (value.includes("CHECK CONSTRAINT")) {
     const constraint=message.match(/constraint ["']?([^"'\s]+)["']?/i)?.[1];
     return `Jedna z wartości narusza regułę bazy${constraint?` „${constraint}”`:""}. Żadne dane nie zostały częściowo zapisane; komunikat został zachowany dla administratora UAT.`;

@@ -14,6 +14,7 @@ import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
+import { QUICK_WORKBOOK_SHEETS, referenceLabel } from "@/lib/workbook-contract";
 import {
   authorizeGoogleDriveFile,
   beginGoogleDriveRedirectAuthorization,
@@ -936,7 +937,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
       const raw=XLSX.utils.sheet_to_json<Record<string,unknown>>(sheet,{defval:""});
       const rows:AccessImportRow[]=[];const errors:string[]=[];
       const normalize=(value:unknown)=>String(value??"").trim();
-      const header=(value:string)=>value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|SYSTEM)\s*$/iu,"");
+      const header=(value:string)=>value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|WARUNKOWE|SYSTEM)\s*$/iu,"");
       const value=(source:Record<string,unknown>,...names:string[])=>{
         const key=Object.keys(source).find(candidate=>names.some(name=>header(candidate).toLocaleLowerCase("pl-PL")===name.toLocaleLowerCase("pl-PL")));
         return normalize(key===undefined?"":source[key]);
@@ -948,8 +949,9 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
         const email=value(source,"Adres e-mail","email").toLocaleLowerCase("pl-PL");
         const accessValue=value(source,"Rodzaj dostępu","appRole").toLocaleUpperCase("pl-PL");
         const appRole=roleByValue.get(accessValue)??"";
-        const roleValue=value(source,"Zakres roli","role").toLocaleUpperCase("pl-PL");
-        const locationValue=value(source,"Zakres lokalu","location").toLocaleUpperCase("pl-PL");
+        const referenceCode=(selected:string)=>selected.match(/\[([^\]]+)\]\s*$/u)?.[1]??selected;
+        const roleValue=referenceCode(value(source,"Zakres roli","role")).toLocaleUpperCase("pl-PL");
+        const locationValue=referenceCode(value(source,"Zakres lokalu","location")).toLocaleUpperCase("pl-PL");
         const role=directory.roles.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===roleValue));
         const location=directory.locations.find(item=>[item.code,item.name].some(value=>value.toLocaleUpperCase("pl-PL")===locationValue));
         const activeValue=value(source,"Aktywny","active").replace(/[☑☐✓✔]/gu,"").trim().toLocaleUpperCase("pl-PL");
@@ -1270,11 +1272,11 @@ function WorkforceTab({
     </section>
 
     <div className="matrix-v2-entity-grid workforce-links">
-      <WorkforceLinks title="Role" items={employeeRoles.map(item=>({
-        id:item.id,label:itemName(data.roles,item.role_id),detail:[item.is_primary?"podstawowa":item.assignment_mode==="BACKUP"?`rezerwowa • kolejność ${item.backup_priority}`:"standardowa dodatkowa",item.can_lead?"może prowadzić":null,!item.active?"wyłączona":null].filter(Boolean).join(" • "),item,
+      <WorkforceLinks title="Rola podstawowa i role dodatkowe" items={employeeRoles.map(item=>({
+        id:item.id,label:itemName(data.roles,item.role_id),detail:[item.is_primary?"rola podstawowa":"rola dodatkowa • używana wyłącznie awaryjnie",item.can_lead?"może prowadzić":null,!item.active?"wyłączona":null].filter(Boolean).join(" • "),item,
       }))} editable={editable} add={()=>edit({kind:"EMPLOYEE_ROLE",item:{employee_id:employee.id}})} edit={item=>edit({kind:"EMPLOYEE_ROLE",item})}/>
-      <WorkforceLinks title="Lokale" items={employeeLocations.map(item=>({
-        id:item.id,label:itemName(data.locations,item.location_id),detail:[item.standard_allowed?"w zwykłym limicie":null,item.overtime_allowed?"dopuszczony również w nadgodzinach":null,!item.active?"wyłączony":null].filter(Boolean).join(" • "),item,
+      <WorkforceLinks title="Lokale pracy" items={employeeLocations.map(item=>({
+        id:item.id,label:itemName(data.locations,item.location_id),detail:[item.standard_allowed?"może pracować w tym lokalu":null,!item.active?"wyłączony":null].filter(Boolean).join(" • "),item,
       }))} editable={editable} add={()=>edit({kind:"EMPLOYEE_LOCATION",item:{employee_id:employee.id}})} edit={item=>edit({kind:"EMPLOYEE_LOCATION",item})}/>
       <WorkforceLinks title="Obowiązki i kompetencje" items={employeeDuties.map(item=>({
         id:item.id,label:itemName(data.duties,item.duty_id),detail:[item.role_id?itemName(data.roles,item.role_id):"wszystkie role",item.location_id?itemName(data.locations,item.location_id):"wszystkie lokale",!item.active?"wyłączony":null].filter(Boolean).join(" • "),item,
@@ -1707,7 +1709,82 @@ type FullImportPreview={
   };
 };
 
+async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
+  const XLSX=await import("xlsx");
+  const workbook=XLSX.utils.book_new();
+  const add=(name:keyof typeof QUICK_WORKBOOK_SHEETS,rows:(string|number|boolean|null)[][]=[])=>{
+    const headers=[...QUICK_WORKBOOK_SHEETS[name].headers];
+    const sheet=XLSX.utils.aoa_to_sheet([headers,...rows]);
+    sheet["!autofilter"]={ref:`A1:${XLSX.utils.encode_col(headers.length-1)}${Math.max(1,rows.length+1)}`};
+    sheet["!freeze"]={xSplit:0,ySplit:1};
+    sheet["!cols"]=headers.map(header=>({wch:Math.min(36,Math.max(15,header.length+2))}));
+    XLSX.utils.book_append_sheet(workbook,sheet,name);
+  };
+  const instructions=XLSX.utils.aoa_to_sheet([["GRAFIK PRO — prosta konfiguracja firmy"]]);
+  XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
+  const settings=matrixV2Settings(data.matrixVersion);
+  add("Firma",[[settings.currency,settings.timezone,settings.minimumRestMinutes/60,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE"]]);
+  add("Kategorie grafików",(data.roleCategories??[]).map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]));
+  add("Role",data.roles.map(item=>[
+    item.code,item.name,referenceLabel((data.roleCategories??[]).find(category=>category.id===item.category_id)?.name,(data.roleCategories??[]).find(category=>category.id===item.category_id)?.code),item.color??"",item.active?"TAK":"NIE",
+  ]));
+  add("Lokale",data.locations.map(item=>[item.code,item.name,item.timezone,item.active?"TAK":"NIE"]));
+  add("Obowiązki",data.duties.map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]));
+
+  const employees=data.employees.filter(employee=>employee.active).map(employee=>{
+    const primary=data.roles.find(role=>role.id===employee.primaryRoleId);
+    const additional=(data.employeeRoles??[]).filter(link=>link.employee_id===employee.id&&link.active&&!link.is_primary)
+      .sort((left,right)=>(left.backup_priority??100)-(right.backup_priority??100)||left.id.localeCompare(right.id))
+      .map(link=>{const role=data.roles.find(item=>item.id===link.role_id);return referenceLabel(role?.name,role?.code);});
+    const locations=(data.employeeLocations??[]).filter(link=>link.employee_id===employee.id&&link.active&&(link.standard_allowed||link.overtime_allowed||link.home_location))
+      .map(link=>{const location=data.locations.find(item=>item.id===link.location_id);return referenceLabel(location?.name,location?.code);});
+    const duties=(data.employeeDuties??[]).filter(link=>link.employee_id===employee.id&&link.active)
+      .map(link=>{const duty=data.duties.find(item=>item.id===link.duty_id);return referenceLabel(duty?.name,duty?.code);});
+    return [employee.employeeNo,employee.active?"TAK":"NIE",employee.firstName,employee.lastName,employee.email??"",referenceLabel(primary?.name,primary?.code),
+      additional[0]??"",additional[1]??"",additional[2]??"",locations[0]??"",locations[1]??"",locations[2]??"",duties[0]??"",duties[1]??"",duties[2]??"",
+      employee.employmentStage??"REGULAR",employee.probationEnd??"",employee.employmentStart??"",employee.employmentEnd??"",Number(employee.nominalMonthlyMinutes??0)/60,
+      Number(employee.maximumMonthlyMinutes??0)/60,Number(employee.maximumWeeklyMinutes??0)/60,employee.maximumConsecutiveDays,
+      employee.minimumRestMinutes===null||employee.minimumRestMinutes===undefined?"":employee.minimumRestMinutes/60,employee.noWeekends?"TAK":"NIE",employee.contractType??"INNE",employee.overtimePolicy??"NEVER"];
+  });
+  add("Pracownicy",employees);
+  add("Zmiany",data.shiftTemplates.map(shift=>{
+    const location=data.locations.find(item=>item.id===shift.location_id);
+    return [shift.code,shift.name,referenceLabel(location?.name,location?.code),time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.active?"TAK":"NIE"];
+  }));
+  const defaultScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)??data.scenarios.find(scenario=>scenario.active);
+  add("Obsada",data.staffingRules.filter(rule=>!defaultScenario||rule.scenario_id===defaultScenario.id).map(rule=>{
+    const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
+    const role=data.roles.find(item=>item.id===rule.role_id);
+    const duty=data.duties.find(item=>item.id===rule.duty_id);
+    return [referenceLabel(shift?.name,shift?.code),referenceLabel(role?.name,role?.code),referenceLabel(duty?.name,duty?.code),rule.count_value??"",rule.active?"TAK":"NIE"];
+  }));
+  add("Grupy rezerwy",settings.standbyGroups.map(group=>{
+    const category=(data.roleCategories??[]).find(item=>item.code===group.categoryCode);
+    const roles=group.roleCodes.map(code=>{const role=data.roles.find(item=>item.code===code);return referenceLabel(role?.name,role?.code);});
+    return [group.code,group.name,referenceLabel(category?.name,category?.code),roles.join(", "),group.tiers];
+  }));
+  add("Pula ad-hoc",(data.adHocWorkers??[]).map(item=>{
+    const role=data.roles.find(candidate=>candidate.id===item.role_id);
+    const names=String(item.display_name??"").trim().split(/\s+/);const firstName=names.shift()??"";
+    return [firstName,names.join(" "),item.email??"",item.phone??"",referenceLabel(role?.name,role?.code),item.contract_type,item.base_rate_minor===null||item.base_rate_minor===undefined?"":item.base_rate_minor/100,item.currency,item.available_from??"",item.available_to??"",item.notes??"",item.active?"TAK":"NIE"];
+  }));
+  const dictionaries=[
+    ["TYP","KOD","NAZWA"],
+    ...(data.roleCategories??[]).filter(item=>item.active).map(item=>["KATEGORIA GRAFIKU",item.code,item.name]),
+    ...data.roles.filter(item=>item.active).map(item=>["ROLA",item.code,item.name]),
+    ...data.locations.filter(item=>item.active).map(item=>["LOKAL",item.code,item.name]),
+    ...data.duties.filter(item=>item.active).map(item=>["OBOWIĄZEK",item.code,item.name]),
+    ...data.shiftTemplates.filter(item=>item.active).map(item=>["ZMIANA",item.code,item.name]),
+  ];
+  const dictionarySheet=XLSX.utils.aoa_to_sheet(dictionaries);
+  XLSX.utils.book_append_sheet(workbook,dictionarySheet,"_LISTY");
+  const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
+  const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
+  return {bytes:await polishMatrixWorkbook(raw,"QUICK"),fileName:`grafik-pro-prosta-konfiguracja-v${data.matrixVersion.version}.xlsx`};
+}
+
 async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
+  if(variant==="QUICK")return buildQuickMatrixTemplate(data);
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const add=(name:string,headers:string[],rows:(string|number|boolean|null)[][]=[])=>{
@@ -1718,11 +1795,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     XLSX.utils.book_append_sheet(workbook,sheet,name);
   };
   const instructions=XLSX.utils.aoa_to_sheet([
-    [variant==="QUICK"?"GRAFIK PRO — szybki start firmy":"GRAFIK PRO — import konfiguracji firmy","Zasada"],
-    ...(variant==="QUICK"?[
-      ["Co uzupełnić","Pracuj tylko w widocznych arkuszach. Najpierw ustaw strukturę firmy i zespół; stawki uzupełnisz w osobnym pliku po nadaniu numerów GP-###."],
-      ["Ukryte arkusze","Zawierają bezpieczne ustawienia techniczne bieżącej wersji. Nie musisz ich otwierać ani wypełniać."],
-    ]:[]),
+    ["GRAFIK PRO — pełna kopia techniczna firmy","Zasada"],
     ["Nowy pracownik","Pozostaw Numer pracownika pusty. System nada kolejny wolny numer GP-### automatycznie."],
     ["Aktualizacja pracownika","Podaj istniejący numer lub e-mail. Nieistniejący numer zostanie odrzucony w podglądzie."],
     ["Kody","Kody ról, lokali, obowiązków i scenariuszy skopiuj z arkusza Słowniki."],
@@ -1845,13 +1918,9 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
   dictionarySheet["!autofilter"]={ref:`A1:C${dictionaries.length}`};
   dictionarySheet["!cols"]=[{wch:24},{wch:30},{wch:48}];
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"Słowniki");
-  if(variant==="QUICK"){
-    const hidden=new Set(["Scenariusze","Strategie","Kryteria strategii","Warianty scenariuszy","Role pracowników","Lokale pracowników","Kompetencje pracowników","Dostępność","Zasady płacowe","Dodatki scenariuszy","Budżety scenariuszy","Finanse pracowników"]);
-    workbook.Workbook={...(workbook.Workbook??{}),Sheets:workbook.SheetNames.map(name=>({Hidden:hidden.has(name)?1:0}))};
-  }
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
   const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
-  return {bytes:await polishMatrixWorkbook(raw,variant),fileName:variant==="QUICK"?`grafik-pro-szybki-start-v${data.matrixVersion.version}.xlsx`:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`};
+  return {bytes:await polishMatrixWorkbook(raw,"FULL"),fileName:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`};
 }
 
 async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
@@ -1861,7 +1930,7 @@ async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
     ["GRAFIK PRO — zbiorcza aktualizacja stawek","Zasada"],
     ["Co można zrobić","W jednym pliku dodasz nowe okresy stawek, poprawisz istniejące i wyłączysz błędne wpisy dla całego zespołu."],
     ["Tożsamość pracownika","Nie zmieniaj kolumny Numer pracownika. Imię, nazwisko i daty zatrudnienia są tylko informacją pomocniczą."],
-    ["Nowa stawka","Dodaj nowy wiersz, pozostaw ID stawki puste i podaj Numer pracownika, okres, kwotę, walutę oraz rodzaj umowy."],
+    ["Nowa stawka","Dodaj nowy wiersz, pozostaw ID stawki puste i podaj Numer pracownika, okres, kwotę, walutę oraz aktywność. Forma współpracy pochodzi z profilu pracownika."],
     ["Zmiana istniejącej stawki","Zachowaj ID stawki i popraw wybrane dane w tym samym wierszu."],
     ["Wyłączenie wpisu","Zachowaj ID stawki i wpisz NIE w kolumnie Aktywna. Wpis nie jest usuwany — pozostaje w historii."],
     ["Okresy","Aktywne okresy jednej osoby nie mogą się nakładać. Puste Obowiązuje do oznacza stawkę bez daty końcowej."],
@@ -1871,27 +1940,22 @@ async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
   instructions["!cols"]=[{wch:34},{wch:108}];
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
 
-  const headers=["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Rodzaj umowy","Aktywna"];
+  const headers=["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Aktywna"];
   const draftStart=String(data.matrixVersion.effective_from??data.month??new Date().toISOString()).slice(0,10);
   const rows=data.employees.filter(employee=>employee.active).flatMap(employee=>{
     const rates=(data.employeePayRates??[]).filter(rate=>rate.employee_id===employee.id&&rate.active)
       .sort((left,right)=>left.valid_from.localeCompare(right.valid_from));
     const employeeName=`${employee.firstName} ${employee.lastName}`.trim();
-    if(!rates.length)return [["",employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",employee.employmentStart&&employee.employmentStart>draftStart?employee.employmentStart:draftStart,"","",data.matrixVersion.settings?.currency??"PLN",employee.contractType??"INNE","TAK"]];
-    return rates.map(rate=>[rate.id,employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",rate.valid_from,rate.valid_to??"",rate.base_rate_minor/100,rate.currency,rate.contract_type??employee.contractType??"INNE",rate.active?"TAK":"NIE"]);
+    if(!rates.length)return [["",employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",employee.employmentStart&&employee.employmentStart>draftStart?employee.employmentStart:draftStart,"","",data.matrixVersion.settings?.currency??"PLN","TAK"]];
+    return rates.map(rate=>[rate.id,employee.employeeNo,employeeName,employee.employmentStart??"",employee.employmentEnd??"",rate.valid_from,rate.valid_to??"",rate.base_rate_minor/100,rate.currency,rate.active?"TAK":"NIE"]);
   });
   const sheet=XLSX.utils.aoa_to_sheet([headers,...rows]);
-  sheet["!autofilter"]={ref:`A1:K${Math.max(1,rows.length+1)}`};
+  sheet["!autofilter"]={ref:`A1:J${Math.max(1,rows.length+1)}`};
   sheet["!freeze"]={xSplit:0,ySplit:1};
-  sheet["!cols"]=[{wch:38},{wch:20},{wch:28},{wch:17},{wch:17},{wch:17},{wch:17},{wch:22},{wch:12},{wch:28},{wch:12}];
+  sheet["!cols"]=[{wch:38},{wch:20},{wch:28},{wch:17},{wch:17},{wch:17},{wch:17},{wch:22},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(workbook,sheet,"Finanse pracowników");
   const dictionaries=XLSX.utils.aoa_to_sheet([
     ["POLE","WARTOŚĆ","OPIS"],
-    ["Rodzaj umowy","UMOWA_O_PRACE","Umowa o pracę"],
-    ["Rodzaj umowy","CZESC_ETATU","Umowa o pracę — część etatu"],
-    ["Rodzaj umowy","ZLECENIE","Umowa zlecenie"],
-    ["Rodzaj umowy","B2B","Współpraca B2B"],
-    ["Rodzaj umowy","INNE","Inna forma współpracy"],
     ["Aktywna","TAK","Wpis obowiązuje"],
     ["Aktywna","NIE","Wyłącz wpis bez usuwania historii"],
   ]);
@@ -1979,10 +2043,15 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     try{
       if(scope==="FINANCE"){
         const parsed=await readWorkforceFinanceWorkbook(file);
-        if(!parsed.payRates.length)throw new Error("Arkusz „Finanse pracowników” nie zawiera żadnej stawki do sprawdzenia.");
-        const result=await supabase.rpc("matrix_v2_finance_import_preview_uat_v1",{p_payload:parsed});
+        const financePayload={...parsed,payRates:parsed.payRates.map(rate=>{
+          const existing=rate.rateId?data.employeePayRates.find(item=>item.id===rate.rateId):undefined;
+          const employee=data.employees.find(item=>item.employeeNo.toLocaleUpperCase("pl-PL")===rate.employeeNo.toLocaleUpperCase("pl-PL"));
+          return {...rate,contractType:rate.contractType||existing?.contract_type||employee?.contractType||"INNE"};
+        })};
+        if(!financePayload.payRates.length)throw new Error("Arkusz „Finanse pracowników” nie zawiera żadnej stawki do sprawdzenia.");
+        const result=await supabase.rpc("matrix_v2_finance_import_preview_uat_v1",{p_payload:financePayload});
         if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
-        setPayload(parsed);setPreview(result.data as FinanceImportPreview);
+        setPayload(financePayload);setPreview(result.data as FinanceImportPreview);
         return;
       }
       const [configuration,finance]=await Promise.all([readMatrixWorkbook(file),readWorkforceFinanceWorkbook(file)]);
@@ -2221,9 +2290,8 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <label>Rola<select name="roleId" required disabled={Boolean(item?.id)} defaultValue={String(item?.role_id ?? "")}>{data.roles.filter(x=>x.active||x.id===item?.role_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="roleId" value={String(item.role_id)}/>}
     <div className="form-row"><label>Ważna od<input name="validFrom" type="date" defaultValue={String(item?.valid_from??"")}/></label><label>Ważna do<input name="validTo" type="date" defaultValue={String(item?.valid_to??"")}/></label></div>
-    <label className="check-label"><input name="isPrimary" type="checkbox" defaultChecked={Boolean(item?.is_primary)}/> Rola podstawowa</label>
-    <label>Sposób użycia roli<select name="assignmentMode" defaultValue={String(item?.assignment_mode??"STANDARD")}><option value="STANDARD">Standardowo — silnik może planować tę rolę normalnie</option><option value="BACKUP">Rezerwowo — dopiero gdy brakuje osób standardowych</option></select><small>Przykład: HOST jako rola podstawowa = standardowo; kelner mogący awaryjnie wejść jako HOST = rezerwowo.</small></label>
-    <label>Kolejność użycia rezerwowego<input name="backupPriority" type="number" min="1" max="999" step="1" defaultValue={Number(item?.backup_priority??100)}/><small>Niższa liczba oznacza wcześniejsze użycie. Pole ma znaczenie tylko dla roli rezerwowej.</small></label>
+    <label className="check-label"><input name="isPrimary" type="checkbox" defaultChecked={Boolean(item?.is_primary)}/> To jest rola podstawowa pracownika</label>
+    <p className="matrix-v2-form-hint"><strong>Jedna prosta zasada:</strong> jeśli pole powyżej nie jest zaznaczone, jest to rola dodatkowa. Generator użyje jej dopiero wtedy, gdy nie ma dostępnej osoby z tą rolą podstawową.</p>
     <label className="check-label"><input name="canLead" type="checkbox" defaultChecked={Boolean(item?.can_lead)}/> Może prowadzić zespół</label>
     <ActiveToggle item={item}/>
   </>;
@@ -2232,15 +2300,15 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <label>Lokal<select name="locationId" required disabled={Boolean(item?.id)} defaultValue={String(item?.location_id ?? "")}>{data.locations.filter(x=>x.active||x.id===item?.location_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="locationId" value={String(item.location_id)}/>}
     <div className="form-row"><label>Ważny od<input name="validFrom" type="date" defaultValue={String(item?.valid_from??"")}/></label><label>Ważny do<input name="validTo" type="date" defaultValue={String(item?.valid_to??"")}/></label></div>
-    <label className="check-label"><input name="standardAllowed" type="checkbox" defaultChecked={Boolean(item?.standard_allowed)}/> Może pracować standardowo</label>
-    <label className="check-label"><input name="overtimeAllowed" type="checkbox" defaultChecked={Boolean(item?.overtime_allowed)}/> Może pracować w nadgodzinach</label>
+    <input type="hidden" name="standardAllowed" value="true"/>
+    <p className="matrix-v2-form-hint">Przypisanie oznacza po prostu, że pracownik może pracować w tym lokalu. Zasada nadgodzin jest ustawiana raz w profilu pracownika, a nie osobno dla każdego lokalu.</p>
     <ActiveToggle item={item}/>
   </>;
   if (kind === "EMPLOYEE_DUTY") return <>
     <EmployeeContextField data={data} employeeId={String(item?.employee_id??"")}/>
     <label>Obowiązek<select name="dutyId" required disabled={Boolean(item?.id)} defaultValue={String(item?.duty_id ?? "")}>{data.duties.filter(x=>x.active||x.id===item?.duty_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     {item?.id&&<input type="hidden" name="dutyId" value={String(item.duty_id)}/>}
-    <div className="form-row"><label>Rola<select name="roleId" defaultValue={String(item?.role_id??"")}><option value="">Wszystkie role</option>{data.roles.filter(x=>x.active||x.id===item?.role_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label><label>Lokal<select name="locationId" defaultValue={String(item?.location_id??"")}><option value="">Wszystkie lokale</option>{data.locations.filter(x=>x.active||x.id===item?.location_id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label></div>
+    <p className="matrix-v2-form-hint">Kompetencja należy do pracownika i może być użyta w każdej jego roli i każdym przypisanym lokalu. Nie trzeba powtarzać tego samego obowiązku dla każdej kombinacji.</p>
     <div className="form-row"><label>Ważny od<input name="validFrom" type="date" defaultValue={String(item?.valid_from??"")}/></label><label>Ważny do<input name="validTo" type="date" defaultValue={String(item?.valid_to??"")}/></label></div>
     <ActiveToggle item={item}/>
   </>;
@@ -2509,9 +2577,9 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
   if(["ROLE","LOCATION","DUTY","STRATEGY"].includes(kind)){if(!name||!code)throw new Error("Podaj nazwę elementu.");if(kind==="ROLE"){const categoryId=formText(form,"categoryId");if(!categoryId)throw new Error("Wybierz kategorię grafiku dla tej roli.");return{...common(),color:formText(form,"color"),categoryId};}if(kind==="LOCATION"){const timezone=formText(form,"timezone");if(!timezone)throw new Error("Wybierz strefę czasową lokalu.");try{new Intl.DateTimeFormat("en",{timeZone:timezone}).format(new Date(0));}catch{throw new Error("Podaj prawidłową strefę czasową IANA, np. Europe/Warsaw.");}return{...common(),timezone};}if(kind==="DUTY")return{...common(),description:formText(form,"description"),color:formText(form,"color")};return{...common(),description:formText(form,"description"),solverCode:"CP_SAT"};}
   if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const startsAt=parseTime24(formText(form,"startsAt"),"Godzina rozpoczęcia") as string;const endsAt=parseTime24(formText(form,"endsAt"),"Godzina zakończenia") as string;return{...common(),locationId:formText(form,"locationId"),shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt,endsNextDay:checked(form,"endsNextDay"),days};}
   if(kind==="ROLE_DUTY"){const assignmentMode=formText(form,"assignmentMode"),minimumCount=requiredNumber(formText(form,"minimumCount")||"0");if(assignmentMode==="REQUIRED"&&minimumCount<1)throw new Error("Obowiązek wymagany musi mieć minimalną liczbę co najmniej 1.");return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode,minimumCount,shiftObligation:false,shiftPeriod:null,active:checked(form,"active")};}
-  if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isPrimary=checked(form,"isPrimary"),assignmentMode=isPrimary?"STANDARD":formText(form,"assignmentMode")||"STANDARD",backupPriority=requiredNumber(formText(form,"backupPriority")||"100");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");if(backupPriority<1||backupPriority>999)throw new Error("Kolejność rezerwowa musi mieścić się od 1 do 999.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary,assignmentMode,backupPriority,canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
-  if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");if(!checked(form,"standardAllowed")&&!checked(form,"overtimeAllowed"))throw new Error("Wybierz zwykły limit lub dopuszczenie nadgodzin.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:checked(form,"standardAllowed"),overtimeAllowed:checked(form,"overtimeAllowed"),homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
-  if(kind==="EMPLOYEE_DUTY"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),dutyId:formText(form,"dutyId"),roleId:formText(form,"roleId")||null,locationId:formText(form,"locationId")||null,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
+  if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isPrimary=checked(form,"isPrimary");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początku.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary,assignmentMode:isPrimary?"STANDARD":"BACKUP",backupPriority:isPrimary?100:Number(item?.backup_priority??100),canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
+  if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:true,overtimeAllowed:false,homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
+  if(kind==="EMPLOYEE_DUTY"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początku.");return{employeeId:formText(form,"employeeId"),dutyId:formText(form,"dutyId"),roleId:null,locationId:null,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="SCENARIO"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isDefault=checked(form,"isDefault");if(!isDefault&&(!validFrom||!validTo))throw new Error("Profil okresowy wymaga daty początku i końca. Jednodniowy wyjątek dodaj w Kalendarzu operacyjnym.");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data zakończenia profilu nie może być wcześniejsza od daty rozpoczęcia.");return{...common(),description:formText(form,"description"),parentScenarioId:formText(form,"parentScenarioId")||null,color:formText(form,"color"),isDefault,validFrom:validFrom||null,validTo:validTo||null,settingsOverrides:scenarioSettingsOverridesFromForm(form)};}
   if(kind==="STAFFING_RULE"){
     const shiftTemplateIds=item?.id?[]:data.getAll("shiftTemplateIds").map(String).filter(Boolean);

@@ -25,7 +25,7 @@ export type MatrixWorkbookPayload = {
 };
 
 function normalizeImportHeader(value:string){
-  return value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|SYSTEM)\s*$/iu,"").toLocaleLowerCase("pl-PL");
+  return value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|WARUNKOWE|SYSTEM)\s*$/iu,"").toLocaleLowerCase("pl-PL");
 }
 
 function importCell(row:Record<string,unknown>,...names:string[]){
@@ -54,7 +54,8 @@ function normalizeOvertimePolicy(value:string){
 function importList(value:string){return value.split(/[;,|]/).map(item=>item.trim()).filter(Boolean);}
 
 function importCode(value:string){
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+  const reference=value.match(/\[([^\]]+)\]\s*$/u)?.[1]??value;
+  return reference.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
     .toLocaleUpperCase("pl-PL").replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
 }
 
@@ -210,14 +211,15 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   };
 
   const settingsRow=rows(["Firma","Ustawienia firmy","Company"])[0]??{};
+  const minimumRestHours=importCell(settingsRow,"Minimalny odpoczynek (godz.)");
   const settings={
     currency:importCell(settingsRow,"Waluta","currency").toUpperCase(),
     timezone:importCell(settingsRow,"Strefa czasowa","timezone"),
-    minimumRestMinutes:importCell(settingsRow,"Minimalny odpoczynek (min)","minimumRestMinutes"),
+    minimumRestMinutes:importCell(settingsRow,"Minimalny odpoczynek (min)","minimumRestMinutes")||(minimumRestHours?String(Math.round(Number(minimumRestHours.replace(",","."))*60)):"660"),
     maximumShiftsPerDay:importCell(settingsRow,"Maks. zmian jednego pracownika na dobę","Maks. zmian dziennie","maximumShiftsPerDay"),
-    standbyTiersPerRoleDay:importCell(settingsRow,"Poziomy rezerwy stand-by na rolę i dzień","Poziomy stand-by","standbyTiersPerRoleDay"),
-    missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable")),
-    requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal")),
+    standbyTiersPerRoleDay:importCell(settingsRow,"Poziomy rezerwy stand-by na rolę i dzień","Poziomy stand-by","standbyTiersPerRoleDay")||"0",
+    missingAvailabilityMeansAvailable:importBoolean(importCell(settingsRow,"Brak wpisanej dostępności oznacza dostępność","Brak dostępności oznacza dostępność","missingAvailabilityMeansAvailable"),true),
+    requireOptimal:importBoolean(importCell(settingsRow,"Wymagaj wyniku optymalnego","requireOptimal"),false),
   };
   const validatedDictionaryRows=(sheetNames:string[],entityName:string)=>{
     const sheetName=matchingSheetName(sheetNames)??sheetNames[0];
@@ -243,16 +245,16 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const roleCategories=namedRows(["Kategorie grafików","Kategorie grafikow","Role categories"],"kategorii grafiku");
   const roles=validatedDictionaryRows(["Role","Roles"],"roli").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
-    categoryCode:importCode(importCell(row,"Kod kategorii","Kategoria","categoryCode")),
+    categoryCode:importCode(importCell(row,"Kategoria grafiku","Kod kategorii","Kategoria","categoryCode")),
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
   }));
   const standbyGroups=validatedDictionaryRows(["Grupy rezerwy","Standby groups"],"grupy rezerwy").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),
     name:importCell(row,"Nazwa","name"),
-    categoryCode:importCode(importCell(row,"Kod kategorii","categoryCode")),
-    roleCodes:importList(importCell(row,"Kody ról","roleCodes")).map(importCode),
-    tiers:Number(importCell(row,"Poziomy","tiers")||"1"),sourceRow,index:index+1,
+    categoryCode:importCode(importCell(row,"Kategoria grafiku","Kod kategorii","categoryCode")),
+    roleCodes:importList(importCell(row,"Role obsługiwane wspólnie","Kody ról","roleCodes")).map(importCode),
+    tiers:Number(importCell(row,"Poziomy rezerwy","Poziomy","tiers")||"1"),sourceRow,index:index+1,
   }));
   const roleAliases=new Map<string,string>();
   for(const role of roles){
@@ -272,6 +274,9 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   }
   const normalizeLocationCode=(value:string)=>locationAliases.get(importCode(value))??importCode(value);
   const duties=namedRows(["Obowiązki","Obowiazki","Duties"],"obowiązku");
+  const dutyAliases=new Map<string,string>();
+  for(const duty of duties){const code=String(duty.code??"");for(const alias of [code,String(duty.name??"")])if(alias.trim())dutyAliases.set(importCode(alias),code);}
+  const normalizeDutyCode=(value:string)=>dutyAliases.get(importCode(value))??importCode(value);
   const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
     code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
@@ -330,6 +335,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const functionRows=rows(["FUNKCJE_DODATKOWE"]);
   const dictionaryRows=rows(["Słowniki","Slowniki"]);
   const dutyCodes=[...new Set([
+    ...duties.map(duty=>String(duty.code??"")),
     ...functionRows.map(row=>importCell(row,"KOD")),
     ...dictionaryRows.filter(row=>importCell(row,"TYP").toLocaleUpperCase("pl-PL")==="OBOWIĄZEK").map(row=>importCell(row,"KOD")),
   ].filter(Boolean))];
@@ -361,25 +367,29 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     if(baseLocation&&!sourceLocationGrants.some(grant=>grant.code.toLocaleUpperCase("pl-PL")===baseLocation.toLocaleUpperCase("pl-PL"))){
       sourceLocationGrants.push({code:baseLocation,standardAllowed:true,overtimeAllowed:false,homeLocation:true});
     }
-    const nominalHours=importCell(row,"Nominał godzin","nominalHours","GODZINY_MIESIĘCZNE*","GODZINY_MIESIĘCZNE");
+    const simpleLocationCodes=[1,2,3].map(position=>normalizeLocationCode(importCell(row,`Lokal pracy ${position}`))).filter(Boolean);
+    const simpleDutyCodes=[1,2,3].map(position=>normalizeDutyCode(importCell(row,`Kompetencja dodatkowa ${position}`))).filter(Boolean);
+    const simpleDutyColumnsPresent=[1,2,3].some(position=>hasImportColumn(row,`Kompetencja dodatkowa ${position}`));
+    const simpleBackupRoles=[1,2,3].map((position)=>({roleCode:normalizeRoleCode(importCell(row,`Rola dodatkowa ${position}`)),priority:position})).filter(entry=>entry.roleCode);
+    const nominalHours=importCell(row,"Miesięczny cel godzin","Nominał godzin","nominalHours","GODZINY_MIESIĘCZNE*","GODZINY_MIESIĘCZNE");
     const contractType=normalizeContract(importCell(row,"Rodzaj umowy","contractType","TYP_UMOWY*","TYP_UMOWY"));
     const employee:Record<string,unknown> = {
       employeeNo:sourceEmployeeLayout&&!/^GP-\d+$/i.test(sourceEmployeeNo)?"":sourceEmployeeNo||importCell(row,"Numer pracownika","employeeNo"),
       sourceEmployeeNo:sourceEmployeeNo||undefined,
       firstName:importCell(row,"Imię","firstName")||combinedName.firstName,lastName:importCell(row,"Nazwisko","lastName")||combinedName.lastName,
-      email:importCell(row,"E-mail","Email","EMAIL*"),primaryRoleCode:normalizeRoleCode(importCell(row,"Kod roli","primaryRoleCode","ROLA_GŁÓWNA*","ROLA_GŁÓWNA")),
-      locationCodes:locationColumns.length?sourceLocationGrants.filter(grant=>grant.standardAllowed).map(grant=>normalizeLocationCode(grant.code)):importList(importCell(row,"Kody lokali","locationCodes")).map(normalizeLocationCode),
+      email:importCell(row,"E-mail","Email","EMAIL*"),primaryRoleCode:normalizeRoleCode(importCell(row,"Rola podstawowa","Kod roli","primaryRoleCode","ROLA_GŁÓWNA*","ROLA_GŁÓWNA")),
+      locationCodes:simpleLocationCodes.length?simpleLocationCodes:locationColumns.length?sourceLocationGrants.filter(grant=>grant.standardAllowed).map(grant=>normalizeLocationCode(grant.code)):importList(importCell(row,"Kody lokali","locationCodes")).map(normalizeLocationCode),
       employmentStart:normalizeDate(importCell(row,"Zatrudniony od","employmentStart","DATA_ZATRUDNIENIA_OD*","DATA_ZATRUDNIENIA_OD")),employmentEnd:normalizeDate(importCell(row,"Zatrudniony do","employmentEnd","DATA_ZATRUDNIENIA_DO")),
-      nominalHours,maximumMonthlyHours:importCell(row,"Limit miesięczny godzin","maximumMonthlyHours"),
+      nominalHours,maximumMonthlyHours:importCell(row,"Twardy limit miesięczny godzin","Limit miesięczny godzin","maximumMonthlyHours"),
       maximumWeeklyHours:importCell(row,"Limit tygodniowy godzin","maximumWeeklyHours","MAX_GODZIN_TYGODNIOWO"),maximumConsecutiveDays:importCell(row,"Maks. kolejnych dni","maximumConsecutiveDays","MAX_DNI_Z_RZĘDU"),
       minimumRestHours:importCell(row,"Minimalny odpoczynek godzin","minimumRestHours","MIN_ODPOCZYNEK_H"),baseRate:importCell(row,"Stawka godzinowa","baseRate"),contractType,
-      dutyCodes,
+      dutyCodes:simpleDutyColumnsPresent?simpleDutyCodes:dutyCodes,
       employmentFraction:importCell(row,"ETAT*","ETAT","employmentFraction"),
       workTimePolicy:importCell(row,"Polityka czasu pracy","workTimePolicy","POLITYKA_CZASU_PRACY").toUpperCase(),
       overtimePolicy:normalizeOvertimePolicy(importCell(row,"Zgoda na nadgodziny","overtimePolicy","ZGODA_NA_NADGODZINY")),
       employmentStage:normalizeEmploymentStage(importCell(row,"Etap zatrudnienia","employmentStage"),index+2),
       probationEnd:normalizeDate(importCell(row,"Koniec okresu próbnego","probationEnd")),
-      backupRoles:importList(importCell(row,"Role rezerwowe (kolejność)","Role rezerwowe","backupRoles")).map((entry,index)=>{
+      backupRoles:simpleBackupRoles.length?simpleBackupRoles:importList(importCell(row,"Role rezerwowe (kolejność)","Role rezerwowe","backupRoles")).map((entry,index)=>{
         const [roleCode,priorityText]=entry.split(":").map(item=>item.trim());
         const parsedPriority=Number(priorityText||index+1);
         return {roleCode:normalizeRoleCode(roleCode),priority:Number.isInteger(parsedPriority)&&parsedPriority>0?parsedPriority:index+1};
@@ -398,13 +408,28 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     if(hasImportColumn(row,"Bez weekendów","noWeekends","BEZ_WEEKENDÓW"))employee.noWeekends=importBoolean(importCell(row,"Bez weekendów","noWeekends","BEZ_WEEKENDÓW"));
     return employee;
   });
+  const invalidEmployee=employees.map((employee,index)=>({employee,index,roles:[String(employee.primaryRoleCode??""),...((employee.backupRoles as Array<{roleCode?:string}>|undefined)??[]).map(role=>String(role.roleCode??""))].filter(Boolean)})).find(({employee,roles})=>
+    !employee.primaryRoleCode
+      ||(employee.employmentStage==="PROBATION"&&!employee.probationEnd)
+      ||new Set(roles.map(role=>role.toLocaleUpperCase("pl-PL"))).size!==roles.length
+  );
+  if(invalidEmployee){
+    const {employee,index,roles}=invalidEmployee;
+    if(!employee.primaryRoleCode)throw new Error(`Pracownicy • wiersz ${index+2} • kolumna „Rola podstawowa”: wybierz dokładnie jedną rolę podstawową z listy.`);
+    if(employee.employmentStage==="PROBATION"&&!employee.probationEnd)throw new Error(`Pracownicy • wiersz ${index+2} • kolumna „Koniec okresu próbnego”: wpisz datę RRRR-MM-DD, ponieważ etap zatrudnienia to „Okres próbny”.`);
+    if(new Set(roles.map(role=>role.toLocaleUpperCase("pl-PL"))).size!==roles.length)throw new Error(`Pracownicy • wiersz ${index+2} • kolumny ról: ta sama rola została wpisana więcej niż raz. Pozostaw ją tylko jako podstawową albo tylko raz jako dodatkową.`);
+  }
 
   const dutyColumnAliases:Record<string,string[]>={
     EVENT_ROTACYJNY:["ROTACYJNY","EVENT"],
   };
-  const inlineEmployeeDuties=dutyCodes.length?employeeRows.flatMap((row,index)=>dutyCodes.filter(code=>importBoolean(importCell(row,code,...(dutyColumnAliases[code.toLocaleUpperCase("pl-PL")]??[])))).map(code=>({
-    employeeNo:employees[index].employeeNo,email:employees[index].email,dutyCode:code,roleCode:employees[index].primaryRoleCode,active:true,
-  }))):[];
+  const inlineEmployeeDuties=employeeRows.flatMap((row,index)=>{
+    const configured=[1,2,3].map(position=>normalizeDutyCode(importCell(row,`Kompetencja dodatkowa ${position}`))).filter(Boolean);
+    const legacy=dutyCodes.filter(code=>importBoolean(importCell(row,code,...(dutyColumnAliases[code.toLocaleUpperCase("pl-PL")]??[]))));
+    return [...new Set([...configured,...legacy])].map(code=>({
+      employeeNo:employees[index].employeeNo,email:employees[index].email,dutyCode:code,roleCode:employees[index].primaryRoleCode,active:true,
+    }));
+  });
 
   const shiftSheetAliases=["Zmiany","Shifts","DEFINICJE_ZMIAN"];
   const shiftSheetName=matchingSheetName(shiftSheetAliases)??"Zmiany";
@@ -417,11 +442,11 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const day=importCell(row,"DZIEŃ_TYGODNIA");
     const startsAt=normalizeTime(importCell(row,"Od","startsAt","START"));
     return {
-      code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
+      code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:normalizeLocationCode(importCell(row,"Lokal","Kod lokalu","locationCode","LOKALIZACJA_ID")),
       // Pora jest wyłącznie techniczną wartością pochodną. Użytkownik podaje
       // dokładne godziny, a import nigdy nie ufa ręcznemu MORNING/MIDDLE/EVENING.
       shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:normalizeTime(importCell(row,"Do","endsAt","KONIEC")),
-      endsNextDay:importBoolean(importCell(row,"Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni","days")),
+      endsNextDay:importBoolean(importCell(row,"Kończy się następnego dnia","Następny dzień","endsNextDay","KONIEC_DZIEŃ_PLUS")),days:sourceShiftLayout?importDays(day):importDays(importCell(row,"Dni tygodnia","Dni","days")),
       // „Kolejność” jest polem opcjonalnym i nie występuje w prostym pliku
       // startowym. Nigdy nie wysyłamy pustego tekstu do pola liczbowego w bazie;
       // stabilna kolejność wierszy jest bezpiecznym ustawieniem domyślnym.
@@ -447,8 +472,8 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const group=importCell(row,"GRUPA_DNI");
     const sourceShift=importCell(row,"ZMIANA_ID");
     return {
-      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCell(row,"Kod zmiany","shiftCode"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
-      roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA")),dutyCode:importCell(row,"Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA"),
+      scenarioCode:importCell(row,"Kod scenariusza","scenarioCode","SCENARIUSZ"),shiftCode:sourceShift?`${sourceShift}_${group}`:importCode(importCell(row,"Zmiana","Kod zmiany","shiftCode")),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode","LOKALIZACJA_ID")),
+      roleCode:normalizeRoleCode(importCell(row,"Rola","Kod roli","roleCode","ROLA")),dutyCode:normalizeDutyCode(importCell(row,"Obowiązek (opcjonalnie)","Kod obowiązku","dutyCode","FUNKCJA_WYMAGANA")),
       // W prostym imporcie pracodawca podaje docelową liczbę osób. Pole
       // „Operacja” jest technicznym detalem importu pełnej kopii, dlatego jego
       // brak oznacza bezpieczne i intuicyjne SET zamiast blokować cały plik.
@@ -471,18 +496,18 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     shiftPeriod:importCell(row,"Pora","shiftPeriod").toUpperCase(),active:importBoolean(importCell(row,"Aktywne","active"),true),
   }));
 
-  const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>({
-    employeeNo:importCell(row,"Numer pracownika","employeeNo"),roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
-    isPrimary:importBoolean(importCell(row,"Podstawowa","isPrimary")),canLead:importBoolean(importCell(row,"Może zatwierdzać","canLead")),
-    validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
-    active:importBoolean(importCell(row,"Aktywna","active"),true),
-    assignmentMode:(importCell(row,"Sposób użycia","assignmentMode")||"STANDARD").toUpperCase(),
-    backupPriority:importCell(row,"Priorytet rezerwowy","backupPriority")||"100",
-  }));
+  const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>{
+    const isPrimary=importBoolean(importCell(row,"Podstawowa","isPrimary"));
+    return {employeeNo:importCell(row,"Numer pracownika","employeeNo"),roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
+      isPrimary,canLead:importBoolean(importCell(row,"Może zatwierdzać","canLead")),
+      validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
+      active:importBoolean(importCell(row,"Aktywna","active"),true),assignmentMode:isPrimary?"STANDARD":"BACKUP",
+      backupPriority:importCell(row,"Priorytet rezerwowy","backupPriority")||"100"};
+  });
   const adHocWorkers=rows(["Pula ad-hoc","Pula ad hoc","Ad hoc pool"]).map((row,index)=>({
     displayName:[importCell(row,"Imię","firstName"),importCell(row,"Nazwisko","lastName")].filter(Boolean).join(" ")||importCell(row,"Imię i nazwisko","Nazwa","displayName"),
     email:importCell(row,"E-mail","Email","email"),phone:importCell(row,"Telefon","phone"),
-    roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),
+    roleCode:normalizeRoleCode(importCell(row,"Rola","Kod roli","roleCode")),
     contractType:normalizeContract(importCell(row,"Rodzaj współpracy","Rodzaj umowy","contractType"))||"ZLECENIE",
     baseRateMinor:importMoneyMinor(importCell(row,"Stawka godzinowa","baseRate")),
     currency:(importCell(row,"Waluta","currency")||"PLN").toUpperCase(),
@@ -492,8 +517,10 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   })).filter(row=>row.displayName||row.email||row.phone);
   const adHocWorkerWithoutRole=adHocWorkers.find(row=>!row.roleCode);
   if(adHocWorkerWithoutRole){
-    throw new Error(`Pula ad-hoc • wiersz ${adHocWorkerWithoutRole.sourceRow} • kolumna „Kod roli”: wybierz rolę z arkusza „Role” albo usuń ten niepełny wiersz.`);
+    throw new Error(`Pula ad-hoc • wiersz ${adHocWorkerWithoutRole.sourceRow} • kolumna „Rola”: wybierz rolę z zakładki „Role” albo usuń ten niepełny wiersz.`);
   }
+  const adHocWorkerWithoutPhone=adHocWorkers.find(row=>!row.phone);
+  if(adHocWorkerWithoutPhone)throw new Error(`Pula ad-hoc • wiersz ${adHocWorkerWithoutPhone.sourceRow} • kolumna „Telefon”: wpisz numer telefonu osoby ad-hoc albo usuń ten niepełny wiersz.`);
   const employeeLocationsDetailed=rows(["Lokale pracowników","Lokale pracownikow","Employee Locations"]).map(row=>({
     employeeNo:importCell(row,"Numer pracownika","employeeNo"),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),
     standardAllowed:importBoolean(importCell(row,"Zwykła praca","standardAllowed")),overtimeAllowed:importBoolean(importCell(row,"Dodatkowa praca","overtimeAllowed")),
@@ -501,7 +528,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),active:importBoolean(importCell(row,"Aktywna","active"),true),
   }));
   const employeeCapabilities=rows(["Kompetencje pracowników","Kompetencje pracownikow","Employee Capabilities"]).map(row=>({
-    employeeNo:importCell(row,"Numer pracownika","employeeNo"),dutyCode:importCell(row,"Kod obowiązku","dutyCode").toUpperCase(),
+    employeeNo:importCell(row,"Numer pracownika","employeeNo"),dutyCode:normalizeDutyCode(importCell(row,"Kod obowiązku","dutyCode")),
     roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),locationCode:normalizeLocationCode(importCell(row,"Kod lokalu","locationCode")),
     validFrom:normalizeDate(importCell(row,"Obowiązuje od","validFrom")),validTo:normalizeDate(importCell(row,"Obowiązuje do","validTo")),
     active:importBoolean(importCell(row,"Aktywna","active"),true),
