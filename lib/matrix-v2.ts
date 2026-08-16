@@ -330,7 +330,17 @@ export type MatrixV2AdHocWorker = {
   available_to?: string | null;
   active: boolean;
   notes?: string | null;
+  roleCode?: string | null;
 };
+
+export function matrixV2AdHocRoleCode(
+  worker: MatrixV2AdHocWorker,
+  roles: MatrixV2Role[],
+): string {
+  return roles.find(role => role.id === worker.role_id)?.code
+    ?? worker.roleCode?.trim()
+    ?? "";
+}
 
 export type MatrixV2SaveKind =
   | "MATRIX_SETTINGS" | "ROLE" | "LOCATION" | "DUTY" | "SHIFT" | "ROLE_DUTY"
