@@ -3,7 +3,13 @@
 import type { User } from "@supabase/supabase-js";
 import { Check, Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { createSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/client";
+import {
+  applicationEnvironmentLabel,
+  createSupabaseBrowserClient,
+  hasSupabaseConfig,
+  supabaseEnvironmentGuard,
+  supabaseProjectRef,
+} from "@/lib/supabase/client";
 
 type LiveSummary = {
   employees: number;
@@ -52,8 +58,9 @@ export function useAppAuth() {
 
 export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const configured = hasSupabaseConfig();
+  const environmentGuard = supabaseEnvironmentGuard();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [loading, setLoading] = useState(configured);
+  const [loading, setLoading] = useState(configured && environmentGuard.allowed);
   const [user, setUser] = useState<User | null>(null);
   const [access, setAccess] = useState<AppAccess | null>(null);
   const [summary, setSummary] = useState<LiveSummary | null>(null);
@@ -138,6 +145,20 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     refresh,
     signOut,
   };
+
+  if (!environmentGuard.allowed) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><ShieldCheck size={24} /></span>
+          <p className="eyebrow">BLOKADA BEZPIECZEŃSTWA ŚRODOWISKA</p>
+          <h1>To wdrożenie nie może połączyć się z tą bazą</h1>
+          <p>{environmentGuard.message}</p>
+          <small>Środowisko: {environmentGuard.deploymentEnvironment} • projekt: {environmentGuard.projectRef}</small>
+        </section>
+      </main>
+    );
+  }
 
   if (!configured) {
     return (
@@ -229,6 +250,9 @@ function LoginScreen() {
       </section>
       <section className="login-panel">
         <div className="login-card">
+          <div className="live-status environment-status online" title={`Projekt Supabase: ${supabaseProjectRef()}`}>
+            <Database size={15} /><span><b>{applicationEnvironmentLabel()}</b><small>{supabaseProjectRef()}</small></span>
+          </div>
           <span className="login-lock"><LockKeyhole size={24} /></span>
           <p className="eyebrow">BEZPIECZNY DOSTĘP</p>
           <h2>{mode === "login" ? "Zaloguj się" : "Utwórz pierwsze konto demo"}</h2>
