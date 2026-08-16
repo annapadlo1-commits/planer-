@@ -263,12 +263,16 @@ def validate_variant(
     )
     budget_results: list[BudgetValidationResult] = []
     for budget in snapshot.budgets:
-        spent = sum(
-            complete_quotes[(employee.id, slot.id)].cost_units
-            for _assignment, employee, slot in selected
-            if budget.matches(slot)
-        )
-        limit = budget.amount_minor * COST_SCALE
+        if budget.metric_type == "HOURS":
+            spent = sum(slot.duration_minutes for _assignment, _employee, slot in selected if budget.matches(slot))
+            limit = int(budget.limit_minutes or 0)
+        else:
+            spent = sum(
+                complete_quotes[(employee.id, slot.id)].cost_units
+                for _assignment, employee, slot in selected
+                if budget.matches(slot)
+            )
+            limit = budget.amount_minor * COST_SCALE
         exceeded = spent > limit
         scope = budget.scope()
         budget_results.append(

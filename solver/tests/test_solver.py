@@ -767,6 +767,20 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot.budgets[0].id, "legacy-global-budget")
         self.assertEqual(snapshot.budgets[0].scope(), {})
 
+    def test_cumulative_budget_contract_supports_enforcement_and_hours(self) -> None:
+        raw = load_raw()
+        raw.pop("budget")
+        raw["budgets"] = [
+            {"id": "company-hard", "metricType": "COST", "enforcement": "HARD", "amountMinor": 999999},
+            {"id": "role-hours", "metricType": "HOURS", "enforcement": "TARGET", "limitMinutes": 120, "roleIds": [raw["roles"][0]["id"]]},
+            {"id": "monitor", "metricType": "COST", "enforcement": "MONITORING", "amountMinor": 1},
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        self.assertEqual([item.enforcement for item in snapshot.budgets], ["HARD", "TARGET", "MONITORING"])
+        self.assertEqual(snapshot.budgets[1].metric_type, "HOURS")
+        self.assertEqual(snapshot.budgets[1].limit_minutes, 120)
+        self.assertFalse(snapshot.budgets[2].hard)
+
     def test_pay_condition_values_are_typed_before_solving(self) -> None:
         invalid_conditions = (
             {"field": "duty_ids", "operator": "CONTAINS", "value": {}},
@@ -1467,7 +1481,7 @@ class SolverTests(unittest.TestCase):
             results = engine.solve(snapshot)
 
         self.assertTrue(forced_unknown_stages)
-        self.assertEqual(3, len(results))
+        self.assertEqual(len(snapshot.strategies), len(results))
 
     def test_require_optimal_name_matches_feasible_status_semantics(self) -> None:
         class FeasibleSolver:

@@ -475,6 +475,7 @@ class Employee:
     base_hourly_rate_minor: int
     pay_rate_periods: tuple[PayRatePeriod, ...] | None
     contract_code: str = ""
+    overtime_policy: str = "NEVER"
     employment_start: date | None = None
     employment_end: date | None = None
     nominal_monthly_minutes: int | None = None
@@ -555,6 +556,17 @@ class Employee:
         contract_code = str(
             _pick(raw, "contractCode", "contract_code", default="")
         ).upper()
+        overtime_policy = str(
+            _pick(raw, "overtimePolicy", "overtime_policy", default="")
+        ).upper()
+        if not overtime_policy:
+            overtime_policy = (
+                "ALLOWED"
+                if any(grant.overtime_allowed for grant in location_grants or ())
+                else "NEVER"
+            )
+        if overtime_policy not in {"NEVER", "APPROVAL_REQUIRED", "ALLOWED"}:
+            raise SnapshotError("Employee overtimePolicy is invalid")
         return cls(
             id=str(_pick(raw, "id")),
             role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
@@ -575,6 +587,7 @@ class Employee:
             ),
             pay_rate_periods=pay_rate_periods,
             contract_code=contract_code,
+            overtime_policy=overtime_policy,
             employment_start=_optional_date(
                 _pick(raw, "employmentStart", "employment_start", default=None),
                 "employmentStart",
@@ -999,8 +1012,12 @@ class Budget:
     id: str
     amount_minor: int
     hard: bool = True
+    metric_type: str = "COST"
+    enforcement: str = "HARD"
+    limit_minutes: int | None = None
     location_id: str | None = None
     role_id: str | None = None
+    role_ids: tuple[str, ...] = ()
     duty_id: str | None = None
 
     @classmethod
@@ -1013,12 +1030,22 @@ class Budget:
     ) -> Budget | None:
         if raw is None:
             return None
+        metric_type = str(_pick(raw, "metricType", "metric_type", default="COST")).upper()
+        if metric_type not in {"COST", "HOURS", "LABOR_PERCENT"}:
+            raise SnapshotError("A budget metricType is invalid")
+        enforcement = str(_pick(raw, "enforcement", default="")).upper()
+        if not enforcement:
+            enforcement = "HARD" if bool(_pick(raw, "hard", default=True)) else "MONITORING"
+        if enforcement not in {"HARD", "TARGET", "MONITORING"}:
+            raise SnapshotError("A budget enforcement is invalid")
         amount = _pick(raw, "amountMinor", "amount_minor", default=None)
-        hard = bool(_pick(raw, "hard", default=True))
-        if amount is None:
-            if allow_disabled and not hard:
+        limit_minutes = _pick(raw, "limitMinutes", "limit_minutes", default=None)
+        if metric_type in {"COST", "LABOR_PERCENT"} and amount is None:
+            if allow_disabled and enforcement == "MONITORING":
                 return None
             raise SnapshotError("A budget requires amountMinor")
+        if metric_type == "HOURS" and limit_minutes is None:
+            raise SnapshotError("An hours budget requires limitMinutes")
         budget_id = _pick(raw, "id", default=default_id)
         if budget_id in (None, ""):
             raise SnapshotError("A scoped budget requires id")
@@ -1029,10 +1056,14 @@ class Budget:
 
         return cls(
             id=str(budget_id),
-            amount_minor=_integer(amount, "budget amountMinor", 0),
-            hard=hard,
+            amount_minor=_integer(amount or 0, "budget amountMinor", 0),
+            hard=enforcement == "HARD",
+            metric_type=metric_type,
+            enforcement=enforcement,
+            limit_minutes=None if limit_minutes is None else _integer(limit_minutes, "budget limitMinutes", 0),
             location_id=optional_id("locationId", "location_id"),
             role_id=optional_id("roleId", "role_id"),
+            role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
             duty_id=optional_id("dutyId", "duty_id"),
         )
 
@@ -1040,6 +1071,7 @@ class Budget:
         return (
             (self.location_id is None or slot.location_id == self.location_id)
             and (self.role_id is None or slot.role_id == self.role_id)
+            and (not self.role_ids or slot.role_id in self.role_ids)
             and (self.duty_id is None or self.duty_id in slot.duty_ids)
         )
 
@@ -1049,6 +1081,8 @@ class Budget:
             scope["locationId"] = self.location_id
         if self.role_id is not None:
             scope["roleId"] = self.role_id
+        if self.role_ids:
+            scope["roleIds"] = ",".join(self.role_ids)
         if self.duty_id is not None:
             scope["dutyId"] = self.duty_id
         return scope

@@ -43,6 +43,14 @@ function importBoolean(value:string,defaultValue=false){
   return ["1","tak","true","yes","x"].includes(normalized);
 }
 
+function normalizeOvertimePolicy(value:string){
+  const normalized=value.replace(/[☑☐✓✔]/gu,"").trim().toLocaleUpperCase("pl-PL");
+  if(!normalized||["NIE","NEVER","0","FALSE"].includes(normalized))return "NEVER";
+  if(["TYLKO PO ZATWIERDZENIU","PO ZATWIERDZENIU","APPROVAL_REQUIRED"].includes(normalized))return "APPROVAL_REQUIRED";
+  if(["TAK","ALLOWED","1","TRUE"].includes(normalized))return "ALLOWED";
+  return normalized;
+}
+
 function importList(value:string){return value.split(/[;,|]/).map(item=>item.trim()).filter(Boolean);}
 
 function importCode(value:string){
@@ -361,6 +369,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       dutyCodes,
       employmentFraction:importCell(row,"ETAT*","ETAT","employmentFraction"),
       workTimePolicy:importCell(row,"Polityka czasu pracy","workTimePolicy","POLITYKA_CZASU_PRACY").toUpperCase(),
+      overtimePolicy:normalizeOvertimePolicy(importCell(row,"Zgoda na nadgodziny","overtimePolicy","ZGODA_NA_NADGODZINY")),
       employmentStage:normalizeEmploymentStage(importCell(row,"Etap zatrudnienia","employmentStage"),index+2),
       probationEnd:normalizeDate(importCell(row,"Koniec okresu próbnego","probationEnd")),
       backupRoles:importList(importCell(row,"Role rezerwowe (kolejność)","Role rezerwowe","backupRoles")).map((entry,index)=>{

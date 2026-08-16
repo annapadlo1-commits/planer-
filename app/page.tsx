@@ -21,6 +21,7 @@ import {RecoveryCenter} from "@/components/RecoveryCenter";
 import {AnalyticsDashboard} from "@/components/AnalyticsDashboard";
 import {MessageCenter} from "@/components/MessageCenter";
 import {OperationalEventsCenter} from "@/components/OperationalEventsCenter";
+import {MonthlyBudgetDrawer} from "@/components/MonthlyBudgetDrawer";
 import {
   getOperationalSolverWorkspace,
   getManagerStandbyMonth,
@@ -150,6 +151,7 @@ export default function GrafikPro() {
   const [configurationTab,setConfigurationTab]=useState<SetupSection>("structure");
   const [configurationStep,setConfigurationStep]=useState<SetupStepKey>("company");
   const [modal,setModal]=useState<Modal>(null);
+  const [monthlyBudgetOpen,setMonthlyBudgetOpen]=useState(false);
   const [selectedShift,setSelectedShift]=useState<Shift|null>(null);
   const [selectedEmployee,setSelectedEmployee]=useState("");
   const [location,setLocation]=useState("ALL");
@@ -454,6 +456,7 @@ export default function GrafikPro() {
             <label className="date-selector" title="Wybierz miesiąc"><CalendarDays size={16}/><select aria-label="Wybierz miesiąc z listy" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{monthOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <button type="button" aria-label="Następny miesiąc" title="Następny miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,1))}><ChevronRight size={17}/></button>
           </div>
+          {!employeeShell&&primarySection==="schedule"&&<button className="secondary-button" onClick={()=>setMonthlyBudgetOpen(true)}><CircleDollarSign size={17}/> Budżet miesiąca</button>}
           {!employeeShell&&scheduleWriteAllowed&&<button className="primary-button" disabled={!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
         </div>
       </header>
@@ -536,6 +539,7 @@ export default function GrafikPro() {
         </>}
       </div>}
     </section>
+    {monthlyBudgetOpen&&<MonthlyBudgetDrawer month={selectedMonthDate} matrix={matrixV2} currency={activeCurrency} close={()=>setMonthlyBudgetOpen(false)} notify={notify} fail={setError}/>}
     {modal&&<>{modal!=="plan"&&<button className="drawer-scrim" onClick={closeModal}/>}<aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
       <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">

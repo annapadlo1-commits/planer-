@@ -28,7 +28,7 @@ test("explains normalized workload and missing contractual targets", () => {
     NOMINAL_DEVIATION_MINUTES: 0,
     NOMINAL_TARGET_EMPLOYEE_COUNT: 0,
   });
-  assert.equal(normalized.find(item => item.code === "LOAD_UTILIZATION_SPREAD_BPS")?.value, "12,5%");
+  assert.equal(normalized.find(item => item.code === "LOAD_UTILIZATION_SPREAD_BPS")?.value, "12,5 p.p.");
   assert.equal(normalized.find(item => item.code === "NOMINAL_DEVIATION_MINUTES")?.value, "Brak wymiarów");
   assert.match(normalized.find(item => item.code === "NOMINAL_DEVIATION_MINUTES")?.explanation ?? "", /zero nie oznacza/);
 

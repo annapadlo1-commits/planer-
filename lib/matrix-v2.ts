@@ -21,6 +21,7 @@ export type MatrixV2Settings = {
 
 export type MatrixV2NamedItem = {
   id: string;
+  logicalId?: string;
   code: string;
   name: string;
   color?: string;
@@ -161,6 +162,7 @@ export type MatrixV2Employee = {
   contractType?: "UMOWA_O_PRACE" | "ZLECENIE" | "CZESC_ETATU" | "B2B" | "INNE";
   employmentFraction?: number;
   workTimePolicy?: "CONTRACT_DEFAULT" | "CUSTOM";
+  overtimePolicy?: "NEVER" | "APPROVAL_REQUIRED" | "ALLOWED";
   active: boolean;
   employmentStart?: string | null;
   employmentEnd?: string | null;

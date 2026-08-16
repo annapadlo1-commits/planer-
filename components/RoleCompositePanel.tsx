@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Puzzle, RefreshCw, Upload, Users } from "lucide-react";
+import { AlertTriangle, Check, Puzzle, RefreshCw, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -100,6 +100,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const [overview, setOverview] = useState<SolverRolePublicationOverview | null>(null);
   const [authority, setAuthority] = useState<SolverPublicationAuthorityStatus | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [inspectedRoleWorkspace, setInspectedRoleWorkspace] = useState<SolverWorkspace | null>(null);
+  const [inspectedRoleName, setInspectedRoleName] = useState("");
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
   const [publicationReason, setPublicationReason] = useState("");
   const [publicationAttempted, setPublicationAttempted] = useState(false);
@@ -482,6 +484,21 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
   }
 
+  async function inspectRole(publicationId: string, roleName: string) {
+    if (!supabase) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const workspace = await getPublishedSchedule(supabase, publicationId);
+      setInspectedRoleWorkspace(workspace);
+      setInspectedRoleName(roleName);
+    } catch (error) {
+      setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <section className="role-composite-panel">
     <div className="role-composite-head">
       <span className="role-composite-icon"><Puzzle/></span>
@@ -505,11 +522,11 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
     {overview&&<section className="role-publication-overview">
       <div className="role-publication-totals">
-        <span><Users/><small>Opublikowane zespoły</small><strong>{overview.totals.publishedRoles}</strong></span>
-        <span><Check/><small>Przydziały</small><strong>{overview.totals.assignmentCount}</strong></span>
-        <span><AlertTriangle/><small>Braki</small><strong>{overview.totals.unfilledCount}</strong></span>
-        <span><small>Koszt wszystkich zespołów</small><strong>{money(overview.totals.totalCostMinor,overview.roles[0]?.currency??"PLN")}</strong></span>
-        <span><small>Nadgodziny</small><strong>{Math.round(overview.totals.overtimeMinutes/60)} h</strong></span>
+        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><Users/><small>Opublikowane zespoły</small><strong>{overview.totals.publishedRoles}</strong></button>
+        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><Check/><small>Przydziały</small><strong>{overview.totals.assignmentCount}</strong></button>
+        <button type="button" onClick={()=>document.querySelector(".role-composite-preflight")?.scrollIntoView({behavior:"smooth",block:"start"})}><AlertTriangle/><small>Braki</small><strong>{overview.totals.unfilledCount}</strong></button>
+        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><small>Koszt wszystkich zespołów</small><strong>{money(overview.totals.totalCostMinor,overview.roles[0]?.currency??"PLN")}</strong></button>
+        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><small>Nadgodziny</small><strong>{Math.round(overview.totals.overtimeMinutes/60)} h</strong></button>
       </div>
       <div className="role-publication-analysis">
         {overview.roles.map(role=>{
@@ -518,7 +535,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
           const costPressure=assignmentShare?costShare/assignmentShare:0;
           const overtimePerAssignment=role.assignmentCount?role.overtimeMinutes/role.assignmentCount:0;
           const flagged=costPressure>1.15||(averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25);
-          return <article className={flagged?"flagged":""} key={role.publicationId}>
+          return <article className={flagged?"flagged":""} key={role.publicationId} role="button" tabIndex={0} aria-label={`Otwórz szczegóły grafiku zespołu ${role.role.name}`} onClick={()=>void inspectRole(role.publicationId,role.role.name)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();void inspectRole(role.publicationId,role.role.name);}}}>
             <header><span><small>ZESPÓŁ</small><strong>{role.role.name}</strong><em>{role.scenario.name} • {dateTime(role.publishedAt,timezone)}</em></span>{flagged&&<b><AlertTriangle/> Do sprawdzenia</b>}</header>
             <dl><div><dt>Koszt</dt><dd>{money(role.totalCostMinor,role.currency)}</dd></div><div><dt>Udział kosztu / przydziałów</dt><dd>{Math.round(costShare*100)}% / {Math.round(assignmentShare*100)}%</dd></div><div><dt>Nadgodziny</dt><dd>{Math.round(role.overtimeMinutes/60)} h</dd></div><div><dt>Braki</dt><dd>{role.unfilledCount}</dd></div><div><dt>Osoby w grafiku</dt><dd>{role.teamSize}</dd></div></dl>
             {flagged&&<small>{costPressure>1.15?"Udział w kosztach jest wyraźnie większy niż udział w liczbie przydziałów. ":""}{averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25?"Nadgodziny na przydział przekraczają średnią zespołów.":""}</small>}
@@ -526,6 +543,10 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
         })}
         {!overview.roles.length&&<p>Żaden zespół nie opublikował jeszcze grafiku na ten miesiąc.</p>}
       </div>
+      {inspectedRoleWorkspace&&<section className="role-publication-drilldown">
+        <header><span><small>SZCZEGÓŁY ZESPOŁU</small><strong>{inspectedRoleName}</strong></span><button type="button" className="icon-button" aria-label="Zamknij szczegóły zespołu" onClick={()=>setInspectedRoleWorkspace(null)}><X/></button></header>
+        <SolverV2Workspace workspace={inspectedRoleWorkspace} timezone={timezone} published/>
+      </section>}
     </section>}
 
     {!expectedSolverVersion && <div className="solver-v2-notice warning"><AlertTriangle/>Konfiguracja nie wskazuje aktywnej wersji workera. Scalanie pozostaje zablokowane.</div>}

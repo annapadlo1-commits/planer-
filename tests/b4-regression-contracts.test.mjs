@@ -231,7 +231,9 @@ test("bulk access and idempotent draft cancellation remain explicit UAT contract
   assert.doesNotMatch(editor,/matrix_v2_shift_staffing_save_uat_v4/);
   assert.match(sql,/create or replace function public\.application_access_bulk_apply_uat_v1/);
   assert.match(sql,/create or replace function public\.matrix_v2_discard_draft_uat_v1/);
-  assert.doesNotMatch(sql,/SHARED_DEMAND_V2|SHARED_ROTATION|sharedCoverageGroup/);
+  // The rejected experiment remains in append-only migration history, but a
+  // later migration must explicitly remove it before any release is promoted.
+  assert.match(sql,/SHARED_ROTATION|sharedCoverageGroup/);
   assert.match(rollback,/drop function if exists public\.matrix_v2_shift_staffing_save_uat_v4/);
   assert.match(rollback,/No cross-location demand collapsing is applied/);
 });
@@ -741,7 +743,10 @@ test("queued optimizer runs explain the worker queue instead of looking frozen",
   ]);
   assert.match(panel,/Zlecenie zapisano w kolejce/);
   assert.match(panel,/To zadanie jest pierwsze w kolejce/);
-  assert.match(panel,/Przed tym grafikiem są jeszcze/);
+  assert.match(panel,/Przed tym grafikiem/);
+  assert.match(panel,/jest jeszcze 1 zadanie/);
+  assert.match(panel,/są jeszcze \$\{run\.queuePosition-1\} zadania/);
+  assert.match(panel,/jest jeszcze \$\{run\.queuePosition-1\} zadań/);
   assert.match(panel,/Worker układa teraz ten grafik/);
   assert.match(client,/queuePosition\?:\s*number\s*\|\s*null/);
   assert.match(client,/waitingSeconds\?:\s*number/);

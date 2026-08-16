@@ -357,9 +357,16 @@ def matching_monthly_rules(
 
 
 def monthly_threshold_cost_units(
-    rule: PayRule, selected_minutes: int
+    rule: PayRule, selected_minutes: int, employee: Employee | None = None
 ) -> tuple[int, PayComponent]:
-    threshold = _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+    threshold_source = str(rule.values.get("thresholdSource", rule.values.get("threshold_source", "FIXED"))).upper()
+    threshold = (
+        employee.nominal_monthly_minutes
+        if threshold_source == "EMPLOYEE_NOMINAL" and employee is not None
+        else _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+    )
+    if threshold is None:
+        raise SnapshotError("Employee nominal is required by an overtime pay rule")
     rate = _integer(rule.values, "rateMinorPerHour", "rate_minor_per_hour")
     cost_units = max(selected_minutes - threshold, 0) * rate
     return cost_units, PayComponent(
@@ -379,8 +386,9 @@ def quote_variant_dynamic_components(
         for rule in matching_monthly_rules(snapshot, employee, slot):
             minutes_by_rule_employee[(rule.id, employee.id)] += slot.duration_minutes
     components: list[PayComponent] = []
-    for (rule_id, _employee_id), minutes in sorted(minutes_by_rule_employee.items()):
-        cost_units, component = monthly_threshold_cost_units(rules[rule_id], minutes)
+    employees = {employee.id: employee for employee in snapshot.employees}
+    for (rule_id, employee_id), minutes in sorted(minutes_by_rule_employee.items()):
+        cost_units, component = monthly_threshold_cost_units(rules[rule_id], minutes, employees[employee_id])
         if cost_units:
             components.append(component)
     return tuple(components)
@@ -416,7 +424,10 @@ def quote_selected_assignments(
                 for employee, slot in employee_items
                 if rule_matches(snapshot, rule, employee, slot)
             ]
-            threshold = _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+            threshold_source = str(rule.values.get("thresholdSource", rule.values.get("threshold_source", "FIXED"))).upper()
+            threshold = employee_items[0][0].nominal_monthly_minutes if threshold_source == "EMPLOYEE_NOMINAL" else _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+            if threshold is None:
+                raise SnapshotError("Employee nominal is required by an overtime pay rule")
             rate = _integer(rule.values, "rateMinorPerHour", "rate_minor_per_hour")
             cumulative = 0
             for employee, slot in matching:

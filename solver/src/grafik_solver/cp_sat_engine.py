@@ -2349,6 +2349,15 @@ class CpSatScheduleEngine:
             total_minutes[employee.id] = total
             if employee.maximum_monthly_minutes is not None:
                 model.add(total <= employee.maximum_monthly_minutes)
+            # Overtime is never an accidental side-effect of a cheaper base
+            # rate. NEVER and APPROVAL_REQUIRED both stay inside the nominal
+            # during automatic generation. The latter is surfaced as a leader
+            # decision from the remaining shortage workflow.
+            if (
+                employee.nominal_monthly_minutes is not None
+                and employee.overtime_policy != "ALLOWED"
+            ):
+                model.add(total <= employee.nominal_monthly_minutes)
 
             weeks: set[tuple[int, int]] = {
                 (day.isocalendar().year, day.isocalendar().week) for day in all_days
@@ -2456,11 +2465,19 @@ class CpSatScheduleEngine:
             for budget in snapshot.budgets
             if budget.hard
             and sum(
-                eligible_upper_by_slot[slot.id]
+                (
+                    eligible_upper_by_slot[slot.id]
+                    if budget.metric_type in {"COST", "LABOR_PERCENT"}
+                    else slot.duration_minutes
+                )
                 for slot in slots
                 if budget.matches(slot)
             )
-            > budget.amount_minor * COST_SCALE
+            > (
+                budget.amount_minor * COST_SCALE
+                if budget.metric_type in {"COST", "LABOR_PERCENT"}
+                else int(budget.limit_minutes or 0)
+            )
         ]
         if coverage_only and not binding_budgets:
             hinted_assignments = self._add_greedy_coverage_hint(
@@ -2514,7 +2531,10 @@ class CpSatScheduleEngine:
                 rate_raw = rule.values.get(
                     "rateMinorPerHour", rule.values.get("rate_minor_per_hour")
                 )
-                threshold = int(threshold_raw)
+                threshold_source = str(rule.values.get("thresholdSource", rule.values.get("threshold_source", "FIXED"))).upper()
+                threshold = employee.nominal_monthly_minutes if threshold_source == "EMPLOYEE_NOMINAL" else int(threshold_raw)
+                if threshold is None:
+                    raise SnapshotError("Employee nominal is required by an overtime pay rule")
                 rate = int(rate_raw)
                 bound = sum(slot.duration_minutes for slot in matching_slots)
                 selected_minutes = _sum(
@@ -2535,10 +2555,15 @@ class CpSatScheduleEngine:
         total_cost_expression = static_cost_expression + _sum(dynamic_total_terms)
 
         for budget in snapshot.budgets:
-            if budget.hard and not budget.scope():
+            if budget.hard and budget.metric_type in {"COST", "LABOR_PERCENT"} and not budget.scope():
                 model.add(total_cost_expression <= budget.amount_minor * COST_SCALE)
 
-        scoped_budgets = [budget for budget in binding_budgets if budget.scope()]
+        scoped_budgets = [
+            budget for budget in snapshot.budgets
+            if budget.enforcement in {"HARD", "TARGET"}
+            and budget.metric_type in {"COST", "LABOR_PERCENT"}
+            and budget.scope()
+        ]
         dynamic_cost_by_assignment: dict[tuple[str, str], list[Any]] = defaultdict(list)
         if scoped_budgets:
             # A scoped monthly threshold must know precisely which assignment
@@ -2578,6 +2603,7 @@ class CpSatScheduleEngine:
                     previous_cumulative = cumulative
                     previous_excess = excess
 
+        scoped_cost_expressions: dict[str, Any] = {}
         for budget in scoped_budgets:
             scoped_cost = _sum(
                 x[key] * static_quotes[key].cost_units
@@ -2585,7 +2611,40 @@ class CpSatScheduleEngine:
                 for key in x
                 if budget.matches(slots_by_id[key[1]])
             )
-            model.add(scoped_cost <= budget.amount_minor * COST_SCALE)
+            scoped_cost_expressions[budget.id] = scoped_cost
+            if budget.hard:
+                model.add(scoped_cost <= budget.amount_minor * COST_SCALE)
+
+        target_excess_terms: list[Any] = []
+        target_excess_bound = 0
+        for budget in snapshot.budgets:
+            if budget.enforcement == "MONITORING":
+                continue
+            if budget.metric_type == "HOURS":
+                scoped_minutes = _sum(
+                    x[key] * slots_by_id[key[1]].duration_minutes
+                    for key in x
+                    if budget.matches(slots_by_id[key[1]])
+                )
+                limit_minutes = int(budget.limit_minutes or 0)
+                if budget.hard:
+                    model.add(scoped_minutes <= limit_minutes)
+                elif budget.enforcement == "TARGET":
+                    bound = sum(slot.duration_minutes for slot in slots if budget.matches(slot))
+                    excess = model.new_int_var(0, max(bound - limit_minutes, 0), f"budget_target_hours|{budget.id}")
+                    model.add_max_equality(excess, [scoped_minutes - limit_minutes, 0])
+                    target_excess_terms.append(excess * COST_SCALE)
+                    target_excess_bound += max(bound - limit_minutes, 0) * COST_SCALE
+            elif budget.enforcement == "TARGET":
+                expression = total_cost_expression if not budget.scope() else scoped_cost_expressions[budget.id]
+                limit_units = budget.amount_minor * COST_SCALE
+                bound = sum(eligible_upper_by_slot[slot.id] for slot in slots if budget.matches(slot))
+                excess = model.new_int_var(0, max(bound - limit_units, 0), f"budget_target_cost|{budget.id}")
+                model.add_max_equality(excess, [expression - limit_units, 0])
+                target_excess_terms.append(excess)
+                target_excess_bound += max(bound - limit_units, 0)
+
+        budget_target_excess_expression = _sum(target_excess_terms)
 
         if coverage_only:
             return _Artifacts(
@@ -2851,6 +2910,7 @@ class CpSatScheduleEngine:
             "UNFILLED": _sum(unfilled.values()),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
             "TOTAL_COST": total_cost_expression,
+            "BUDGET_TARGET_EXCESS": budget_target_excess_expression,
             "PREFERENCE_VIOLATIONS": preference_expression,
             "HOME_LOCATION_VIOLATIONS": home_expression,
             "NOMINAL_DEVIATION_MINUTES": _sum(deviation_vars),
@@ -2872,6 +2932,7 @@ class CpSatScheduleEngine:
             "UNFILLED": len(slots),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
             "TOTAL_COST": total_cost_upper,
+            "BUDGET_TARGET_EXCESS": target_excess_bound,
             "PREFERENCE_VIOLATIONS": 4 * len(slots),
             "HOME_LOCATION_VIOLATIONS": 0,
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,

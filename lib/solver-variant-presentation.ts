@@ -43,8 +43,8 @@ const METRICS: Record<string, { label: string; explanation: string; unit?: "MINU
     unit: "MINUTES",
   },
   LOAD_UTILIZATION_SPREAD_BPS: {
-    label: "Największa różnica obciążenia w jednej roli",
-    explanation: "Największa różnica procentowa między dwiema osobami wykonującymi tę samą rolę. Dla osób z wymiarem jest liczona względem wymiaru, a dla umów elastycznych względem wspólnej bazy sprawiedliwego podziału. Mniej oznacza równiejszy podział wewnątrz każdej roli.",
+    label: "Największa różnica wykorzystania wymiaru w jednej roli",
+    explanation: "To różnica w punktach procentowych wykorzystania indywidualnego wymiaru, a nie procent różnicy godzin min–max. Przykład: 90% i 100% wymiaru daje 10 p.p., niezależnie od surowej liczby godzin. Mniej oznacza równiejszy podział wewnątrz każdej roli.",
   },
   WEEKEND_SPREAD: {
     label: "Największa różnica weekendów w jednej roli",
@@ -86,7 +86,7 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
         ? "Brak danych"
         : code === "LOAD_UTILIZATION_SPREAD_BPS"
-          ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`
+          ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} p.p.`
           : definition.unit === "MINUTES"
       ? formatDurationMinutes(rawValue)
       : finiteNumber(rawValue)?.toLocaleString("pl-PL") ?? "—";

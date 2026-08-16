@@ -8,6 +8,7 @@ const BOOL_VALUES=["☐ Nie","☑ Tak"];
 const COLOR_VALUES=["Fioletowy — #7257D8","Turkusowy — #0F8F7A","Niebieski — #2F75B5","Złoty — #C9A51D","Różowy — #C62BBE","Koralowy — #D4574F","Zielony — #4A8D78","Szary — #7A6F85"];
 const EMPLOYMENT_STAGE_VALUES=["Stała współpraca","Okres próbny","Okres wypowiedzenia"];
 const CONTRACT_VALUES=["Umowa o pracę","Umowa o pracę — część etatu","Umowa zlecenie","B2B","Inna"];
+const OVERTIME_VALUES=["NIE","TYLKO PO ZATWIERDZENIU","TAK"];
 
 type WorkbookKind="QUICK"|"FULL"|"ACCESS"|"FINANCE";
 type HeaderKind="required"|"optional"|"system";
@@ -158,6 +159,30 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
   for(let row=3;row<=sheet.rowCount;row++){const current=sheet.getRow(row);current.height=34;current.eachCell(cell=>{cell.font={name:"Aptos",size:10,color:{argb:argb(BRAND.ink)}};cell.alignment={vertical:"middle",wrapText:true};cell.border={bottom:{style:"thin",color:{argb:argb(BRAND.line)}}};});current.getCell(1).font={name:"Aptos",size:11,bold:true,color:{argb:argb(BRAND.purpleDark)}};}
 }
 
+const SHEET_PURPOSE:Record<string,string>={
+  Firma:"Ustawienia wspólne dla całej firmy i generatora.","Kategorie grafików":"Grupy ról generowane i oceniane razem.",Role:"Role wymagane w obsadzie.",Lokale:"Miejsca wykonywania pracy.",Obowiązki:"Opcjonalne kompetencje i zadania wewnątrz ról.",Pracownicy:"Dane planistyczne, umowa, limity, zgoda na nadgodziny, role, lokale i kompetencje.",Zmiany:"Powtarzalne godziny pracy w lokalach.",Obsada:"Wymagana liczba osób dla zmiany, roli i opcjonalnego obowiązku.",Dostępność:"Dokładne okna dostępności, nieobecności, urlopu lub choroby.","Pula ad-hoc":"Osoby awaryjne proponowane do naprawy braków, poza zwykłym generowaniem.",Dostępy:"Funkcje i zakres widoczności kont w aplikacji.",Słowniki:"Dozwolone kody i wartości używane przez listy wyboru.",Scenariusze:"Bazowe i okresowe profile zapotrzebowania.",Strategie:"Trzy sposoby oceny poprawnych grafików.","Kryteria strategii":"Kolejność matematycznych celów strategii; arkusz zaawansowany.","Warianty scenariuszy":"Powiązania scenariuszy ze strategiami; arkusz zaawansowany.","Reguły płacowe":"Dodatki i stawki zależne od umowy, dnia, godziny, roli, lokalu lub pracownika.",Budżety:"Starsze domyślne reguły budżetowe konfiguracji; kwoty miesięczne edytuj w aplikacji.","Finanse pracowników":"Okresy stawek podstawowych pracowników.","Dostępy do aplikacji":"Uprawnienia kont niezależne od obecności pracownika w grafiku.",
+};
+const FIELD_GUIDANCE:Record<string,string>={
+  Kod:"Stały, unikalny skrót bez przypadkowych zmian; wybierz go ze słownika, gdy pole odwołuje się do innej zakładki.",Nazwa:"Czytelna nazwa widoczna użytkownikom.",Kolejność:"Opcjonalna liczba porządkująca; mniejsza wartość jest wyżej. Puste pole pozwala systemowi ustawić kolejność.",Aktywna:"Wybierz ☐ Nie albo ☑ Tak.",Aktywny:"Wybierz ☐ Nie albo ☑ Tak.",Kolor:"Wybierz gotowy kolor z listy; nie wpisuj wartości z pamięci.","Numer pracownika":"Dla nowej osoby pozostaw puste — system nada GP-###. Dla aktualizacji zachowaj istniejący numer.",Imię:"Wpisz wyłącznie imię; nazwisko ma osobną kolumnę.",Nazwisko:"Wpisz wyłącznie nazwisko.","Etap zatrudnienia":"Wybierz z listy. Dla okresu próbnego uzupełnij także datę końca.","Koniec okresu próbnego":"Wymagane tylko po wybraniu etapu Okres próbny.","Zgoda na nadgodziny":"NIE blokuje nadgodziny; TYLKO PO ZATWIERDZENIU tworzy decyzję lidera; TAK pozwala generatorowi użyć ich dopiero po zwykłym wymiarze.","Poziomy rezerwy stand-by na rolę i dzień":"0 = wyłączona, 1 = jedna osoba rezerwowa, 2 = dwie osoby w kolejności. Docelowe grupy rezerwy ustawia się per kategoria.","Rodzaj umowy":"Wybierz z listy; wpływa na dobór reguł płacowych i czasu pracy.","Stawka godzinowa":"Kwota podstawowa. Dodatki za nadgodziny ustawiaj regułami płacowymi, jeśli zgoda nie jest NIE.",Od:"Godzina 24-godzinna HH:MM albo data/czas wskazany opisem zakładki.",Do:"Godzina 24-godzinna HH:MM albo data/czas późniejszy niż początek.",Dni:"Numery 1–7: poniedziałek=1, niedziela=7; kilka wartości oddziel przecinkiem.",Operacja:"SET ustawia wartość, ADD dodaje, MULTIPLY mnoży; używaj listy i opisu zakładki.",
+};
+function addDataDictionary(workbook:ExcelJS.Workbook){
+  const existing=workbook.getWorksheet("Opis pól");if(existing)workbook.removeWorksheet(existing.id);
+  const dictionary=workbook.addWorksheet("Opis pól");
+  dictionary.addRow(["ZAKŁADKA","DO CZEGO SŁUŻY","POLE","STATUS","CO WPISAĆ / JAK WYBRAĆ"]);
+  for(const sheet of workbook.worksheets){
+    if(["Instrukcja","Opis pól","_LISTY"].includes(sheet.name))continue;
+    const purpose=SHEET_PURPOSE[sheet.name]??"Dane rozszerzające konfigurację. Pusta zakładka jest dozwolona, jeśli funkcja nie jest używana.";
+    for(let column=1;column<=usedColumnCount(sheet);column++){
+      const field=baseHeader(String(sheet.getRow(1).getCell(column).value??""));if(!field)continue;
+      const kind=headerKind(sheet.name,field);
+      const guidance=FIELD_GUIDANCE[field]??(field.endsWith("_NADGODZINY")?"Lokalne zawężenie zgody globalnej. Wybierz TAK tylko jeśli nadgodziny są dozwolone także w tym lokalu.":field.endsWith("_STANDARD")?"Czy pracownik może wykonywać zwykłą pracę w tym lokalu. Wybierz z listy.":"Uzupełnij zgodnie z celem zakładki. Jeśli pole jest opcjonalne i funkcja nie dotyczy firmy, pozostaw puste.");
+      dictionary.addRow([sheet.name,purpose,field,kind==="required"?"WYMAGANE":kind==="system"?"SYSTEM":"OPCJONALNE",guidance]);
+    }
+  }
+  dictionary.views=[{state:"frozen",ySplit:1,showGridLines:false}];dictionary.autoFilter={from:{row:1,column:1},to:{row:dictionary.rowCount,column:5}};
+  [24,58,38,16,100].forEach((width,index)=>dictionary.getColumn(index+1).width=width);
+}
+
 async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
   // Rebuild the SheetJS export in a fresh ExcelJS package. Loading and then
   // rewriting the same OOXML package produces files accepted by tolerant
@@ -173,9 +198,10 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
     if(rows.length)sheet.addRows(rows);
   }
   const instruction=workbook.getWorksheet("Instrukcja");if(instruction)formatInstruction(instruction,kind);
+  addDataDictionary(workbook);
   const adHoc=workbook.getWorksheet("Pula ad-hoc");if(adHoc)splitAdHocNames(adHoc);
   let lists=workbook.getWorksheet("_LISTY");if(lists)workbook.removeWorksheet(lists.id);lists=workbook.addWorksheet("_LISTY",{state:"hidden"});
-  writeList(lists,1,"Tak / nie",BOOL_VALUES);writeList(lists,2,"Etap zatrudnienia",EMPLOYMENT_STAGE_VALUES);writeList(lists,3,"Rodzaj umowy",CONTRACT_VALUES);writeList(lists,4,"Kolor",COLOR_VALUES);
+  writeList(lists,1,"Tak / nie",BOOL_VALUES);writeList(lists,2,"Etap zatrudnienia",EMPLOYMENT_STAGE_VALUES);writeList(lists,3,"Rodzaj umowy",CONTRACT_VALUES);writeList(lists,4,"Kolor",COLOR_VALUES);writeList(lists,9,"Zgoda na nadgodziny",OVERTIME_VALUES);
   const sourceDictionaries=workbook.getWorksheet("Słowniki");
   const roleCodes:string[]=[],locationCodes:string[]=[],categoryCodes:string[]=[],accessRoles:string[]=[];
   const accessRoleLabels=new Map<string,string>();
@@ -195,6 +221,7 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
     for(const label of ["Kod lokalu","Lokal bazowy","Zakres lokalu"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,6,locationCodes.length),"Wybierz kod istniejącego lokalu.");
     addListValidation(sheet,findColumn(sheet,"Kod kategorii"),listFormula(lists,7,categoryCodes.length),"Wybierz kategorię grafiku.");
     addListValidation(sheet,findColumn(sheet,"Rodzaj dostępu"),listFormula(lists,8,accessRoles.length),"Wybierz rodzaj dostępu w języku użytkownika.");
+    addListValidation(sheet,findColumn(sheet,"Zgoda na nadgodziny"),listFormula(lists,9,OVERTIME_VALUES.length),"NIE blokuje nadgodziny; TYLKO PO ZATWIERDZENIU pozostawia decyzję liderowi; TAK pozwala użyć nadgodzin dopiero po zwykłym wymiarze.");
   }
   lists.state="hidden";
   return new Uint8Array(await workbook.xlsx.writeBuffer());
