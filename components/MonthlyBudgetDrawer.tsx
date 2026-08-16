@@ -3,7 +3,7 @@
 import { CircleDollarSign, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MatrixV2Workspace } from "@/lib/matrix-v2";
-import { getMonthlyBudgets, saveMonthlyBudgets, type MonthlyBudgetLine, type MonthlyBudgetWorkspace } from "@/lib/monthly-budgets";
+import { getMonthlyBudgets, hydrateMonthlyBudgetLines, saveMonthlyBudgets, type MonthlyBudgetLine, type MonthlyBudgetWorkspace } from "@/lib/monthly-budgets";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = { month: string; matrix: MatrixV2Workspace | null; currency: string; close: () => void; notify: (message: string) => void; fail: (message: string) => void };
@@ -20,12 +20,7 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
     setBusy(true);
     getMonthlyBudgets(client, month).then((value) => {
       setWorkspace(value);
-      setLines(value.lines.map((line) => ({
-        ...line,
-        locationId: matrix?.locations.find((item) => item.logicalId === line.locationLogicalId)?.id ?? null,
-        categoryId: matrix?.roleCategories?.find((item) => item.logicalId === line.categoryLogicalId)?.id ?? null,
-        roleId: matrix?.roles.find((item) => item.logicalId === line.roleLogicalId)?.id ?? null,
-      })));
+      setLines(hydrateMonthlyBudgetLines(value.lines, matrix));
     }).catch((error) => fail(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
   }, [client, fail, matrix, month]);
 
@@ -37,7 +32,7 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
     setBusy(true);
     try {
       const result = await saveMonthlyBudgets(client, month, lines, note);
-      setWorkspace(result); setLines(result.lines); setNote("");
+      setWorkspace(result); setLines(hydrateMonthlyBudgetLines(result.lines, matrix)); setNote("");
       notify(`Budżet ${month.slice(0, 7)} zapisano jako rewizję ${result.revision?.number}.`);
     } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { MatrixV2Workspace } from "./matrix-v2";
 
 export type MonthlyBudgetLine = {
   id?: string;
@@ -25,6 +26,18 @@ export type MonthlyBudgetWorkspace = {
   revision: null | { id: string; number: number; note?: string | null; createdAt: string };
   lines: MonthlyBudgetLine[];
 };
+
+export function hydrateMonthlyBudgetLines(
+  lines: MonthlyBudgetLine[],
+  matrix: MatrixV2Workspace | null,
+): MonthlyBudgetLine[] {
+  return lines.map((line) => ({
+    ...line,
+    locationId: matrix?.locations.find((item) => item.logicalId === line.locationLogicalId)?.id ?? null,
+    categoryId: matrix?.roleCategories?.find((item) => item.logicalId === line.categoryLogicalId)?.id ?? null,
+    roleId: matrix?.roles.find((item) => item.logicalId === line.roleLogicalId)?.id ?? null,
+  }));
+}
 
 function rpcError(name: string, error: { code?: string; message?: string; details?: string; hint?: string }) {
   return new Error([name, error.code, error.message, error.details, error.hint].filter(Boolean).join(":"));
