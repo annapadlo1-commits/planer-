@@ -651,6 +651,14 @@ class CpSatScheduleEngine:
                     self._remaining_seconds(global_deadline, "GLOBAL:WARM_START"),
                     MAX_RELAXED_STRATEGY_WARM_START_SECONDS,
                 ),
+                # The coverage incumbent already fixes one selected employee (or
+                # the vacancy variable) for every seat.  Treat those sparse
+                # positive hints as fixed here: the seat equalities force all
+                # competing assignment variables to zero, while the remaining
+                # pay/budget variables are evaluated from that roster.  This
+                # avoids an unbounded presolve pass on a large monthly model;
+                # CP-SAT's search timer does not reliably interrupt that pass.
+                fix_hints=True,
             )
             self._require_optimal(
                 warm_start_solver,

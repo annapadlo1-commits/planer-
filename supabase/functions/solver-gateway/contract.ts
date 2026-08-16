@@ -413,6 +413,12 @@ function validateStageObjective(value: unknown): void {
       "certificate",
       "timeBudgetSeconds",
       "roleBackupPenalty",
+      "overtimeMinimum",
+      "overtimeStatus",
+      "overtimeFrozenUpperBound",
+      "overtimeTimeBudgetSeconds",
+      "overtimeVerifiedZeroIncumbent",
+      "overtimeUsedFallback",
     ],
   );
   assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
@@ -452,6 +458,46 @@ function validateStageObjective(value: unknown): void {
       0,
       Number.MAX_SAFE_INTEGER,
     );
+  }
+  if (Object.hasOwn(value, "overtimeMinimum")) {
+    assertInteger(
+      value.overtimeMinimum,
+      "OVERTIME_MINIMUM",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "overtimeStatus")) {
+    assertString(value.overtimeStatus, "OVERTIME_STATUS", 1, 40);
+  }
+  if (Object.hasOwn(value, "overtimeFrozenUpperBound")) {
+    assertInteger(
+      value.overtimeFrozenUpperBound,
+      "OVERTIME_FROZEN_UPPER_BOUND",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "overtimeTimeBudgetSeconds")) {
+    assertFiniteNumber(
+      value.overtimeTimeBudgetSeconds,
+      "OVERTIME_TIME_BUDGET_SECONDS",
+    );
+    if (
+      value.overtimeTimeBudgetSeconds < 0 ||
+      value.overtimeTimeBudgetSeconds > 86_400
+    ) {
+      fail(400, "INVALID_OVERTIME_TIME_BUDGET_SECONDS");
+    }
+  }
+  if (Object.hasOwn(value, "overtimeVerifiedZeroIncumbent")) {
+    assertBoolean(
+      value.overtimeVerifiedZeroIncumbent,
+      "OVERTIME_VERIFIED_ZERO_INCUMBENT",
+    );
+  }
+  if (Object.hasOwn(value, "overtimeUsedFallback")) {
+    assertBoolean(value.overtimeUsedFallback, "OVERTIME_USED_FALLBACK");
   }
   if (Object.hasOwn(value, "terms")) {
     assertArray(value.terms, "OBJECTIVE_TERMS", 100);

@@ -277,6 +277,31 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
   assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
 });
 
+test("accepts overtime gate diagnostics emitted by the worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  Object.assign(variant.stageObjectives[0], {
+    overtimeMinimum: 0,
+    overtimeStatus: "OPTIMAL",
+    overtimeFrozenUpperBound: 0,
+    overtimeTimeBudgetSeconds: 12.5,
+    overtimeVerifiedZeroIncumbent: true,
+    overtimeUsedFallback: false,
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
+});
+
 test("accepts a diversity proof that preserves frozen objectives", async () => {
   const calls = [];
   const handler = handlerWith(calls);

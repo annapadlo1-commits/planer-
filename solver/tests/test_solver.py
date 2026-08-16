@@ -1421,7 +1421,7 @@ class SolverTests(unittest.TestCase):
                 strategies_with_checked_hint.add(strategy.id)
             result = original_solve_model(*args, **kwargs)
             if stage_name == "WARM_START":
-                self.assertFalse(kwargs.get("fix_hints", False))
+                self.assertTrue(kwargs.get("fix_hints", False))
                 self.assertIsNone(strategy)
                 warm_start_limits.append(kwargs["time_limit_seconds"])
             return result
@@ -1656,10 +1656,15 @@ class SolverTests(unittest.TestCase):
         self.assertIsNone(variants[0].equivalent_to_strategy_id)
         for variant in variants[1:]:
             self.assertIsNone(variant.equivalent_to_strategy_id)
-            diversity = variant.stage_objectives[-1]
-            self.assertEqual(diversity["name"], "DIVERSIFY")
-            self.assertTrue(diversity["businessObjectiveBoundsPreserved"])
-            self.assertTrue(diversity["excludedEquivalentStrategies"])
+            final_stage = variant.stage_objectives[-1]
+            # A second tied strategy may already find a distinct roster during
+            # its normal tier solve.  The explicit diversity pass is required
+            # only when that first result duplicates an earlier solution.
+            if final_stage["name"] == "DIVERSIFY":
+                self.assertTrue(final_stage["businessObjectiveBoundsPreserved"])
+                self.assertTrue(final_stage["excludedEquivalentStrategies"])
+            else:
+                self.assertTrue(final_stage["name"].startswith("TIER_"))
             self.assertTrue(validate_variant(snapshot, variant).valid)
 
     def test_full_model_is_built_once_and_cloned_for_all_strategies(self) -> None:
