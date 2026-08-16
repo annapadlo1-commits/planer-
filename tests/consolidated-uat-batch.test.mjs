@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { polishQueuedTaskSentence, polishTaskCount } from "../lib/polish-plural.ts";
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -104,4 +105,29 @@ test("a leader shortage opens the ad-hoc pool with the exact role and date", asy
   assert.match(recovery,/Brak w wersji lidera/);
   assert.match(recovery,/Utwórz pełny profil pracownika/);
   assert.match(recovery,/opublikuj konfigurację i wygeneruj kategorię ponownie/);
+});
+
+test("Polish queue copy handles singular, teens and compound plural forms", () => {
+  assert.equal(polishTaskCount(1),"1 zadanie");
+  assert.equal(polishTaskCount(2),"2 zadania");
+  assert.equal(polishTaskCount(12),"12 zadań");
+  assert.equal(polishTaskCount(22),"22 zadania");
+  assert.equal(polishTaskCount(114),"114 zadań");
+  assert.equal(polishQueuedTaskSentence(1),"Przed tym grafikiem jest jeszcze 1 zadanie");
+  assert.equal(polishQueuedTaskSentence(5),"Przed tym grafikiem jest jeszcze 5 zadań");
+  assert.equal(polishQueuedTaskSentence(12),"Przed tym grafikiem jest jeszcze 12 zadań");
+  assert.equal(polishQueuedTaskSentence(22),"Przed tym grafikiem są jeszcze 22 zadania");
+});
+
+test("merge summary filters and opens the metric-specific detail in place", async () => {
+  const [panel,workspace]=await Promise.all([
+    read("components/RoleCompositePanel.tsx"),
+    read("components/SolverV2Workspace.tsx"),
+  ]);
+  assert.match(panel,/focusAnalysis\("GAPS"\)/);
+  assert.match(panel,/analysisMetric==="GAPS"\?"ISSUES"/);
+  assert.match(panel,/analysisMetric==="TEAMS"\?"CALENDAR":"WORKLOAD"/);
+  assert.match(panel,/aria-pressed=/);
+  assert.match(panel,/initialView=\{inspectedRoleInitialView\}/);
+  assert.match(workspace,/initialView\?:WorkspaceView/);
 });

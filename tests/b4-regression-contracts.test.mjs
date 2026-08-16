@@ -740,18 +740,19 @@ test("global feedback is dismissible and remains in the active workspace flow", 
 });
 
 test("queued optimizer runs explain the worker queue instead of looking frozen", async () => {
-  const [panel,client,styles,migration]=await Promise.all([
+  const [panel,plural,client,styles,migration]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/polish-plural.ts",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260813234500_uat_optimizer_queue_transparency.sql",import.meta.url),"utf8"),
   ]);
   assert.match(panel,/Zlecenie zapisano w kolejce/);
   assert.match(panel,/To zadanie jest pierwsze w kolejce/);
-  assert.match(panel,/Przed tym grafikiem/);
-  assert.match(panel,/jest jeszcze 1 zadanie/);
-  assert.match(panel,/są jeszcze \$\{run\.queuePosition-1\} zadania/);
-  assert.match(panel,/jest jeszcze \$\{run\.queuePosition-1\} zadań/);
+  assert.match(panel,/polishQueuedTaskSentence\(run\.queuePosition-1\)/);
+  assert.match(plural,/Przed tym grafikiem/);
+  assert.match(plural,/usesPluralVerb/);
+  assert.match(plural,/lastTwo < 12 \|\| lastTwo > 14/);
   assert.match(panel,/Worker układa teraz ten grafik/);
   assert.match(client,/queuePosition\?:\s*number\s*\|\s*null/);
   assert.match(client,/waitingSeconds\?:\s*number/);

@@ -41,6 +41,8 @@ type Props = {
   onPublished?: (scheduleId: string) => void | Promise<void>;
 };
 
+type CompositeAnalysisMetric="TEAMS"|"ASSIGNMENTS"|"GAPS"|"COST"|"OVERTIME";
+
 function monthLabel(value: string) {
   const date = new Date(`${value.slice(0, 7)}-01T12:00:00Z`);
   return Number.isNaN(date.getTime())
@@ -102,6 +104,8 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectedRoleWorkspace, setInspectedRoleWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectedRoleName, setInspectedRoleName] = useState("");
+  const [inspectedRoleInitialView, setInspectedRoleInitialView] = useState<"CALENDAR"|"WORKLOAD"|"ISSUES">("CALENDAR");
+  const [analysisMetric, setAnalysisMetric] = useState<CompositeAnalysisMetric>("TEAMS");
   const [publicationName, setPublicationName] = useState(`Grafik zespołów • ${monthLabel(month)}`);
   const [publicationReason, setPublicationReason] = useState("");
   const [publicationAttempted, setPublicationAttempted] = useState(false);
@@ -345,6 +349,22 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
   const averageOvertimePerAssignment = overview?.totals.assignmentCount
     ? overview.totals.overtimeMinutes / overview.totals.assignmentCount
     : 0;
+  const analysisRoles=useMemo(()=>{
+    const rows=[...(overview?.roles??[])];
+    const score=(role:(typeof rows)[number])=>analysisMetric==="ASSIGNMENTS"?role.assignmentCount
+      :analysisMetric==="GAPS"?role.unfilledCount
+      :analysisMetric==="COST"?role.totalCostMinor
+      :analysisMetric==="OVERTIME"?role.overtimeMinutes
+      :0;
+    return rows
+      .filter(role=>analysisMetric!=="GAPS"||role.unfilledCount>0)
+      .sort((left,right)=>score(right)-score(left)||left.role.name.localeCompare(right.role.name,"pl-PL"));
+  },[analysisMetric,overview]);
+  const analysisLabel=analysisMetric==="TEAMS"?"Wszystkie opublikowane zespoły"
+    :analysisMetric==="ASSIGNMENTS"?"Zespoły od największej liczby przydziałów"
+    :analysisMetric==="GAPS"?"Tylko zespoły z brakami"
+    :analysisMetric==="COST"?"Zespoły od najwyższego kosztu"
+    :"Zespoły od największej liczby nadgodzin";
 
   async function publish() {
     if (!supabase || engine !== "ORTOOLS_V2" || !candidates || !selectedScenario?.id || !ready) return;
@@ -484,6 +504,12 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     }
   }
 
+  function focusAnalysis(metric:CompositeAnalysisMetric){
+    setAnalysisMetric(metric);
+    setInspectedRoleWorkspace(null);
+    window.requestAnimationFrame(()=>document.querySelector(".role-publication-analysis-head")?.scrollIntoView({behavior:"smooth",block:"start"}));
+  }
+
   async function inspectRole(publicationId: string, roleName: string) {
     if (!supabase) return;
     setBusy(true);
@@ -492,6 +518,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       const workspace = await getPublishedSchedule(supabase, publicationId);
       setInspectedRoleWorkspace(workspace);
       setInspectedRoleName(roleName);
+      setInspectedRoleInitialView(analysisMetric==="GAPS"?"ISSUES":analysisMetric==="TEAMS"?"CALENDAR":"WORKLOAD");
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -522,14 +549,15 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
 
     {overview&&<section className="role-publication-overview">
       <div className="role-publication-totals">
-        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><Users/><small>Opublikowane zespoły</small><strong>{overview.totals.publishedRoles}</strong></button>
-        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><Check/><small>Przydziały</small><strong>{overview.totals.assignmentCount}</strong></button>
-        <button type="button" onClick={()=>document.querySelector(".role-composite-preflight")?.scrollIntoView({behavior:"smooth",block:"start"})}><AlertTriangle/><small>Braki</small><strong>{overview.totals.unfilledCount}</strong></button>
-        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><small>Koszt wszystkich zespołów</small><strong>{money(overview.totals.totalCostMinor,overview.roles[0]?.currency??"PLN")}</strong></button>
-        <button type="button" onClick={()=>document.querySelector(".role-publication-analysis")?.scrollIntoView({behavior:"smooth",block:"start"})}><small>Nadgodziny</small><strong>{Math.round(overview.totals.overtimeMinutes/60)} h</strong></button>
+        <button type="button" className={analysisMetric==="TEAMS"?"active":""} aria-pressed={analysisMetric==="TEAMS"} onClick={()=>focusAnalysis("TEAMS")}><Users/><small>Opublikowane zespoły</small><strong>{overview.totals.publishedRoles}</strong></button>
+        <button type="button" className={analysisMetric==="ASSIGNMENTS"?"active":""} aria-pressed={analysisMetric==="ASSIGNMENTS"} onClick={()=>focusAnalysis("ASSIGNMENTS")}><Check/><small>Przydziały</small><strong>{overview.totals.assignmentCount}</strong></button>
+        <button type="button" className={analysisMetric==="GAPS"?"active":""} aria-pressed={analysisMetric==="GAPS"} onClick={()=>focusAnalysis("GAPS")}><AlertTriangle/><small>Braki</small><strong>{overview.totals.unfilledCount}</strong></button>
+        <button type="button" className={analysisMetric==="COST"?"active":""} aria-pressed={analysisMetric==="COST"} onClick={()=>focusAnalysis("COST")}><small>Koszt wszystkich zespołów</small><strong>{money(overview.totals.totalCostMinor,overview.roles[0]?.currency??"PLN")}</strong></button>
+        <button type="button" className={analysisMetric==="OVERTIME"?"active":""} aria-pressed={analysisMetric==="OVERTIME"} onClick={()=>focusAnalysis("OVERTIME")}><small>Nadgodziny</small><strong>{Math.round(overview.totals.overtimeMinutes/60)} h</strong></button>
       </div>
+      <div className="role-publication-analysis-head"><strong>{analysisLabel}</strong><small>Kliknij zespół, aby otworzyć {analysisMetric==="GAPS"?"braki i ich przyczyny":analysisMetric==="TEAMS"?"jego grafik":"godziny, osoby i lokale"} bez opuszczania scalenia.</small></div>
       <div className="role-publication-analysis">
-        {overview.roles.map(role=>{
+        {analysisRoles.map(role=>{
           const costShare=overview.totals.totalCostMinor?role.totalCostMinor/overview.totals.totalCostMinor:0;
           const assignmentShare=overview.totals.assignmentCount?role.assignmentCount/overview.totals.assignmentCount:0;
           const costPressure=assignmentShare?costShare/assignmentShare:0;
@@ -541,11 +569,11 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
             {flagged&&<small>{costPressure>1.15?"Udział w kosztach jest wyraźnie większy niż udział w liczbie przydziałów. ":""}{averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25?"Nadgodziny na przydział przekraczają średnią zespołów.":""}</small>}
           </article>;
         })}
-        {!overview.roles.length&&<p>Żaden zespół nie opublikował jeszcze grafiku na ten miesiąc.</p>}
+        {!analysisRoles.length&&<p>{analysisMetric==="GAPS"?"Żaden opublikowany zespół nie ma braków.":"Żaden zespół nie opublikował jeszcze grafiku na ten miesiąc."}</p>}
       </div>
       {inspectedRoleWorkspace&&<section className="role-publication-drilldown">
         <header><span><small>SZCZEGÓŁY ZESPOŁU</small><strong>{inspectedRoleName}</strong></span><button type="button" className="icon-button" aria-label="Zamknij szczegóły zespołu" onClick={()=>setInspectedRoleWorkspace(null)}><X/></button></header>
-        <SolverV2Workspace workspace={inspectedRoleWorkspace} timezone={timezone} published/>
+        <SolverV2Workspace key={`${inspectedRoleWorkspace.context.scheduleId??inspectedRoleWorkspace.context.runId}:${inspectedRoleInitialView}`} workspace={inspectedRoleWorkspace} timezone={timezone} published initialView={inspectedRoleInitialView}/>
       </section>}
     </section>}
 

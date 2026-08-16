@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { presentSolverVariantMetrics } from "@/lib/solver-variant-presentation";
+import { polishQueuedTaskSentence } from "@/lib/polish-plural";
 import {
   createIdempotencyKey,
   createLeaderVariant,
@@ -725,7 +726,7 @@ export function SolverV2Panel({
         </div>)}
       </div>}
       {run.failureMessage && run.status!=="FAILED" && <div className="solver-v2-notice warning"><AlertTriangle/>{solverErrorMessage(run.failureMessage)}</div>}
-      {run.status==="QUEUED"&&run.phase!=="RETRY_QUEUED"&&<div className="solver-v2-run-state queued"><RefreshCw className="spin"/><span><strong>{run.queuePosition&&run.queuePosition>1?`Przed tym grafikiem ${run.queuePosition-1===1?"jest jeszcze 1 zadanie":run.queuePosition-1<5?`są jeszcze ${run.queuePosition-1} zadania`:`jest jeszcze ${run.queuePosition-1} zadań`}`:`To zadanie jest pierwsze w kolejce`}</strong><small>Zlecenie jest zapisane i nie trzeba klikać ponownie. Oczekiwanie: {elapsedLabel(run.waitingSeconds)}. Obliczenia uruchomią się automatycznie po zwolnieniu workera.</small></span></div>}
+      {run.status==="QUEUED"&&run.phase!=="RETRY_QUEUED"&&<div className="solver-v2-run-state queued"><RefreshCw className="spin"/><span><strong>{run.queuePosition&&run.queuePosition>1?polishQueuedTaskSentence(run.queuePosition-1):`To zadanie jest pierwsze w kolejce`}</strong><small>Zlecenie jest zapisane i nie trzeba klikać ponownie. Oczekiwanie: {elapsedLabel(run.waitingSeconds)}. Obliczenia uruchomią się automatycznie po zwolnieniu workera.</small></span></div>}
       {run.status==="RUNNING"&&<div className="solver-v2-run-state running"><RefreshCw className="spin"/><span><strong>Worker układa teraz ten grafik</strong><small>Czas obliczeń: {elapsedLabel(run.runningSeconds)}. Postęp i strategie są odświeżane automatycznie.</small></span></div>}
       {run.status==="QUEUED"&&run.phase==="RETRY_QUEUED"&&<div className="solver-v2-run-state retry"><RefreshCw/><span><strong>Poprzednia próba została bezpiecznie zakończona</strong><small>Zadanie oczekuje w kolejce na automatyczne ponowienie. „Odśwież” tylko sprawdza stan — nie tworzy kolejnej kopii zadania.</small></span></div>}
       {run.status==="FAILED"&&<div className="solver-v2-run-state failed"><AlertTriangle/><span><strong>Ten przebieg zakończył się błędem</strong><small>{run.failureMessage?solverErrorMessage(run.failureMessage):"Nie zapisano technicznej przyczyny awarii."} „Odśwież” sprawdza zapisany stan. „Spróbuj ponownie” tworzy nowe, osobne generowanie z aktualnymi danymi.</small></span></div>}

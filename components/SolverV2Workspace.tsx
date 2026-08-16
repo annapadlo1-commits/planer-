@@ -17,6 +17,7 @@ type Props = {
   leaderEditable?:boolean;
   onLeaderChanged?:()=>void|Promise<void>;
   onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void;
+  initialView?:WorkspaceView;
 };
 
 function money(value: number | null, currency: string) {
@@ -200,7 +201,7 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
   </article>;
 }
 
-export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc }: Props) {
+export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc, initialView="CALENDAR" }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
   const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
@@ -221,7 +222,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderLimitWarning,setLeaderLimitWarning]=useState("");
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderBusy,setLeaderBusy]=useState(false);
-  const [workspaceView,setWorkspaceView]=useState<WorkspaceView>("CALENDAR");
+  const [workspaceView,setWorkspaceView]=useState<WorkspaceView>(initialView);
   const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
   const [locationFilter,setLocationFilter]=useState("");
   const [employeeDetailId,setEmployeeDetailId]=useState("");
@@ -242,7 +243,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     // React reuses the drawer when another strategy is opened. Variant-bound
     // state must be cleared so workload and diagnostics can never be shown for
     // a different variant than the one named in the header.
-    setWorkspaceView("CALENDAR");
+    setWorkspaceView(initialView);
     setSchedulePerspective("EMPLOYEES");
     setLocationFilter("");
     setWorkloadRows(null);
@@ -256,7 +257,18 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     setDiagnostics(null);
     setVariantDiagnostics(null);
     setLeaderContext(null);
-  },[workspaceIdentity]);
+  },[initialView,workspaceIdentity]);
+  useEffect(()=>{
+    if(initialView!=="WORKLOAD"||!supabase||!workspaceVariantId)return;
+    let active=true;
+    setWorkloadLoading(true);
+    setWorkloadError("");
+    void getVariantWorkloadDistribution(supabase,workspaceVariantId)
+      .then(rows=>{if(active)setWorkloadRows(rows);})
+      .catch(error=>{if(active)setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));})
+      .finally(()=>{if(active)setWorkloadLoading(false);});
+    return()=>{active=false;};
+  },[initialView,supabase,workspaceIdentity,workspaceVariantId]);
   useEffect(()=>{
     const variantId=workspace.variants[0]?.id;
     const employeeIds=[employeeDetailId,comparisonEmployeeId].filter(Boolean);
