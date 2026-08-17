@@ -2482,6 +2482,73 @@ class CpSatScheduleEngine:
             for item in snapshot.external_assignments
         )
 
+        # Capacity-based target used by every strategy.  Count only occurrences
+        # that the employee can actually cover after role, duty, location,
+        # employment, availability, hard-block and external-rest checks.  Daily
+        # and weekly limits then cap that compatible capacity before the
+        # employee's monthly target/maximum is applied.  External work belongs
+        # to the same monthly utilization numerator and target.
+        achievable_target_minutes: dict[str, int] = {}
+        for employee in snapshot.employees:
+            external = external_by_employee.get(employee.id, [])
+            external_daily_count: dict[date, int] = defaultdict(int)
+            external_daily_minutes: dict[date, int] = defaultdict(int)
+            for item in external:
+                local_day = item.start.astimezone(timezone).date()
+                duration = int((item.end.timestamp() - item.start.timestamp()) // 60)
+                external_daily_count[local_day] += 1
+                external_daily_minutes[local_day] += duration
+
+            compatible_occurrences: dict[str, Slot] = {}
+            for slot in slots:
+                if eligibility.evaluate(employee, slot).allowed:
+                    compatible_occurrences.setdefault(slot.occurrence_id, slot)
+            compatible_by_day: dict[date, list[int]] = defaultdict(list)
+            for occurrence in compatible_occurrences.values():
+                compatible_by_day[occurrence.date].append(
+                    occurrence.duration_minutes
+                )
+
+            compatible_by_week: dict[tuple[int, int], int] = defaultdict(int)
+            for day, durations in compatible_by_day.items():
+                remaining_shifts = max(
+                    0,
+                    employee.maximum_shifts_per_day
+                    - external_daily_count.get(day, 0),
+                )
+                if remaining_shifts:
+                    week_key = (day.isocalendar().year, day.isocalendar().week)
+                    compatible_by_week[week_key] += sum(
+                        sorted(durations, reverse=True)[:remaining_shifts]
+                    )
+
+            compatible_minutes = 0
+            for week_key, candidate_minutes in compatible_by_week.items():
+                if employee.maximum_weekly_minutes is not None:
+                    external_week = sum(
+                        duration
+                        for day, duration in external_daily_minutes.items()
+                        if (day.isocalendar().year, day.isocalendar().week)
+                        == week_key
+                    )
+                    candidate_minutes = min(
+                        candidate_minutes,
+                        max(0, employee.maximum_weekly_minutes - external_week),
+                    )
+                compatible_minutes += candidate_minutes
+
+            external_month_total = sum(
+                minutes
+                for day, minutes in external_daily_minutes.items()
+                if snapshot.period_start <= day <= snapshot.period_end
+            )
+            attainable = external_month_total + compatible_minutes
+            if employee.maximum_monthly_minutes is not None:
+                attainable = min(attainable, employee.maximum_monthly_minutes)
+            if employee.nominal_monthly_minutes is not None:
+                attainable = min(attainable, employee.nominal_monthly_minutes)
+            achievable_target_minutes[employee.id] = max(0, attainable)
+
         for employee in snapshot.employees:
             external = external_by_employee.get(employee.id, [])
             external_daily_count: dict[date, int] = defaultdict(int)
@@ -2916,9 +2983,7 @@ class CpSatScheduleEngine:
                 # minimize the number of zero-hour target employees, then the
                 # category-wide spread of target realization. Availability and
                 # every hard rule are already reflected in the x variables.
-                if nominal > 0 and any(
-                    employee_id == employee.id for employee_id, _slot_id in x
-                ):
+                if nominal > 0 and achievable_target_minutes[employee.id] > 0:
                     has_minutes = model.new_bool_var(
                         f"has_target_minutes|{employee.id}"
                     )
@@ -2949,20 +3014,6 @@ class CpSatScheduleEngine:
             weekend_vars.append(weekend)
 
         zero_target_count = _sum(zero_target_vars)
-        # Reuse the already required absolute target deviations here.  The
-        # previous global percentage min/max introduced an additional family
-        # of integer divisions and made a production-size SALA snapshot exceed
-        # the gateway deadline.  This remains lexicographic: avoid zero-hour
-        # eligible employees first, then move the whole category toward each
-        # employee's monthly target.  Availability still bounds every x term.
-        common_fairness_guard_score = (
-            zero_target_count * (deviation_bound_total + 1)
-            + _sum(deviation_vars)
-        )
-        common_fairness_guard_bound = (
-            len(zero_target_vars) * (deviation_bound_total + 1)
-            + deviation_bound_total
-        )
 
         # Fairness must be evaluated inside each role, not once across the whole
         # category.  A single category-wide min/max allowed a heavily loaded
@@ -2973,10 +3024,10 @@ class CpSatScheduleEngine:
         # followed by the sum of all role ranges.  BACKUP-only grants are not
         # regular staffing capacity and therefore do not dilute fair sharing.
         role_dates: dict[str, set[date]] = defaultdict(set)
-        role_slot_minutes: dict[str, int] = defaultdict(int)
+        pool_dates: dict[tuple[str, str], set[date]] = defaultdict(set)
         for slot in slots:
             role_dates[slot.role_id].add(slot.date)
-            role_slot_minutes[slot.role_id] += slot.duration_minutes
+            pool_dates[(slot.role_id, slot.location_id)].add(slot.date)
 
         def standard_role_member(employee: Any, role_id: str) -> bool:
             if employee.role_grants is None:
@@ -2996,59 +3047,46 @@ class CpSatScheduleEngine:
         utilization_bound = 0
         weekend_bound = len(occurrences)
 
-        for role_id in sorted(role_dates):
+        for role_id, location_id in sorted(pool_dates):
             members = [
                 employee
                 for employee in snapshot.employees
                 if standard_role_member(employee, role_id)
+                and achievable_target_minutes[employee.id] > 0
+                and any(
+                    employee_id == employee.id
+                    and slots_by_id[slot_id].role_id == role_id
+                    and slots_by_id[slot_id].location_id == location_id
+                    for employee_id, slot_id in x
+                )
             ]
             if len(members) < 2:
                 continue
-            role_fallback_basis = max(
-                1,
-                math.ceil(role_slot_minutes[role_id] / len(members)),
-            )
             role_utilizations: list[Any] = []
             role_weekends: list[Any] = []
             for employee in members:
                 utilization_participants.add(employee.id)
-                basis = employee.nominal_monthly_minutes
-                if basis is None or basis <= 0:
-                    basis = employee.maximum_monthly_minutes
-                if basis is None or basis <= 0:
-                    basis = role_fallback_basis
-                    fallback_utilization_participants.add(employee.id)
-                else:
+                basis = achievable_target_minutes[employee.id]
+                if employee.nominal_monthly_minutes is not None:
                     explicit_utilization_participants.add(employee.id)
-
-                role_minutes = model.new_int_var(
-                    0,
-                    max_total_bound,
-                    f"role_minutes|{role_id}|{employee.id}",
-                )
-                model.add(
-                    role_minutes
-                    == _sum(
-                        variable * slots_by_id[slot_id].duration_minutes
-                        for (employee_id, slot_id), variable in x.items()
-                        if employee_id == employee.id
-                        and slots_by_id[slot_id].role_id == role_id
-                    )
-                )
+                else:
+                    fallback_utilization_participants.add(employee.id)
                 bound = math.ceil(max_total_bound * 1000 / basis)
                 utilization = model.new_int_var(
                     0,
                     bound,
-                    f"role_utilization_bps|{role_id}|{employee.id}",
+                    f"pool_utilization_bps|{role_id}|{location_id}|{employee.id}",
                 )
-                model.add_division_equality(utilization, role_minutes * 1000, basis)
+                model.add_division_equality(
+                    utilization, total_minutes[employee.id] * 1000, basis
+                )
                 role_utilizations.append(utilization)
                 utilization_bound = max(utilization_bound, bound)
 
                 role_weekend = model.new_int_var(
                     0,
                     weekend_bound,
-                    f"role_weekends|{role_id}|{employee.id}",
+                    f"pool_weekends|{role_id}|{location_id}|{employee.id}",
                 )
                 model.add(
                     role_weekend
@@ -3057,26 +3095,27 @@ class CpSatScheduleEngine:
                         for (employee_id, occurrence_id), variable in work.items()
                         if employee_id == employee.id
                         and occurrences[occurrence_id].role_id == role_id
+                        and occurrences[occurrence_id].location_id == location_id
                         and occurrences[occurrence_id].date.isoweekday() in {6, 7}
                     )
                 )
                 role_weekends.append(role_weekend)
 
             role_max = model.new_int_var(
-                0, utilization_bound, f"role_max_utilization|{role_id}"
+                0, utilization_bound, f"pool_max_utilization|{role_id}|{location_id}"
             )
             role_min = model.new_int_var(
-                0, utilization_bound, f"role_min_utilization|{role_id}"
+                0, utilization_bound, f"pool_min_utilization|{role_id}|{location_id}"
             )
             model.add_max_equality(role_max, role_utilizations)
             model.add_min_equality(role_min, role_utilizations)
             role_utilization_spreads.append(role_max - role_min)
 
             role_max_weekend = model.new_int_var(
-                0, weekend_bound, f"role_max_weekend|{role_id}"
+                0, weekend_bound, f"pool_max_weekend|{role_id}|{location_id}"
             )
             role_min_weekend = model.new_int_var(
-                0, weekend_bound, f"role_min_weekend|{role_id}"
+                0, weekend_bound, f"pool_min_weekend|{role_id}|{location_id}"
             )
             model.add_max_equality(role_max_weekend, role_weekends)
             model.add_min_equality(role_min_weekend, role_weekends)
@@ -3101,6 +3140,18 @@ class CpSatScheduleEngine:
             role_load_sum = 0
             role_load_fairness_score = 0
             role_load_score_bound = 0
+
+        # Product-wide lexicographic gate shared by all strategies: eliminate
+        # unjustified zero-hour outcomes first, then minimize the worst and the
+        # total proportional spread inside comparable role-location pools.
+        common_fairness_guard_score = (
+            zero_target_count * (role_load_score_bound + 1)
+            + role_load_fairness_score
+        )
+        common_fairness_guard_bound = (
+            len(zero_target_vars) * (role_load_score_bound + 1)
+            + role_load_score_bound
+        )
 
         if role_weekend_spreads:
             weekend_role_count = len(role_weekend_spreads)
@@ -3148,11 +3199,13 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
+            "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
             "ROLE_LOAD_SPREAD_SUM_BPS": role_load_sum,
             "ROLE_LOAD_FAIRNESS_ROLE_COUNT": len(role_utilization_spreads),
+            "ROLE_LOCATION_FAIRNESS_POOL_COUNT": len(role_utilization_spreads),
             "LOAD_UTILIZATION_TARGET_COUNT": len(utilization_participants),
             "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT": len(explicit_utilization_participants),
             "LOAD_UTILIZATION_FALLBACK_COUNT": len(fallback_utilization_participants),
@@ -3172,11 +3225,13 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
+            "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
             "ROLE_LOAD_SPREAD_SUM_BPS": utilization_bound * len(role_utilization_spreads),
             "ROLE_LOAD_FAIRNESS_ROLE_COUNT": len(role_utilization_spreads),
+            "ROLE_LOCATION_FAIRNESS_POOL_COUNT": len(role_utilization_spreads),
             "LOAD_UTILIZATION_TARGET_COUNT": len(snapshot.employees),
             "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT": len(snapshot.employees),
             "LOAD_UTILIZATION_FALLBACK_COUNT": len(snapshot.employees),

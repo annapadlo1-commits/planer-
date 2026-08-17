@@ -1167,6 +1167,65 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(guard_stage["tolerance"], 0)
             self.assertEqual(guard_stage["tier"], 0)
 
+    def test_all_strategies_share_work_by_achievable_target_in_role_location_pool(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-10"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        morning = next(
+            item for item in raw["shiftTemplates"] if item["id"] == "shift-morning"
+        )
+        morning["weekdays"] = [1, 2, 3, 4, 5, 6, 7]
+        raw["shiftTemplates"] = [morning]
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": [f"2026-08-{day:02d}" for day in range(1, 11)],
+                "requiredCount": 1,
+            }
+        ]
+        employees = [
+            employee
+            for employee in raw["employees"]
+            if employee["id"] in {"employee-bob", "employee-charlie"}
+        ]
+        for employee in employees:
+            employee["nominalMonthlyMinutes"] = 2_400
+            employee["maximumMonthlyMinutes"] = 2_400
+            employee["maximumWeeklyMinutes"] = 2_400
+            employee["softDayOffDates"] = []
+        employees[0]["baseHourlyRateMinor"] = 1_000
+        employees[1]["baseHourlyRateMinor"] = 10_000
+        raw["employees"] = employees
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        raw["lockedAssignments"] = []
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+
+        variants = CpSatScheduleEngine(max_total_seconds=60).solve(
+            Snapshot.from_dict(raw)
+        )
+        self.assertEqual(len(variants), 2)
+        for variant in variants:
+            counts = {
+                employee["id"]: sum(
+                    assignment.employee_id == employee["id"]
+                    for assignment in variant.assignments
+                )
+                for employee in employees
+            }
+            self.assertEqual(counts, {"employee-bob": 5, "employee-charlie": 5})
+            self.assertEqual(variant.metrics["ZERO_TARGET_EMPLOYEE_COUNT"], 0)
+            self.assertEqual(variant.metrics["LOAD_UTILIZATION_SPREAD_BPS"], 0)
+            self.assertEqual(variant.metrics["ROLE_LOCATION_FAIRNESS_POOL_COUNT"], 1)
+            self.assertEqual(
+                variant.metrics["ACHIEVABLE_TARGET_MINUTES_TOTAL"], 4_800
+            )
+
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()
         raw["settings"]["standbyTiersPerRoleDay"] = 2
