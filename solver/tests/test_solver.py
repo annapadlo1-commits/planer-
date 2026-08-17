@@ -1165,6 +1165,7 @@ class SolverTests(unittest.TestCase):
                 )
             )
             self.assertEqual(guard_stage["tolerance"], 0)
+            self.assertEqual(guard_stage["tier"], 0)
 
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()

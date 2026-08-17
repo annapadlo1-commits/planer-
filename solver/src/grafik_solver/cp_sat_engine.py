@@ -1060,10 +1060,11 @@ class CpSatScheduleEngine:
             # unjustified zero hours and extreme category-wide utilization
             # spread before pursuing cost, preference or presentation-specific
             # fairness objectives.
-            # Keep the product phase clearly separate from Matrix tier numbers
-            # (which are normally positive and are preserved verbatim in the
-            # audit trail).
-            guard_tier = min(tiers, default=0) - 1000
+            # Tier 0 is reserved for this product-wide gate.  The gateway
+            # contract accepts objective tiers only in the 0..100000 range;
+            # using a negative synthetic tier made an otherwise valid SALA
+            # result fail only when the worker tried to persist it.
+            guard_tier = 0
             guard_metric = "COMMON_FAIRNESS_GUARD_SCORE"
             guard_bound = artifacts.metric_bounds[guard_metric]
             if guard_bound > 0:
