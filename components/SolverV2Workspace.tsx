@@ -231,6 +231,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [comparisonAvailability,setComparisonAvailability]=useState<SolverEmployeeDayAvailability[]>([]);
   const [comparisonAvailabilityLoading,setComparisonAvailabilityLoading]=useState(false);
   const [workloadRows,setWorkloadRows]=useState<SolverWorkloadDistributionRow[]|null>(null);
+  const [workloadVariantId,setWorkloadVariantId]=useState("");
   const [workloadLoading,setWorkloadLoading]=useState(false);
   const [workloadError,setWorkloadError]=useState("");
   const [workloadSearch,setWorkloadSearch]=useState("");
@@ -247,6 +248,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     setSchedulePerspective("EMPLOYEES");
     setLocationFilter("");
     setWorkloadRows(null);
+    setWorkloadVariantId("");
     setWorkloadError("");
     setWorkloadSearch("");
     setWorkloadReasonFilter("");
@@ -264,7 +266,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     setWorkloadLoading(true);
     setWorkloadError("");
     void getVariantWorkloadDistribution(supabase,workspaceVariantId)
-      .then(rows=>{if(active)setWorkloadRows(rows);})
+      .then(rows=>{if(active){setWorkloadRows(rows);setWorkloadVariantId(workspaceVariantId);}})
       .catch(error=>{if(active)setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));})
       .finally(()=>{if(active)setWorkloadLoading(false);});
     return()=>{active=false;};
@@ -327,7 +329,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const missingByShift=groupMissing(issue=>issue.shift?.shiftTemplate.name??"Brak wskazanej zmiany");
   const publishedAt = timestampLabel(workspace.context.publishedAt, timezone);
   const activeDiagnosticIssue=diagnostics?workspace.issues.find(issue=>issue.id===diagnostics.issue.id)??null:null;
-  const filteredWorkload=(workloadRows??[]).filter(row=>{
+  const currentWorkloadRows=workloadVariantId===workspaceVariantId?workloadRows:null;
+  const filteredWorkload=(currentWorkloadRows??[]).filter(row=>{
     const normalize=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("pl-PL");
     const search=normalize(workloadSearch.trim());
     const assignedRoleNames=[...(assignedRoleNamesByEmployee.get(row.employeeId)??[])];
@@ -343,11 +346,14 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const workloadMedian=workloadMinutes.length?(workloadMinutes[Math.floor((workloadMinutes.length-1)/2)]+workloadMinutes[Math.ceil((workloadMinutes.length-1)/2)])/2:0;
 
   async function loadWorkload(force=false){
-    if(workloadRows&&!force||workloadLoading)return;
+    if(currentWorkloadRows&&!force||workloadLoading)return;
     const variantId=workspace.variants[0]?.id;
     if(!supabase||!variantId){setWorkloadError("Ten widok nie wskazuje wariantu do analizy.");return;}
     setWorkloadLoading(true);setWorkloadError("");
-    try{setWorkloadRows(await getVariantWorkloadDistribution(supabase,variantId));}
+    try{
+      const rows=await getVariantWorkloadDistribution(supabase,variantId);
+      if(variantId===workspaceVariantId){setWorkloadRows(rows);setWorkloadVariantId(variantId);}
+    }
     catch(error){setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setWorkloadLoading(false);}
   }
@@ -499,7 +505,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const eligibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>candidate.suggestionEligible).length;
   const blockedLeaderCandidates=(leaderContext?.candidates??[]).length-eligibleLeaderCandidates;
   const selectedLeaderCandidate=(leaderContext?.candidates??[]).find(candidate=>candidate.employeeId===leaderEmployeeId)??null;
-  const employeeDetailWorkload=(workloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
+  const employeeDetailWorkload=(currentWorkloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
   const employeeDetail=scheduleEmployees.find(employee=>employee.id===employeeDetailId)??(
     employeeDetailSeed?.id===employeeDetailId
       ? {id:employeeDetailSeed.id,firstName:employeeDetailSeed.name,lastName:"",employeeNo:employeeDetailSeed.employeeNo,nominalMonthlyMinutes:employeeDetailWorkload?.nominalMonthlyMinutes??0}
@@ -575,7 +581,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <header className="solver-workspace-view-head"><span><em>{published?"OPUBLIKOWANY GRAFIK":workspace.context.variantKind==="LEADER_COPY"?"WERSJA LIDERA • JESZCZE NIEOPUBLIKOWANA":"WARIANT • JESZCZE NIEOPUBLIKOWANY"}</em><strong>Rozkład pracy zespołu</strong><small>{workspace.context.variantKind==="LEADER_COPY"?"Aktualny bilans kopii lidera — po każdej zmianie jest liczony ponownie.":"Analiza dokładnie tego wariantu, który wskazuje nagłówek."}</small></span><button className="secondary-button" disabled={workloadLoading} onClick={()=>void openWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz</button></header>
       {workloadLoading&&<div className="solver-workspace-empty"><RefreshCw className="spin"/> Obliczamy rozkład godzin…</div>}
       {workloadError&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Nie udało się pobrać rozkładu pracy</strong><small>{workloadError}</small></span></div>}
-      {workloadRows&&<>
+      {currentWorkloadRows&&<>
         <div className="solver-workload-summary">
           <span><small>Osoby w analizie</small><strong>{filteredWorkload.length}</strong></span>
           <span><small>Najmniej godzin</small><strong>{workloadHours(workloadMinutes[0]??0)}</strong></span>
@@ -685,7 +691,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         {variantDiagnostics.summary.eligible>0&&!variantDiagnostics.decisionContext&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>{variantDiagnostics.summary.eligible} osób nie ma indywidualnej twardej blokady</strong><small>{leaderEditable?"Wróć do listy braków i użyj „Uzupełnij w wersji lidera”. System sprawdzi wtedy cały miesiąc przed zapisem.":variantDiagnostics.publishedScheduleId?"To nie gwarantuje, że dopisanie zachowa poprawność całego miesiąca. Przycisk wykona ponowną kontrolę globalną przed zapisem.":"Silnik mógł wykorzystać te osoby w innym miejscu. Utwórz wersję lidera, aby poprawić grafik przed publikacją."}</small></span></div>}
         <p className="candidate-count-explainer">Liczba „z blokadą” oznacza unikalne osoby. Sumy w kategoriach mogą być większe, bo jedna osoba może mieć kilka powodów jednocześnie.</p>
         <div className="variant-reason-list">{variantDiagnostics.summary.reasons.map(reason=><details key={reason.code}><summary><span><strong>{reasonLabel(reason.code)}</strong><small>Kliknij, aby zobaczyć osoby i szczegóły</small></span><b>{reason.count} os.</b></summary><div>{variantDiagnostics.candidates.filter(candidate=>candidate.reasons.includes(reason.code)).map(candidate=><article key={candidate.employeeId}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}</small></span>{candidate.blockingDetails?.filter(detail=>detail.code===reason.code).map((detail,index)=><p key={`${detail.code}:${index}`}><b>{detail.label}</b>{detail.shiftName?` • ${detail.shiftName}`:""}{detail.locationName?` • ${detail.locationName}`:""}{detail.startsAt?` • ${timeLabel(detail.startsAt,timezone)}–${timeLabel(detail.endsAt??detail.startsAt,timezone)}`:""}{detail.createdAt?` • zgłoszono ${timestampLabel(detail.createdAt,timezone)}`:""}</p>)}</article>)}</div></details>)}</div>
-        {variantDiagnostics.candidates.some(candidate=>candidate.roleMatch)&&<section className="variant-role-candidates"><div><h3>Pracownicy z wymaganą rolą</h3><p>Kliknij osobę, aby bez wychodzenia z analizy zobaczyć jej kalendarz, aktualne godziny, liczbę zmian, cel i twardy limit. Rola i dodatkowy obowiązek są sprawdzane osobno.</p></div>{variantDiagnostics.candidates.filter(candidate=>candidate.roleMatch).map(candidate=>{const workload=(workloadRows??[]).find(row=>row.employeeId===candidate.employeeId);const onlyLimitRisk=candidate.reasons.length>0&&candidate.reasons.every(reason=>reason==="WEEKLY_LIMIT"||reason==="MONTHLY_LIMIT");return <article key={candidate.employeeId}><button type="button" className="candidate-calendar-link" onClick={()=>openEmployeeCalendar(candidate)}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo} • {candidate.locationMatch?"lokal pasuje":"lokal nie pasuje"}{candidate.dutyMatch?" • wymagany obowiązek pasuje":" • brak wymaganego obowiązku"}</small></span><em><CalendarDays/> {workload?`${workloadHours(workload.plannedMinutes)} • ${workload.shiftCount} zmian • cel ${workload.nominalMonthlyMinutes>0?workloadHours(workload.nominalMonthlyMinutes):"brak"}`:"Otwórz kalendarz i bilans"}</em></button>{candidate.reasons.length?<><ul>{candidate.reasons.map(reason=><li key={reason}>{reasonLabel(reason)}</li>)}</ul>{candidate.blockingDetails?.map((detail,index)=><small className="candidate-block-detail" key={`${detail.code}:${index}`}>{detail.label}{detail.shiftName?` • ${detail.shiftName}`:""}{detail.locationName?` • ${detail.locationName}`:""}{detail.startsAt?` • ${timeLabel(detail.startsAt,timezone)}–${timeLabel(detail.endsAt??detail.startsAt,timezone)}`:""}</small>)}{leaderEditable&&onlyLimitRisk&&<button className="danger-button" onClick={()=>{const issueId=variantDiagnostics.issueId;setVariantDiagnostics(null);void openLeaderEdit({issueId,preferredEmployeeId:candidate.employeeId});}}><AlertTriangle/> Przypisz w wersji lidera</button>}</>:<div className="candidate-eligible-actions"><b className="candidate-eligible">Brak indywidualnej blokady</b>{variantDiagnostics.publishedScheduleId&&<button className="primary-button" disabled={variantDiagnosticsLoading} onClick={()=>void assignVariantCandidate(candidate)}>{variantDiagnosticsLoading&&selectedEmployee===candidate.employeeId?<RefreshCw className="spin"/>:<Plus/>} Sprawdź i dopisz do grafiku</button>}</div>}</article>})}</section>}
+        {variantDiagnostics.candidates.some(candidate=>candidate.roleMatch)&&<section className="variant-role-candidates"><div><h3>Pracownicy z wymaganą rolą</h3><p>Kliknij osobę, aby bez wychodzenia z analizy zobaczyć jej kalendarz, aktualne godziny, liczbę zmian, cel i twardy limit. Rola i dodatkowy obowiązek są sprawdzane osobno.</p></div>{variantDiagnostics.candidates.filter(candidate=>candidate.roleMatch).map(candidate=>{const workload=(currentWorkloadRows??[]).find(row=>row.employeeId===candidate.employeeId);const onlyLimitRisk=candidate.reasons.length>0&&candidate.reasons.every(reason=>reason==="WEEKLY_LIMIT"||reason==="MONTHLY_LIMIT");return <article key={candidate.employeeId}><button type="button" className="candidate-calendar-link" onClick={()=>openEmployeeCalendar(candidate)}><span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo} • {candidate.locationMatch?"lokal pasuje":"lokal nie pasuje"}{candidate.dutyMatch?" • wymagany obowiązek pasuje":" • brak wymaganego obowiązku"}</small></span><em><CalendarDays/> {workload?`${workloadHours(workload.plannedMinutes)} • ${workload.shiftCount} zmian • cel ${workload.nominalMonthlyMinutes>0?workloadHours(workload.nominalMonthlyMinutes):"brak"}`:"Otwórz kalendarz i bilans"}</em></button>{candidate.reasons.length?<><ul>{candidate.reasons.map(reason=><li key={reason}>{reasonLabel(reason)}</li>)}</ul>{candidate.blockingDetails?.map((detail,index)=><small className="candidate-block-detail" key={`${detail.code}:${index}`}>{detail.label}{detail.shiftName?` • ${detail.shiftName}`:""}{detail.locationName?` • ${detail.locationName}`:""}{detail.startsAt?` • ${timeLabel(detail.startsAt,timezone)}–${timeLabel(detail.endsAt??detail.startsAt,timezone)}`:""}</small>)}{leaderEditable&&onlyLimitRisk&&<button className="danger-button" onClick={()=>{const issueId=variantDiagnostics.issueId;setVariantDiagnostics(null);void openLeaderEdit({issueId,preferredEmployeeId:candidate.employeeId});}}><AlertTriangle/> Przypisz w wersji lidera</button>}</>:<div className="candidate-eligible-actions"><b className="candidate-eligible">Brak indywidualnej blokady</b>{variantDiagnostics.publishedScheduleId&&<button className="primary-button" disabled={variantDiagnosticsLoading} onClick={()=>void assignVariantCandidate(candidate)}>{variantDiagnosticsLoading&&selectedEmployee===candidate.employeeId?<RefreshCw className="spin"/>:<Plus/>} Sprawdź i dopisz do grafiku</button>}</div>}</article>})}</section>}
         {!variantDiagnostics.summary.reasons.length&&<p>Nie znaleziono twardych blokad kandydatów. Ten przypadek wymaga kontroli celów strategii i materiału wejściowego solvera.</p>}
       </div>
     </aside></>}

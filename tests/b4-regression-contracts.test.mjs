@@ -495,7 +495,18 @@ test("every opened variant owns fresh workload and diagnostic state", async () =
   assert.match(panel,/key=\{`inspect:/);
   assert.match(workspace,/const workspaceIdentity=/);
   assert.match(workspace,/setWorkloadRows\(null\)/);
+  assert.match(workspace,/workloadVariantId===workspaceVariantId/);
+  assert.match(workspace,/setWorkloadVariantId\(workspaceVariantId\)/);
   assert.match(workspace,/setComparisonAvailability\(\[\]\)/);
+});
+
+test("UAT-052 availability uses the company timezone and swap actions stay in flow", async () => {
+  const migration=await readFile(new URL("../supabase/migrations/20260817150626_uat052_availability_local_date_contract.sql",import.meta.url),"utf8");
+  const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(migration,/at time zone v_timezone\)::date<=day_value\.day_date/);
+  assert.match(migration,/upper\(constraint_row\.time_range\)-interval '1 microsecond'\) at time zone v_timezone/);
+  assert.match(css,/\.possible-swap-day\{position:static!important;right:auto!important;top:auto!important;/);
+  assert.match(css,/height:auto!important/);
 });
 
 test("swap discovery starts on the first employee and validates availability plus duty hand-off", async () => {

@@ -1053,6 +1053,34 @@ class CpSatScheduleEngine:
                     }
                 )
 
+            # This guard is intentionally outside editable Matrix strategy
+            # terms. Coverage and overtime remain earlier hard product gates;
+            # every displayed strategy must then protect target employees from
+            # unjustified zero hours and extreme category-wide utilization
+            # spread before pursuing cost, preference or presentation-specific
+            # fairness objectives.
+            # Keep the product phase clearly separate from Matrix tier numbers
+            # (which are normally positive and are preserved verbatim in the
+            # audit trail).
+            guard_tier = min(tiers, default=0) - 1000
+            guard_metric = "COMMON_FAIRNESS_GUARD_SCORE"
+            guard_bound = artifacts.metric_bounds[guard_metric]
+            if guard_bound > 0:
+                tiers[guard_tier].append(artifacts.metrics[guard_metric])
+                tier_upper_bounds[guard_tier] = guard_bound
+                tier_tolerances[guard_tier] = 0
+                tier_terms[guard_tier].append(
+                    {
+                        "metric": guard_metric,
+                        "direction": "MIN",
+                        "weight": 1,
+                        "tolerance": 0,
+                        "parameters": {"productGuard": True},
+                        "normalizationCoefficient": 1,
+                        "metricUpperBound": guard_bound,
+                    }
+                )
+
             self._emit_progress(
                 phase="SOLVING",
                 progress=10 + (80 * strategy_index // strategy_count),
@@ -2853,8 +2881,11 @@ class CpSatScheduleEngine:
         deviation_vars: list[Any] = []
         overtime_vars: list[Any] = []
         weekend_vars: list[Any] = []
+        zero_target_vars: list[Any] = []
+        global_utilization_vars: list[Any] = []
         deviation_bound_total = 0
         overtime_bound_total = 0
+        global_utilization_bound = 0
         for employee in snapshot.employees:
             total = total_minutes[employee.id]
             if employee.nominal_monthly_minutes is not None:
@@ -2871,6 +2902,32 @@ class CpSatScheduleEngine:
                 model.add_max_equality(overtime, [total - nominal, 0])
                 overtime_vars.append(overtime)
                 overtime_bound_total += max_total_bound
+                # Common product guard: an eligible employee with a positive
+                # monthly target may not be silently dropped merely because a
+                # strategy values cost or preferences more highly. First
+                # minimize the number of zero-hour target employees, then the
+                # category-wide spread of target realization. Availability and
+                # every hard rule are already reflected in the x variables.
+                if nominal > 0 and any(
+                    employee_id == employee.id for employee_id, _slot_id in x
+                ):
+                    has_minutes = model.new_bool_var(
+                        f"has_target_minutes|{employee.id}"
+                    )
+                    model.add(total >= 1).only_enforce_if(has_minutes)
+                    model.add(total == 0).only_enforce_if(has_minutes.Not())
+                    zero_target_vars.append(1 - has_minutes)
+                    utilization_bound = math.ceil(max_total_bound * 1000 / nominal)
+                    utilization = model.new_int_var(
+                        0,
+                        utilization_bound,
+                        f"global_target_utilization|{employee.id}",
+                    )
+                    model.add_division_equality(utilization, total * 1000, nominal)
+                    global_utilization_vars.append(utilization)
+                    global_utilization_bound = max(
+                        global_utilization_bound, utilization_bound
+                    )
             external_weekends = sum(
                 1
                 for item in external_by_employee.get(employee.id, [])
@@ -2893,6 +2950,34 @@ class CpSatScheduleEngine:
                 + external_weekends
             )
             weekend_vars.append(weekend)
+
+        if len(global_utilization_vars) >= 2:
+            global_utilization_min = model.new_int_var(
+                0, global_utilization_bound, "global_target_utilization_min"
+            )
+            global_utilization_max = model.new_int_var(
+                0, global_utilization_bound, "global_target_utilization_max"
+            )
+            model.add_min_equality(global_utilization_min, global_utilization_vars)
+            model.add_max_equality(global_utilization_max, global_utilization_vars)
+            global_utilization_spread = model.new_int_var(
+                0, global_utilization_bound, "global_target_utilization_spread"
+            )
+            model.add(
+                global_utilization_spread
+                == global_utilization_max - global_utilization_min
+            )
+        else:
+            global_utilization_spread = 0
+        zero_target_count = _sum(zero_target_vars)
+        common_fairness_guard_score = (
+            zero_target_count * (global_utilization_bound + 1)
+            + global_utilization_spread
+        )
+        common_fairness_guard_bound = (
+            len(zero_target_vars) * (global_utilization_bound + 1)
+            + global_utilization_bound
+        )
 
         # Fairness must be evaluated inside each role, not once across the whole
         # category.  A single category-wide min/max allowed a heavily loaded
@@ -3077,6 +3162,9 @@ class CpSatScheduleEngine:
             "NOMINAL_DEVIATION_MINUTES": _sum(deviation_vars),
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
+            "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
+            "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_spread,
+            "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
             "ROLE_LOAD_SPREAD_SUM_BPS": role_load_sum,
@@ -3099,6 +3187,9 @@ class CpSatScheduleEngine:
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
+            "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
+            "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_bound,
+            "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
             "ROLE_LOAD_SPREAD_SUM_BPS": utilization_bound * len(role_utilization_spreads),

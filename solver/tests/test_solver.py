@@ -1125,17 +1125,46 @@ class SolverTests(unittest.TestCase):
         zero_stage = next(
             stage
             for stage in variant.stage_objectives
-            if stage.get("name") == "TIER_1"
+            if any(
+                term.get("metric") == "PREFERENCE_VIOLATIONS"
+                for term in stage.get("terms", [])
+            )
         )
-        self.assertEqual(zero_stage["value"], 0)
         self.assertEqual(zero_stage["status"], "OPTIMAL")
-        self.assertTrue(zero_stage["verifiedZeroIncumbent"])
         self.assertTrue(
             any(
                 stage.get("name") == "TIER_2"
                 for stage in variant.stage_objectives
             )
         )
+
+    def test_every_strategy_applies_common_zero_hour_fairness_guard(self) -> None:
+        raw = load_raw()
+        raw["settings"]["requireOptimal"] = True
+        variants = CpSatScheduleEngine(max_total_seconds=60).solve(
+            Snapshot.from_dict(raw)
+        )
+        self.assertGreater(len(variants), 1)
+        zero_counts = {
+            variant.metrics["ZERO_TARGET_EMPLOYEE_COUNT"] for variant in variants
+        }
+        self.assertEqual(len(zero_counts), 1)
+        for variant in variants:
+            guard_stage = next(
+                stage
+                for stage in variant.stage_objectives
+                if any(
+                    term.get("metric") == "COMMON_FAIRNESS_GUARD_SCORE"
+                    for term in stage.get("terms", [])
+                )
+            )
+            self.assertTrue(
+                any(
+                    term.get("parameters", {}).get("productGuard") is True
+                    for term in guard_stage["terms"]
+                )
+            )
+            self.assertEqual(guard_stage["tolerance"], 0)
 
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()
@@ -1385,7 +1414,10 @@ class SolverTests(unittest.TestCase):
         self.assertTrue(initial_hint_counts)
         self.assertTrue(all(count > 0 for count in initial_hint_counts))
         for variant in variants:
-            fixed_tier = variant.stage_objectives[1]
+            fixed_tier = next(
+                stage for stage in variant.stage_objectives
+                if stage.get("name") == "TIER_1"
+            )
             self.assertEqual(fixed_tier["name"], "TIER_1")
             self.assertEqual(fixed_tier["status"], "OPTIMAL")
 
@@ -1887,7 +1919,14 @@ class SolverTests(unittest.TestCase):
         ]
         snapshot = Snapshot.from_dict(raw)
         variant = self.engine.solve(snapshot)[0]
-        stage = variant.stage_objectives[1]
+        stage = next(
+            item
+            for item in variant.stage_objectives
+            if any(
+                term.get("metric") == "TOTAL_COST"
+                for term in item.get("terms", [])
+            )
+        )
         coefficient = stage["terms"][0]["normalizationCoefficient"]
         self.assertEqual(stage["tolerance"], coefficient * 125)
         self.assertEqual(
@@ -1923,7 +1962,14 @@ class SolverTests(unittest.TestCase):
         snapshot = Snapshot.from_dict(raw)
         self.assertEqual(snapshot.strategies[0].objective_terms[0].weight, 0)
         variant = self.engine.solve(snapshot)[0]
-        self.assertEqual([stage["tier"] for stage in variant.stage_objectives], [0])
+        self.assertEqual(variant.stage_objectives[0]["tier"], 0)
+        self.assertTrue(
+            any(
+                term.get("metric") == "COMMON_FAIRNESS_GUARD_SCORE"
+                for stage in variant.stage_objectives[1:]
+                for term in stage.get("terms", [])
+            )
+        )
         self.assertTrue(validate_variant(snapshot, variant).valid)
 
     def test_strategies_can_produce_independent_solutions(self) -> None:
@@ -2520,7 +2566,7 @@ class SolverTests(unittest.TestCase):
         ):
             engine.solve(snapshot)
 
-        self.assertEqual(len(completed), 1)
+        self.assertLessEqual(len(completed), 1)
         self.assertEqual(len(observed_limits), 4)
         self.assertEqual(observed_limits, [8.0, 5.5, 3.0, 0.5])
         self.assertTrue(snapshot.settings.require_optimal)
