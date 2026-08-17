@@ -2959,10 +2959,32 @@ class CpSatScheduleEngine:
         overtime_vars: list[Any] = []
         weekend_vars: list[Any] = []
         zero_target_vars: list[Any] = []
+        achievable_utilization_vars: list[Any] = []
         deviation_bound_total = 0
         overtime_bound_total = 0
         for employee in snapshot.employees:
             total = total_minutes[employee.id]
+            achievable_target = achievable_target_minutes[employee.id]
+            if achievable_target > 0:
+                capped_minutes = model.new_int_var(
+                    0,
+                    achievable_target,
+                    f"achievable_capped_minutes|{employee.id}",
+                )
+                model.add_min_equality(
+                    capped_minutes, [total, achievable_target]
+                )
+                achievable_utilization = model.new_int_var(
+                    0,
+                    1000,
+                    f"achievable_utilization_bps|{employee.id}",
+                )
+                model.add_division_equality(
+                    achievable_utilization,
+                    capped_minutes * 1000,
+                    achievable_target,
+                )
+                achievable_utilization_vars.append(achievable_utilization)
             if employee.nominal_monthly_minutes is not None:
                 nominal = employee.nominal_monthly_minutes
                 deviation = model.new_int_var(
@@ -3071,7 +3093,11 @@ class CpSatScheduleEngine:
                     explicit_utilization_participants.add(employee.id)
                 else:
                     fallback_utilization_participants.add(employee.id)
-                bound = math.ceil(max_total_bound * 1000 / basis)
+                # Achievable target is an upper bound on minutes this employee
+                # can receive in the snapshot, so utilization is naturally
+                # capped at 1000 (100%).  The fixed bound also keeps the
+                # lexicographic score safely inside CP-SAT int64 arithmetic.
+                bound = 1000
                 utilization = model.new_int_var(
                     0,
                     bound,
@@ -3142,14 +3168,28 @@ class CpSatScheduleEngine:
             role_load_score_bound = 0
 
         # Product-wide lexicographic gate shared by all strategies: eliminate
-        # unjustified zero-hour outcomes first, then minimize the worst and the
-        # total proportional spread inside comparable role-location pools.
+        # unjustified zero-hour outcomes first, maximize the least-realized
+        # achievable target (capped at 100%), then minimize the worst and total
+        # proportional spread inside comparable role-location pools.
+        if achievable_utilization_vars:
+            minimum_achievable_utilization = model.new_int_var(
+                0, 1000, "minimum_achievable_utilization_bps"
+            )
+            model.add_min_equality(
+                minimum_achievable_utilization, achievable_utilization_vars
+            )
+            achievable_utilization_deficit = 1000 - minimum_achievable_utilization
+        else:
+            minimum_achievable_utilization = 0
+            achievable_utilization_deficit = 0
         common_fairness_guard_score = (
-            zero_target_count * (role_load_score_bound + 1)
+            zero_target_count * (1001 * (role_load_score_bound + 1))
+            + achievable_utilization_deficit * (role_load_score_bound + 1)
             + role_load_fairness_score
         )
         common_fairness_guard_bound = (
-            len(zero_target_vars) * (role_load_score_bound + 1)
+            len(zero_target_vars) * (1001 * (role_load_score_bound + 1))
+            + 1000 * (role_load_score_bound + 1)
             + role_load_score_bound
         )
 
@@ -3200,6 +3240,7 @@ class CpSatScheduleEngine:
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
+            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
@@ -3226,6 +3267,7 @@ class CpSatScheduleEngine:
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
+            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
