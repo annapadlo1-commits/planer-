@@ -111,6 +111,7 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 15.0
 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
+MAX_RELAXED_COMMON_FAIRNESS_SECONDS = 12.0
 MAX_RELAXED_DIVERSITY_SECONDS = 6.0
 RELAXED_DIVERSITY_FRACTION = 0.01
 MAX_RELAXED_DIVERSITY_ASSIGNMENT_CHANGES = 20
@@ -1265,6 +1266,11 @@ class CpSatScheduleEngine:
                             0.001,
                             usable_tier_budget / max(1, remaining_tier_count),
                         )
+                        if tier == guard_tier:
+                            tier_time_budget = min(
+                                tier_time_budget,
+                                MAX_RELAXED_COMMON_FAIRNESS_SECONDS,
+                            )
                     final_solver, final_status = self._solve_model(
                         artifacts.model,
                         snapshot,
@@ -2882,10 +2888,8 @@ class CpSatScheduleEngine:
         overtime_vars: list[Any] = []
         weekend_vars: list[Any] = []
         zero_target_vars: list[Any] = []
-        global_utilization_vars: list[Any] = []
         deviation_bound_total = 0
         overtime_bound_total = 0
-        global_utilization_bound = 0
         for employee in snapshot.employees:
             total = total_minutes[employee.id]
             if employee.nominal_monthly_minutes is not None:
@@ -2917,17 +2921,6 @@ class CpSatScheduleEngine:
                     model.add(total >= 1).only_enforce_if(has_minutes)
                     model.add(total == 0).only_enforce_if(has_minutes.Not())
                     zero_target_vars.append(1 - has_minutes)
-                    utilization_bound = math.ceil(max_total_bound * 1000 / nominal)
-                    utilization = model.new_int_var(
-                        0,
-                        utilization_bound,
-                        f"global_target_utilization|{employee.id}",
-                    )
-                    model.add_division_equality(utilization, total * 1000, nominal)
-                    global_utilization_vars.append(utilization)
-                    global_utilization_bound = max(
-                        global_utilization_bound, utilization_bound
-                    )
             external_weekends = sum(
                 1
                 for item in external_by_employee.get(employee.id, [])
@@ -2951,32 +2944,20 @@ class CpSatScheduleEngine:
             )
             weekend_vars.append(weekend)
 
-        if len(global_utilization_vars) >= 2:
-            global_utilization_min = model.new_int_var(
-                0, global_utilization_bound, "global_target_utilization_min"
-            )
-            global_utilization_max = model.new_int_var(
-                0, global_utilization_bound, "global_target_utilization_max"
-            )
-            model.add_min_equality(global_utilization_min, global_utilization_vars)
-            model.add_max_equality(global_utilization_max, global_utilization_vars)
-            global_utilization_spread = model.new_int_var(
-                0, global_utilization_bound, "global_target_utilization_spread"
-            )
-            model.add(
-                global_utilization_spread
-                == global_utilization_max - global_utilization_min
-            )
-        else:
-            global_utilization_spread = 0
         zero_target_count = _sum(zero_target_vars)
+        # Reuse the already required absolute target deviations here.  The
+        # previous global percentage min/max introduced an additional family
+        # of integer divisions and made a production-size SALA snapshot exceed
+        # the gateway deadline.  This remains lexicographic: avoid zero-hour
+        # eligible employees first, then move the whole category toward each
+        # employee's monthly target.  Availability still bounds every x term.
         common_fairness_guard_score = (
-            zero_target_count * (global_utilization_bound + 1)
-            + global_utilization_spread
+            zero_target_count * (deviation_bound_total + 1)
+            + _sum(deviation_vars)
         )
         common_fairness_guard_bound = (
-            len(zero_target_vars) * (global_utilization_bound + 1)
-            + global_utilization_bound
+            len(zero_target_vars) * (deviation_bound_total + 1)
+            + deviation_bound_total
         )
 
         # Fairness must be evaluated inside each role, not once across the whole
@@ -3163,7 +3144,6 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
-            "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_spread,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
@@ -3188,7 +3168,6 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
-            "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_bound,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
