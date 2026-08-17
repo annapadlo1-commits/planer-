@@ -1158,12 +1158,12 @@ class SolverTests(unittest.TestCase):
                     for term in stage.get("terms", [])
                 )
             )
-            self.assertTrue(
-                any(
-                    term.get("parameters", {}).get("productGuard") is True
-                    for term in guard_stage["terms"]
-                )
+            guard_term = next(
+                term
+                for term in guard_stage["terms"]
+                if term.get("metric") == "COMMON_FAIRNESS_GUARD_SCORE"
             )
+            self.assertEqual(guard_term["parameters"], {})
             self.assertEqual(guard_stage["tolerance"], 0)
             self.assertEqual(guard_stage["tier"], 0)
 

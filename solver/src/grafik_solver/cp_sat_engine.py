@@ -1077,7 +1077,10 @@ class CpSatScheduleEngine:
                         "direction": "MIN",
                         "weight": 1,
                         "tolerance": 0,
-                        "parameters": {"productGuard": True},
+                        # The gateway only permits the public objective
+                        # parameter `targetValue`; the metric name itself is
+                        # the durable audit identifier for this product gate.
+                        "parameters": {},
                         "normalizationCoefficient": 1,
                         "metricUpperBound": guard_bound,
                     }
