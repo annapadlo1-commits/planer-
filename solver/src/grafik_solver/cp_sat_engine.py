@@ -111,7 +111,7 @@ BOUNDARY_PROOF_BUDGET_FRACTION = 0.35
 # remaining time is more valuable for materializing and validating strategies.
 MAX_RELAXED_STRATEGY_WARM_START_SECONDS = 15.0
 RELAXED_STRATEGY_FINAL_RESERVE_SECONDS = 7.0
-MAX_RELAXED_COMMON_FAIRNESS_SECONDS = 30.0
+MAX_RELAXED_COMMON_FAIRNESS_SECONDS = 12.0
 MAX_RELAXED_DIVERSITY_SECONDS = 6.0
 RELAXED_DIVERSITY_FRACTION = 0.01
 MAX_RELAXED_DIVERSITY_ASSIGNMENT_CHANGES = 20
@@ -923,16 +923,6 @@ class CpSatScheduleEngine:
                         disable_presolve=(
                             not snapshot.settings.require_optimal
                             and feasible_fallback_solver is not None
-                            # The shared fairness gate contains global min/max
-                            # utilization variables.  Starting its search from
-                            # the raw feasibility roster without presolve left
-                            # production-size categories at the warm-start
-                            # extreme (for example 5 h versus 160+ h) even
-                            # though much fairer full-coverage rosters existed.
-                            # Give this one product-wide gate a bounded presolve;
-                            # later strategy tiers still use the fast hinted
-                            # search path and keep their own time budget.
-                            and tier != guard_tier
                         ),
                     )
                     if (
