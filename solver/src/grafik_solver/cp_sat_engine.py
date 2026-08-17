@@ -2988,14 +2988,29 @@ class CpSatScheduleEngine:
                 == global_utilization_max - global_utilization_min
             )
         else:
+            global_utilization_min = (
+                global_utilization_vars[0] if global_utilization_vars else 0
+            )
             global_utilization_spread = 0
         zero_target_count = _sum(zero_target_vars)
+        # The shared gate is deliberately lexicographic.  Merely minimizing
+        # max-min spread can improve the upper extreme while still leaving the
+        # least-used eligible employee on a token shift.  First maximize that
+        # minimum proportional target realization, then use spread as the
+        # tie-breaker.  Strategy-specific cost/preferences run only afterwards.
+        global_min_utilization_deficit = (
+            global_utilization_bound - global_utilization_min
+        )
         common_fairness_guard_score = (
-            zero_target_count * (global_utilization_bound + 1)
+            zero_target_count
+            * ((global_utilization_bound + 1) * (global_utilization_bound + 1))
+            + global_min_utilization_deficit * (global_utilization_bound + 1)
             + global_utilization_spread
         )
         common_fairness_guard_bound = (
-            len(zero_target_vars) * (global_utilization_bound + 1)
+            len(zero_target_vars)
+            * ((global_utilization_bound + 1) * (global_utilization_bound + 1))
+            + global_utilization_bound * (global_utilization_bound + 1)
             + global_utilization_bound
         )
 
@@ -3183,6 +3198,7 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
+            "GLOBAL_MIN_TARGET_UTILIZATION_DEFICIT_BPS": global_min_utilization_deficit,
             "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_spread,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
@@ -3208,6 +3224,7 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
+            "GLOBAL_MIN_TARGET_UTILIZATION_DEFICIT_BPS": global_utilization_bound,
             "GLOBAL_TARGET_UTILIZATION_SPREAD_BPS": global_utilization_bound,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
