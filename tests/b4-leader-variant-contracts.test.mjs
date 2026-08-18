@@ -67,6 +67,17 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(panel, /aria-modal="true"/);
   assert.match(panel, /initialView="CALENDAR"/);
   assert.match(panel, /Pracownicy nie widzą zmian przed publikacją/);
+  const styles = await readFile(new URL("../app/product-journey.css", import.meta.url), "utf8");
+  assert.match(styles, /solver-workspace\.leader-studio\{display:grid;grid-template-columns:minmax\(230px,290px\) minmax\(620px,1fr\) minmax\(250px,320px\)/);
+  assert.match(styles, /leader-studio>\.solver-global-filters\{grid-column:1/);
+  assert.match(styles, /leader-studio>\.leader-studio-impact\{grid-column:3/);
+  assert.match(workspace, /open=\{!leaderEditable&&workspace\.issues\.length > 0\}/);
+  assert.match(workspace, /leader-studio-candidate-panel/);
+  assert.match(workspace, /application\/x-grafik-employee/);
+  assert.match(workspace, /draggable=\{candidate\.suggestionEligible\}/);
+  assert.match(workspace, /studio-vacancy-target/);
+  assert.match(workspace, /onDrop=\{event=>/);
+  assert.match(styles, /\.leader-studio>\.leader-studio-candidate-panel\{grid-column:1/);
   assert.equal((panel.match(/window\.confirm/g) ?? []).length, 1, "wybór i publikacja nie mogą otwierać blokujących okien przeglądarki");
   const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
   assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
