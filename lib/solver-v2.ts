@@ -2071,6 +2071,23 @@ export async function removeLeaderAssignment(
   }));
 }
 
+export type SolverLeaderHistoryStatus={
+  canUndo:boolean;canRedo:boolean;
+  entries:Array<{seq:number;revision:number;label:string;createdAt:string;current:boolean}>;
+};
+
+export async function getLeaderHistoryStatus(
+  client:SupabaseClient,variantId:string,
+):Promise<SolverLeaderHistoryStatus>{
+  const payload=record(await rpc(client,"optimizer_leader_history_status_uat_v1",{p_variant_id:variantId}));
+  return {canUndo:Boolean(payload.canUndo),canRedo:Boolean(payload.canRedo),entries:Array.isArray(payload.entries)
+    ?payload.entries.map(value=>{const row=record(value);return{seq:numberOf(row,"seq","seq"),revision:numberOf(row,"revision","revision"),label:String(row.label??"Zmiana w Studio"),createdAt:String(row.createdAt??""),current:Boolean(row.current)};}):[]};
+}
+
+export async function moveLeaderHistory(
+  client:SupabaseClient,variantId:string,direction:"UNDO"|"REDO",
+){return record(await rpc(client,"optimizer_leader_history_move_uat_v1",{p_variant_id:variantId,p_direction:direction}));}
+
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
   month: string,

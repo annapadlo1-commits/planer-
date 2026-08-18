@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, RefreshCw, Search, Sparkles, Square, Upload, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, History, Redo2, RefreshCw, Search, Sparkles, Square, Undo2, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -17,10 +17,12 @@ import {
   getPublicationAuthorityStatus,
   getLeaderVariantForRun,
   getLeaderVariantWorkspace,
+  getLeaderHistoryStatus,
   getSelectedVariantWorkspace,
   getVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
+  moveLeaderHistory,
   isValidIdempotencyKey,
   isSolverRunTerminal,
   publicationAttemptStorageKey,
@@ -42,6 +44,7 @@ import {
   type SolverEngine,
   type SolverRun,
   type SolverLeaderVariant,
+  type SolverLeaderHistoryStatus,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -189,6 +192,7 @@ export function SolverV2Panel({
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
+  const [leaderHistory,setLeaderHistory]=useState<SolverLeaderHistoryStatus|null>(null);
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
@@ -395,6 +399,15 @@ export function SolverV2Panel({
     };
   }, [pollingRunId, refreshStatus]);
 
+  useEffect(()=>{
+    if(!supabase||!leaderVariant||leaderVariant.status==="PUBLISHED"){setLeaderHistory(null);return;}
+    let disposed=false;
+    void getLeaderHistoryStatus(supabase,leaderVariant.id)
+      .then(status=>{if(!disposed)setLeaderHistory(status);})
+      .catch(error=>{if(!disposed)setMessage(solverErrorMessage(errorText(error)));});
+    return()=>{disposed=true;};
+  },[supabase,leaderVariant?.id,leaderVariant?.revision,leaderVariant?.status]);
+
   async function start() {
     if (!supabase || pollingRunId || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount === 0 || !name.trim()) return;
     setBusy(true);
@@ -525,9 +538,21 @@ export function SolverV2Panel({
       const workspace=await getLeaderVariantWorkspace(supabase,leaderVariant.id);
       const summary=workspace.variants[0];
       setSelectedWorkspace(workspace);
+      setLeaderHistory(await getLeaderHistoryStatus(supabase,leaderVariant.id));
       setLeaderVariant(current=>current?{...current,revision:workspace.context.revision??current.revision,
         assignmentCount:summary?.assignmentCount??current.assignmentCount,
         unfilledCount:summary?.unfilledCount??current.unfilledCount,lastEditedAt:workspace.context.lastEditedAt}:current);
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function moveLeaderRevision(direction:"UNDO"|"REDO"){
+    if(!supabase||!leaderVariant)return;
+    setBusy(true);setMessage("");
+    try{
+      await moveLeaderHistory(supabase,leaderVariant.id,direction);
+      await reloadLeaderWorkspace();
+      setMessage(direction==="UNDO"?"Cofnięto ostatnią zmianę. Cały grafik został ponownie sprawdzony.":"Ponowiono zmianę. Cały grafik został ponownie sprawdzony.");
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
   }
@@ -826,7 +851,7 @@ export function SolverV2Panel({
       <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
-      <header className="leader-studio-fullscreen-head"><span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span><div><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em><button type="button" className="icon-button" aria-label="Zamknij Studio lidera" onClick={()=>setLeaderVariant(null)}><X/></button></div></header>
+      <header className="leader-studio-fullscreen-head"><span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span><div className="leader-studio-history-actions"><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canUndo} onClick={()=>void moveLeaderRevision("UNDO")}><Undo2/> Cofnij</button><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canRedo} onClick={()=>void moveLeaderRevision("REDO")}><Redo2/> Ponów</button><details><summary><History/> Historia</summary><div>{leaderHistory?.entries.map(entry=><span className={entry.current?"current":""} key={entry.seq}><b>{entry.label}</b><small>Rewizja {entry.revision}</small></span>)}</div></details><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em><button type="button" className="icon-button" aria-label="Zamknij Studio lidera" onClick={()=>setLeaderVariant(null)}><X/></button></div></header>
       <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
     </section>}
 

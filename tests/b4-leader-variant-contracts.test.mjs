@@ -69,7 +69,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(panel, /Pracownicy nie widzą zmian przed publikacją/);
   const styles = await readFile(new URL("../app/product-journey.css", import.meta.url), "utf8");
   assert.match(styles, /solver-workspace\.leader-studio\{display:grid;grid-template-columns:minmax\(230px,290px\) minmax\(620px,1fr\) minmax\(250px,320px\)/);
-  assert.match(styles, /leader-studio>\.solver-global-filters\{grid-column:1/);
+  assert.match(styles, /leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel\{grid-column:1/);
   assert.match(styles, /leader-studio>\.leader-studio-impact\{grid-column:3/);
   assert.match(workspace, /open=\{!leaderEditable&&workspace\.issues\.length > 0\}/);
   assert.match(workspace, /leader-studio-candidate-panel/);
@@ -78,6 +78,10 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(workspace, /studio-vacancy-target/);
   assert.match(workspace, /onDrop=\{event=>/);
   assert.match(styles, /\.leader-studio>\.leader-studio-candidate-panel\{grid-column:1/);
+  assert.match(panel, /Cofnij/);
+  assert.match(panel, /Ponów/);
+  assert.match(panel, /getLeaderHistoryStatus/);
+  assert.match(panel, /moveLeaderHistory/);
   assert.equal((panel.match(/window\.confirm/g) ?? []).length, 1, "wybór i publikacja nie mogą otwierać blokujących okien przeglądarki");
   const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
   assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
@@ -98,6 +102,19 @@ test("the UI exposes a persistent, editable leader workflow before publication",
     "publikacja ma prowadzić użytkownika w panelu aplikacji, nie przez natywne pytanie o datę");
   assert.doesNotMatch(editor, /window\.confirm\("Kontrola gotowości nie wykryła blokad\./,
     "końcowe potwierdzenie publikacji ma pozostać w panelu aplikacji");
+});
+
+test("leader history is durable, atomic and protected behind authenticated RPC",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818201340_leader_studio_history.sql",import.meta.url),"utf8");
+  assert.match(migration,/leader_variant_history_v2/);
+  assert.match(migration,/leader_variant_history_cursor_v2/);
+  assert.match(migration,/deferrable initially deferred/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/optimizer_leader_history_move_uat_v1/);
+  assert.match(migration,/p_direction not in \('UNDO','REDO'\)/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_history_status_uat_v1/);
+  assert.match(migration,/grant execute on function public\.optimizer_leader_history_status_uat_v1/);
 });
 
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
