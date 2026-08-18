@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test:matrix-import": "node --experimental-strip-types --test tests/matrix-workbook-import.test.mjs",
-    "test:uat006": "node --experimental-strip-types --test tests/uat006-workflows.test.mjs tests/unified-matrix-workflow.test.mjs tests/product-journey.test.mjs tests/workforce-profile.test.mjs tests/workforce-finance-import.test.mjs tests/solver-variant-presentation.test.mjs tests/b4-regression-contracts.test.mjs tests/b4-leader-variant-contracts.test.mjs"
+    "test:uat006": "node --experimental-strip-types --test tests/uat006-workflows.test.mjs tests/unified-matrix-workflow.test.mjs tests/product-journey.test.mjs tests/workforce-profile.test.mjs tests/workforce-finance-import.test.mjs tests/solver-variant-presentation.test.mjs tests/b4-regression-contracts.test.mjs tests/b4-leader-variant-contracts.test.mjs",
+    "test:full-uat-evidence": "node scripts/validate-full-uat-evidence.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
