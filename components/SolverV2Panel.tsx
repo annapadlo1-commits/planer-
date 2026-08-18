@@ -200,6 +200,7 @@ export function SolverV2Panel({
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
+  const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant;
   const generatedSelectedVariant = variants.find(variant => variant.selected)
     ?? (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
     ?? null;
@@ -741,8 +742,9 @@ export function SolverV2Panel({
       <button className="primary-button full" disabled={busy || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount===0 || !name.trim()} onClick={() => void start()}>
         {busy ? <><RefreshCw className="spin"/> Uruchamiam…</> : <><Sparkles/> Generuj wszystkie aktywne warianty</>}
       </button>
-      {engine==="ORTOOLS_V2"&&<section className="solver-manual-studio-entry"><span><Edit3/></span><div><strong>Studio lidera — ułóż grafik bez generatora</strong><small>Powstanie bezpieczna wersja robocza z wymaganymi zmianami i brakami. Internet oraz backend są nadal potrzebne; pomijamy wyłącznie automatyczne generowanie.</small></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz Studio</button></section>}
     </div>}
+
+    {canOpenManualStudio&&<section className="solver-manual-studio-entry"><span><Edit3/></span><div><strong>Studio lidera — ułóż grafik bez generatora</strong><small>Możesz rozpocząć od pustej obsady także po zakończonym lub nieudanym generowaniu. Internet oraz backend są nadal potrzebne; pomijamy wyłącznie automatyczne generowanie.</small></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz Studio</button></section>}
 
     {run && <div className="solver-v2-run">
       <div className="solver-v2-run-head">

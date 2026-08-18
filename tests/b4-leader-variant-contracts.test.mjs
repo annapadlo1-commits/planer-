@@ -99,6 +99,11 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
   assert.doesNotMatch(sql,/bdybebzvzapihjdauehg/);
   assert.match(panel,/Studio lidera — ułóż grafik bez generatora/);
   assert.match(panel,/Internet oraz backend są nadal potrzebne/);
+  assert.match(panel,/const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant/);
+  assert.match(panel,/\{canOpenManualStudio&&<section className="solver-manual-studio-entry">/,
+    "Studio ma pozostać dostępne po zakończonym lub nieudanym uruchomieniu generatora");
+  assert.doesNotMatch(panel,/\{engine==="ORTOOLS_V2"&&<section className="solver-manual-studio-entry">/,
+    "Studio nie może być zagnieżdżone wyłącznie w formularzu widocznym przed pierwszym generowaniem");
   assert.match(client,/createManualLeaderStudio/);
   assert.match(client,/if \(!id\) return null/);
   assert.match(panel,/rememberSolverRun\(context,created\.runId\)/);
