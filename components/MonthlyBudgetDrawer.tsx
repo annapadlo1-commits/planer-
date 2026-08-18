@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MatrixV2Workspace } from "@/lib/matrix-v2";
 import { getMonthlyBudgets, hydrateMonthlyBudgetLines, saveMonthlyBudgets, type MonthlyBudgetLine, type MonthlyBudgetWorkspace } from "@/lib/monthly-budgets";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getEmployerCostComponents, saveEmployerCostComponent, type EmployerCostComponent } from "@/lib/employer-costs";
 
 type Props = { month: string; matrix: MatrixV2Workspace | null; currency: string; close: () => void; notify: (message: string) => void; fail: (message: string) => void };
 
@@ -14,6 +15,8 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
   const [lines, setLines] = useState<MonthlyBudgetLine[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [components, setComponents] = useState<EmployerCostComponent[]>([]);
+  const [costForm, setCostForm] = useState({ code: "", name: "", calculationMethod: "PERCENT_BASE" as EmployerCostComponent["calculationMethod"], value: 0, contractType: "", validFrom: month, validTo: "", reason: "" });
 
   useEffect(() => {
     if (!client) return;
@@ -22,6 +25,7 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
       setWorkspace(value);
       setLines(hydrateMonthlyBudgetLines(value.lines, matrix));
     }).catch((error) => fail(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
+    getEmployerCostComponents(client, month).then(setComponents).catch((error) => fail(error instanceof Error ? error.message : String(error)));
   }, [client, fail, matrix, month]);
 
   const change = (index: number, patch: Partial<MonthlyBudgetLine>) => setLines((current) => current.map((line, itemIndex) => itemIndex === index ? { ...line, ...patch } : line));
@@ -34,6 +38,18 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
       const result = await saveMonthlyBudgets(client, month, lines, note);
       setWorkspace(result); setLines(hydrateMonthlyBudgetLines(result.lines, matrix)); setNote("");
       notify(`Budżet ${month.slice(0, 7)} zapisano jako rewizję ${result.revision?.number}.`);
+    } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function saveCostComponent() {
+    if (!client) return;
+    setBusy(true);
+    try {
+      await saveEmployerCostComponent(client, { ...costForm, validTo: costForm.validTo || null, contractType: costForm.contractType || null, active: true });
+      setComponents(await getEmployerCostComponents(client, month));
+      setCostForm({ code: "", name: "", calculationMethod: "PERCENT_BASE", value: 0, contractType: "", validFrom: month, validTo: "", reason: "" });
+      notify("Zapisano nową, datowaną rewizję składnika kosztu pracodawcy.");
     } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
@@ -55,6 +71,10 @@ export function MonthlyBudgetDrawer({ month, matrix, currency, close, notify, fa
       </article>)}
       {!lines.length && !busy && <p>Brak budżetów dla tego miesiąca.</p>}
       {workspace?.canEdit && <><button className="secondary-button" onClick={add}><Plus /> Dodaj zakres</button><label>Powód zmiany<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Np. zatwierdzony budżet operacyjny na miesiąc" /></label><button className="primary-button full" disabled={busy || !note.trim()} onClick={() => void save()}><Save /> Zapisz nową rewizję budżetu</button></>}
+      <section className="employer-cost-config"><h3>Składniki pełnego kosztu pracodawcy</h3><p>System niczego nie dolicza domyślnie. „Pełny koszt” obejmuje wyłącznie poniższe jawne, datowane składniki. Wynagrodzenia pozostają osobną podstawą.</p>
+        {components.map((item) => <div key={item.id}><strong>{item.name}</strong><span>{item.calculationMethod === "PERCENT_BASE" ? `${(Number(item.percentBasisPoints ?? 0) / 100).toFixed(2)}% podstawy` : item.calculationMethod === "PER_HOUR" ? `${(Number(item.rateMinorPerHour ?? 0) / 100).toFixed(2)} ${currency}/h` : `${(Number(item.amountMinor ?? 0) / 100).toFixed(2)} ${currency}/zmianę`} • od {item.validFrom}{item.validTo ? ` do ${item.validTo}` : ""} • rewizja {item.revision}</span></div>)}
+        {workspace?.canEdit && <div className="employer-cost-form"><label>Kod<input value={costForm.code} onChange={(event) => setCostForm({...costForm,code:event.target.value})}/></label><label>Nazwa<input value={costForm.name} onChange={(event) => setCostForm({...costForm,name:event.target.value})}/></label><label>Sposób naliczania<select value={costForm.calculationMethod} onChange={(event) => setCostForm({...costForm,calculationMethod:event.target.value as EmployerCostComponent["calculationMethod"]})}><option value="PERCENT_BASE">Procent wynagrodzenia podstawowego</option><option value="PER_HOUR">Kwota za godzinę</option><option value="FIXED_PER_SHIFT">Kwota za zmianę</option></select></label><label>{costForm.calculationMethod === "PERCENT_BASE" ? "Procent" : `Kwota (${currency})`}<input type="number" min="0" step="0.01" value={costForm.calculationMethod === "PERCENT_BASE" ? costForm.value / 100 : costForm.value / 100} onChange={(event) => setCostForm({...costForm,value:Math.round(Number(event.target.value)*100)})}/></label><label>Typ umowy (opcjonalnie)<input value={costForm.contractType} onChange={(event) => setCostForm({...costForm,contractType:event.target.value})}/></label><label>Od<input type="date" value={costForm.validFrom} onChange={(event) => setCostForm({...costForm,validFrom:event.target.value})}/></label><label>Do (opcjonalnie)<input type="date" value={costForm.validTo} onChange={(event) => setCostForm({...costForm,validTo:event.target.value})}/></label><label>Podstawa / powód<input value={costForm.reason} onChange={(event) => setCostForm({...costForm,reason:event.target.value})}/></label><button className="secondary-button" disabled={busy || !costForm.code.trim() || !costForm.name.trim() || costForm.reason.trim().length < 5} onClick={() => void saveCostComponent()}><Plus/> Dodaj datowaną rewizję</button></div>}
+      </section>
     </div>
   </aside></>;
 }

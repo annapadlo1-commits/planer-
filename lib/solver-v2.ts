@@ -1929,7 +1929,7 @@ export async function getLeaderAssignmentContext(
   client: SupabaseClient,
   input: { variantId: string; assignmentId?: string | null; issueId?: string | null },
 ): Promise<SolverLeaderAssignmentContext> {
-  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v3", {
+  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v4", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
@@ -2006,12 +2006,32 @@ export async function saveLeaderAssignment(
     approveOvertime?: boolean;
   },
 ) {
-  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v3", {
+  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v4", {
     p_variant_id: input.variantId,
     p_assignment_id: input.assignmentId ?? null,
     p_issue_id: input.issueId ? Number(input.issueId) : null,
     p_employee_id: input.employeeId,
     p_reason: input.reason,
+    p_allow_limit_override: input.allowLimitOverride ?? false,
+    p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
+    p_approve_overtime: input.approveOvertime ?? false,
+  }));
+}
+
+export async function validateLeaderAssignment(
+  client: SupabaseClient,
+  input: {
+    variantId: string; assignmentId?: string | null; issueId?: string | null;
+    employeeId: string; allowLimitOverride?: boolean;
+    dutyTransferAssignmentId?: string|null;
+    approveOvertime?: boolean;
+  },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_validate_uat_v2", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+    p_employee_id: input.employeeId,
     p_allow_limit_override: input.allowLimitOverride ?? false,
     p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
     p_approve_overtime: input.approveOvertime ?? false,

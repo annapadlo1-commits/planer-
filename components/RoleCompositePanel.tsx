@@ -510,7 +510,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
     window.requestAnimationFrame(()=>document.querySelector(".role-publication-analysis-head")?.scrollIntoView({behavior:"smooth",block:"start"}));
   }
 
-  async function inspectRole(publicationId: string, roleName: string) {
+  async function inspectRole(publicationId: string, roleName: string, requestedView?:"ISSUES"|"CALENDAR"|"WORKLOAD") {
     if (!supabase) return;
     setBusy(true);
     setMessage("");
@@ -518,7 +518,7 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
       const workspace = await getPublishedSchedule(supabase, publicationId);
       setInspectedRoleWorkspace(workspace);
       setInspectedRoleName(roleName);
-      setInspectedRoleInitialView(analysisMetric==="GAPS"?"ISSUES":analysisMetric==="TEAMS"?"CALENDAR":"WORKLOAD");
+      setInspectedRoleInitialView(requestedView??(analysisMetric==="GAPS"?"ISSUES":analysisMetric==="TEAMS"?"CALENDAR":"WORKLOAD"));
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -563,10 +563,11 @@ export function RoleCompositePanel({ engine, solverVersion, userId, month, timez
           const costPressure=assignmentShare?costShare/assignmentShare:0;
           const overtimePerAssignment=role.assignmentCount?role.overtimeMinutes/role.assignmentCount:0;
           const flagged=costPressure>1.15||(averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25);
-          return <article className={flagged?"flagged":""} key={role.publicationId} role="button" tabIndex={0} aria-label={`Otwórz szczegóły grafiku zespołu ${role.role.name}`} onClick={()=>void inspectRole(role.publicationId,role.role.name)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();void inspectRole(role.publicationId,role.role.name);}}}>
+          return <article className={flagged?"flagged":""} key={role.publicationId}>
             <header><span><small>ZESPÓŁ</small><strong>{role.role.name}</strong><em>{role.scenario.name} • {dateTime(role.publishedAt,timezone)}</em></span>{flagged&&<b><AlertTriangle/> Do sprawdzenia</b>}</header>
             <dl><div><dt>Koszt</dt><dd>{money(role.totalCostMinor,role.currency)}</dd></div><div><dt>Udział kosztu / przydziałów</dt><dd>{Math.round(costShare*100)}% / {Math.round(assignmentShare*100)}%</dd></div><div><dt>Nadgodziny</dt><dd>{Math.round(role.overtimeMinutes/60)} h</dd></div><div><dt>Braki</dt><dd>{role.unfilledCount}</dd></div><div><dt>Osoby w grafiku</dt><dd>{role.teamSize}</dd></div></dl>
             {flagged&&<small>{costPressure>1.15?"Udział w kosztach jest wyraźnie większy niż udział w liczbie przydziałów. ":""}{averageOvertimePerAssignment>0&&overtimePerAssignment>averageOvertimePerAssignment*1.25?"Nadgodziny na przydział przekraczają średnią zespołów.":""}</small>}
+            <footer className="role-publication-card-actions"><button type="button" className="secondary-button" onClick={()=>void inspectRole(role.publicationId,role.role.name,"CALENDAR")}><Users/> Otwórz zespół</button><button type="button" className="secondary-button" disabled={role.unfilledCount===0} aria-label={role.unfilledCount===0?`${role.role.name}: brak wakatów do otwarcia`:`${role.role.name}: otwórz ${role.unfilledCount} braków`} onClick={()=>void inspectRole(role.publicationId,role.role.name,"ISSUES")}><AlertTriangle/> Braki {role.unfilledCount}</button></footer>
           </article>;
         })}
         {!analysisRoles.length&&<p>{analysisMetric==="GAPS"?"Żaden opublikowany zespół nie ma braków.":"Żaden zespół nie opublikował jeszcze grafiku na ten miesiąc."}</p>}

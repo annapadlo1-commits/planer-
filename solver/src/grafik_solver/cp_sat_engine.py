@@ -562,28 +562,45 @@ class CpSatScheduleEngine:
         minimum_role_backup_penalty = int(
             common_solver.value(common.metrics["ROLE_BACKUP_PENALTY"])
         )
+        raw_common_bound = self._solver_measure(
+            common_solver, "best_objective_bound"
+        )
+        solver_coverage_lower_bound = (
+            max(
+                0,
+                math.floor(
+                    float(raw_common_bound) / role_priority_multiplier + 1e-7
+                ),
+            )
+            if raw_common_bound is not None
+            and math.isfinite(float(raw_common_bound))
+            else 0
+        )
         proven_coverage_lower_bound = (
-            certificate.lower_bound if certificate is not None else 0
+            max(
+                certificate.lower_bound if certificate is not None else 0,
+                solver_coverage_lower_bound,
+            )
         )
         coverage_minimum_proven = (
             common_status == cp_model.OPTIMAL
             or minimum_unfilled == proven_coverage_lower_bound
         )
-        # A formal proof that no additional seat can be covered is an audit
-        # requirement, not a prerequisite for everyday planning.  In normal
-        # mode we must return the best feasible roster found in the configured
-        # time limit and expose its vacancies to the leader.  Otherwise a
-        # perfectly valid, actionable schedule is incorrectly turned into the
-        # fatal UNFILLED_NOT_PROVEN error and blocks the whole UAT workflow.
-        if (
-            snapshot.settings.require_optimal
-            and minimum_unfilled > 0
-            and not coverage_minimum_proven
-        ):
+        # A vacancy is a business claim. Never publish one when CP-SAT's own
+        # lower bound says that a better-covered roster may still exist. This
+        # exact condition caused UAT runs for BAR/PIZZABAR/KUCHNIA/ZMYWAK to
+        # expose 1-3 vacancies although the recorded coverage bound was zero
+        # and a leader could immediately fill the same seat without an
+        # override. A non-optimal complete roster remains acceptable (there is
+        # no better coverage than zero); an unexplained incomplete roster does
+        # not.
+        if minimum_unfilled > 0 and not coverage_minimum_proven:
             raise OptimizationIncomplete(
-                "UNFILLED_NOT_PROVEN: silnik znalazł niepełny grafik, ale nie "
-                "udowodnił, że wakatów nie da się jeszcze usunąć. Wynik nie "
-                "zostanie pokazany jako decyzja biznesowa."
+                "UNFILLED_NOT_PROVEN: silnik nie zakończył minimalizacji "
+                f"braków (znaleziono {minimum_unfilled}, potwierdzona dolna "
+                f"granica {proven_coverage_lower_bound}). Uruchom generowanie "
+                "ponownie albo ułóż grafik w Studio; ten wynik nie zostanie "
+                "pokazany jako rzeczywisty niedobór zespołu."
             )
         self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
         self._emit_progress(
@@ -2691,6 +2708,14 @@ class CpSatScheduleEngine:
         # most expensive eligible employee independently for every slot, and
         # charges every dynamic rule for the full shift duration.  It can only
         # overestimate real spend.
+        def static_cost_for_basis(key: tuple[str, str], cost_basis: str) -> int:
+            return sum(
+                component.cost_units
+                for component in static_quotes[key].components
+                if cost_basis == "FULL_EMPLOYER_COST"
+                or component.cost_category != "EMPLOYER_ONCOST"
+            )
+
         assignment_cost_upper = {
             key: static_quotes[key].cost_units
             + sum(
@@ -2819,10 +2844,19 @@ class CpSatScheduleEngine:
                 )
 
         total_cost_expression = static_cost_expression + _sum(dynamic_total_terms)
+        wage_cost_expression = _sum(
+            variable * static_cost_for_basis(key, "WAGES")
+            for key, variable in x.items()
+        ) + _sum(dynamic_total_terms)
 
         for budget in snapshot.budgets:
             if budget.hard and budget.metric_type in {"COST", "LABOR_PERCENT"} and not budget.scope():
-                model.add(total_cost_expression <= budget.amount_minor * COST_SCALE)
+                budget_expression = (
+                    total_cost_expression
+                    if budget.cost_basis == "FULL_EMPLOYER_COST"
+                    else wage_cost_expression
+                )
+                model.add(budget_expression <= budget.amount_minor * COST_SCALE)
 
         scoped_budgets = [
             budget for budget in snapshot.budgets
@@ -2872,7 +2906,7 @@ class CpSatScheduleEngine:
         scoped_cost_expressions: dict[str, Any] = {}
         for budget in scoped_budgets:
             scoped_cost = _sum(
-                x[key] * static_quotes[key].cost_units
+                x[key] * static_cost_for_basis(key, budget.cost_basis)
                 + _sum(dynamic_cost_by_assignment[key])
                 for key in x
                 if budget.matches(slots_by_id[key[1]])
@@ -2902,7 +2936,10 @@ class CpSatScheduleEngine:
                     target_excess_terms.append(excess * COST_SCALE)
                     target_excess_bound += max(bound - limit_minutes, 0) * COST_SCALE
             elif budget.enforcement == "TARGET":
-                expression = total_cost_expression if not budget.scope() else scoped_cost_expressions[budget.id]
+                expression = (
+                    (total_cost_expression if budget.cost_basis == "FULL_EMPLOYER_COST" else wage_cost_expression)
+                    if not budget.scope() else scoped_cost_expressions[budget.id]
+                )
                 limit_units = budget.amount_minor * COST_SCALE
                 bound = sum(eligible_upper_by_slot[slot.id] for slot in slots if budget.matches(slot))
                 excess = model.new_int_var(0, max(bound - limit_units, 0), f"budget_target_cost|{budget.id}")
@@ -2946,6 +2983,9 @@ class CpSatScheduleEngine:
                     and slot.location_id not in employee.preferred_location_ids
                 )
                 + int(slot.date in employee.soft_day_off_dates)
+                + int(
+                    eligibility.violates_preferred_work_pattern(employee.id, slot)
+                )
             )
             for employee in snapshot.employees
             for slot in slots
@@ -3232,6 +3272,8 @@ class CpSatScheduleEngine:
             "UNFILLED": _sum(unfilled.values()),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
             "TOTAL_COST": total_cost_expression,
+            "WAGE_COST": wage_cost_expression,
+            "EMPLOYER_ONCOST": total_cost_expression - wage_cost_expression,
             "BUDGET_TARGET_EXCESS": budget_target_excess_expression,
             "PREFERENCE_VIOLATIONS": preference_expression,
             "HOME_LOCATION_VIOLATIONS": home_expression,
@@ -3259,8 +3301,10 @@ class CpSatScheduleEngine:
             "UNFILLED": len(slots),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
             "TOTAL_COST": total_cost_upper,
+            "WAGE_COST": total_cost_upper,
+            "EMPLOYER_ONCOST": total_cost_upper,
             "BUDGET_TARGET_EXCESS": target_excess_bound,
-            "PREFERENCE_VIOLATIONS": 4 * len(slots),
+            "PREFERENCE_VIOLATIONS": 5 * len(slots),
             "HOME_LOCATION_VIOLATIONS": 0,
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),

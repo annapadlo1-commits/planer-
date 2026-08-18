@@ -40,7 +40,7 @@ test("automatic generation honors global overtime consent and prices the individ
   assert.match(approvalMigration,/'APPROVE_OVERTIME'/);
   assert.match(workspace,/Zatwierdź nadgodziny/);
   assert.match(workspace,/Pełny koszt po zmianie/);
-  assert.match(client,/optimizer_leader_assignment_save_uat_v3/);
+  assert.match(client,/optimizer_leader_assignment_save_uat_v4/);
 });
 
 test("monthly planning budgets are cumulative, revisioned and enforce HARD TARGET or MONITORING", async () => {
@@ -162,4 +162,41 @@ test("daily shift validation ignores external assignments outside the selected m
     migration,
     /return solver_private\.validate_variant_before_daily_limit_period_guard_uat_v1/,
   );
+});
+
+test("B4F-91 versions permanent work patterns across UI, snapshot, solver and leader edits",async()=>{
+  const [migration,editor,models,eligibility,client]=await Promise.all([
+    read("supabase/migrations/20260818074124_b4f91_weekly_work_patterns.sql"),
+    read("components/MatrixV2Editor.tsx"),read("solver/src/grafik_solver/models.py"),
+    read("solver/src/grafik_solver/eligibility.py"),read("lib/solver-v2.ts"),
+  ]);
+  assert.match(migration,/employee_weekly_work_patterns_v2/);
+  assert.match(migration,/revision integer not null/);
+  assert.match(migration,/workPatterns/);
+  assert.match(migration,/optimizer_leader_assignment_save_uat_v4/);
+  assert.match(editor,/Stały wzorzec pracy/);
+  assert.match(editor,/employee_weekly_work_patterns_replace_uat_v1/);
+  assert.match(models,/class WorkPattern/);
+  assert.match(eligibility,/PERMANENT_WORK_PATTERN/);
+  assert.match(client,/optimizer_leader_assignment_validate_uat_v2/);
+});
+
+test("B4F-88 keeps wages, employer on-costs and incident proposals semantically separate",async()=>{
+  const [migration,models,pricing,engine,validator,drawer]=await Promise.all([
+    read("supabase/migrations/20260818093000_b4f88_full_employer_cost_engine.sql"),
+    read("solver/src/grafik_solver/models.py"),read("solver/src/grafik_solver/pay_rules.py"),
+    read("solver/src/grafik_solver/cp_sat_engine.py"),read("solver/src/grafik_solver/validator.py"),
+    read("components/MonthlyBudgetDrawer.tsx"),
+  ]);
+  assert.match(migration,/employer_cost_components_v2/);
+  assert.match(migration,/recovery_incident_rate_revisions_v2/);
+  assert.match(migration,/status='APPROVED'/);
+  assert.match(migration,/'costCategory','EMPLOYER_ONCOST'/);
+  assert.match(migration,/'calculationType','BASE_RATE_OVERRIDE'/);
+  assert.match(models,/cost_category: str = "WAGE"/);
+  assert.match(models,/cost_basis: str = "WAGES"/);
+  assert.match(pricing,/BASE_OVERRIDE_CALCULATION_TYPE/);
+  assert.match(engine,/static_cost_for_basis/);
+  assert.match(validator,/budget\.cost_basis == "FULL_EMPLOYER_COST"/);
+  assert.match(drawer,/System niczego nie dolicza domyślnie/);
 });

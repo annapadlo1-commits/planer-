@@ -723,7 +723,7 @@ export function MatrixV2Editor({
     {!data.editable && <div className="matrix-v2-readonly"><ShieldCheck/><span><strong>Oglądasz opublikowaną konfigurację</strong><small>Utwórz wersję roboczą, aby bezpiecznie wprowadzić zmiany bez wpływu na istniejące grafiki.</small></span></div>}
 
     {tab === "structure" && <StructureTab data={data} editable={data.editable} busy={busy} settings={settings} edit={setEdit} saveSettings={saveSettings} normalizeShiftPeriods={normalizeShiftPeriods} mergeEquivalentShifts={mergeEquivalentShifts} mergeAvailability={shiftMergeAvailability} createDraft={createDraft} bulkAdjust={bulkAdjustStaffing} defaultScenarioCount={defaultScenarioCount} onOpenOperationalCalendar={onOpenOperationalCalendar}/>}
-    {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding}/>}
+    {tab === "workforce" && <WorkforceTab data={data} month={month} editable={data.editable} busy={busy} edit={setEdit} editProfile={setEmployeeEdit} setArchived={setEmployeeArchived} saveTime={saveTimeConstraint} revokeTime={revokeTimeConstraint} saveRate={savePayRate} focusEmployeeId={workforceFocusEmployeeId} financeOnboardingEmployeeId={financeOnboardingEmployeeId} dismissFinanceOnboarding={skipFinanceOnboarding} notify={notify}/>}
     {tab === "strategies" && <StrategiesTab data={data} editable={data.editable} edit={setEdit} unlinkedScenarios={unlinkedScenarios} incompleteStrategies={incompleteStrategies}/>}
     {tab === "finance" && data.financeVisible && <FinanceTab data={data} editable={data.editable} edit={setEdit}/>}
     {tab === "access" && canManageAccess && <AccessTab notify={notify} fail={fail}/>} 
@@ -1070,16 +1070,18 @@ function MatrixSettingsCard({
 function StructureTab({data, editable, busy, settings, edit, saveSettings, normalizeShiftPeriods,mergeEquivalentShifts,mergeAvailability,createDraft,bulkAdjust,defaultScenarioCount,onOpenOperationalCalendar}: {data: MatrixV2Workspace; editable: boolean; busy:boolean; settings:MatrixV2Settings; edit: (value: EditTarget) => void; saveSettings:(form:HTMLFormElement)=>Promise<void>; normalizeShiftPeriods:()=>Promise<void>;mergeEquivalentShifts:()=>Promise<void>;mergeAvailability:{groups:number;duplicates:number}|null;createDraft:()=>Promise<void>;bulkAdjust:(input:{scenarioId:string;locationId:string|null;shiftPeriod:string|null;roleId:string|null;delta:number;visibleCount:number})=>Promise<boolean>;defaultScenarioCount:number;onOpenOperationalCalendar?:()=>void}) {
   const [locationId,setLocationId]=useState("");
   const [query,setQuery]=useState("");
+  const [shiftRoleIds,setShiftRoleIds]=useState<string[]>([]);
   const normalizedQuery=query.trim().toLocaleLowerCase("pl-PL");
   const periodMismatches=data.shiftTemplates.filter(shift=>{
     const expected=expectedShiftPeriodFromStart(shift.starts_at);
     return shift.active&&expected!==null&&shift.shift_period!==expected;
   });
-  const shifts=data.shiftTemplates.filter(shift=>(!locationId||shift.location_id===locationId)
-    &&(!normalizedQuery||`${shift.name} ${time(shift.starts_at)} ${time(shift.ends_at)}`.toLocaleLowerCase("pl-PL").includes(normalizedQuery)));
-  const visibleLocations=data.locations.filter(location=>!locationId||location.id===locationId);
   const baseScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)
     ??data.scenarios.find(scenario=>scenario.active);
+  const shifts=data.shiftTemplates.filter(shift=>(!locationId||shift.location_id===locationId)
+    &&(!shiftRoleIds.length||data.staffingRules.some(rule=>rule.active&&rule.shift_template_id===shift.id&&rule.scenario_id===baseScenario?.id&&rule.role_id&&shiftRoleIds.includes(rule.role_id)))
+    &&(!normalizedQuery||`${shift.name} ${time(shift.starts_at)} ${time(shift.ends_at)}`.toLocaleLowerCase("pl-PL").includes(normalizedQuery)));
+  const visibleLocations=data.locations.filter(location=>!locationId||location.id===locationId);
   return <div className="matrix-v2-tab-content">
     {periodMismatches.length>0&&<details className="matrix-v2-technical-repair"><summary><AlertTriangle/> System wykrył {periodMismatches.length} niespójnych danych zmian</summary><p>To pole techniczne jest wyliczane automatycznie z godziny rozpoczęcia i nie wymaga decyzji biznesowej.</p><button className="secondary-button" disabled={busy} onClick={()=>void normalizeShiftPeriods()}>{editable?"Napraw dane zmian":"Utwórz wersję roboczą i napraw"}</button></details>}
     {mergeAvailability&&<details className="matrix-duplicate-cleanup"><summary><span><strong>Porządkowanie danych: {mergeAvailability.groups} grup zmian można uprościć</strong><small>Sprawdzone przez serwer • godziny i obsada pozostaną bez zmian</small></span></summary><div><p>Serwer potwierdził, że te wpisy mają identyczne reguły i można bezpiecznie połączyć ich dni w czytelniejsze karty. Historia zostanie zachowana.</p>{editable?<button className="secondary-button" disabled={busy} onClick={()=>void mergeEquivalentShifts()}>Połącz powtarzające się zmiany</button>:<button className="secondary-button" disabled={busy} onClick={()=>void createDraft()}>Utwórz wersję roboczą, aby uporządkować</button>}</div></details>}
@@ -1091,8 +1093,10 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
       <SectionHead title="Zmiany i obsada" description="Zacznij od konkretnej zmiany. Następnie przypisz rolę, opcjonalny obowiązek lub kompetencję i wymaganą liczbę osób." editable={editable} disabled={!data.locations.length} add={() => edit({kind: "SHIFT"})}/>
       <div className="matrix-v2-filterbar">
         <label>Lokal<select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">Wszystkie lokale</option>{data.locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+        <fieldset className="matrix-v2-role-filter"><legend>Role</legend>{data.roles.filter(role=>role.active).map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={shiftRoleIds.includes(role.id)} onChange={event=>setShiftRoleIds(event.target.checked?[...shiftRoleIds,role.id]:shiftRoleIds.filter(id=>id!==role.id))}/>{role.name}</label>)}</fieldset>
         <label>Szukaj<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nazwa lub godziny zmiany"/></label>
         <strong>{shifts.length} z {data.shiftTemplates.length} zmian</strong>
+        <button type="button" className="secondary-button" disabled={!locationId&&!query&&!shiftRoleIds.length} onClick={()=>{setLocationId("");setQuery("");setShiftRoleIds([]);}}>Wyczyść filtry</button>
       </div>
       <div className="guided-shift-grid">
         {visibleLocations.map(location=>{
@@ -1183,7 +1187,7 @@ function dateTimeLabel(value: string, timezone: string) {
 }
 
 function WorkforceTab({
-  data,month,editable,busy,edit,editProfile,setArchived,saveTime,revokeTime,saveRate,focusEmployeeId,financeOnboardingEmployeeId,dismissFinanceOnboarding,
+  data,month,editable,busy,edit,editProfile,setArchived,saveTime,revokeTime,saveRate,focusEmployeeId,financeOnboardingEmployeeId,dismissFinanceOnboarding,notify,
 }: {
   data: MatrixV2Workspace; month: string; editable: boolean; busy: boolean;
   edit: (value: EditTarget) => void;
@@ -1195,6 +1199,7 @@ function WorkforceTab({
   focusEmployeeId?:string|null;
   financeOnboardingEmployeeId?:string|null;
   dismissFinanceOnboarding:(employeeId:string)=>Promise<void>;
+  notify:(message:string)=>void;
 }) {
   const employees = data.employees ?? [];
   const settings = matrixV2Settings(data.matrixVersion),currency=settings.currency,timezone=settings.timezone;
@@ -1283,6 +1288,15 @@ function WorkforceTab({
       }))} editable={editable} add={()=>edit({kind:"EMPLOYEE_DUTY",item:{employee_id:employee.id}})} edit={item=>edit({kind:"EMPLOYEE_DUTY",item})}/>
     </div>
 
+    <WorkPatternsCard
+      employee={employee}
+      roles={data.roles}
+      locations={data.locations}
+      month={month}
+      editable={editable}
+      notify={notify}
+    />
+
     <section className="matrix-v2-card">
       <SectionHead title="Nadrzędne ograniczenia pracodawcy" description="Pracownik ustawia wiele okien dostępności w swoim portalu. Tutaj pracodawca zapisuje tylko nadrzędną blokadę, urlop lub L4." editable={editable} add={()=>setTimeEdit(null)}/>
       <div className="matrix-v2-time-list">
@@ -1316,6 +1330,85 @@ function WorkforceTab({
       </form>
     </section>}
   </div>;
+}
+
+type WeeklyWorkPatternDraft={
+  key:string;weekday:number;localStart:string;localEnd:string;roleId:string;
+  locationId:string;enforcement:"HARD"|"PREFERENCE";
+};
+
+function WorkPatternsCard({employee,roles,locations,month,editable,notify}:{
+  employee:MatrixV2Employee;roles:MatrixV2Role[];locations:MatrixV2Location[];month:string;
+  editable:boolean;notify:(message:string)=>void;
+}){
+  const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
+  const [patterns,setPatterns]=useState<WeeklyWorkPatternDraft[]>([]);
+  const [validFrom,setValidFrom]=useState(`${month}-01`);
+  const [validTo,setValidTo]=useState("");
+  const [reason,setReason]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const weekdayNames=["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
+
+  useEffect(()=>{
+    let active=true;
+    setLoading(true);setError(null);
+    if(!supabase){setError("Brak konfiguracji połączenia z UAT.");setLoading(false);return()=>{active=false;};}
+    void Promise.resolve(supabase.rpc("employee_weekly_work_patterns_workspace_uat_v1",{
+      p_employee_id:employee.id,p_on_date:`${month}-01`,
+    })).then(({data,error:rpcError})=>{
+      if(!active)return;
+      if(rpcError){setError(rpcError.message);setPatterns([]);return;}
+      const payload=asRecord(data),rows=Array.isArray(payload.patterns)?payload.patterns:[];
+      setPatterns(rows.map((value,index)=>{const row=asRecord(value);return{
+        key:String(row.id??`${employee.id}:${index}`),weekday:Number(row.weekday),
+        localStart:String(row.localStart??"08:00").slice(0,5),localEnd:String(row.localEnd??"16:00").slice(0,5),
+        roleId:String(row.roleId??""),locationId:String(row.locationId??""),
+        enforcement:String(row.enforcement??"HARD")==="PREFERENCE"?"PREFERENCE":"HARD",
+      };}));
+      const first=rows.length?asRecord(rows[0]):null;
+      setValidFrom(String(first?.validFrom??`${month}-01`));setValidTo(String(first?.validTo??""));
+    }).finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;};
+  },[employee.id,month,supabase]);
+
+  function update(key:string,change:Partial<WeeklyWorkPatternDraft>){
+    setPatterns(current=>current.map(pattern=>pattern.key===key?{...pattern,...change}:pattern));
+  }
+  function addPattern(){
+    setPatterns(current=>[...current,{key:crypto.randomUUID(),weekday:1,localStart:"08:00",localEnd:"16:00",roleId:"",locationId:"",enforcement:"HARD"}]);
+  }
+  async function save(){
+    setLoading(true);setError(null);
+    if(!supabase){setError("Brak konfiguracji połączenia z UAT.");setLoading(false);return;}
+    const {data,error:rpcError}=await supabase.rpc("employee_weekly_work_patterns_replace_uat_v1",{
+      p_employee_id:employee.id,p_valid_from:validFrom,p_valid_to:validTo||null,
+      p_patterns:patterns.map(pattern=>({weekday:pattern.weekday,localStart:pattern.localStart,
+        localEnd:pattern.localEnd,roleId:pattern.roleId||null,locationId:pattern.locationId||null,
+        enforcement:pattern.enforcement})),p_reason:reason,
+    });
+    setLoading(false);
+    if(rpcError){setError(rpcError.message);return;}
+    const result=asRecord(data);setReason("");
+    notify(`Stały wzorzec pracy zapisany jako rewizja ${String(result.revision??"")}. Generator uwzględni go od ${validFrom}.`);
+  }
+
+  return <section className="matrix-v2-card weekly-work-patterns">
+    <div className="matrix-v2-section-head"><div><h3>Stały wzorzec pracy</h3><p>Tu zapisujesz cykliczną zasadę, np. „poniedziałek–środa, tylko rano”. Twarda zasada blokuje inne zmiany w generatorze i korektach lidera; preferencja wpływa na wybór, ale nie blokuje obsady.</p></div>{editable&&<button type="button" className="secondary-button" onClick={addPattern}><Plus/> Dodaj dzień</button>}</div>
+    {loading&&!patterns.length&&<p className="matrix-v2-empty">Wczytuję stałe zasady…</p>}
+    {error&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Nie udało się odczytać lub zapisać wzorca</strong><small>{error}</small></span></div>}
+    <div className="weekly-work-pattern-list">{patterns.map(pattern=><article key={pattern.key}>
+      <label>Dzień<select disabled={!editable} value={pattern.weekday} onChange={event=>update(pattern.key,{weekday:Number(event.target.value)})}>{weekdayNames.map((name,index)=><option value={index+1} key={name}>{name}</option>)}</select></label>
+      <label>Od<input disabled={!editable} type="time" value={pattern.localStart} onChange={event=>update(pattern.key,{localStart:event.target.value})}/></label>
+      <label>Do<input disabled={!editable} type="time" value={pattern.localEnd} onChange={event=>update(pattern.key,{localEnd:event.target.value})}/></label>
+      <label>Charakter<select disabled={!editable} value={pattern.enforcement} onChange={event=>update(pattern.key,{enforcement:event.target.value as "HARD"|"PREFERENCE"})}><option value="HARD">Twarda zasada</option><option value="PREFERENCE">Preferencja</option></select></label>
+      <label>Rola (opcjonalnie)<select disabled={!editable} value={pattern.roleId} onChange={event=>update(pattern.key,{roleId:event.target.value})}><option value="">Każda dozwolona rola</option>{roles.filter(role=>role.active).map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+      <label>Lokal (opcjonalnie)<select disabled={!editable} value={pattern.locationId} onChange={event=>update(pattern.key,{locationId:event.target.value})}><option value="">Każdy dozwolony lokal</option>{locations.filter(location=>location.active).map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+      {editable&&<button type="button" className="icon-button" title="Usuń dzień z nowej rewizji" onClick={()=>setPatterns(current=>current.filter(item=>item.key!==pattern.key))}><Trash2/></button>}
+    </article>)}</div>
+    {!patterns.length&&!loading&&<p className="matrix-v2-empty">Brak stałego wzorca. Obowiązują wpisy miesięczne i firmowa zasada domyślnej dostępności.</p>}
+    {editable&&<div className="weekly-work-pattern-save"><label>Obowiązuje od<input type="date" value={validFrom} onChange={event=>setValidFrom(event.target.value)}/></label><label>Obowiązuje do<input type="date" min={validFrom} value={validTo} onChange={event=>setValidTo(event.target.value)}/><small>Puste = bez daty końcowej</small></label><label>Powód zmiany<input minLength={3} value={reason} onChange={event=>setReason(event.target.value)} placeholder="np. stały grafik uzgodniony z pracownikiem"/></label><button type="button" className="primary-button" disabled={loading||reason.trim().length<3||!validFrom} onClick={()=>void save()}><Save/> Zapisz nową rewizję</button></div>}
+  </section>;
 }
 
 function WorkforceLinks({title,items,editable,add,edit}:{title:string;items:{id:string;label:string;detail:string;item:Record<string,unknown>}[];editable:boolean;add:()=>void;edit:(item:Record<string,unknown>)=>void}) {
@@ -1808,6 +1901,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     ["Kompetencje pracownika","Każdy aktywny obowiązek ma osobną kolumnę w arkuszu Pracownicy. Wpisz TAK tylko przy osobach, które mogą go wykonywać."],
     ["Lokale pracownika","Kolumny <KOD>_STANDARD i <KOD>_NADGODZINY są niezależne. Lokal bazowy musi być również dozwolony standardowo."],
     ["Dostępność pracownika","W arkuszu Dostępność wpisuj dokładne daty i godziny dostępności, niedostępności, urlopów i chorobowego. Plik nie używa ogólnych pór dnia."],
+    ["Stały wzorzec pracy","Arkusz Stałe wzorce zawiera wersjonowane, cykliczne zasady dni i godzin. HARD blokuje pracę poza wzorcem; PREFERENCE jest preferencją solvera."],
     ["Zawartość pliku","Arkusze zawierają aktualną wersję roboczą konfiguracji firmy. Zachowaj Numer pracownika lub e-mail, aby aktualizować właściwą osobę."],
     ["Tryb aktualizacji","Zmienia i dodaje wyłącznie osoby obecne w pliku; pozostałych nie dotyka."],
     ["Tryb zastąpienia","Po podglądzie archiwizuje w wersji roboczej osoby nieobecne w pliku. Historia zmian i decyzji pozostaje zachowana."],
@@ -1883,6 +1977,11 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
   ]));
   add("Pula ad-hoc",["Imię i nazwisko","E-mail","Telefon","Kod roli","Rodzaj współpracy","Stawka godzinowa","Waluta","Dostępny od","Dostępny do","Notatki","Aktywna"],(data.adHocWorkers??[]).map(item=>[
     item.display_name,item.email??"",item.phone??"",matrixV2AdHocRoleCode(item,data.roles),item.contract_type,item.base_rate_minor===null||item.base_rate_minor===undefined?"":item.base_rate_minor/100,item.currency,item.available_from??"",item.available_to??"",item.notes??"",item.active?"TAK":"NIE",
+  ]));
+  add("Stałe wzorce",["Numer pracownika","Dzień tygodnia","Od","Do","Kod roli","Kod lokalu","Charakter","Obowiązuje od","Obowiązuje do","Rewizja","Powód","Aktywny"],(data.workPatterns??[]).map(item=>[
+    data.employees.find(employee=>employee.id===item.employeeId)?.employeeNo??"",item.weekday,time(item.localStart),time(item.localEnd),
+    data.roles.find(role=>role.id===item.roleId)?.code??"",data.locations.find(location=>location.id===item.locationId)?.code??"",
+    item.enforcement,item.validFrom,item.validTo??"",item.revision,item.reason,item.active?"TAK":"NIE",
   ]));
   add("Zasady płacowe",["Kod","Nazwa","Opis","Sposób obliczania","Kwota","Kwota za godzinę","Procent","Mnożnik","Próg minut","Waluta","Priorytet","Grupa łączenia","Sposób łączenia","Dni","Od","Do","Następny dzień","Obowiązuje od","Obowiązuje do","Warunek JSON","Formuła JSON","Kody ról","Kody obowiązków","Kody lokali","Kody zmian","Kolejność","Aktywna"],data.payRules.map(rule=>[
     rule.code,rule.name,rule.description??"",rule.calculation_method,rule.amount_minor===null||rule.amount_minor===undefined?"":rule.amount_minor/100,rule.rate_minor_per_hour===null||rule.rate_minor_per_hour===undefined?"":rule.rate_minor_per_hour/100,rule.percent_basis_points===null||rule.percent_basis_points===undefined?"":rule.percent_basis_points/100,rule.multiplier_basis_points===null||rule.multiplier_basis_points===undefined?"":rule.multiplier_basis_points/10000,rule.threshold_minutes??"",rule.currency,rule.priority,rule.stacking_group??"",rule.stacking_mode,rule.day_mask.join(","),rule.local_start??"",rule.local_end??"",rule.ends_next_day?"TAK":"NIE",rule.valid_from??"",rule.valid_to??"",json(rule.condition_expression),json(rule.formula_expression),data.payRuleRoles.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.roles.find(item=>item.id===scope.role_id)?.code).filter(Boolean).join(", "),data.payRuleDuties.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.duties.find(item=>item.id===scope.duty_id)?.code).filter(Boolean).join(", "),data.payRuleLocations.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.locations.find(item=>item.id===scope.location_id)?.code).filter(Boolean).join(", "),data.payRuleShifts.filter(scope=>scope.pay_rule_id===rule.id).map(scope=>data.shiftTemplates.find(item=>item.id===scope.shift_template_id)?.code).filter(Boolean).join(", "),rule.sort_order,rule.active?"TAK":"NIE",

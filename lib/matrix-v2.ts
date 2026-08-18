@@ -295,6 +295,7 @@ export type MatrixV2Workspace = {
   employeeLocations: MatrixV2EmployeeLocation[];
   employeeDuties: MatrixV2EmployeeDuty[];
   timeConstraints: MatrixV2TimeConstraint[];
+  workPatterns?: MatrixV2WorkPattern[];
   payRules: MatrixV2PayRule[];
   payRuleRoles: MatrixV2PayRole[];
   payRuleDuties: MatrixV2PayDuty[];
@@ -331,6 +332,12 @@ export type MatrixV2AdHocWorker = {
   active: boolean;
   notes?: string | null;
   roleCode?: string | null;
+};
+
+export type MatrixV2WorkPattern={
+  id:string;employeeId:string;weekday:number;localStart:string;localEnd:string;
+  roleId?:string|null;locationId?:string|null;enforcement:"HARD"|"PREFERENCE";
+  validFrom:string;validTo?:string|null;revision:number;reason:string;active:boolean;
 };
 
 export function matrixV2AdHocRoleCode(

@@ -749,6 +749,71 @@ class AvailabilityWindow:
 
 
 @dataclass(frozen=True)
+class WorkPattern:
+    id: str
+    employee_id: str
+    weekday: int
+    local_start: time
+    local_end: time
+    role_id: str | None = None
+    location_id: str | None = None
+    enforcement: str = "HARD"
+    valid_from: date | None = None
+    valid_to: date | None = None
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> WorkPattern:
+        weekday = _integer(_pick(raw, "weekday"), "workPattern weekday")
+        if weekday not in range(1, 8):
+            raise SnapshotError("workPattern weekday must be between 1 and 7")
+        enforcement = str(_pick(raw, "enforcement", default="HARD")).upper()
+        if enforcement not in {"HARD", "PREFERENCE"}:
+            raise SnapshotError("workPattern enforcement must be HARD or PREFERENCE")
+        try:
+            local_start = time.fromisoformat(
+                str(_pick(raw, "localStart", "local_start"))
+            )
+            local_end = time.fromisoformat(str(_pick(raw, "localEnd", "local_end")))
+        except (TypeError, ValueError) as exc:
+            raise SnapshotError("workPattern times must use HH:MM[:SS]") from exc
+        valid_from = _optional_date(
+            _pick(raw, "validFrom", "valid_from", default=None),
+            "workPattern validFrom",
+        )
+        valid_to = _optional_date(
+            _pick(raw, "validTo", "valid_to", default=None),
+            "workPattern validTo",
+        )
+        if valid_from and valid_to and valid_to < valid_from:
+            raise SnapshotError("workPattern validTo cannot precede validFrom")
+        return cls(
+            id=str(_pick(raw, "id")),
+            employee_id=str(_pick(raw, "employeeId", "employee_id")),
+            weekday=weekday,
+            local_start=local_start,
+            local_end=local_end,
+            role_id=(
+                str(value)
+                if (value := _pick(raw, "roleId", "role_id", default=None))
+                else None
+            ),
+            location_id=(
+                str(value)
+                if (value := _pick(raw, "locationId", "location_id", default=None))
+                else None
+            ),
+            enforcement=enforcement,
+            valid_from=valid_from,
+            valid_to=valid_to,
+        )
+
+    def active_on(self, day: date) -> bool:
+        return (self.valid_from is None or day >= self.valid_from) and (
+            self.valid_to is None or day <= self.valid_to
+        )
+
+
+@dataclass(frozen=True)
 class HardBlock:
     employee_id: str
     start: datetime | None = None
@@ -928,6 +993,7 @@ class PayRule:
     stacking_mode: str
     priority: int
     active: bool
+    cost_category: str = "WAGE"
     effective_from: date | None = None
     effective_to: date | None = None
 
@@ -981,6 +1047,11 @@ class PayRule:
                 )
             )
         stacking_group = _pick(raw, "stackingGroup", "stacking_group", default=None)
+        cost_category = str(
+            _pick(raw, "costCategory", "cost_category", default="WAGE")
+        ).upper()
+        if cost_category not in {"WAGE", "EMPLOYER_ONCOST"}:
+            raise SnapshotError("Pay rule costCategory must be WAGE or EMPLOYER_ONCOST")
         return cls(
             id=rule_id,
             calculation_type=calculation_type,
@@ -996,6 +1067,7 @@ class PayRule:
                 _pick(raw, "priority", default=index), "pay rule priority", 0
             ),
             active=bool(_pick(raw, "active", default=True)),
+            cost_category=cost_category,
             effective_from=_optional_date(
                 _pick(raw, "effectiveFrom", "effective_from", default=None),
                 "effectiveFrom",
@@ -1019,6 +1091,7 @@ class Budget:
     role_id: str | None = None
     role_ids: tuple[str, ...] = ()
     duty_id: str | None = None
+    cost_basis: str = "WAGES"
 
     @classmethod
     def from_dict(
@@ -1054,6 +1127,9 @@ class Budget:
             value = _pick(raw, camel, snake, default=None)
             return None if value in (None, "") else str(value)
 
+        cost_basis = str(_pick(raw, "costBasis", "cost_basis", default="WAGES")).upper()
+        if cost_basis not in {"WAGES", "FULL_EMPLOYER_COST"}:
+            raise SnapshotError("A budget costBasis is invalid")
         return cls(
             id=str(budget_id),
             amount_minor=_integer(amount or 0, "budget amountMinor", 0),
@@ -1065,6 +1141,7 @@ class Budget:
             role_id=optional_id("roleId", "role_id"),
             role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
             duty_id=optional_id("dutyId", "duty_id"),
+            cost_basis=cost_basis,
         )
 
     def matches(self, slot: Any) -> bool:
@@ -1160,6 +1237,7 @@ class Snapshot:
     demand: tuple[Demand, ...]
     employees: tuple[Employee, ...]
     availability_windows: tuple[AvailabilityWindow, ...]
+    work_patterns: tuple[WorkPattern, ...]
     hard_blocks: tuple[HardBlock, ...]
     pay_rules: tuple[PayRule, ...]
     budgets: tuple[Budget, ...]
@@ -1275,6 +1353,13 @@ class Snapshot:
                         raw, "availabilityWindows", "availability_windows", default=[]
                     ),
                     "availabilityWindows",
+                )
+            ),
+            work_patterns=tuple(
+                WorkPattern.from_dict(item)
+                for item in _items(
+                    _pick(raw, "workPatterns", "work_patterns", default=[]),
+                    "workPatterns",
                 )
             ),
             hard_blocks=tuple(

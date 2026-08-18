@@ -8,5 +8,6 @@ coverage
 .pytest_cache/
 .ruff_cache/
 .venv/
+.testdeps*/
 __pycache__/
 *.py[cod]

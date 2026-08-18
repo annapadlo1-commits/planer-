@@ -102,6 +102,7 @@ export type RecoveryIncidentDetail = {
   notes?: string | null;
   actions: RecoveryAction[];
   overrides: Record<string, unknown>[];
+  incidentRates: { id: string; employeeId: string; employeeName: string; revision: number; proposedRateMinor: number; approvedRateMinor?: number | null; currency: string; validFrom: string; validTo: string; status: string; proposalReason: string; decisionReason?: string | null }[];
 };
 
 export type RecoveryAdHocWorker = {
@@ -273,6 +274,19 @@ export async function saveRecoveryOverride(client: SupabaseClient, input: {
     p_numeric_value: input.numericValue, p_currency: input.currency ?? null,
     p_justification: input.justification, p_employee_acknowledged: input.employeeAcknowledged,
     p_compliance_confirmed: input.complianceConfirmed,
+  });
+}
+
+export async function proposeRecoveryIncidentRate(client: SupabaseClient, input: { incidentId: string; employeeId: string; rateMinor: number; currency: string; validFrom: string; validTo: string; reason: string }) {
+  return await rpc(client, "recovery_incident_rate_propose_uat_v1", {
+    p_incident_id: input.incidentId, p_employee_id: input.employeeId, p_rate_minor: input.rateMinor,
+    p_currency: input.currency, p_valid_from: input.validFrom, p_valid_to: input.validTo, p_reason: input.reason,
+  });
+}
+
+export async function decideRecoveryIncidentRate(client: SupabaseClient, input: { rateId: string; approve: boolean; approvedRateMinor?: number | null; reason: string }) {
+  return await rpc(client, "recovery_incident_rate_decide_uat_v1", {
+    p_rate_id: input.rateId, p_approve: input.approve, p_approved_rate_minor: input.approvedRateMinor ?? null, p_reason: input.reason,
   });
 }
 

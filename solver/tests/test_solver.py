@@ -635,6 +635,51 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(components["pay-close-duty"], 1000 * 60)
         self.assertEqual(components["pay-weekend"], 120000)
 
+    def test_employer_oncost_is_explicit_and_separately_classified(self) -> None:
+        raw = load_raw()
+        raw["payRules"] = [{
+            "id": "employer-zus-entered-by-owner",
+            "calculationType": "PERCENT_BASE",
+            "values": {"percentBasisPoints": 2000},
+            "conditions": [],
+            "stackingGroup": "employer-zus",
+            "stackingMode": "STACK",
+            "priority": 0,
+            "active": True,
+            "costCategory": "EMPLOYER_ONCOST",
+        }]
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(item for item in snapshot.employees if item.id == "employee-bob")
+        quote = quote_assignment(snapshot, employee, generate_slots(snapshot)[1])
+        oncost = next(component for component in quote.components if component.rule_id != "BASE")
+        self.assertEqual(oncost.cost_category, "EMPLOYER_ONCOST")
+        self.assertEqual(oncost.cost_units, 2500 * 240 * 20 // 100)
+
+    def test_incident_rate_is_ignored_until_approved_rule_reaches_snapshot(self) -> None:
+        raw = load_raw()
+        raw["payRules"] = []
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(item for item in snapshot.employees if item.id == "employee-bob")
+        slot = generate_slots(snapshot)[1]
+        self.assertEqual(quote_assignment(snapshot, employee, slot).components[0].rule_id, "BASE")
+
+        raw["payRules"] = [{
+            "id": "incident-rate:approved",
+            "calculationType": "BASE_RATE_OVERRIDE",
+            "values": {"rateMinorPerHour": 4000},
+            "conditions": [{"field": "employee_id", "operator": "EQ", "value": "employee-bob"}],
+            "stackingGroup": "incident-rate:employee-bob",
+            "stackingMode": "FIRST",
+            "priority": 0,
+            "active": True,
+            "effectiveFrom": slot.date.isoformat(),
+            "effectiveTo": slot.date.isoformat(),
+        }]
+        approved = Snapshot.from_dict(raw)
+        approved_quote = quote_assignment(approved, employee, generate_slots(approved)[1])
+        self.assertEqual(approved_quote.components[0].rule_id, "incident-rate:approved")
+        self.assertEqual(approved_quote.components[0].cost_units, 4000 * 240)
+
     def test_hourly_pay_windows_charge_only_intersection_minutes(self) -> None:
         expectations = {
             "PER_HOUR": ({"rateMinorPerHour": 1000}, 1000 * 60),
@@ -854,6 +899,61 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(config.poll_interval_seconds, 7)
         self.assertEqual(config.max_runs, 3)
         self.assertEqual(config.idle_exit_seconds, 60)
+
+
+    def test_permanent_weekly_work_pattern_limits_real_eligibility(self) -> None:
+        raw = scoped_budget_snapshot_raw()
+        raw["workPatterns"] = [
+            {
+                "id": "dominika-saturday-morning",
+                "employeeId": "employee-both",
+                "weekday": 6,
+                "localStart": "07:00",
+                "localEnd": "13:00",
+                "roleId": "role-a",
+                "locationId": "location-a",
+                "enforcement": "HARD",
+                "validFrom": "2026-08-01",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        eligibility = EligibilityIndex(snapshot)
+
+        saturday = eligibility.evaluate(snapshot.employees[0], slots[0])
+        sunday = eligibility.evaluate(snapshot.employees[0], slots[1])
+
+        self.assertTrue(saturday.allowed, saturday.reasons)
+        self.assertFalse(sunday.allowed)
+        self.assertIn("PERMANENT_WORK_PATTERN", sunday.reasons)
+
+    def test_preferred_weekly_work_pattern_is_soft(self) -> None:
+        raw = scoped_budget_snapshot_raw()
+        raw["workPatterns"] = [
+            {
+                "id": "preferred-sunday",
+                "employeeId": "employee-both",
+                "weekday": 7,
+                "localStart": "07:00",
+                "localEnd": "13:00",
+                "enforcement": "PREFERENCE",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        slots = generate_slots(snapshot)
+        eligibility = EligibilityIndex(snapshot)
+
+        self.assertTrue(eligibility.evaluate(snapshot.employees[0], slots[0]).allowed)
+        self.assertTrue(
+            eligibility.violates_preferred_work_pattern(
+                snapshot.employees[0].id, slots[0]
+            )
+        )
+        self.assertFalse(
+            eligibility.violates_preferred_work_pattern(
+                snapshot.employees[0].id, slots[1]
+            )
+        )
 
 
 class SolverTests(unittest.TestCase):

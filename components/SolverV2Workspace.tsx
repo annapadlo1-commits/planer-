@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, Check, CircleDo
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, removeLeaderAssignment, saveLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, removeLeaderAssignment, saveLeaderAssignment, validateLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -221,10 +221,12 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderFeedback,setLeaderFeedback]=useState("");
   const [leaderLimitWarning,setLeaderLimitWarning]=useState("");
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
+  const [leaderValidatedKey,setLeaderValidatedKey]=useState("");
   const [leaderBusy,setLeaderBusy]=useState(false);
   const [workspaceView,setWorkspaceView]=useState<WorkspaceView>(initialView);
   const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
   const [locationFilter,setLocationFilter]=useState("");
+  const [roleFilters,setRoleFilters]=useState<string[]>([]);
   const [employeeDetailId,setEmployeeDetailId]=useState("");
   const [employeeDetailSeed,setEmployeeDetailSeed]=useState<{id:string;name:string;employeeNo:string}|null>(null);
   const [comparisonEmployeeId,setComparisonEmployeeId]=useState("");
@@ -296,8 +298,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     return()=>{active=false;};
   },[published,scopeRoleId,supabase,workspace.context.month,workspace.variants]);
   const workspaceLocations=[...new Map(workspace.shifts.map(shift=>[shift.location.id,shift.location])).values()].sort((a,b)=>a.name.localeCompare(b.name,"pl-PL"));
-  const visibleShifts=workspace.shifts.filter(shift=>!locationFilter||shift.location.id===locationFilter);
-  const visibleIssues=workspace.issues.filter(issue=>!locationFilter||issue.shift?.location.id===locationFilter);
+  const workspaceRoles=[...new Map([...workspace.shifts.flatMap(shift=>shift.assignments.map(assignment=>[assignment.role.id,assignment.role] as const)),...workspace.issues.flatMap(issue=>issue.role?[[issue.role.id,issue.role] as const]:[])]).values()].sort((a,b)=>a.name.localeCompare(b.name,"pl-PL"));
+  const visibleIssues=workspace.issues.filter(issue=>(!locationFilter||issue.shift?.location.id===locationFilter)&&(!roleFilters.length||(issue.role&&roleFilters.includes(issue.role.id))));
+  const visibleShifts=workspace.shifts.filter(shift=>(!locationFilter||shift.location.id===locationFilter)&&(!roleFilters.length||shift.assignments.some(assignment=>roleFilters.includes(assignment.role.id))||visibleIssues.some(issue=>issue.shift?.id===shift.id)));
   const shiftsByDate = new Map<string, typeof workspace.shifts>();
   for (const shift of visibleShifts) {
     shiftsByDate.set(shift.date, [...(shiftsByDate.get(shift.date) ?? []), shift]);
@@ -337,6 +340,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     const searchable=normalize(`${row.employeeName} ${row.employeeNo} ${row.roleNames.join(" ")} ${assignedRoleNames.join(" ")}`);
     return (!search||searchable.includes(search))
       &&(!locationFilter||row.locations.some(location=>location.id===locationFilter))
+      &&(!roleFilters.length||row.roleNames.some(name=>workspaceRoles.some(role=>roleFilters.includes(role.id)&&role.name===name)))
       &&(!workloadReasonFilter||row.reasonCode===workloadReasonFilter);
   }).sort((left,right)=>workloadSort==="HOURS_ASC"?left.plannedMinutes-right.plannedMinutes
     :workloadSort==="DIFFERENCE"?Math.abs(right.differenceMinutes)-Math.abs(left.differenceMinutes)
@@ -443,7 +447,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   async function openLeaderEdit(input:{assignmentId?:string;issueId?:string;preferredEmployeeId?:string}){
     const variantId=workspace.variants[0]?.id;
     if(!supabase||!leaderEditable||!variantId)return;
-    setLeaderBusy(true);setLeaderContext(null);setLeaderReason("");setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);
+    setLeaderBusy(true);setLeaderContext(null);setLeaderReason("");setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);setLeaderValidatedKey("");
     try{
       const {preferredEmployeeId,...contextInput}=input;
       const context=await getLeaderAssignmentContext(supabase,{variantId,...contextInput});
@@ -458,6 +462,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     if(!leaderEmployeeId){setLeaderFeedback("Wybierz pracownika z listy kandydatów.");return;}
     const selectedCandidate=leaderContext.candidates.find(candidate=>candidate.employeeId===leaderEmployeeId);
     if(!selectedCandidate?.suggestionEligible){setLeaderFeedback("Ta osoba nie jest bezpieczną sugestią dla tej zmiany. Sprawdź status dostępności i pokrycie obowiązku.");return;}
+    const validationKey=[leaderContext.variantId,leaderContext.assignmentId??leaderContext.issueId,leaderEmployeeId,allowLimitOverride,approveOvertime,selectedCandidate.dutyTransferAssignmentId??""].join(":");
+    if(leaderValidatedKey!==validationKey){setLeaderFeedback("Najpierw użyj „Sprawdź”. Zapis jest dostępny dopiero po aktualnej, niemutującej kontroli serwera.");return;}
     if(leaderReason.trim().length<3){setLeaderFeedback("Wpisz krótki powód zmiany — jest zapisywany w audycie.");return;}
     setLeaderBusy(true);
     setLeaderFeedback("Serwer sprawdza rolę, lokal, obowiązki, dostępność, odpoczynek i limity całego miesiąca…");
@@ -483,6 +489,24 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       const message=solverErrorMessage(raw);setLeaderFeedback(message);fail?.(message);
     }
     finally{setLeaderBusy(false);}
+  }
+  async function validateLeaderEdit(allowLimitOverride=false,approveOvertime=false){
+    if(!supabase||!leaderContext||!leaderEmployeeId)return;
+    const selectedCandidate=leaderContext.candidates.find(candidate=>candidate.employeeId===leaderEmployeeId);
+    if(!selectedCandidate?.suggestionEligible){setLeaderFeedback("Ta osoba ma blokadę. Wybierz kandydata oznaczonego jako możliwy do sprawdzenia.");return;}
+    setLeaderBusy(true);setLeaderValidatedKey("");
+    setLeaderFeedback("Sprawdzam bez zapisywania: rolę, lokal, obowiązki, dostępność, odpoczynek, limity i koszt całego miesiąca…");
+    try{
+      await validateLeaderAssignment(supabase,{variantId:leaderContext.variantId,assignmentId:leaderContext.assignmentId,issueId:leaderContext.issueId,employeeId:leaderEmployeeId,allowLimitOverride,dutyTransferAssignmentId:selectedCandidate.dutyTransferAssignmentId,approveOvertime});
+      setLeaderValidatedKey([leaderContext.variantId,leaderContext.assignmentId??leaderContext.issueId,leaderEmployeeId,allowLimitOverride,approveOvertime,selectedCandidate.dutyTransferAssignmentId??""].join(":"));
+      setLeaderFeedback("Kontrola zakończona: zmiana jest poprawna i niczego jeszcze nie zapisano. Dodaj komentarz audytowy i wybierz „Zapisz”, jeśli chcesz ją zastosować.");
+    }catch(error){
+      const raw=error instanceof Error?error.message:String(error);const upper=raw.toUpperCase();
+      if(upper.includes("LEADER_OVERTIME_APPROVAL_REQUIRED")){setLeaderOvertimeWarning(true);setLeaderFeedback("Ta zmiana tworzy nadgodziny wymagające decyzji. Sprawdź wycenę i ponów kontrolę z zatwierdzeniem nadgodzin.");}
+      else if(upper.includes("LEADER_OVERTIME_NOT_ALLOWED")){setLeaderFeedback("Pracownik ma twarde „NIE” dla nadgodzin. Wybierz inną osobę albo zmień zgodę w konfiguracji firmy.");}
+      else if(upper.includes("LEADER_LIMIT_OVERRIDE_REQUIRED")){const detail=raw.split("LEADER_LIMIT_OVERRIDE_REQUIRED:")[1]?.split("\n")[0]?.trim()??"Przypisanie przekroczy limit godzin.";setLeaderLimitWarning(detail);setLeaderFeedback("Zmiana przekracza limit. Ponów kontrolę jako świadomy wyjątek, jeśli chcesz ją dopuścić.");}
+      else{const message=solverErrorMessage(raw);setLeaderFeedback(message);fail?.(message);}
+    }finally{setLeaderBusy(false);}
   }
   async function removeLeaderEdit(){
     if(!supabase||!leaderContext?.assignmentId)return;
@@ -541,8 +565,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     </nav>
     <div className="solver-global-filters">
       <label><MapPin/> Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{workspaceLocations.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label>
-      {locationFilter&&<button className="secondary-button" onClick={()=>setLocationFilter("")}><X/> Wyczyść filtr</button>}
-      <small>Ten filtr zmienia grafik, rozkład godzin, statystyki i listę braków.</small>
+      <fieldset><legend>Role</legend>{workspaceRoles.map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={roleFilters.includes(role.id)} onChange={event=>setRoleFilters(event.target.checked?[...roleFilters,role.id]:roleFilters.filter(id=>id!==role.id))}/>{role.name}</label>)}</fieldset>
+      {(locationFilter||roleFilters.length>0)&&<button className="secondary-button" onClick={()=>{setLocationFilter("");setRoleFilters([]);}}><X/> Wyczyść filtry</button>}
+      <small>Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji.</small>
     </div>
 
     {workspaceView==="ISSUES"&&<>
@@ -647,9 +672,9 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         </div>}
         <div className="employee-compare-toolbar"><label><ArrowLeftRight/> Porównaj z<select value={comparisonEmployeeId} onChange={event=>setComparisonEmployeeId(event.target.value)}><option value="">Nie porównuj</option>{scheduleEmployees.filter(employee=>employee.id!==employeeDetail.id).map(employee=><option value={employee.id} key={employee.id}>{employee.lastName} {employee.firstName} • {employee.employeeNo}</option>)}</select></label><small>Nakładamy oba grafiki tydzień po tygodniu. Obowiązki i lokale są widoczne przy każdej zmianie; każda korekta przechodzi końcową kontrolę serwera.</small></div>
         <div className="employee-compare-legend"><span className="primary-person">{employeeDetailName}</span>{comparisonEmployee&&<span className="comparison-person">{comparisonEmployee.firstName} {comparisonEmployee.lastName}</span>}</div>
-        <section className="employee-availability-comparison" aria-label="Dostępność porównywanych pracowników">
-          <header><strong>Dostępność dzień po dniu</strong><small>{comparisonAvailabilityLoading?"Sprawdzamy deklaracje…":"Kolor rozróżnia dostępność od samego wolnego miejsca w grafiku."}</small></header>
-          <div>{weeks.flat().filter((date,index,all)=>date.slice(0,7)===workspace.context.month.slice(0,7)&&all.indexOf(date)===index).map(date=><article key={date}><b>{shortDayLabel(date)}</b>{[employeeDetail.id,comparisonEmployee?.id].filter(Boolean).map(employeeId=>{const row=comparisonAvailability.find(item=>item.employeeId===employeeId&&item.date===date);const person=employeeId===employeeDetail.id?employeeDetailShortName:comparisonEmployee?.firstName;return <span className={`availability-${(row?.status??"unknown").toLowerCase()}`} key={employeeId}><em>{person}</em><small>{row?.scheduled?"Ma zmianę • ":""}{row?.label??"Sprawdzamy dostępność"}</small></span>;})}</article>)}</div>
+        <section className="employee-availability-comparison employee-availability-month-grid" aria-label="Dostępność porównywanych pracowników">
+          <header><strong>Dostępność w układzie kalendarza poniedziałek–niedziela</strong><small>{comparisonAvailabilityLoading?"Sprawdzamy deklaracje…":"Daty pozostają w tych samych kolumnach co w grafiku poniżej."}</small></header>
+          <div className="employee-availability-weeks">{weeks.map(week=><section key={week[0]}>{week.map(date=>date.slice(0,7)===workspace.context.month.slice(0,7)?<article key={date}><b>{shortDayLabel(date)}</b>{[employeeDetail.id,comparisonEmployee?.id].filter(Boolean).map(employeeId=>{const row=comparisonAvailability.find(item=>item.employeeId===employeeId&&item.date===date);const person=employeeId===employeeDetail.id?employeeDetailShortName:comparisonEmployee?.firstName;return <span className={`availability-${(row?.status??"unknown").toLowerCase()}`} key={employeeId}><em>{person}</em><small>{row?.scheduled?"Ma zmianę • ":""}{row?.label??"Sprawdzamy dostępność"}</small></span>;})}</article>:<article className="outside-month" key={date}/>)}</section>)}</div>
         </section>
         {leaderEditable&&!comparisonEmployee&&<div className="swap-suggestion-hint"><ArrowLeftRight/><span><strong>Możliwe zamiany dla {employeeDetailShortName}</strong><small>Przy każdej zmianie wybierz „Możliwa zamiana”. Otworzymy wyszukiwalną listę osób z wolnym oknem oraz analizą obowiązku.</small></span></div>}
         <div className="employee-compare-weeks">{weeks.map((week,weekIndex)=><section key={week[0]}><header><strong>Tydzień {weekIndex+1}</strong><small>{shortDayLabel(week[0])} – {shortDayLabel(week[6])}</small></header><div>{week.filter(date=>date.slice(0,7)===workspace.context.month.slice(0,7)).map(date=>{const primary=employeeEntries(employeeDetail.id,date);const compared=comparisonEmployee?employeeEntries(comparisonEmployee.id,date):[];return <article className="employee-compare-day" key={date}><header><CalendarDays/><strong>{shortDayLabel(date)}</strong></header><div className="employee-compare-slots"><section><small>{employeeDetailShortName}</small>{primary.map(({shift,assignment})=><div style={assignmentStyle(assignment.role.id,shift.location.id)} key={assignment.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.location.name} • {assignment.role.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&!comparisonEmployee&&<button type="button" className="possible-swap-day" onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><ArrowLeftRight/> Możliwa zamiana</button>}{leaderEditable&&comparisonEmployee&&<button aria-label="Edytuj przydział" onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button>}</div>)}{!primary.length&&<p>Wolne</p>}</section>{comparisonEmployee&&<section><small>{comparisonEmployee.firstName}</small>{compared.map(({shift,assignment})=><div style={assignmentStyle(assignment.role.id,shift.location.id)} key={assignment.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.location.name} • {assignment.role.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<button aria-label="Edytuj przydział" onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button>}</div>)}{!compared.length&&<p>Wolne</p>}</section>}</div>{comparisonEmployee&&((primary.length&&!compared.length)||(!primary.length&&compared.length))&&<button type="button" className="swap-opportunity" disabled={!leaderEditable} onClick={()=>void openLeaderEdit({assignmentId:(primary[0]??compared[0]).assignment.id,preferredEmployeeId:primary.length?comparisonEmployee.id:employeeDetail.id})}><ArrowLeftRight/> Sprawdź, czy {primary.length?comparisonEmployee.firstName:employeeDetailShortName} może przejąć tę zmianę. System najpierw kontroluje rolę, lokal i obowiązek, a przy zapisie cały miesiąc.</button>}</article>})}</div></section>)}</div>
@@ -663,7 +688,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         <div className="leader-candidate-picker">
           <label>Znajdź pracownika<input value={leaderSearch} onChange={event=>setLeaderSearch(event.target.value)} placeholder="Wpisz nazwisko, numer, rolę, lokal lub obowiązek"/></label>
           <div className="leader-candidate-summary"><span><b>{eligibleLeaderCandidates}</b> można bezpiecznie sprawdzić</span><span><b>{blockedLeaderCandidates}</b> ma blokadę lub brak pokrycia obowiązku</span></div>
-          <div>{visibleLeaderCandidates.map(candidate=><button type="button" disabled={!candidate.suggestionEligible} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);}} key={candidate.employeeId}>
+          <div>{visibleLeaderCandidates.map(candidate=><button type="button" disabled={!candidate.suggestionEligible} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);setLeaderValidatedKey("");}} key={candidate.employeeId}>
             <span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}{candidate.current?" • obecnie":""} • {availabilityLabel(candidate.availabilityStatus)}</small><em>{candidate.dutyCoverageMode==="DIRECT"?(leaderContext.duty?`Ma obowiązek: ${leaderContext.duty.name}`:"Rola i lokal pasują"):candidate.dutyCoverageMode==="TRANSFER"?`${candidate.dutyTransferEmployeeName} przejmie obowiązek „${leaderContext.duty?.name}”`:`Brak pokrycia obowiązku „${leaderContext.duty?.name}”`}</em>{candidate.addedOvertimeMinutes>0&&<em className={candidate.overtimeBlocked?"overtime-blocked":candidate.overtimeApprovalRequired?"overtime-approval":"overtime-allowed"}>{candidate.overtimeBlocked?"Nadgodziny niedozwolone":candidate.overtimeApprovalRequired?"Nadgodziny wymagają decyzji lidera":"Nadgodziny dozwolone przez pracownika"} • +{workloadHours(candidate.addedOvertimeMinutes)}</em>}</span>
             {leaderEmployeeId===candidate.employeeId&&<Check/>}
           </button>)}</div>
@@ -677,8 +702,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
           {selectedLeaderCandidate.overtimeBlocked&&<p>Ustawienie „NIE” jest twardą blokadą. Zwykły zapis ani wyjątek od limitu nie mogą jej ominąć.</p>}
         </div>}
         {leaderFeedback&&<div className="solver-v2-notice warning" role="status"><AlertTriangle/><span><strong>Status zapisu</strong><small>{leaderFeedback}</small></span></div>}
-        {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Ręczny wyjątek będzie widoczny w audycie wraz z podanym wyżej powodem.</small></span></div>}
-        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}{leaderOvertimeWarning&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit(Boolean(leaderLimitWarning),true)}><AlertTriangle/> {leaderLimitWarning?"Zatwierdź nadgodziny i przekroczenie limitu":"Zatwierdź nadgodziny"}</button>}{leaderLimitWarning&&!leaderOvertimeWarning&&<button className="danger-button" disabled={leaderBusy||leaderReason.trim().length<3} onClick={()=>void saveLeaderEdit(true)}><AlertTriangle/> Przypisz mimo limitu</button>}<button className="primary-button" disabled={leaderBusy||Boolean(selectedLeaderCandidate?.overtimeBlocked)} onClick={()=>void saveLeaderEdit()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Sprawdź i zapisz</button></div>
+        {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Najpierw sprawdź wyjątek, a potem wybierz „Przypisz mimo limitu”; decyzja i powód pozostaną w audycie.</small></span></div>}
+        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń przydział</button>}<button className="secondary-button" disabled={leaderBusy||Boolean(selectedLeaderCandidate?.overtimeBlocked)} onClick={()=>void validateLeaderEdit(Boolean(leaderLimitWarning),leaderOvertimeWarning)}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} {leaderLimitWarning||leaderOvertimeWarning?"Sprawdź wyjątek":"Sprawdź"}</button><button className="primary-button" disabled={leaderBusy||leaderReason.trim().length<3||!leaderValidatedKey} onClick={()=>void saveLeaderEdit(Boolean(leaderLimitWarning),leaderOvertimeWarning)}><Check/> {leaderOvertimeWarning?"Zatwierdź nadgodziny i zapisz":leaderLimitWarning?"Przypisz mimo limitu":"Zapisz"}</button></div>
       </div>
     </aside></>}
 

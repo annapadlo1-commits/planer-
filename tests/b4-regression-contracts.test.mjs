@@ -54,6 +54,10 @@ const discardDraftAdHocFixUrl = new URL(
   "../supabase/migrations/20260815212630_uat_discard_draft_ad_hoc_fk_fix.sql",
   import.meta.url,
 );
+const localDateWorkloadDiagnosticsUrl = new URL(
+  "../supabase/migrations/20260817202257_b4f79_local_date_workload_diagnostics.sql",
+  import.meta.url,
+);
 
 test("B4 migration restores every server contract required by the UI", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -500,6 +504,15 @@ test("every opened variant owns fresh workload and diagnostic state", async () =
   assert.match(workspace,/setComparisonAvailability\(\[\]\)/);
 });
 
+test("B4F-79 workload diagnostics count company-local days instead of UTC dates", async () => {
+  const sql=await readFile(localDateWorkloadDiagnosticsUrl,"utf8");
+  assert.match(sql,/version\.settings->>'timezone'/);
+  assert.match(sql,/lower\(constraint_row\.time_range\) at time zone v_timezone/);
+  assert.match(sql,/upper\(constraint_row\.time_range\)-interval '1 microsecond'\) at time zone v_timezone/);
+  assert.match(sql,/v_run\.month::timestamp at time zone v_timezone/);
+  assert.doesNotMatch(sql,/at time zone 'UTC'/);
+});
+
 test("UAT-052 availability uses the company timezone and swap actions stay in flow", async () => {
   const migration=await readFile(new URL("../supabase/migrations/20260817150626_uat052_availability_local_date_contract.sql",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
@@ -519,7 +532,7 @@ test("swap discovery starts on the first employee and validates availability plu
   assert.match(workspace,/suggestionEligible/);
   assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
   assert.match(workspace,/DAILY_LIMIT:\"Osiągnięty dzienny limit zmian\"/);
-  assert.match(client,/optimizer_leader_assignment_context_uat_v3/);
+  assert.match(client,/optimizer_leader_assignment_context_uat_v4/);
   assert.match(client,/p_duty_transfer_assignment_id/);
   assert.match(migration,/optimizer_employee_availability_month_uat_v1/);
   assert.match(migration,/'date',day_value\.day_date::date/);

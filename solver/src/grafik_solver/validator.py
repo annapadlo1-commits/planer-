@@ -268,7 +268,12 @@ def validate_variant(
             limit = int(budget.limit_minutes or 0)
         else:
             spent = sum(
-                complete_quotes[(employee.id, slot.id)].cost_units
+                sum(
+                    component.cost_units
+                    for component in complete_quotes[(employee.id, slot.id)].components
+                    if budget.cost_basis == "FULL_EMPLOYER_COST"
+                    or component.cost_category != "EMPLOYER_ONCOST"
+                )
                 for _assignment, employee, slot in selected
                 if budget.matches(slot)
             )
