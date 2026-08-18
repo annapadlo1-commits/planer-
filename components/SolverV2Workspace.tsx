@@ -495,19 +495,20 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
-  async function applyLeaderCandidate(allowLimitOverride=false,approveOvertime=false){
-    if(!supabase||!leaderContext)return;
-    if(!leaderEmployeeId){setLeaderFeedback("Wybierz pracownika z listy kandydatów.");return;}
-    const selectedCandidate=leaderContext.candidates.find(candidate=>candidate.employeeId===leaderEmployeeId);
+  async function applyLeaderCandidate(allowLimitOverride=false,approveOvertime=false,employeeIdOverride?:string,contextOverride?:SolverLeaderAssignmentContext){
+    const context=contextOverride??leaderContext;
+    const employeeId=employeeIdOverride??leaderEmployeeId;
+    if(!supabase||!context)return;
+    if(!employeeId){setLeaderFeedback("Wybierz pracownika z listy kandydatów.");return;}
+    const selectedCandidate=context.candidates.find(candidate=>candidate.employeeId===employeeId);
     if(!selectedCandidate?.suggestionEligible){setLeaderFeedback("Ta osoba nie jest bezpieczną sugestią dla tej zmiany. Sprawdź status dostępności i pokrycie obowiązku.");return;}
     setLeaderBusy(true);
     setLeaderFeedback("Dodaję zmianę do roboczego szkicu…");
     try{
-      await saveLeaderAssignment(supabase,{variantId:leaderContext.variantId,
-        assignmentId:leaderContext.assignmentId,issueId:leaderContext.issueId,
-        employeeId:leaderEmployeeId,reason:"Edycja robocza metodą przeciągnij i upuść w Studio lidera",allowLimitOverride,
+      await saveLeaderAssignment(supabase,{variantId:context.variantId,
+        assignmentId:context.assignmentId,issueId:context.issueId,
+        employeeId,reason:"Edycja robocza metodą przeciągnij i upuść w Studio lidera",allowLimitOverride,
         dutyTransferAssignmentId:selectedCandidate.dutyTransferAssignmentId,approveOvertime});
-      notify?.("Szkic zaktualizowany. Możesz od razu wykonywać kolejne przeciągnięcia; pełną kontrolę uruchomisz raz dla całego grafiku.");
       setLeaderContext(null);await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){
       const raw=error instanceof Error?error.message:String(error);
@@ -551,18 +552,21 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     setLeaderBusy(true);
     try{
       const result=await previewLeaderAssignmentDrag(supabase,{variantId,...input});
-      const message=result.valid?(input.targetAssignmentId?
-        "Można zamienić pracowników. Twarde reguły całego miesiąca pozostaną spełnione.":
-        "Można przenieść pracownika. Zwolnione miejsce pozostanie jawnym wakatem."):
-        solverErrorMessage(result.errorCode??"VARIANT_MATERIALIZATION_HASH_MISMATCH");
-      setDragPreview({key:`${input.sourceAssignmentId}:${input.targetAssignmentId??input.targetIssueId??""}`,loading:false,valid:result.valid,message});
-      if(!result.valid)return;
+      if(!result.valid){setDragPreview({key:`${input.sourceAssignmentId}:${input.targetAssignmentId??input.targetIssueId??""}`,loading:false,valid:false,message:solverErrorMessage(result.errorCode??"VARIANT_MATERIALIZATION_HASH_MISMATCH")});return;}
       await dragLeaderAssignment(supabase,{variantId,...input,reason:input.targetAssignmentId?
         "Zamiana pracowników przez przeciągnięcie w Studio lidera":"Przeniesienie pracownika na wakat w Studio lidera"});
-      notify?.("Szkic zaktualizowany. Możesz kontynuować bez dodatkowego potwierdzania każdej operacji.");
       setDragPreview(null);await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){const message=solverErrorMessage(error instanceof Error?error.message:String(error));setDragPreview({key:"error",loading:false,valid:false,message});fail?.(message);}
     finally{setLeaderBusy(false);}
+  }
+
+  async function applyEmployeeDrop(issueId:string,employeeId:string){
+    const variantId=workspace.variants[0]?.id;
+    if(!supabase||!leaderEditable||!variantId||leaderBusy)return;
+    try{
+      const context=leaderContext?.issueId===issueId?leaderContext:await getLeaderAssignmentContext(supabase,{variantId,issueId});
+      await applyLeaderCandidate(false,false,employeeId,context);
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
   }
   async function toggleAssignmentLock(assignmentId:string,locked:boolean){
     const variantId=workspace.variants[0]?.id;
@@ -764,7 +768,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
             const vacancies=unfilledIssues.filter(issue=>issue.role?.id===role.id&&issue.shift?.date===date);
             return <div className={["solver-roster-cell","solver-role-day-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date} title={vacancies.length?`${vacancies.length} wymagań do obsadzenia dla roli ${role.name}`:`Obsada roli ${role.name}`}>
               {entries.map(({shift,assignment})=><article className={`solver-role-assignment studio-assignment-drag ${assignment.locked?"leader-locked":""}`} style={assignmentStyle(role.id,shift.location.id)} draggable={leaderEditable&&!assignment.locked} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-assignment",assignment.id);event.dataTransfer.effectAllowed="move";}} onDragOver={event=>{if(leaderEditable&&event.dataTransfer.types.includes("application/x-grafik-assignment")){event.preventDefault();event.dataTransfer.dropEffect="move";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");if(sourceAssignmentId&&sourceAssignmentId!==assignment.id){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetAssignmentId:assignment.id});}}} key={assignment.id}><span><b>{assignment.employee.firstName} {assignment.employee.lastName}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<span className="studio-assignment-actions"><button aria-label={assignment.locked?"Odepnij decyzję lidera":"Przypnij decyzję lidera"} disabled={leaderBusy} onClick={()=>void toggleAssignmentLock(assignment.id,!assignment.locked)}>{assignment.locked?<LockKeyhole/>:<LockOpen/>}</button><button aria-label="Edytuj przydział" disabled={leaderBusy||assignment.locked} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button></span>}</article>)}
-              {vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${role.name} • brakuje ${missing}`} onDragOver={event=>{if(leaderEditable){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void openLeaderEdit({issueId:issue.id,preferredEmployeeId:employeeId});}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""} — pokaż kandydatów</em></button>})}
+              {vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${role.name} • brakuje ${missing}`} onDragOver={event=>{if(leaderEditable){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""} — pokaż kandydatów</em></button>})}
               {!entries.length&&!vacancies.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}
             </div>;
           })}</div>)}
@@ -808,7 +812,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
             {leaderEmployeeId===candidate.employeeId&&<Check/>}
           </button>)}</div>
           {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie i wybrany filtr. Wybierz „Wszyscy z powodami”, aby zobaczyć konkretne blokady.</p>}
-          <small>Przeciągnij dostępną osobę bezpośrednio na wakat w kalendarzu albo wybierz ją i użyj „Dodaj do szkicu”. Nie wpisujesz komentarza i nie zatwierdzasz każdej operacji osobno. Wyszarzone osoby mają konkretną twardą blokadę.</small>
+          <small>Przeciągnij dostępną osobę bezpośrednio na wakat w kalendarzu. Upuszczenie kafelka od razu zmienia roboczy szkic — bez komentarza, potwierdzenia i dodatkowego przycisku. Wyszarzone osoby mają konkretną twardą blokadę.</small>
         </div>
         {selectedLeaderCandidate&&<section className="leader-change-preview">
           <header><BarChart3/><span><strong>Skutek w szkicu</strong><small>Podgląd dla {selectedLeaderCandidate.employeeName}. Pełną kontrolę uruchamiasz raz, kiedy cały układ jest gotowy.</small></span></header>
@@ -821,7 +825,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
         </div>}
         {leaderFeedback&&<div className="solver-v2-notice warning" role="status"><AlertTriangle/><span><strong>Status szkicu</strong><small>{leaderFeedback}</small></span></div>}
         {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Najpierw sprawdź wyjątek, a potem wybierz „Przypisz mimo limitu”; decyzja i powód pozostaną w audycie.</small></span></div>}
-        <div className="leader-edit-actions">{leaderContext.assignmentId&&<button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń ze szkicu</button>}<button className="primary-button" disabled={leaderBusy||!selectedLeaderCandidate?.suggestionEligible||Boolean(selectedLeaderCandidate?.overtimeBlocked)} onClick={()=>void applyLeaderCandidate(Boolean(leaderLimitWarning),leaderOvertimeWarning)}>{leaderBusy?<RefreshCw className="spin"/>:<Plus/>} {leaderOvertimeWarning?"Dodaj z zatwierdzeniem nadgodzin":leaderLimitWarning?"Dodaj jako wyjątek":"Dodaj do szkicu"}</button></div>
+        {leaderContext.assignmentId&&<div className="leader-edit-actions"><button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń ze szkicu</button></div>}
       </div>
     </aside></>}
 

@@ -38,7 +38,8 @@ test("automatic generation honors global overtime consent and prices the individ
   assert.match(approvalMigration,/LEADER_OVERTIME_APPROVAL_REQUIRED/);
   assert.match(approvalMigration,/requote_variant_payload_v2/);
   assert.match(approvalMigration,/'APPROVE_OVERTIME'/);
-  assert.match(workspace,/Dodaj z zatwierdzeniem nadgodzin/);
+  assert.match(workspace,/LEADER_OVERTIME_APPROVAL_REQUIRED/);
+  assert.doesNotMatch(workspace,/Dodaj z zatwierdzeniem nadgodzin/);
   assert.match(workspace,/Pełny koszt po zmianie/);
   assert.match(client,/optimizer_leader_assignment_save_uat_v4/);
 });
@@ -227,4 +228,22 @@ test("B4F-84 exposes staffing risk by day role and location before and after pub
   assert.match(workspace,/row\.assigned\}\/\{row\.required\} obsadzonych/);
   assert.match(analytics,/<h3>Ryzyko obsady<\/h3>/);
   assert.match(analytics,/item\.assigned\}\/\{item\.required\} obsadzonych/);
+});
+
+test("B4F-89 offers only role-aware shifts that physically occur in the selected dates",async()=>{
+  const [migration,modules]=await Promise.all([
+    read("supabase/migrations/20260818231501_b4f89_role_aware_event_shifts.sql"),
+    read("components/ActiveModules.tsx"),
+  ]);
+  assert.match(migration,/'roleIds'/);
+  assert.match(migration,/staffing\.shift_template_id=\(template\.value->>'id'\)::uuid/);
+  assert.match(migration,/extract\(isodow from v_date\)::integer=any\(template\.day_mask\)/);
+  assert.match(migration,/staffing\.role_id=\(demand\.value->>'roleId'\)::uuid/);
+  assert.match(migration,/EVENT_HAS_NO_ACTIVE_ROLE_SHIFTS/);
+  assert.match(migration,/revoke all on function public\.workforce_calendar_context_uat_v4/);
+  assert.match(modules,/template\.roleIds\.includes\(roleId\)/);
+  assert.match(modules,/const templateOccurrences/);
+  assert.match(modules,/occurrences\.join\(", "\)/);
+  assert.match(modules,/Brak zmian tej roli w wybranych dniach/);
+  assert.doesNotMatch(modules,/template\.dayMask\.filter\(day=>selectedWeekdays\.has\(day\)\)\.length/);
 });

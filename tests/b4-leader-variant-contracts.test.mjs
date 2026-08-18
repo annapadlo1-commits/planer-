@@ -87,7 +87,8 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
   assert.match(workspace, /Uzupełnij w wersji lidera/);
   assert.match(workspace, /Usuń ze szkicu/);
-  assert.match(workspace, /Dodaj do szkicu/);
+  assert.doesNotMatch(workspace, /Dodaj do szkicu/);
+  assert.match(workspace, /applyEmployeeDrop/);
   assert.doesNotMatch(workspace, /Najpierw użyj „Sprawdź”/);
   assert.doesNotMatch(workspace, /<label>Powód zmiany/);
   assert.doesNotMatch(workspace, /window\.confirm/, "operacyjne uzupełnianie i edycja kopii nie mogą blokować karty natywnym oknem");
@@ -245,7 +246,8 @@ test("Studio lidera filters candidates and supports uninterrupted draft editing"
   assert.doesNotMatch(panel,/window\.prompt/);
   assert.match(workspace,/Skutek w szkicu/);
   assert.match(workspace,/Pełną kontrolę uruchamiasz raz/);
-  assert.match(workspace,/Możesz kontynuować bez dodatkowego potwierdzania każdej operacji/);
+  assert.match(workspace,/Upuszczenie kafelka od razu zmienia roboczy szkic/);
+  assert.doesNotMatch(workspace,/Szkic zaktualizowany\. Możesz kontynuować/);
   assert.doesNotMatch(workspace,/Zastosuj sprawdzoną zmianę/);
   assert.doesNotMatch(workspace,/Dodaj komentarz audytowy/);
   assert.match(styles,/\.leader-studio-impact/);
@@ -307,7 +309,8 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
     "pusty ręczny szkic nadal musi pokazać wszystkie wymagane role");
   assert.match(workspace,/studio-role-vacancy studio-vacancy-target/);
   assert.match(workspace,/application\/x-grafik-employee/);
-  assert.match(workspace,/openLeaderEdit\(\{issueId:issue\.id,preferredEmployeeId:employeeId\}\)/);
+  assert.match(workspace,/applyEmployeeDrop\(issue\.id,employeeId\)/);
+  assert.doesNotMatch(workspace,/Dodaj do szkicu/);
   assert.match(workspace,/Obsada i wolne miejsca/);
   assert.match(workspace,/workspaceView==="ISSUES"&&<section className="solver-issues-view">/);
   assert.match(styles,/leader-studio>\.solver-issues-view\{grid-column:2;grid-row:3/);
