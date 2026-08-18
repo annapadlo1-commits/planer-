@@ -1,5 +1,7 @@
 # Alpha 16 — kontrolowane wdrożenie
 
+> **Historyczna procedura Alpha 16.** Nie jest instrukcją wdrożenia aktualnej gałęzi UAT. Bieżący stan: `codex/uat-consolidated-fixes`, PR #7; źródła prawdy znajdują się w katalogu nadrzędnym.
+
 Ten release rozdziela generator wariantów od grafiku operacyjnego, ustanawia Matrix v2 jako jedyne źródło administracyjne i wycofuje zapisy Alpha 15. Migracje są addytywne; aktywacja OR-Tools jest osobną bramką po wdrożeniu kodu i bazy.
 
 ## Bramka 0 — stan wejściowy

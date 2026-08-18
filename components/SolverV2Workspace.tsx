@@ -80,6 +80,8 @@ function workloadReasonCode(row:SolverWorkloadDistributionRow){
 
 type WorkspaceView="CALENDAR"|"WORKLOAD"|"ISSUES";
 type SchedulePerspective="EMPLOYEES"|"ROLES"|"COVERAGE";
+type LeaderCandidateView="ELIGIBLE"|"ALL"|"BELOW_TARGET"|"PREFERRED";
+type FinanceVisibility="NONE"|"BUDGET_ONLY"|"AGGREGATE"|"FULL";
 
 const rolePalette=[
   {accent:"#6848d8",background:"#f0ebff"},
@@ -223,6 +225,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderValidatedKey,setLeaderValidatedKey]=useState("");
   const [leaderBusy,setLeaderBusy]=useState(false);
+  const [leaderCandidateView,setLeaderCandidateView]=useState<LeaderCandidateView>("ELIGIBLE");
   const [workspaceView,setWorkspaceView]=useState<WorkspaceView>(initialView);
   const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
   const [locationFilter,setLocationFilter]=useState("");
@@ -239,9 +242,22 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [workloadSearch,setWorkloadSearch]=useState("");
   const [workloadReasonFilter,setWorkloadReasonFilter]=useState("");
   const [workloadSort,setWorkloadSort]=useState<"HOURS_DESC"|"HOURS_ASC"|"DIFFERENCE">("HOURS_DESC");
+  const [financeVisibility,setFinanceVisibility]=useState<FinanceVisibility>("NONE");
   const workspaceVariantId=workspace.variants[0]?.id??"";
   const workspaceIdentity=`${workspace.context.type}:${workspace.context.runId??workspace.context.scheduleId??workspace.context.sourceVariantId??workspaceVariantId}:${workspaceVariantId}`;
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
+  useEffect(()=>{
+    let active=true;
+    setFinanceVisibility("NONE");
+    if(!supabase)return()=>{active=false;};
+    void supabase.rpc("application_finance_visibility_current_uat_v1")
+      .then(({data,error})=>{
+        if(!active||error)return;
+        const value=typeof data==="string"?data:Array.isArray(data)&&typeof data[0]==="string"?data[0]:"NONE";
+        if(value==="NONE"||value==="BUDGET_ONLY"||value==="AGGREGATE"||value==="FULL")setFinanceVisibility(value);
+      });
+    return()=>{active=false;};
+  },[supabase]);
   useEffect(()=>{
     // React reuses the drawer when another strategy is opened. Variant-bound
     // state must be cleared so workload and diagnostics can never be shown for
@@ -490,6 +506,15 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     }
     finally{setLeaderBusy(false);}
   }
+
+  useEffect(()=>{
+    if(!leaderEditable||!workspaceVariantId)return;
+    void loadWorkload();
+  // The displayed draft identity is the boundary for Studio metrics. Filters
+  // are deliberately not dependencies, so changing them never refetches or
+  // resets the user's working context.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[leaderEditable,workspaceIdentity,workspaceVariantId]);
   async function validateLeaderEdit(allowLimitOverride=false,approveOvertime=false){
     if(!supabase||!leaderContext||!leaderEmployeeId)return;
     const selectedCandidate=leaderContext.candidates.find(candidate=>candidate.employeeId===leaderEmployeeId);
@@ -522,13 +547,27 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   }
 
   const normalizedLeaderSearch=leaderSearch.trim().toLocaleLowerCase("pl-PL");
-  const visibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>!normalizedLeaderSearch||[
-    candidate.employeeName,candidate.employeeNo,candidate.roleName,leaderContext?.role.name,
-    candidate.locationName,leaderContext?.shift.locationName,candidate.dutyName,leaderContext?.duty?.name,
-  ].filter(Boolean).join(" ").toLocaleLowerCase("pl-PL").includes(normalizedLeaderSearch));
+  const visibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>{
+    const matchesSearch=!normalizedLeaderSearch||[
+      candidate.employeeName,candidate.employeeNo,candidate.roleName,leaderContext?.role.name,
+      candidate.locationName,leaderContext?.shift.locationName,candidate.dutyName,leaderContext?.duty?.name,
+    ].filter(Boolean).join(" ").toLocaleLowerCase("pl-PL").includes(normalizedLeaderSearch);
+    const utilization=candidate.nominalMonthlyMinutes>0?candidate.projectedMonthlyMinutes/candidate.nominalMonthlyMinutes:0;
+    const matchesView=leaderCandidateView==="ALL"
+      ||leaderCandidateView==="ELIGIBLE"&&candidate.suggestionEligible
+      ||leaderCandidateView==="BELOW_TARGET"&&candidate.suggestionEligible&&utilization<1
+      ||leaderCandidateView==="PREFERRED"&&candidate.suggestionEligible&&candidate.availabilityStatus==="AVAILABLE";
+    return matchesSearch&&matchesView;
+  }).sort((left,right)=>Number(right.suggestionEligible)-Number(left.suggestionEligible)
+    ||(left.nominalMonthlyMinutes>0?left.projectedMonthlyMinutes/left.nominalMonthlyMinutes:1)-(right.nominalMonthlyMinutes>0?right.projectedMonthlyMinutes/right.nominalMonthlyMinutes:1)
+    ||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
   const eligibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>candidate.suggestionEligible).length;
   const blockedLeaderCandidates=(leaderContext?.candidates??[]).length-eligibleLeaderCandidates;
   const selectedLeaderCandidate=(leaderContext?.candidates??[]).find(candidate=>candidate.employeeId===leaderEmployeeId)??null;
+  const studioZeroHours=filteredWorkload.filter(row=>row.plannedMinutes===0&&row.nominalMonthlyMinutes>0).length;
+  const studioBelowTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes<row.nominalMonthlyMinutes).length;
+  const studioAboveTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes>row.nominalMonthlyMinutes).length;
+  const studioOvertimeMinutes=filteredWorkload.reduce((sum,row)=>sum+Math.max(0,row.plannedMinutes-row.nominalMonthlyMinutes),0);
   const employeeDetailWorkload=(currentWorkloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
   const employeeDetail=scheduleEmployees.find(employee=>employee.id===employeeDetailId)??(
     employeeDetailSeed?.id===employeeDetailId
@@ -540,7 +579,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const comparisonEmployee=scheduleEmployees.find(employee=>employee.id===comparisonEmployeeId)??null;
   const employeeEntries=(employeeId:string,date:string)=>scheduleEntries.filter(entry=>entry.assignment.employee.id===employeeId&&entry.shift.date===date);
 
-  return <section className={`solver-workspace ${published ? "published" : ""}`}>
+  return <section className={`solver-workspace ${published ? "published" : ""} ${leaderEditable?"leader-studio":""}`}>
     <div className="solver-workspace-head">
       <span>
         <small>{published ? publicationStatus(workspace.context.status) : "Podgląd wybranego wariantu"}</small>
@@ -570,6 +609,13 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <small>Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji.</small>
     </div>
 
+    {leaderEditable&&<aside className="leader-studio-impact" aria-label="Wpływ zmian w Studio lidera">
+      <header><BarChart3/><span><strong>Wpływ bieżącego szkicu</strong><small>{locationFilter||roleFilters.length?"Wyniki dla aktywnych filtrów":"Cały zakres wersji lidera"}</small></span></header>
+      <div><span><small>Przydziały</small><b>{assignmentCount}</b></span><span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span><span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span><span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span><span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span><span><small>Nad celem</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>{workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Łączny koszt</small><b>{money(workspace.finance.totalCostMinor,workspace.finance.currency)}</b></span>}{workspace.finance&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.finance.budgetMinor!==null&&workspace.finance.totalCostMinor>workspace.finance.budgetMinor?"warning":"ok"}><small>Status budżetu</small><b>{workspace.finance.budgetMinor===null?"Bez limitu":workspace.finance.totalCostMinor<=workspace.finance.budgetMinor?"W budżecie":"Przekroczony"}</b></span>}</div>
+      <button type="button" className="secondary-button" disabled={workloadLoading} onClick={()=>void openWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz pełną analizę</button>
+      <small>Po każdym zapisie szkic jest ponownie pobierany. Twarde reguły sprawdza serwer przed zapisem; świadome wyjątki pozostają w audycie.</small>
+    </aside>}
+
     {workspaceView==="ISSUES"&&<>
     {unfilledIssues.length>0&&<section className="solver-missing-breakdown">
       <div className="solver-missing-explainer"><AlertTriangle/><span><strong>{unfilledCount} braków to suma nieobsadzonych wymaganych miejsc</strong><small>Każdy brak poniżej wskazuje konkretny dzień, lokal, zmianę i rolę. To nie jest liczba pracowników ani naruszenie twardych reguł.</small></span></div>
@@ -595,11 +641,14 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     </details>
     </>}
 
-    {workspace.finance && <div className="solver-workspace-finance">
+    {workspace.finance && (financeVisibility==="AGGREGATE"||financeVisibility==="FULL") && <div className="solver-workspace-finance">
       <div><CircleDollarSign/><span><small>Koszt podstawowy</small><strong>{money(workspace.finance.baseCostMinor, workspace.finance.currency)}</strong></span></div>
       <div><span><small>Dodatki płacowe</small><strong>{money(workspace.finance.additionsCostMinor, workspace.finance.currency)}</strong></span></div>
       <div><span><small>Łączny koszt</small><strong>{money(workspace.finance.totalCostMinor, workspace.finance.currency)}</strong></span></div>
       <div><span><small>Budżet scenariusza</small><strong>{money(workspace.finance.budgetMinor, workspace.finance.currency)}</strong></span></div>
+    </div>}
+    {workspace.finance && financeVisibility==="BUDGET_ONLY" && <div className="solver-workspace-finance budget-only">
+      <div><CircleDollarSign/><span><small>Status budżetu scenariusza</small><strong>{workspace.finance.budgetMinor===null?"Brak ustawionego limitu":workspace.finance.totalCostMinor<=workspace.finance.budgetMinor?"Koszt mieści się w budżecie":"Koszt przekracza budżet"}</strong></span></div>
     </div>}
 
     {workspaceView==="WORKLOAD"&&<section className="solver-workload-content" aria-label="Rozkład pracy zespołu">
@@ -687,18 +736,23 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
         <div className="solver-v2-notice"><ShieldCheck/><span><strong>Oryginalne warianty nie zostaną zmienione</strong><small>Ta korekta dotyczy tylko kopii lidera. Przed zapisem serwer ponownie sprawdzi cały miesiąc, wszystkie twarde reguły oraz koszty.</small></span></div>
         <div className="leader-candidate-picker">
           <label>Znajdź pracownika<input value={leaderSearch} onChange={event=>setLeaderSearch(event.target.value)} placeholder="Wpisz nazwisko, numer, rolę, lokal lub obowiązek"/></label>
+          <div className="leader-candidate-view" role="tablist" aria-label="Filtr kandydatów"><button type="button" className={leaderCandidateView==="ELIGIBLE"?"active":""} onClick={()=>setLeaderCandidateView("ELIGIBLE")}>Tylko możliwe</button><button type="button" className={leaderCandidateView==="BELOW_TARGET"?"active":""} onClick={()=>setLeaderCandidateView("BELOW_TARGET")}>Poniżej celu</button><button type="button" className={leaderCandidateView==="PREFERRED"?"active":""} onClick={()=>setLeaderCandidateView("PREFERRED")}>Dostępni</button><button type="button" className={leaderCandidateView==="ALL"?"active":""} onClick={()=>setLeaderCandidateView("ALL")}>Wszyscy z powodami</button></div>
           <div className="leader-candidate-summary"><span><b>{eligibleLeaderCandidates}</b> można bezpiecznie sprawdzić</span><span><b>{blockedLeaderCandidates}</b> ma blokadę lub brak pokrycia obowiązku</span></div>
           <div>{visibleLeaderCandidates.map(candidate=><button type="button" disabled={!candidate.suggestionEligible} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);setLeaderValidatedKey("");}} key={candidate.employeeId}>
             <span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}{candidate.current?" • obecnie":""} • {availabilityLabel(candidate.availabilityStatus)}</small><em>{candidate.dutyCoverageMode==="DIRECT"?(leaderContext.duty?`Ma obowiązek: ${leaderContext.duty.name}`:"Rola i lokal pasują"):candidate.dutyCoverageMode==="TRANSFER"?`${candidate.dutyTransferEmployeeName} przejmie obowiązek „${leaderContext.duty?.name}”`:`Brak pokrycia obowiązku „${leaderContext.duty?.name}”`}</em>{candidate.addedOvertimeMinutes>0&&<em className={candidate.overtimeBlocked?"overtime-blocked":candidate.overtimeApprovalRequired?"overtime-approval":"overtime-allowed"}>{candidate.overtimeBlocked?"Nadgodziny niedozwolone":candidate.overtimeApprovalRequired?"Nadgodziny wymagają decyzji lidera":"Nadgodziny dozwolone przez pracownika"} • +{workloadHours(candidate.addedOvertimeMinutes)}</em>}</span>
             {leaderEmployeeId===candidate.employeeId&&<Check/>}
           </button>)}</div>
-          {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie.</p>}
+          {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie i wybrany filtr. Wybierz „Wszyscy z powodami”, aby zobaczyć konkretne blokady.</p>}
           <small>Lista pokazuje cały zespół, a nie czterech „aktywnych” pracowników: zielone osoby można sprawdzić i zapisać, wyszarzone mają podany konkretny powód blokady. Przy zamianie trójstronnej serwer może przenieść obowiązek, a na końcu kontroluje cały miesiąc.</small>
         </div>
+        {selectedLeaderCandidate&&<section className="leader-change-preview">
+          <header><BarChart3/><span><strong>Skutek przed zapisem</strong><small>Podgląd dla {selectedLeaderCandidate.employeeName}; „Sprawdź” wykona niemutującą kontrolę całego miesiąca.</small></span></header>
+          <div><span><small>Godziny przed</small><b>{workloadHours(selectedLeaderCandidate.currentMonthlyMinutes)}</b></span><span><small>Godziny po</small><b>{workloadHours(selectedLeaderCandidate.projectedMonthlyMinutes)}</b></span><span><small>Cel miesięczny</small><b>{selectedLeaderCandidate.nominalMonthlyMinutes?workloadHours(selectedLeaderCandidate.nominalMonthlyMinutes):"Brak"}</b></span><span><small>Realizacja celu</small><b>{selectedLeaderCandidate.nominalMonthlyMinutes?`${Math.round(selectedLeaderCandidate.projectedMonthlyMinutes/selectedLeaderCandidate.nominalMonthlyMinutes*100)}%`:"—"}</b></span>{financeVisibility==="FULL"&&<span><small>Zmiana kosztu</small><b>{selectedLeaderCandidate.addedCostMinor>=0?"+":""}{money(selectedLeaderCandidate.addedCostMinor,selectedLeaderCandidate.currency)}</b></span>}<span><small>Dostępność</small><b>{availabilityLabel(selectedLeaderCandidate.availabilityStatus)}</b></span></div>
+        </section>}
         <label>Powód zmiany<textarea required minLength={3} value={leaderReason} onChange={event=>setLeaderReason(event.target.value)} placeholder="np. uzgodniona zamiana w zespole"/></label>
         {selectedLeaderCandidate&&selectedLeaderCandidate.addedOvertimeMinutes>0&&<div className={`leader-overtime-quote ${selectedLeaderCandidate.overtimeBlocked?"blocked":selectedLeaderCandidate.overtimeApprovalRequired?"approval":"allowed"}`}>
           <header><CircleDollarSign/><span><strong>{selectedLeaderCandidate.overtimeBlocked?"Ta osoba nie może mieć nadgodzin":selectedLeaderCandidate.overtimeApprovalRequired?"Propozycja nadgodzin do zatwierdzenia":"Nadgodziny dozwolone przez pracownika"}</strong><small>Wycena obejmuje cały wariant po tej zmianie, w tym reguły zależne od umowy, dnia i pory.</small></span></header>
-          <div><span><small>Przed zmianą</small><b>{workloadHours(selectedLeaderCandidate.currentMonthlyMinutes)}</b></span><span><small>Po zmianie</small><b>{workloadHours(selectedLeaderCandidate.projectedMonthlyMinutes)}</b></span><span><small>Nominał</small><b>{workloadHours(selectedLeaderCandidate.nominalMonthlyMinutes)}</b></span><span><small>Nowe nadgodziny</small><b>+{workloadHours(selectedLeaderCandidate.addedOvertimeMinutes)}</b></span><span><small>Zmiana kosztu grafiku</small><b>{selectedLeaderCandidate.addedCostMinor>=0?"+":""}{money(selectedLeaderCandidate.addedCostMinor,selectedLeaderCandidate.currency)}</b></span><span><small>Pełny koszt po zmianie</small><b>{money(selectedLeaderCandidate.projectedTotalCostMinor,selectedLeaderCandidate.currency)}</b></span></div>
+          <div><span><small>Przed zmianą</small><b>{workloadHours(selectedLeaderCandidate.currentMonthlyMinutes)}</b></span><span><small>Po zmianie</small><b>{workloadHours(selectedLeaderCandidate.projectedMonthlyMinutes)}</b></span><span><small>Nominał</small><b>{workloadHours(selectedLeaderCandidate.nominalMonthlyMinutes)}</b></span><span><small>Nowe nadgodziny</small><b>+{workloadHours(selectedLeaderCandidate.addedOvertimeMinutes)}</b></span>{financeVisibility==="FULL"&&<><span><small>Zmiana kosztu grafiku</small><b>{selectedLeaderCandidate.addedCostMinor>=0?"+":""}{money(selectedLeaderCandidate.addedCostMinor,selectedLeaderCandidate.currency)}</b></span><span><small>Pełny koszt po zmianie</small><b>{money(selectedLeaderCandidate.projectedTotalCostMinor,selectedLeaderCandidate.currency)}</b></span></>}</div>
           {selectedLeaderCandidate.overtimeBlocked&&<p>Ustawienie „NIE” jest twardą blokadą. Zwykły zapis ani wyjątek od limitu nie mogą jej ominąć.</p>}
         </div>}
         {leaderFeedback&&<div className="solver-v2-notice warning" role="status"><AlertTriangle/><span><strong>Status zapisu</strong><small>{leaderFeedback}</small></span></div>}

@@ -1,5 +1,7 @@
 # GRAFIK PRO — znaleziska UAT z 4 sierpnia 2026
 
+> **Historyczny zapis UAT z 2026-08-04.** Nie jest aktualnym backlogiem ani statusem wdrożenia. Każde aktywne ID i jego najnowszy dowód znajdują się w nadrzędnym rejestrze Excel; bieżący skrót jest w `PROJECT_STATUS.md`.
+
 ## Status dokumentu
 
 - Rejestr znalezisk, wymagań i stanu realizacji zbiorczej poprawki.

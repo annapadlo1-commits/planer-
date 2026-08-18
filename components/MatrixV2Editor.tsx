@@ -70,6 +70,9 @@ type ShiftMergeDialogState={
 type AccessDirectoryEntry={id:string;email:string;appRole:string;active:boolean;authUserId?:string|null;status:"ACTIVE"|"PENDING";roleLogicalId?:string|null;roleName?:string|null;locationLogicalId?:string|null;locationName?:string|null};
 type AccessDirectoryOption={rowId:string;logicalId:string;name:string;code:string};
 type AccessDirectoryPayload={entries:AccessDirectoryEntry[];roles:AccessDirectoryOption[];locations:AccessDirectoryOption[]};
+type FinanceVisibility="NONE"|"BUDGET_ONLY"|"AGGREGATE"|"FULL";
+type FinanceAccessPolicy={appRole:string;visibility:FinanceVisibility;updatedAt?:string|null};
+type FinanceAccessPolicyPayload={levels:FinanceVisibility[];policies:FinanceAccessPolicy[]};
 type AccessImportRow={row:number;email:string;appRole:string;roleId:string|null;locationId:string|null;active:boolean};
 type AccessImportPreview={rows:AccessImportRow[];errors:string[];fileName:string};
 
@@ -802,6 +805,7 @@ const accessRoleDescriptions:Record<string,string>={
 function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:string)=>void}){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [directory,setDirectory]=useState<AccessDirectoryPayload|null>(null);
+  const [financePolicy,setFinancePolicy]=useState<FinanceAccessPolicyPayload|null>(null);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [googleServerReady,setGoogleServerReady]=useState(false);
@@ -829,10 +833,14 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   async function loadDirectory(){
     if(!supabase)return;
     setLoading(true);
-    const result=await supabase.rpc("application_access_directory_uat_v1");
+    const [result,policyResult]=await Promise.all([
+      supabase.rpc("application_access_directory_uat_v1"),
+      supabase.rpc("application_finance_visibility_policy_uat_v1"),
+    ]);
     setLoading(false);
     if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
     setDirectory(result.data as AccessDirectoryPayload);
+    if(!policyResult.error)setFinancePolicy(policyResult.data as FinanceAccessPolicyPayload);
   }
   useEffect(()=>{void loadDirectory();},[]);
 
@@ -896,6 +904,16 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
     const {polishAccessWorkbook}=await import("@/lib/excel-workbook-polish");
     return {bytes:await polishAccessWorkbook(raw),fileName:"grafik-pro-dostepy-do-aplikacji.xlsx"};
+  }
+
+  async function saveFinanceVisibility(appRole:string,visibility:FinanceVisibility){
+    if(!supabase)return;
+    setSaving(true);
+    const result=await supabase.rpc("application_finance_visibility_save_uat_v1",{p_app_role:appRole,p_visibility:visibility});
+    setSaving(false);
+    if(result.error){fail(matrixV2ErrorMessage(result.error.message));return;}
+    notify(`Zapisano widoczność finansów dla: ${accessRoleLabels[appRole]??appRole}.`);
+    await loadDirectory();
   }
 
   async function exportAccessWorkbook(toGoogle=false){
@@ -981,6 +999,11 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   return <section className="access-management">
     <div className="matrix-v2-section-head"><div><h3>Dostępy do aplikacji</h3><p>Uprawnienia są niezależne od składu grafiku i działają od razu. Osoba z finansów lub administrator nie musi być pracownikiem planowanym na zmianach.</p></div></div>
     <div className="access-explainer"><ShieldCheck/><span><strong>Jedna osoba może mieć kilka funkcji</strong><small>Przykład: pracownik może mieć portal pracownika i jednocześnie dostęp lidera do grafiku roli Barman. Lider roli i lider lokalu otrzymują wyłącznie wskazany zakres.</small></span></div>
+    {financePolicy&&<section className="finance-access-policy">
+      <header><CircleDollarSign/><span><strong>Widoczność kosztów według rodzaju dostępu</strong><small>Ustawia wyłącznie właściciel. Osoba z kilkoma funkcjami otrzymuje najwyższy jawnie nadany poziom, nadal tylko w zakresie swoich ról i lokali.</small></span></header>
+      <div>{financePolicy.policies.map(policy=><label key={policy.appRole}><span><b>{accessRoleLabels[policy.appRole]??policy.appRole}</b><small>{accessRoleDescriptions[policy.appRole]??"Rodzaj dostępu do aplikacji"}</small></span><select disabled={saving} value={policy.visibility} onChange={event=>void saveFinanceVisibility(policy.appRole,event.target.value as FinanceVisibility)}><option value="NONE">Brak danych finansowych</option><option value="BUDGET_ONLY">Tylko status budżetu</option><option value="AGGREGATE">Koszty zbiorcze</option><option value="FULL">Pełne koszty indywidualne</option></select></label>)}</div>
+      <small>Ta polityka jest wspólnym źródłem dla Studia lidera, analiz, RPC i eksportów. Sama rola aplikacyjna nie nadaje już ukrytego poziomu finansowego.</small>
+    </section>}
     <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
     {googleServerReady&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Konto Google jest połączone</strong><small>Arkusz nie powstał jeszcze automatycznie. Kliknij „Utwórz arkusz na Dysku Google”, aby świadomie wysłać ten plik.</small></span></div>}
     {googleFallback&&!googleServerReady&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Użyj bezpiecznego przekierowania Google</strong><small>{googleStatusMessage||"Logowanie w małym oknie jest blokowane przez przeglądarkę. Połącz konto przez pełną stronę Google, a potem wrócisz tutaj."}</small></span><button type="button" className="secondary-button" onClick={beginGoogleDriveRedirectAuthorization}>Połącz konto Google</button></div>}

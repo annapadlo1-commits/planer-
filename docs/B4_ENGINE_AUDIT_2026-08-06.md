@@ -1,5 +1,7 @@
 # GRAFIK PRO — audyt silnika i decyzja B4
 
+> **Historyczny audyt wycofanej gałęzi.** Werdykt poniżej dotyczy stanu z 2026-08-06, nie commita `ce07939`. Aktualne wyniki solvera, wdrożenia i otwarte findings znajdują się w nadrzędnym `PROJECT_STATUS.md` i rejestrze Excel.
+
 Data audytu: 2026-08-06  
 Zakres: gałąź `agent/uat-matrix-role-portal-overhaul`, wyłącznie Supabase UAT `nhthrtpkfpmufmrmdyjg`  
 Werdykt bieżący: **B4 NIEZALICZONY — poprawki wymagają ponownego wdrożenia i pełnego E2E w Chrome**

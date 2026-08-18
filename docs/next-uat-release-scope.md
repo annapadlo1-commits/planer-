@@ -1,5 +1,7 @@
 # GRAFIK PRO — zakres kolejnego UAT
 
+> **Historyczna bramka wcześniejszego UAT.** Nie używać jako bieżącego scope'u. Aktualny backlog i ostatnie testy są prowadzone wyłącznie w nadrzędnym rejestrze Excel; skrót podaje `PROJECT_STATUS.md`.
+
 Ten dokument jest bramką zakresu. Każda pozycja odwołuje się do pełnego opisu w
 `uat-findings-2026-08-04.md`. Produkcja pozostaje poza zakresem.
 

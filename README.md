@@ -1,5 +1,7 @@
 # GRAFIK PRO 3.0 — Alpha 12 Matrix & Calendar
 
+> **Dokument historyczny.** Opisuje pakiet Alpha 12, a nie bieżący stan UAT. Aktualne źródła to nadrzędny `PROJECT_STATUS.md`, `DECISIONS.md` i rejestr Excel w katalogu nadrzędnym; aktywna gałąź to `codex/uat-consolidated-fixes`, PR #7.
+
 Alpha 12 rozwija działającą bazę Alpha 11 bez usuwania danych źródłowych Alpha 5:
 76 pracowników (`GP-001`–`GP-076`), dwa lokale, ustalone role, funkcje, godziny i zapotrzebowanie.
 

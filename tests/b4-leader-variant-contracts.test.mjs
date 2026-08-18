@@ -116,3 +116,33 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
     "historyczne oznaczenie wariantu nie jest źródłem obowiązującego grafiku");
   assert.doesNotMatch(authoritySql,/bdybebzvzapihjdauehg/);
 });
+
+test("Studio lidera filters real candidates and previews impact before a mutating save", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(workspace,/type LeaderCandidateView="ELIGIBLE"\|"ALL"\|"BELOW_TARGET"\|"PREFERRED"/);
+  assert.match(workspace,/Tylko możliwe/);
+  assert.match(workspace,/Wszyscy z powodami/);
+  assert.match(workspace,/Wpływ bieżącego szkicu/);
+  assert.match(workspace,/Skutek przed zapisem/);
+  assert.match(workspace,/niemutującą kontrolę całego miesiąca/);
+  assert.match(styles,/\.leader-studio-impact/);
+  assert.match(styles,/\.leader-change-preview/);
+});
+
+test("the owner configures finance visibility by application role in one access policy", async () => {
+  const migration=await readFile(new URL("../supabase/migrations/20260818190421_studio_finance_visibility_policy.sql",import.meta.url),"utf8");
+  const editor=await readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(migration,/visibility in \('NONE','BUDGET_ONLY','AGGREGATE','FULL'\)/);
+  assert.match(migration,/if not public\.has_app_role\('OWNER'\) then raise exception 'ACCESS_POLICY_EDIT_FORBIDDEN'/);
+  assert.match(migration,/application_finance_visibility_current_uat_v1/);
+  assert.match(migration,/insert into public\.audit_log/);
+  assert.match(editor,/Widoczność kosztów według rodzaju dostępu/);
+  assert.match(editor,/Sama rola aplikacyjna nie nadaje już ukrytego poziomu finansowego/);
+  assert.match(editor,/application_finance_visibility_save_uat_v1/);
+  assert.match(workspace,/application_finance_visibility_current_uat_v1/);
+  assert.match(workspace,/financeVisibility==="FULL"/);
+  assert.match(workspace,/financeVisibility==="BUDGET_ONLY"/);
+  assert.match(workspace,/setFinanceVisibility\("NONE"\)/);
+});
