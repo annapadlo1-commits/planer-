@@ -205,6 +205,9 @@ export function SolverV2Panel({
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
+  const [pendingCompanyPublication,setPendingCompanyPublication]=useState<{warningCount:number;roleReplacementCount:number}|null>(null);
+  const [publicationWarningReason,setPublicationWarningReason]=useState("");
+  const [publicationReplacementReason,setPublicationReplacementReason]=useState("");
   const [refreshing,setRefreshing]=useState(false);
   const [lastStatusCheck,setLastStatusCheck]=useState("");
   const statusFingerprintRef=useRef("");
@@ -597,58 +600,10 @@ export function SolverV2Panel({
     }
   }
 
-  async function publishSelected() {
+  async function executeCompanyPublication(warningReason:string|null,roleReplacementReason:string|null) {
     if (!supabase || !run || !selectedVariant || engine === "SHADOW" || scopeType !== "COMPANY") return;
-    const trimmedName = publicationName.trim();
-    if (!trimmedName) {
-      setMessage("Nie udało się opublikować grafiku. Podaj jego nazwę.");
-      return;
-    }
-    setBusy(true);
-    setMessage("");
-    let readiness:SolverPublicationReadiness;
-    try{
-      readiness=await getPublicationReadiness(supabase,run.id,selectedVariant.id,trimmedName);
-      setPublicationReadiness(readiness);
-    }catch(error){
-      setBusy(false);
-      setMessage(solverErrorMessage(errorText(error)));
-      return;
-    }
-    if(!readiness.ready){
-      setBusy(false);
-      setMessage("Nie można opublikować grafiku. Szczegółowe blokady są widoczne poniżej.");
-      return;
-    }
-    let warningReason:string|null=null;
-    if(readiness.warnings.unfilledCount>0){
-      warningReason=window.prompt(
-        `Wariant zawiera ${readiness.warnings.unfilledCount} braków obsady.\n\nPodaj powód publikacji mimo ostrzeżeń (zostanie zapisany w historii):`,
-      )?.trim()??null;
-      if(!warningReason||warningReason.length<3){
-        setBusy(false);
-        setMessage("Publikacja z brakami obsady została anulowana: wymagany jest powód decyzji.");
-        return;
-      }
-    }
-    let roleReplacementReason:string|null=null;
-    try {
-      const authority=await getPublicationAuthorityStatus(supabase,month);
-      if(authority.roles.length>0){
-        roleReplacementReason=window.prompt(
-          `Dla tego miesiąca istnieje ${authority.roles.length} opublikowanych grafików zespołów. Publikacja grafiku firmy zastąpi je atomowo i zachowa w historii.\n\nPodaj powód decyzji właściciela do audytu:`,
-        )?.trim()??null;
-        if(!roleReplacementReason||roleReplacementReason.length<5){
-          setBusy(false);
-          setMessage("Publikacja anulowana: zastąpienie grafików zespołów wymaga powodu do audytu.");
-          return;
-        }
-      }
-    }catch(error){
-      setBusy(false);
-      setMessage(solverErrorMessage(errorText(error)));
-      return;
-    }
+    const trimmedName=publicationName.trim();
+    setBusy(true);setMessage("");
     const attemptKey = publicationAttemptStorageKey(context, run.id, selectedVariant.id, trimmedName);
     let idempotencyKey = window.localStorage.getItem(attemptKey);
     if (!isValidIdempotencyKey(idempotencyKey)) {
@@ -690,11 +645,47 @@ export function SolverV2Panel({
       } catch {
         setMessage("Grafik został opublikowany, ale główny widok nie odświeżył się automatycznie. Użyj przycisku „Odśwież”.");
       }
+      setPendingCompanyPublication(null);
+      setPublicationWarningReason("");
+      setPublicationReplacementReason("");
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function publishSelected() {
+    if (!supabase || !run || !selectedVariant || engine === "SHADOW" || scopeType !== "COMPANY") return;
+    const trimmedName = publicationName.trim();
+    if (!trimmedName) {setMessage("Nie udało się opublikować grafiku. Podaj jego nazwę.");return;}
+    setBusy(true);setMessage("");setPendingCompanyPublication(null);
+    try{
+      const [readiness,authority]=await Promise.all([
+        getPublicationReadiness(supabase,run.id,selectedVariant.id,trimmedName),
+        getPublicationAuthorityStatus(supabase,month),
+      ]);
+      setPublicationReadiness(readiness);
+      if(!readiness.ready){setMessage("Nie można opublikować grafiku. Szczegółowe blokady są widoczne poniżej.");return;}
+      const warningCount=readiness.warnings.unfilledCount;
+      const roleReplacementCount=authority.roles.length;
+      if(warningCount>0||roleReplacementCount>0){
+        setPendingCompanyPublication({warningCount,roleReplacementCount});
+        setMessage("Kontrola zakończona. Przejrzyj skutki publikacji i podaj wymagane uzasadnienia.");
+        return;
+      }
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));return;}
+    finally{setBusy(false);}
+    await executeCompanyPublication(null,null);
+  }
+
+  async function confirmCompanyPublication(){
+    if(!pendingCompanyPublication)return;
+    const warningReason=pendingCompanyPublication.warningCount>0?publicationWarningReason.trim():null;
+    const replacementReason=pendingCompanyPublication.roleReplacementCount>0?publicationReplacementReason.trim():null;
+    if(pendingCompanyPublication.warningCount>0&&(!warningReason||warningReason.length<3)){setMessage("Podaj powód publikacji mimo braków obsady.");return;}
+    if(pendingCompanyPublication.roleReplacementCount>0&&(!replacementReason||replacementReason.length<5)){setMessage("Podaj powód zastąpienia opublikowanych grafików zespołów.");return;}
+    await executeCompanyPublication(warningReason,replacementReason);
   }
 
   async function publishSelectedRole() {
@@ -936,6 +927,8 @@ export function SolverV2Panel({
           {busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj wybrany wariant</>}
         </button>
       </div>}
+
+    {pendingCompanyPublication&&<section className="solver-publication-confirm" aria-label="Potwierdzenie publikacji grafiku firmy"><header><AlertTriangle/><span><strong>Sprawdź skutki przed publikacją</strong><small>Kontrola nie zmieniła grafiku. Publikacja nastąpi dopiero po jawnym potwierdzeniu poniżej.</small></span></header>{pendingCompanyPublication.warningCount>0&&<label>Powód publikacji mimo {pendingCompanyPublication.warningCount} braków obsady<textarea minLength={3} value={publicationWarningReason} onChange={event=>setPublicationWarningReason(event.target.value)} placeholder="np. potwierdzony niedobór kadrowy; wakaty zostaną obsadzone operacyjnie"/></label>}{pendingCompanyPublication.roleReplacementCount>0&&<label>Powód zastąpienia {pendingCompanyPublication.roleReplacementCount} opublikowanych grafików zespołów<textarea minLength={5} value={publicationReplacementReason} onChange={event=>setPublicationReplacementReason(event.target.value)} placeholder="np. zatwierdzone scalenie grafików kategorii do grafiku firmy"/></label>}<div><button type="button" className="secondary-button" disabled={busy} onClick={()=>{setPendingCompanyPublication(null);setPublicationWarningReason("");setPublicationReplacementReason("");}}>Anuluj — niczego nie publikuj</button><button type="button" className="primary-button" disabled={busy||(pendingCompanyPublication.warningCount>0&&publicationWarningReason.trim().length<3)||(pendingCompanyPublication.roleReplacementCount>0&&publicationReplacementReason.trim().length<5)} onClick={()=>void confirmCompanyPublication()}>{busy?<RefreshCw className="spin"/>:<Upload/>} Potwierdź i opublikuj</button></div></section>}
 
     {publicationReadiness&&<div className={`solver-v2-readiness ${publicationReadiness.ready?"ready":"blocked"}`}>
       <h4>{publicationReadiness.ready?"Grafik przeszedł kontrolę publikacji":"Publikacja jest zablokowana"}</h4>

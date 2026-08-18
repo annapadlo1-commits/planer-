@@ -273,7 +273,7 @@ export default function GrafikPro() {
       supabase.rpc("complete_workspace",{p_month:requestedMonth}),
       supabase.rpc("matrix_v2_workspace",{p_month:requestedMonth}),
       supabase.rpc("matrix_v2_employee_directory_alpha16",{p_month:requestedMonth}),
-      supabase.rpc("workforce_calendar_context_uat_v3",{p_month:requestedMonth}),
+      supabase.rpc("workforce_calendar_context_uat_v4",{p_month:requestedMonth}),
       activeWorkspaceRequest,
       standbyRequest,
       swapBoardRequest,

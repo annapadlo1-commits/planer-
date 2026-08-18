@@ -200,3 +200,21 @@ test("B4F-88 keeps wages, employer on-costs and incident proposals semantically 
   assert.match(validator,/budget\.cost_basis == "FULL_EMPLOYER_COST"/);
   assert.match(drawer,/System niczego nie dolicza domyślnie/);
 });
+
+test("B4F-83 scopes persistent availability filters by category role and location",async()=>{
+  const [migration,modules,page]=await Promise.all([
+    read("supabase/migrations/20260818214442_b4f83_scoped_availability_summary.sql"),
+    read("components/ActiveModules.tsx"),read("app/page.tsx"),
+  ]);
+  assert.match(migration,/workforce_calendar_context_uat_v4/);
+  assert.match(migration,/'availabilityScopedSummary'/);
+  assert.match(migration,/matrix_scope_grants_v2/);
+  assert.match(migration,/scope_grant\.role_logical_id/);
+  assert.match(migration,/scope_grant\.location_logical_id/);
+  assert.match(modules,/setAvailabilityCategoryIds/);
+  assert.match(modules,/setAvailabilityRoleIds/);
+  assert.match(modules,/setAvailabilityLocationIds/);
+  assert.match(modules,/Kategoria, rola, lokal, osoba lub data/);
+  assert.match(modules,/workforce_calendar_context_uat_v4/);
+  assert.match(page,/workforce_calendar_context_uat_v4/);
+});

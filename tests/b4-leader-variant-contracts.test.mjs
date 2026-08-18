@@ -238,6 +238,9 @@ test("Studio lidera filters real candidates and previews impact before a mutatin
   assert.match(panel,/baselineWorkspace=\{leaderBaselineWorkspace\}/);
   assert.match(panel,/Potwierdź zmianę etapu/);
   assert.doesNotMatch(panel,/window\.prompt\(`Podaj powód przejścia/);
+  assert.match(panel,/Sprawdź skutki przed publikacją/);
+  assert.match(panel,/Potwierdź i opublikuj/);
+  assert.doesNotMatch(panel,/window\.prompt/);
   assert.match(workspace,/Skutek przed zapisem/);
   assert.match(workspace,/niemutującą kontrolę całego miesiąca/);
   assert.match(styles,/\.leader-studio-impact/);
