@@ -218,3 +218,13 @@ test("B4F-83 scopes persistent availability filters by category role and locatio
   assert.match(modules,/workforce_calendar_context_uat_v4/);
   assert.match(page,/workforce_calendar_context_uat_v4/);
 });
+
+test("B4F-84 exposes staffing risk by day role and location before and after publication",async()=>{
+  const [workspace,analytics]=await Promise.all([
+    read("components/SolverV2Workspace.tsx"),read("components/AnalyticsDashboard.tsx"),
+  ]);
+  assert.match(workspace,/Ryzyko obsady według dnia, roli i lokalu/);
+  assert.match(workspace,/row\.assigned\}\/\{row\.required\} obsadzonych/);
+  assert.match(analytics,/<h3>Ryzyko obsady<\/h3>/);
+  assert.match(analytics,/item\.assigned\}\/\{item\.required\} obsadzonych/);
+});

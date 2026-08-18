@@ -358,6 +358,19 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   const missingByRole=groupMissing(issue=>issue.role?.name??"Brak wskazanej roli");
   const missingByLocation=groupMissing(issue=>issue.shift?.location.name??"Brak wskazanego lokalu");
   const missingByShift=groupMissing(issue=>issue.shift?.shiftTemplate.name??"Brak wskazanej zmiany");
+  const staffingRiskRows=[...unfilledIssues.reduce((groups,issue)=>{
+    const date=issue.shift?.date??"Brak daty";
+    const role=issue.role?.name??"Brak wskazanej roli";
+    const location=issue.shift?.location.name??"Brak wskazanego lokalu";
+    const key=`${date}:${issue.role?.id??role}:${issue.shift?.location.id??location}`;
+    const required=Math.max(0,issue.requiredCount??1);
+    const assigned=Math.max(0,issue.assignedCount??0);
+    const current=groups.get(key)??{key,date,role,location,required:0,assigned:0,missing:0};
+    current.required+=required;current.assigned+=assigned;current.missing+=missingSeats(issue);
+    groups.set(key,current);return groups;
+  },new Map<string,{key:string;date:string;role:string;location:string;required:number;assigned:number;missing:number}>()).values()]
+    .map(row=>({...row,coverage:row.required?Math.round(row.assigned/row.required*100):0}))
+    .sort((left,right)=>left.coverage-right.coverage||right.missing-left.missing||left.date.localeCompare(right.date));
   const publishedAt = timestampLabel(workspace.context.publishedAt, timezone);
   const activeDiagnosticIssue=diagnostics?workspace.issues.find(issue=>issue.id===diagnostics.issue.id)??null:null;
   const currentWorkloadRows=workloadVariantId===workspaceVariantId?workloadRows:null;
@@ -692,6 +705,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     </aside>}
 
     {workspaceView==="ISSUES"&&<>
+    {staffingRiskRows.length>0&&<section className="solver-staffing-risk" aria-label="Ryzyko obsady przed publikacją"><header><AlertTriangle/><span><strong>Ryzyko obsady według dnia, roli i lokalu</strong><small>Najpierw pokazujemy zakresy o najniższym pokryciu. Szczegóły problemów poniżej prowadzą do konkretnej zmiany, kandydatów i możliwego działania.</small></span></header><div>{staffingRiskRows.slice(0,12).map(row=><article className={row.coverage<50?"critical":row.coverage<100?"warning":"ok"} key={row.key}><span><b>{row.date} • {row.role}</b><small>{row.location}</small></span><strong>{row.coverage}%</strong><em>{row.assigned}/{row.required} obsadzonych • brakuje {row.missing}</em></article>)}</div>{staffingRiskRows.length>12&&<small>Pokazano 12 najwyższych ryzyk z {staffingRiskRows.length}. Użyj filtrów roli i lokalu, aby zawęzić analizę.</small>}</section>}
     {unfilledIssues.length>0&&<section className="solver-missing-breakdown">
       <div className="solver-missing-explainer"><AlertTriangle/><span><strong>{unfilledCount} braków to suma nieobsadzonych wymaganych miejsc</strong><small>Każdy brak poniżej wskazuje konkretny dzień, lokal, zmianę i rolę. To nie jest liczba pracowników ani naruszenie twardych reguł.</small></span></div>
       <div className="solver-missing-groups">

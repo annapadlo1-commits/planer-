@@ -133,6 +133,27 @@ export function AnalyticsDashboard({
     }
     return [...grouped.values()].sort((a, b) => b.occurrences - a.occurrences || b.seats - a.seats).slice(0, 6);
   }, [data.issues, data.shifts, roles]);
+  const staffingRisk = useMemo(() => {
+    const grouped = new Map<string, { key: string; date: string; role: string; location: string; required: number; assigned: number; missing: number }>();
+    for (const issue of data.issues.filter(item => item.issue_type === "SHORTAGE" || item.issue_type === "CAPABILITY_MISSING")) {
+      const shift = data.shifts.find(item => item.id === issue.shift_id);
+      const issueRoleId = issue.role_id ?? issue.role;
+      if (roleId && issueRoleId !== roleId) continue;
+      const issueLocationId = shift?.location_id ?? shift?.location_code ?? "";
+      if (locationId && issueLocationId !== locationId) continue;
+      const role = roles.find(item => item.id === issueRoleId)?.name ?? issue.role ?? "Nieokreślona rola";
+      const location = shift?.location_name ?? shift?.location_code ?? "Cała firma";
+      const date = shift?.shift_date ?? "Brak daty";
+      const key = `${date}:${issueRoleId}:${issueLocationId}`;
+      const required = Math.max(0, Number(issue.required_count || 0));
+      const assigned = Math.max(0, Number(issue.assigned_count || 0));
+      const row = grouped.get(key) ?? { key, date, role, location, required: 0, assigned: 0, missing: 0 };
+      row.required += required;row.assigned += assigned;row.missing += Math.max(0, required - assigned);
+      grouped.set(key, row);
+    }
+    return [...grouped.values()].map(row => ({ ...row, coverage: row.required ? Math.round(row.assigned / row.required * 100) : 0 }))
+      .sort((a, b) => a.coverage - b.coverage || b.missing - a.missing || a.date.localeCompare(b.date));
+  }, [data.issues, data.shifts, locationId, roleId, roles]);
 
   if (!data.plan) return <section className="analytics-empty"><BarChart3 /><h2>Analizy pojawią się po opublikowaniu grafiku</h2><p>Panel nie tworzy danych przykładowych. Pokaże koszty, godziny, pokrycie i obciążenie z rzeczywiście opublikowanego grafiku.</p></section>;
 
@@ -156,6 +177,7 @@ export function AnalyticsDashboard({
       <section className="analytics-panel"><header><div><h3>Praca według roli</h3><p>Godziny, przydziały i koszt.</p></div></header><div className="analytics-bars">{byRole.map(item => <article key={item.id}><div><b>{item.name}</b><strong>{hours(item.minutes)}</strong></div><i><span style={{ width: `${item.minutes / maxRoleMinutes * 100}%` }} /></i><small>{item.count} przydziałów • {money(item.cost, currency)}</small></article>)}</div></section>
       <section className="analytics-panel"><header><div><h3>Praca według lokalu</h3><p>Porównanie wykorzystania lokalizacji.</p></div></header><div className="analytics-bars locations">{byLocation.map(item => <article key={item.id}><div><b>{item.name}</b><strong>{hours(item.minutes)}</strong></div><i><span style={{ width: `${item.minutes / maxLocationMinutes * 100}%` }} /></i><small>{item.count} przydziałów • {money(item.cost, currency)}</small></article>)}</div></section>
       <section className="analytics-panel shortage-panel"><header><div><h3>Powtarzalne braki zasobów</h3><p>Diagnoza wzorców, a nie tylko pojedynczych wakatów.</p></div><AlertTriangle /></header>{structuralShortages.length ? <div>{structuralShortages.map(item => <article key={item.label}><span><b>{item.label}</b><small>{item.occurrences} dni/zmian • {item.seats} miejsc do pokrycia</small></span><strong>{item.occurrences >= 3 ? "Brak strukturalny" : "Sprawdź obsadę"}</strong></article>)}</div> : <p className="analytics-success">Brak powtarzalnych nieobsadzonych wzorców w wybranym zakresie.</p>}</section>
+      <section className="analytics-panel shortage-panel staffing-risk-panel"><header><div><h3>Ryzyko obsady</h3><p>Dzień, rola i lokal uporządkowane od najniższego procentu pokrycia.</p></div><AlertTriangle /></header>{staffingRisk.length ? <div>{staffingRisk.slice(0,12).map(item => <article key={item.key}><span><b>{item.date} • {item.role}</b><small>{item.location} • {item.assigned}/{item.required} obsadzonych • brakuje {item.missing}</small></span><strong>{item.coverage}%</strong></article>)}</div> : <p className="analytics-success">Brak ryzyka obsady dla aktywnych filtrów.</p>}</section>
     </div>
     {matrix && <footer className="analytics-source"><BarChart3 /><span><b>Jedno źródło danych</b><small>Role, lokale, cele godzinowe i budżety są odczytywane z konfiguracji firmy v{matrix.matrixVersion.version}; przydziały i koszty z opublikowanego grafiku.</small></span></footer>}
   </section>;
