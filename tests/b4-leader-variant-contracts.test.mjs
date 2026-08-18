@@ -117,6 +117,21 @@ test("leader history is durable, atomic and protected behind authenticated RPC",
   assert.match(migration,/grant execute on function public\.optimizer_leader_history_status_uat_v1/);
 });
 
+test("Studio drag operations move or swap assignments atomically and revalidate the month",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818202834_leader_studio_atomic_drag_operations.sql",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(migration,/optimizer_leader_assignment_drag_uat_v1/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/dragOperation','SWAP'/);
+  assert.match(migration,/dragOperation','MOVE'/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_assignment_drag_uat_v1/);
+  assert.match(workspace,/application\/x-grafik-assignment/);
+  assert.match(workspace,/applyAssignmentDrag/);
+  assert.match(workspace,/targetAssignmentId:assignment\.id/);
+  assert.match(workspace,/targetIssueId:issues\[0\]\.id/);
+});
+
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),

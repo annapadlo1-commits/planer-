@@ -2088,6 +2088,15 @@ export async function moveLeaderHistory(
   client:SupabaseClient,variantId:string,direction:"UNDO"|"REDO",
 ){return record(await rpc(client,"optimizer_leader_history_move_uat_v1",{p_variant_id:variantId,p_direction:direction}));}
 
+export async function dragLeaderAssignment(
+  client:SupabaseClient,input:{variantId:string;sourceAssignmentId:string;
+    targetAssignmentId?:string|null;targetIssueId?:string|null;reason:string},
+){return record(await rpc(client,"optimizer_leader_assignment_drag_uat_v1",{
+  p_variant_id:input.variantId,p_source_assignment_id:input.sourceAssignmentId,
+  p_target_assignment_id:input.targetAssignmentId??null,
+  p_target_issue_id:input.targetIssueId?Number(input.targetIssueId):null,p_reason:input.reason,
+}));}
+
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
   month: string,
