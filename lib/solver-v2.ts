@@ -1874,7 +1874,7 @@ function normalizeLeaderVariant(value: unknown): SolverLeaderVariant | null {
   const source = record(value);
   const id = String(source.id ?? source.variantId ?? "");
   const sourceVariantId = String(source.sourceVariantId ?? source.source_variant_id ?? "");
-  if (!id || !sourceVariantId) return null;
+  if (!id) return null;
   return {
     id,
     sourceVariantId,
@@ -2016,6 +2016,28 @@ export async function saveLeaderAssignment(
     p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
     p_approve_overtime: input.approveOvertime ?? false,
   }));
+}
+
+export async function createManualLeaderStudio(
+  client: SupabaseClient,
+  input: {
+    month: string; scenarioId: string; scopeType: SolverScope;
+    scopeRoleId?: string | null; name: string; solverVersion: string;
+  },
+): Promise<{runId:string;leader:SolverLeaderVariant}> {
+  const payload=record(await rpc(client,"optimizer_create_manual_leader_studio_uat_v1",{
+    p_month:input.month,p_scenario_id:input.scenarioId,p_scope_type:input.scopeType,
+    p_scope_role_id:input.scopeRoleId??null,p_name:input.name,p_solver_version:input.solverVersion,
+  }));
+  const runId=String(payload.runId??"");
+  const variantId=String(payload.variantId??"");
+  if(!runId||!variantId)throw new Error("MANUAL_STUDIO_CREATE_FAILED");
+  return {runId,leader:{
+    id:variantId,sourceVariantId:"",name:String(payload.name??input.name),status:"SELECTED",
+    revision:numberOf(payload,"revision","revision"),
+    assignmentCount:numberOf(payload,"assignmentCount","assignment_count"),
+    unfilledCount:numberOf(payload,"unfilledCount","unfilled_count"),lastEditedAt:null,
+  }};
 }
 
 export async function validateLeaderAssignment(

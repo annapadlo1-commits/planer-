@@ -9,6 +9,7 @@ import { polishQueuedTaskSentence } from "@/lib/polish-plural";
 import {
   createIdempotencyKey,
   createLeaderVariant,
+  createManualLeaderStudio,
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
@@ -210,6 +211,13 @@ export function SolverV2Panel({
     assignmentCount:leaderVariant.assignmentCount||selectedWorkspace?.variants[0]?.assignmentCount||generatedSelectedVariant.assignmentCount,
     unfilledCount:leaderVariant.unfilledCount||selectedWorkspace?.variants[0]?.unfilledCount||0,
     selected:true,
+  } : leaderVariant&&selectedWorkspace?.variants[0] ? {
+    ...selectedWorkspace.variants[0],id:leaderVariant.id,name:leaderVariant.name,
+    status:leaderVariant.status,selected:true,hardViolations:0,
+    totalCostMinor:selectedWorkspace.variants[0].finance?.totalCostMinor??null,
+    budgetMinor:selectedWorkspace.variants[0].finance?.budgetMinor??null,
+    currency:selectedWorkspace.variants[0].finance?.currency??"PLN",
+    metrics:{manualStudio:true},
   } : generatedSelectedVariant;
   const selectedIsPublished = Boolean(
     selectedVariant
@@ -486,6 +494,29 @@ export function SolverV2Panel({
     finally{setBusy(false);}
   }
 
+  async function createManualStudio(){
+    if(!supabase||!selectedScenario?.id||!expectedSolverVersion||!name.trim())return;
+    setBusy(true);setMessage("");
+    try{
+      const created=await createManualLeaderStudio(supabase,{
+        month,scenarioId:selectedScenario.id,scopeType,scopeRoleId,
+        name:`Studio lidera • ${scopeLabel} • ${month.slice(0,7)}`,
+        solverVersion:expectedSolverVersion,
+      });
+      const [status,workspace]=await Promise.all([
+        getSolverStatus(supabase,created.runId),getLeaderVariantWorkspace(supabase,created.leader.id),
+      ]);
+      rememberSolverRun(context,created.runId);
+      setRun(status.run);setStrategies(status.strategies);setVariants([]);
+      setLeaderVariant({...created.leader,
+        assignmentCount:workspace.variants[0]?.assignmentCount??0,
+        unfilledCount:workspace.variants[0]?.unfilledCount??created.leader.unfilledCount});
+      setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||created.leader.name);
+      setMessage("Otwarto Studio bez generatora. Wszystkie wymagane miejsca są widoczne jako braki; obsadzaj je ręcznie, a każda zmiana przejdzie kontrolę całego miesiąca.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
   async function reloadLeaderWorkspace(){
     if(!supabase||!leaderVariant)return;
     setBusy(true);
@@ -710,6 +741,7 @@ export function SolverV2Panel({
       <button className="primary-button full" disabled={busy || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount===0 || !name.trim()} onClick={() => void start()}>
         {busy ? <><RefreshCw className="spin"/> Uruchamiam…</> : <><Sparkles/> Generuj wszystkie aktywne warianty</>}
       </button>
+      {engine==="ORTOOLS_V2"&&<section className="solver-manual-studio-entry"><span><Edit3/></span><div><strong>Studio lidera — ułóż grafik bez generatora</strong><small>Powstanie bezpieczna wersja robocza z wymaganymi zmianami i brakami. Internet oraz backend są nadal potrzebne; pomijamy wyłącznie automatyczne generowanie.</small></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz Studio</button></section>}
     </div>}
 
     {run && <div className="solver-v2-run">
@@ -792,7 +824,7 @@ export function SolverV2Panel({
       <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="solver-leader-workspace">
-      <header><span><Edit3/><div><small>KROK 3 • WERSJA LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
+      <header><span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h3>{leaderVariant.name}</h3><p>{leaderVariant.sourceVariantId?"Edytujesz wyłącznie własną kopię. Oryginalne trzy warianty powyżej pozostają niezmienione.":"Tryb ręczny bez generatora: obsadzasz zapotrzebowanie zapisane w opublikowanej konfiguracji firmy."}</p></div></span><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"GOTOWA DO EDYCJI"}</em></header>
       <SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/>
     </section>}
 

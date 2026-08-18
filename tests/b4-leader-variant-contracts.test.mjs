@@ -84,3 +84,22 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.doesNotMatch(editor, /window\.confirm\("Kontrola gotowości nie wykryła blokad\./,
     "końcowe potwierdzenie publikacji ma pozostać w panelu aplikacji");
 });
+
+test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
+  const [sql,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(sql,/optimizer_create_manual_leader_studio_uat_v1/);
+  assert.match(sql,/build_snapshot_payload_v2/);
+  assert.match(sql,/Miejsce oczekuje na ręczną obsadę w Studio lidera/);
+  assert.match(sql,/CREATE_MANUAL_LEADER_STUDIO/);
+  assert.doesNotMatch(sql,/pgmq\.send/);
+  assert.doesNotMatch(sql,/bdybebzvzapihjdauehg/);
+  assert.match(panel,/Studio lidera — ułóż grafik bez generatora/);
+  assert.match(panel,/Internet oraz backend są nadal potrzebne/);
+  assert.match(client,/createManualLeaderStudio/);
+  assert.match(client,/if \(!id\) return null/);
+  assert.match(panel,/rememberSolverRun\(context,created\.runId\)/);
+});
