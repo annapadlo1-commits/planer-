@@ -185,10 +185,11 @@ test("bulk Studio operations affect exactly the visible filtered assignment rang
   assert.match(migration,/LEADER_BULK_/);
   assert.match(migration,/revoke all on function public\.optimizer_leader_assignments_bulk_uat_v1/);
   assert.match(migration,/grant execute on function public\.optimizer_leader_assignments_bulk_uat_v1/);
-  assert.match(workspace,/Operacje dla widocznego zakresu/);
-  assert.match(workspace,/Przypnij widoczne/);
-  assert.match(workspace,/Usuń widoczne/);
-  assert.match(workspace,/const assignmentIds=scheduleEntries\.map/);
+  assert.match(workspace,/Operacje dla zaznaczenia lub widocznego zakresu/);
+  assert.match(workspace,/Zaznacz widoczne/);
+  assert.match(workspace,/> Przypnij</);
+  assert.match(workspace,/> Usuń</);
+  assert.match(workspace,/const visibleAssignmentIds=scheduleEntries\.map/);
 });
 
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
