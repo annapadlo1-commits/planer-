@@ -287,3 +287,21 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   assert.match(panel,/Wszystkie obecne przydziały lidera są zablokowane/);
   assert.match(panel,/result\.variants\.find\(item=>item\.recommended&&item\.hardViolations===0\)/);
 });
+
+test("Studio role calendar exposes vacancies as drop targets and keeps analytics panels separate",async()=>{
+  const [workspace,styles]=await Promise.all([
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/product-journey.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(workspace,/const scheduleRoles=workspaceRoles/,
+    "pusty ręczny szkic nadal musi pokazać wszystkie wymagane role");
+  assert.match(workspace,/studio-role-vacancy studio-vacancy-target/);
+  assert.match(workspace,/application\/x-grafik-employee/);
+  assert.match(workspace,/openLeaderEdit\(\{issueId:issue\.id,preferredEmployeeId:employeeId\}\)/);
+  assert.match(workspace,/Obsada i wolne miejsca/);
+  assert.match(workspace,/workspaceView==="ISSUES"&&<section className="solver-issues-view">/);
+  assert.match(styles,/leader-studio>\.solver-issues-view\{grid-column:2;grid-row:3/);
+  assert.match(styles,/\.studio-role-vacancy:hover/);
+  assert.doesNotMatch(workspace,/onLeaderChanged\?\.\(\);await openWorkload\(true\)/,
+    "zapis w Studio nie może sam przenosić lidera z kalendarza do rozkładu pracy");
+});
