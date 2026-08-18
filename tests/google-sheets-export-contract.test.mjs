@@ -65,8 +65,9 @@ test("server upload is app-authenticated, one-use and least privilege", () => {
 });
 
 test("UAT Google OAuth and application entry use one canonical host", () => {
-  assert.match(canonicalOrigin, /nhthrtpkfpmufmrmdyjg/);
-  assert.match(canonicalOrigin, /planer-git-codex-uat-consolidated-fixes-planner10\.vercel\.app/);
+  assert.match(canonicalOrigin, /NEXT_PUBLIC_CANONICAL_APP_ORIGIN/);
+  assert.match(canonicalOrigin, /GOOGLE_OAUTH_REDIRECT_ORIGIN/);
+  assert.doesNotMatch(canonicalOrigin, /planer-git-codex-uat-consolidated-fixes/);
   assert.match(oauthShared, /configuredCanonicalAppOrigin\(\)/);
   assert.match(oauthStart, /canonicalOAuthStartUrl\(request\)/);
   assert.match(appPage, /window\.location\.replace\(destination\)/);
