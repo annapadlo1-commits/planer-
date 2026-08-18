@@ -86,8 +86,9 @@ test("the UI exposes a persistent, editable leader workflow before publication",
 });
 
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
-  const [sql,panel,client]=await Promise.all([
+  const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260818183433_b4f93_authoritative_external_assignments.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -107,4 +108,11 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
   assert.match(client,/createManualLeaderStudio/);
   assert.match(client,/if \(!id\) return null/);
   assert.match(panel,/rememberSolverRun\(context,created\.runId\)/);
+  assert.match(authoritySql,/published_role_schedules_v2 publication/);
+  assert.match(authoritySql,/published_schedules_v2 publication/);
+  assert.match(authoritySql,/publication\.status='PUBLISHED'/);
+  assert.match(authoritySql,/select distinct raw\.employee_id,raw\.starts_at,raw\.ends_at/);
+  assert.doesNotMatch(authoritySql,/v\.status='PUBLISHED'/,
+    "historyczne oznaczenie wariantu nie jest źródłem obowiązującego grafiku");
+  assert.doesNotMatch(authoritySql,/bdybebzvzapihjdauehg/);
 });
