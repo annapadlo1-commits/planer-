@@ -2115,6 +2115,24 @@ export async function getRoleCompositeCandidates(
   }));
 }
 
+export type SolverLeaderDragPreview={
+  valid:boolean;
+  errorCode?:string;
+  operation?:"MOVE"|"SWAP";
+};
+
+export async function previewLeaderAssignmentDrag(
+  client:SupabaseClient,
+  input:{variantId:string;sourceAssignmentId:string;targetAssignmentId?:string;targetIssueId?:string},
+):Promise<SolverLeaderDragPreview>{
+  const value=record(await rpc(client,"optimizer_leader_assignment_drag_preview_uat_v1",{
+    p_variant_id:input.variantId,p_source_assignment_id:input.sourceAssignmentId,
+    p_target_assignment_id:input.targetAssignmentId??null,p_target_issue_id:input.targetIssueId??null,
+  }));
+  return {valid:Boolean(value.valid),errorCode:value.errorCode?String(value.errorCode):undefined,
+    operation:value.operation?String(value.operation) as "MOVE"|"SWAP":undefined};
+}
+
 export async function getRoleCompositePreflight(
   client: SupabaseClient,
   month: string,

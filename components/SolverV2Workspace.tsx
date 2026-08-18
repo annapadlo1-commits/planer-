@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, Check, CircleDo
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { dragLeaderAssignment, emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, removeLeaderAssignment, saveLeaderAssignment, setLeaderAssignmentLock, validateLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { dragLeaderAssignment, emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, previewLeaderAssignmentDrag, removeLeaderAssignment, saveLeaderAssignment, setLeaderAssignmentLock, validateLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -225,6 +225,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderValidatedKey,setLeaderValidatedKey]=useState("");
   const [leaderBusy,setLeaderBusy]=useState(false);
+  const [dragPreview,setDragPreview]=useState<{key:string;loading:boolean;valid:boolean;message:string}|null>(null);
+  const [pendingAssignmentDrag,setPendingAssignmentDrag]=useState<{sourceAssignmentId:string;targetAssignmentId?:string;targetIssueId?:string}|null>(null);
   const [leaderCandidateView,setLeaderCandidateView]=useState<LeaderCandidateView>("ELIGIBLE");
   const [workspaceView,setWorkspaceView]=useState<WorkspaceView>(initialView);
   const [schedulePerspective,setSchedulePerspective]=useState<SchedulePerspective>("EMPLOYEES");
@@ -550,10 +552,25 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     if(!supabase||!leaderEditable||!variantId||leaderBusy)return;
     setLeaderBusy(true);
     try{
-      await dragLeaderAssignment(supabase,{variantId,...input,reason:input.targetAssignmentId?
+      const result=await previewLeaderAssignmentDrag(supabase,{variantId,...input});
+      const message=result.valid?(input.targetAssignmentId?
+        "Można zamienić pracowników. Twarde reguły całego miesiąca pozostaną spełnione.":
+        "Można przenieść pracownika. Zwolnione miejsce pozostanie jawnym wakatem."):
+        solverErrorMessage(result.errorCode??"VARIANT_MATERIALIZATION_HASH_MISMATCH");
+      setDragPreview({key:`${input.sourceAssignmentId}:${input.targetAssignmentId??input.targetIssueId??""}`,loading:false,valid:result.valid,message});
+      setPendingAssignmentDrag(result.valid?input:null);
+    }catch(error){const message=solverErrorMessage(error instanceof Error?error.message:String(error));setDragPreview({key:"error",loading:false,valid:false,message});setPendingAssignmentDrag(null);}
+    finally{setLeaderBusy(false);}
+  }
+  async function confirmAssignmentDrag(){
+    const variantId=workspace.variants[0]?.id;
+    if(!supabase||!leaderEditable||!variantId||!pendingAssignmentDrag||leaderBusy)return;
+    setLeaderBusy(true);
+    try{
+      await dragLeaderAssignment(supabase,{variantId,...pendingAssignmentDrag,reason:pendingAssignmentDrag.targetAssignmentId?
         "Zamiana pracowników przez przeciągnięcie w Studio lidera":"Przeniesienie pracownika na wakat w Studio lidera"});
-      notify?.(input.targetAssignmentId?"Zamiana została sprawdzona i zapisana jako jedna rewizja.":"Pracownik został przeniesiony, a zwolnione miejsce pozostało jawnym wakatem.");
-      await onLeaderChanged?.();await openWorkload(true);
+      notify?.(pendingAssignmentDrag.targetAssignmentId?"Zamiana została zapisana jako jedna rewizja.":"Pracownik został przeniesiony, a zwolnione miejsce pozostało jawnym wakatem.");
+      setPendingAssignmentDrag(null);setDragPreview(null);await onLeaderChanged?.();await openWorkload(true);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
@@ -719,6 +736,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
 
     {workspaceView==="CALENDAR"&&<section className="solver-weekly-workspace">
       <header className="solver-workspace-view-head"><span><strong>Grafik tygodniowy</strong><small>Ta sama wersja grafiku w trzech perspektywach. Pierwsza kolumna i daty pozostają widoczne podczas przewijania.</small></span></header>
+      {dragPreview&&<div className={`solver-v2-notice ${dragPreview.loading?"info":dragPreview.valid?"success":"danger"}`} role="status">{dragPreview.loading?<RefreshCw className="spin"/>:dragPreview.valid?<Check/>:<AlertTriangle/>}<span><strong>{dragPreview.loading?"Kontrola przed upuszczeniem":dragPreview.valid?"Dozwolona operacja":"Nie można upuścić tutaj"}</strong><small>{dragPreview.message}</small></span>{pendingAssignmentDrag&&<span className="leader-drag-confirm"><button className="secondary-button" disabled={leaderBusy} onClick={()=>{setPendingAssignmentDrag(null);setDragPreview(null);}}>Anuluj</button><button className="primary-button" disabled={leaderBusy} onClick={()=>void confirmAssignmentDrag()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Zastosuj sprawdzoną zmianę</button></span>}</div>}
       <div className="solver-schedule-perspectives" role="tablist" aria-label="Perspektywa grafiku"><button className={schedulePerspective==="EMPLOYEES"?"active":""} onClick={()=>setSchedulePerspective("EMPLOYEES")}>Pracownicy</button><button className={schedulePerspective==="ROLES"?"active":""} onClick={()=>setSchedulePerspective("ROLES")}>Stanowiska</button><button className={schedulePerspective==="COVERAGE"?"active":""} onClick={()=>setSchedulePerspective("COVERAGE")}>Pokrycie obsady</button></div>
       {dates.length === 0 && <div className="solver-workspace-empty">Ten wariant nie zawiera jeszcze zmian do pokazania.</div>}
       {weeks.map((week,weekIndex)=><article className="solver-roster-week" key={week[0]}>

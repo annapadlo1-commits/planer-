@@ -146,6 +146,20 @@ test("leader can pin and unpin an assignment without exposing the protected tabl
   assert.match(workspace,/draggable=\{leaderEditable&&!assignment\.locked\}/);
 });
 
+test("Studio preflights the exact drag transaction and always rolls the preview back",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818210100_leader_studio_drag_preflight.sql",import.meta.url),"utf8");
+  const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(migration,/optimizer_leader_assignment_drag_preview_uat_v1/);
+  assert.match(migration,/optimizer_leader_assignment_drag_uat_v1/);
+  assert.match(migration,/LEADER_DRAG_PREVIEW_ROLLBACK/);
+  assert.match(migration,/return jsonb_build_object\('valid',false,'errorCode',v_error\)/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_assignment_drag_preview_uat_v1/);
+  assert.match(client,/previewLeaderAssignmentDrag/);
+  assert.match(workspace,/Kontrola przed upuszczeniem/);
+  assert.match(workspace,/Nie można upuścić tutaj/);
+});
+
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
