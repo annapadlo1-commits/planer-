@@ -185,13 +185,13 @@ function preferenceLevelLabel(value:string){
   return ({PREFERRED:"preferowana",NEUTRAL:"neutralna",AVOIDED:"unikać",BLOCKED:"zablokowana"} as Record<string,string>)[value]??value;
 }
 
-function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader,studioEmployeeId,dropStudioEmployee,onOpenAdHoc}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void;studioEmployeeId:string;dropStudioEmployee:(issueId:string,employeeId:string)=>void;onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void}){
+function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader,onOpenAdHoc}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void;onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void}){
   const shift=issue.shift;
   const shiftTimezone=shift?.location.timezone??timezone;
   const required=issue.requiredCount;
   const assigned=issue.assignedCount;
   const missing=required===null?null:Math.max(0,required-(assigned??0));
-  return <article id={`solver-issue-${issue.id}`} className={leaderEditable&&issue.code==="UNFILLED_SLOT"?"studio-drop-target":""} onDragOver={event=>{if(leaderEditable&&issue.code==="UNFILLED_SLOT")event.preventDefault();}} onDrop={event=>{if(!leaderEditable||issue.code!=="UNFILLED_SLOT")return;event.preventDefault();const employeeId=event.dataTransfer.getData("application/x-grafik-employee")||studioEmployeeId;if(employeeId)dropStudioEmployee(issue.id,employeeId);}}>
+  return <article id={`solver-issue-${issue.id}`}>
     <header><span><strong>{issue.message}</strong><small>{issue.severity==="CRITICAL"?"BLOKADA KRYTYCZNA":issue.severity==="WARNING"?"OSTRZEŻENIE":"INFORMACJA"}</small></span></header>
     {shift&&<div className="solver-issue-context"><span><CalendarDays/><b>{dateLabel(shift.date)}</b></span><span><MapPin/><b>{shift.location.name}</b></span><span>{timeLabel(shift.startsAt,shiftTimezone)}–{timeLabel(shift.endsAt,shiftTimezone)} • {shift.shiftTemplate.name}</span></div>}
     {issue.role&&<div className="solver-issue-requirements"><span>Wymagana rola: <b>{issue.role.name}</b></span><span>Dodatkowy obowiązek: <b>{issue.duty?.name??"brak — wystarczy rola"}</b></span></div>}
@@ -199,7 +199,6 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
     {operational&&published&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>inspect(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Dlaczego nikt nie został przypisany?</button>}
     {!operational&&previewAvailable&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>explainPreview(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Co blokowało kandydatów?</button>}
     {leaderEditable&&issue.code==="UNFILLED_SLOT"&&<button className="primary-button" disabled={busy} onClick={()=>editLeader(issue.id)}><Plus/> Uzupełnij w wersji lidera</button>}
-    {leaderEditable&&issue.code==="UNFILLED_SLOT"&&studioEmployeeId&&<button className="secondary-button" disabled={busy} onClick={()=>dropStudioEmployee(issue.id,studioEmployeeId)}><ArrowLeftRight/> Sprawdź wybraną osobę tutaj</button>}
     {leaderEditable&&issue.code==="UNFILLED_SLOT"&&onOpenAdHoc&&<button className="secondary-button" disabled={busy} onClick={()=>onOpenAdHoc({roleId:issue.role?.id??null,date:issue.shift?.date??null})}><Users/> Sprawdź pulę ad-hoc</button>}
   </article>;
 }
@@ -244,7 +243,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [workloadReasonFilter,setWorkloadReasonFilter]=useState("");
   const [workloadSort,setWorkloadSort]=useState<"HOURS_DESC"|"HOURS_ASC"|"DIFFERENCE">("HOURS_DESC");
   const [financeVisibility,setFinanceVisibility]=useState<FinanceVisibility>("NONE");
-  const [studioEmployeeId,setStudioEmployeeId]=useState("");
   const workspaceVariantId=workspace.variants[0]?.id??"";
   const workspaceIdentity=`${workspace.context.type}:${workspace.context.runId??workspace.context.scheduleId??workspace.context.sourceVariantId??workspaceVariantId}:${workspaceVariantId}`;
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
@@ -279,7 +277,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     setDiagnostics(null);
     setVariantDiagnostics(null);
     setLeaderContext(null);
-    setStudioEmployeeId("");
   },[initialView,workspaceIdentity]);
   useEffect(()=>{
     if(initialView!=="WORKLOAD"||!supabase||!workspaceVariantId)return;
@@ -336,7 +333,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const scheduleEmployees=[...new Map(scheduleEntries.map(entry=>[entry.assignment.employee.id,entry.assignment.employee])).values()].sort((left,right)=>`${left.lastName} ${left.firstName}`.localeCompare(`${right.lastName} ${right.firstName}`,"pl-PL"));
   const scheduleRoles=[...new Map(scheduleEntries.map(entry=>[entry.assignment.role.id,entry.assignment.role])).values()].sort((left,right)=>left.name.localeCompare(right.name,"pl-PL"));
   const assignmentCount = scheduleEntries.length;
-  const studioEmployees=(workloadRows??[]).filter(row=>!roleFilters.length||row.roleNames.some(name=>workspaceRoles.some(role=>roleFilters.includes(role.id)&&role.name===name))).sort((left,right)=>left.plannedMinutes-right.plannedMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
   const unfilledIssues=visibleIssues.filter(issue=>issue.code==="UNFILLED_SLOT");
   const missingSeats=(issue:SolverWorkspaceIssue)=>issue.requiredCount===null
     ? 1
@@ -568,9 +564,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const eligibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>candidate.suggestionEligible).length;
   const blockedLeaderCandidates=(leaderContext?.candidates??[]).length-eligibleLeaderCandidates;
   const selectedLeaderCandidate=(leaderContext?.candidates??[]).find(candidate=>candidate.employeeId===leaderEmployeeId)??null;
-  async function placeStudioEmployee(issueId:string,employeeId:string){
-    await openLeaderEdit({issueId,preferredEmployeeId:employeeId});
-  }
   const studioZeroHours=filteredWorkload.filter(row=>row.plannedMinutes===0&&row.nominalMonthlyMinutes>0).length;
   const studioBelowTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes<row.nominalMonthlyMinutes).length;
   const studioAboveTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes>row.nominalMonthlyMinutes).length;
@@ -623,12 +616,6 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       <small>Po każdym zapisie szkic jest ponownie pobierany. Twarde reguły sprawdza serwer przed zapisem; świadome wyjątki pozostają w audycie.</small>
     </aside>}
 
-    {leaderEditable&&<section className="leader-studio-pool" aria-label="Pula pracowników do przeciągania">
-      <header><Users/><span><strong>Pula pracowników</strong><small>Wybierz osobę albo przeciągnij jej kafelek na konkretny brak. Upuszczenie niczego nie zapisuje — otwiera kontrolę tej zmiany.</small></span></header>
-      <div>{studioEmployees.map(employee=><button type="button" draggable className={studioEmployeeId===employee.employeeId?"selected":""} onClick={()=>setStudioEmployeeId(current=>current===employee.employeeId?"":employee.employeeId)} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-employee",employee.employeeId);event.dataTransfer.effectAllowed="copy";setStudioEmployeeId(employee.employeeId);}} key={employee.employeeId}><strong>{employee.employeeName}</strong><small>{employee.roleNames.join(", ")||"Brak roli"}</small><span>{workloadHours(employee.plannedMinutes)} / {employee.nominalMonthlyMinutes?workloadHours(employee.nominalMonthlyMinutes):"bez celu"} • {employee.shiftCount} zmian</span></button>)}</div>
-      {!studioEmployees.length&&<p>Nie znaleziono osób w aktywnym filtrze ról. Wyczyść filtr albo sprawdź konfigurację zespołu.</p>}
-    </section>}
-
     {workspaceView==="ISSUES"&&<>
     {unfilledIssues.length>0&&<section className="solver-missing-breakdown">
       <div className="solver-missing-explainer"><AlertTriangle/><span><strong>{unfilledCount} braków to suma nieobsadzonych wymaganych miejsc</strong><small>Każdy brak poniżej wskazuje konkretny dzień, lokal, zmianę i rolę. To nie jest liczba pracowników ani naruszenie twardych reguł.</small></span></div>
@@ -649,7 +636,7 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {visibleIssues.length === 0
         ? <p>{locationFilter?"Brak braków i uwag dla wybranego lokalu.":"Nie zgłoszono braków ani uwag do tego wariantu."}</p>
         : <div>
-          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})} studioEmployeeId={studioEmployeeId} dropStudioEmployee={(issueId,employeeId)=>void placeStudioEmployee(issueId,employeeId)} onOpenAdHoc={onOpenAdHoc}/>)}
+          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})} onOpenAdHoc={onOpenAdHoc}/>)}
         </div>}
     </details>
     </>}
