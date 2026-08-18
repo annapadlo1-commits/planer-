@@ -38,7 +38,7 @@ test("automatic generation honors global overtime consent and prices the individ
   assert.match(approvalMigration,/LEADER_OVERTIME_APPROVAL_REQUIRED/);
   assert.match(approvalMigration,/requote_variant_payload_v2/);
   assert.match(approvalMigration,/'APPROVE_OVERTIME'/);
-  assert.match(workspace,/Zatwierdź nadgodziny/);
+  assert.match(workspace,/Dodaj z zatwierdzeniem nadgodzin/);
   assert.match(workspace,/Pełny koszt po zmianie/);
   assert.match(client,/optimizer_leader_assignment_save_uat_v4/);
 });

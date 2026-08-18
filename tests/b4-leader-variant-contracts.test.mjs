@@ -86,8 +86,10 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
   assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
   assert.match(workspace, /Uzupełnij w wersji lidera/);
-  assert.match(workspace, /Usuń przydział/);
-  assert.match(workspace, /Powód zmiany/);
+  assert.match(workspace, /Usuń ze szkicu/);
+  assert.match(workspace, /Dodaj do szkicu/);
+  assert.doesNotMatch(workspace, /Najpierw użyj „Sprawdź”/);
+  assert.doesNotMatch(workspace, /<label>Powód zmiany/);
   assert.doesNotMatch(workspace, /window\.confirm/, "operacyjne uzupełnianie i edycja kopii nie mogą blokować karty natywnym oknem");
   assert.match(page, /grafik-pro:open-role-generator/);
   assert.match(editor, /import-draft/);
@@ -226,7 +228,7 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
   assert.doesNotMatch(authoritySql,/bdybebzvzapihjdauehg/);
 });
 
-test("Studio lidera filters real candidates and previews impact before a mutating save", async () => {
+test("Studio lidera filters candidates and supports uninterrupted draft editing", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
   const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
@@ -241,10 +243,14 @@ test("Studio lidera filters real candidates and previews impact before a mutatin
   assert.match(panel,/Sprawdź skutki przed publikacją/);
   assert.match(panel,/Potwierdź i opublikuj/);
   assert.doesNotMatch(panel,/window\.prompt/);
-  assert.match(workspace,/Skutek przed zapisem/);
-  assert.match(workspace,/niemutującą kontrolę całego miesiąca/);
+  assert.match(workspace,/Skutek w szkicu/);
+  assert.match(workspace,/Pełną kontrolę uruchamiasz raz/);
+  assert.match(workspace,/Możesz kontynuować bez dodatkowego potwierdzania każdej operacji/);
+  assert.doesNotMatch(workspace,/Zastosuj sprawdzoną zmianę/);
+  assert.doesNotMatch(workspace,/Dodaj komentarz audytowy/);
   assert.match(styles,/\.leader-studio-impact/);
   assert.match(styles,/\.leader-change-preview/);
+  assert.match(styles,/leader-studio-candidate-panel>\.drawer-content\{overflow:visible\}/);
 });
 
 test("the owner configures finance visibility by application role in one access policy", async () => {
@@ -284,6 +290,10 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   assert.match(client,/requestLeaderRefill/);
   assert.match(client,/applyLeaderRefill/);
   assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
+  assert.match(panel,/Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów/);
+  assert.match(panel,/key=\{`leader:\$\{selectedWorkspace\.context\.runId\?\?leaderVariant\.id\}`\}/,
+    "odświeżenie rewizji nie może przemontować Studia i wyzerować perspektywy Stanowiska");
+  assert.doesNotMatch(panel,/key=\{`leader:[^`]*leaderVariant\.revision/);
   assert.match(panel,/Wszystkie obecne przydziały lidera są zablokowane/);
   assert.match(panel,/result\.variants\.find\(item=>item\.recommended&&item\.hardViolations===0\)/);
 });
