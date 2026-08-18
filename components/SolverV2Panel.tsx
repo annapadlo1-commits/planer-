@@ -18,11 +18,13 @@ import {
   getLeaderVariantForRun,
   getLeaderVariantWorkspace,
   getLeaderHistoryStatus,
+  getLeaderWorkflowStatus,
   getSelectedVariantWorkspace,
   getVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
   moveLeaderHistory,
+  transitionLeaderWorkflow,
   isValidIdempotencyKey,
   isSolverRunTerminal,
   publicationAttemptStorageKey,
@@ -45,6 +47,7 @@ import {
   type SolverRun,
   type SolverLeaderVariant,
   type SolverLeaderHistoryStatus,
+  type SolverLeaderWorkflowStatus,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -193,6 +196,7 @@ export function SolverV2Panel({
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
   const [leaderHistory,setLeaderHistory]=useState<SolverLeaderHistoryStatus|null>(null);
+  const [leaderWorkflow,setLeaderWorkflow]=useState<SolverLeaderWorkflowStatus>("DRAFT");
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
@@ -402,8 +406,8 @@ export function SolverV2Panel({
   useEffect(()=>{
     if(!supabase||!leaderVariant||leaderVariant.status==="PUBLISHED"){setLeaderHistory(null);return;}
     let disposed=false;
-    void getLeaderHistoryStatus(supabase,leaderVariant.id)
-      .then(status=>{if(!disposed)setLeaderHistory(status);})
+    void Promise.all([getLeaderHistoryStatus(supabase,leaderVariant.id),getLeaderWorkflowStatus(supabase,leaderVariant.id)])
+      .then(([history,workflow])=>{if(!disposed){setLeaderHistory(history);setLeaderWorkflow(workflow);}})
       .catch(error=>{if(!disposed)setMessage(solverErrorMessage(errorText(error)));});
     return()=>{disposed=true;};
   },[supabase,leaderVariant?.id,leaderVariant?.revision,leaderVariant?.status]);
@@ -553,6 +557,19 @@ export function SolverV2Panel({
       await moveLeaderHistory(supabase,leaderVariant.id,direction);
       await reloadLeaderWorkspace();
       setMessage(direction==="UNDO"?"Cofnięto ostatnią zmianę. Cały grafik został ponownie sprawdzony.":"Ponowiono zmianę. Cały grafik został ponownie sprawdzony.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function moveLeaderWorkflow(targetStatus:SolverLeaderWorkflowStatus){
+    if(!supabase||!leaderVariant)return;
+    const labels:Record<SolverLeaderWorkflowStatus,string>={DRAFT:"wersji roboczej",REVIEW:"sprawdzenia",LEADER_APPROVED:"zatwierdzenia lidera",READY_TO_MERGE:"gotowości do scalenia",PUBLISHED:"publikacji"};
+    const reason=window.prompt(`Podaj powód przejścia do etapu: ${labels[targetStatus]}. Zapiszemy go w audycie.`)?.trim();
+    if(!reason||reason.length<3)return;
+    setBusy(true);setMessage("");
+    try{
+      await transitionLeaderWorkflow(supabase,{variantId:leaderVariant.id,targetStatus,reason});
+      setLeaderWorkflow(targetStatus);setMessage(`Status Studia zmieniono na: ${labels[targetStatus]}.`);
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
   }
@@ -852,7 +869,15 @@ export function SolverV2Panel({
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
       <header className="leader-studio-fullscreen-head"><span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span><div className="leader-studio-history-actions"><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canUndo} onClick={()=>void moveLeaderRevision("UNDO")}><Undo2/> Cofnij</button><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canRedo} onClick={()=>void moveLeaderRevision("REDO")}><Redo2/> Ponów</button><details><summary><History/> Historia</summary><div>{leaderHistory?.entries.map(entry=><span className={entry.current?"current":""} key={entry.seq}><b>{entry.label}</b><small>Rewizja {entry.revision}</small></span>)}</div></details><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em><button type="button" className="icon-button" aria-label="Zamknij Studio lidera" onClick={()=>setLeaderVariant(null)}><X/></button></div></header>
-      <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
+      <nav className="leader-studio-workflow" aria-label="Etap wersji roboczej">
+        <span className={leaderWorkflow==="DRAFT"?"active":"done"}><b>1</b> Roboczy</span>
+        <span className={leaderWorkflow==="REVIEW"?"active":["LEADER_APPROVED","READY_TO_MERGE","PUBLISHED"].includes(leaderWorkflow)?"done":""}><b>2</b> Do sprawdzenia</span>
+        <span className={leaderWorkflow==="LEADER_APPROVED"?"active":["READY_TO_MERGE","PUBLISHED"].includes(leaderWorkflow)?"done":""}><b>3</b> Zatwierdzony przez lidera</span>
+        <span className={leaderWorkflow==="READY_TO_MERGE"?"active":leaderWorkflow==="PUBLISHED"?"done":""}><b>4</b> Gotowy do scalenia</span>
+        <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
+        <div>{leaderWorkflow==="DRAFT"&&<button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("REVIEW")}>Przekaż do sprawdzenia</button>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
+      </nav>
+      <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"&&leaderWorkflow==="DRAFT"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
     </section>}
 
     {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace key={`preview:${previewWorkspace.context.runId??previewWorkspace.context.scheduleId??previewWorkspace.variants[0]?.id??"workspace"}`} workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}

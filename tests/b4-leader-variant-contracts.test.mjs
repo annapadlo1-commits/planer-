@@ -160,6 +160,20 @@ test("Studio preflights the exact drag transaction and always rolls the preview 
   assert.match(workspace,/Nie można upuścić tutaj/);
 });
 
+test("leader workflow is durable, audited and owner-gated before merge",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818215500_leader_studio_workflow.sql",import.meta.url),"utf8");
+  const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
+  assert.match(migration,/leader_workflow_status in \('DRAFT','REVIEW','LEADER_APPROVED','READY_TO_MERGE','PUBLISHED'\)/);
+  assert.match(migration,/LEADER_WORKFLOW_TRANSITION_INVALID/);
+  assert.match(migration,/public\.has_app_role\('OWNER'\).*public\.has_app_role\('ADMIN'\)/s);
+  assert.match(migration,/LEADER_WORKFLOW_TRANSITION/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_workflow_status_uat_v1/);
+  assert.match(panel,/Przekaż do sprawdzenia/);
+  assert.match(panel,/Zatwierdź jako lider/);
+  assert.match(panel,/Oznacz jako gotowy do scalenia/);
+  assert.match(panel,/leaderWorkflow==="DRAFT"/);
+});
+
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),

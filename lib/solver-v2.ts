@@ -2076,6 +2076,19 @@ export type SolverLeaderHistoryStatus={
   entries:Array<{seq:number;revision:number;label:string;createdAt:string;current:boolean}>;
 };
 
+export type SolverLeaderWorkflowStatus="DRAFT"|"REVIEW"|"LEADER_APPROVED"|"READY_TO_MERGE"|"PUBLISHED";
+
+export async function getLeaderWorkflowStatus(client:SupabaseClient,variantId:string):Promise<SolverLeaderWorkflowStatus>{
+  const value=record(await rpc(client,"optimizer_leader_workflow_status_uat_v1",{p_variant_id:variantId}));
+  return String(value.status??"DRAFT") as SolverLeaderWorkflowStatus;
+}
+
+export async function transitionLeaderWorkflow(client:SupabaseClient,input:{variantId:string;targetStatus:SolverLeaderWorkflowStatus;reason:string}){
+  return record(await rpc(client,"optimizer_leader_workflow_transition_uat_v1",{
+    p_variant_id:input.variantId,p_target_status:input.targetStatus,p_reason:input.reason,
+  }));
+}
+
 export async function getLeaderHistoryStatus(
   client:SupabaseClient,variantId:string,
 ):Promise<SolverLeaderHistoryStatus>{
@@ -2523,6 +2536,8 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
   if (normalized.includes("LEADER_VARIANT_NOT_EDITABLE") || normalized.includes("LEADER_VARIANT_NOT_FOUND")) return "Wersja lidera nie jest już edytowalna. Utwórz świeżą kopię z jednego z trzech wygenerowanych wariantów.";
   if (normalized.includes("LEADER_VARIANT_FORBIDDEN")) return "Nie masz uprawnień do przygotowania wersji lidera dla tego zespołu.";
+  if (normalized.includes("LEADER_WORKFLOW_TRANSITION_INVALID")) return "Ten krok akceptacji nie jest dostępny z bieżącego etapu. Odśwież Studio i wybierz następną widoczną akcję.";
+  if (normalized.includes("LEADER_READY_TO_MERGE_FORBIDDEN")) return "Tylko właściciel lub administrator może oznaczyć grafik jako gotowy do scalenia. Lider może wcześniej zatwierdzić swoją wersję.";
   if (normalized.includes("EDIT_REASON_REQUIRED")) return "Krótko opisz powód ręcznej zmiany. Zapiszemy go w historii wersji lidera.";
   if (normalized.includes("LOCKED_ASSIGNMENT_CANNOT_BE_REMOVED")) return "Tego przydziału nie można usunąć, ponieważ pochodzi z twardo zablokowanej decyzji.";
   if (normalized.includes("ASSIGNMENT_NOT_FOUND") || normalized.includes("UNFILLED_ISSUE_NOT_FOUND")) return "Wybrane miejsce zmieniło się. Odśwież wersję lidera i spróbuj ponownie.";
