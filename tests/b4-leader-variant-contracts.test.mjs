@@ -263,3 +263,27 @@ test("the owner configures finance visibility by application role in one access 
   assert.match(workspace,/financeVisibility==="BUDGET_ONLY"/);
   assert.match(workspace,/setFinanceVisibility\("NONE"\)/);
 });
+
+test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{
+  const [migration,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/optimizer_leader_refill_request_uat_v1/);
+  assert.match(migration,/lockedAssignments/);
+  assert.match(migration,/baselineAssignments/);
+  assert.match(migration,/leaderStudioRefill/);
+  assert.match(migration,/issue_code='UNFILLED_SLOT' and issue\.slot_key=source\.slot_key/);
+  assert.match(migration,/LEADER_REFILL_DRAFT_CHANGED/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_refill_request_uat_v1/);
+  assert.doesNotMatch(migration,/delete from public\.plan_assignments_v2/,
+    "uzupełnienie nie może usuwać ani zastępować decyzji lidera");
+  assert.match(client,/requestLeaderRefill/);
+  assert.match(client,/applyLeaderRefill/);
+  assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
+  assert.match(panel,/Wszystkie obecne przydziały lidera są zablokowane/);
+  assert.match(panel,/result\.variants\.find\(item=>item\.recommended&&item\.hardViolations===0\)/);
+});

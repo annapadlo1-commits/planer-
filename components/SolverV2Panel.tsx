@@ -10,6 +10,8 @@ import {
   createIdempotencyKey,
   createLeaderVariant,
   createManualLeaderStudio,
+  requestLeaderRefill,
+  applyLeaderRefill,
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
@@ -200,6 +202,9 @@ export function SolverV2Panel({
   const [leaderWorkflow,setLeaderWorkflow]=useState<SolverLeaderWorkflowStatus>("DRAFT");
   const [pendingLeaderWorkflow,setPendingLeaderWorkflow]=useState<SolverLeaderWorkflowStatus|null>(null);
   const [leaderWorkflowReason,setLeaderWorkflowReason]=useState("");
+  const [leaderRefillReason,setLeaderRefillReason]=useState("");
+  const [leaderRefillRun,setLeaderRefillRun]=useState<{runId:string;leaderRevision:number;reason:string}|null>(null);
+  const leaderRefillApplyingRef=useRef(false);
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
@@ -561,6 +566,62 @@ export function SolverV2Panel({
     finally{setBusy(false);}
   }
 
+  async function startLeaderRefill(){
+    if(!supabase||!leaderVariant||leaderWorkflow!=="DRAFT")return;
+    const reason=leaderRefillReason.trim();
+    if(reason.length<3){setMessage("Podaj krótki powód automatycznego uzupełnienia wakatów — zostanie zapisany w audycie.");return;}
+    setBusy(true);setMessage("");
+    try{
+      const request=await requestLeaderRefill(supabase,{
+        variantId:leaderVariant.id,reason,
+        idempotencyKey:createIdempotencyKey(context,`leader-refill-r${leaderVariant.revision}`),
+      });
+      setLeaderRefillRun({runId:request.runId,leaderRevision:request.leaderRevision,reason});
+      setMessage("Generator uzupełnia wyłącznie wolne miejsca. Wszystkie obecne przydziały lidera są zablokowane i pozostaną bez zmian.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  useEffect(()=>{
+    if(!supabase||!leaderRefillRun||!leaderVariant)return;
+    let cancelled=false;
+    let timer:ReturnType<typeof setTimeout>|null=null;
+    const poll=async()=>{
+      try{
+        const status=await getSolverStatus(supabase,leaderRefillRun.runId);
+        if(cancelled)return;
+        if(status.run.status==="READY"){
+          if(leaderRefillApplyingRef.current)return;
+          leaderRefillApplyingRef.current=true;
+          const result=await getSolverVariants(supabase,leaderRefillRun.runId);
+          const source=result.variants.find(item=>item.recommended&&item.hardViolations===0)
+            ?? result.variants.find(item=>item.hardViolations===0);
+          if(!source)throw new Error("LEADER_REFILL_NO_VALID_VARIANT");
+          const applied=await applyLeaderRefill(supabase,{
+            leaderVariantId:leaderVariant.id,sourceVariantId:source.id,reason:leaderRefillRun.reason,
+          });
+          if(cancelled)return;
+          const added=Number(applied.addedAssignments??0);
+          setLeaderRefillRun(null);setLeaderRefillReason("");
+          await reloadLeaderWorkspace();
+          setMessage(`Uzupełniono ${added} wolnych ${added===1?"miejsce":"miejsc"}. Wcześniejsze przydziały lidera pozostały bez zmian; cały miesiąc został ponownie sprawdzony.`);
+          return;
+        }
+        if(["FAILED","CANCELLED","STALE_INPUT"].includes(status.run.status)){
+          setLeaderRefillRun(null);
+          setMessage(`Nie zastosowano automatycznego uzupełnienia. Zadanie zakończyło się statusem ${solverStatusLabel(status.run.status)}; wersja lidera pozostała bez zmian.`);
+          return;
+        }
+        timer=setTimeout(poll,3000);
+      }catch(error){
+        if(cancelled)return;
+        setLeaderRefillRun(null);setMessage(solverErrorMessage(errorText(error)));
+      }finally{leaderRefillApplyingRef.current=false;}
+    };
+    void poll();
+    return()=>{cancelled=true;if(timer)clearTimeout(timer);};
+  },[supabase,leaderRefillRun?.runId,leaderVariant?.id]);
+
   async function moveLeaderRevision(direction:"UNDO"|"REDO"){
     if(!supabase||!leaderVariant)return;
     setBusy(true);setMessage("");
@@ -879,6 +940,7 @@ export function SolverV2Panel({
         <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
         <div>{leaderWorkflow==="DRAFT"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("REVIEW")}>Przekaż do sprawdzenia</button>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
       </nav>
+      {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Generator potraktuje wszystkie obecne przydziały jako zablokowane. Nie przeniesie ani nie usunie decyzji lidera; doda wyłącznie legalne przydziały do istniejących wakatów.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={Boolean(leaderRefillRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/></label><span><button type="button" className="primary-button" disabled={busy||Boolean(leaderRefillRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()}>{leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span></section>}
       {pendingLeaderWorkflow&&<section className="leader-workflow-confirm"><div><strong>Potwierdź zmianę etapu</strong><small>Powód zostanie zapisany w historii wersji lidera. Samo przejście etapu nie publikuje grafiku pracownikom.</small></div><label>Powód decyzji<textarea autoFocus minLength={3} value={leaderWorkflowReason} onChange={event=>setLeaderWorkflowReason(event.target.value)} placeholder="np. grafik sprawdzony przez lidera BAR"/></label><span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");}}>Anuluj</button><button type="button" className="primary-button" disabled={busy||leaderWorkflowReason.trim().length<3} onClick={()=>void moveLeaderWorkflow(pendingLeaderWorkflow)}>{busy?<RefreshCw className="spin"/>:<Check/>} Zapisz zmianę etapu</button></span></section>}
       <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} baselineWorkspace={leaderBaselineWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"&&leaderWorkflow==="DRAFT"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
     </section>}

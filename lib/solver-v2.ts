@@ -2040,6 +2040,21 @@ export async function createManualLeaderStudio(
   }};
 }
 
+export async function requestLeaderRefill(client:SupabaseClient,input:{variantId:string;reason:string;idempotencyKey:string}){
+  const payload=record(await rpc(client,"optimizer_leader_refill_request_uat_v1",{
+    p_variant_id:input.variantId,p_reason:input.reason,p_idempotency_key:input.idempotencyKey,
+  }));
+  const runId=String(payload.runId??"");
+  if(!runId)throw new Error("RUN_ID_MISSING");
+  return {runId,leaderRevision:numberOf(payload,"leaderRevision","leader_revision")};
+}
+
+export async function applyLeaderRefill(client:SupabaseClient,input:{leaderVariantId:string;sourceVariantId:string;reason:string}){
+  return record(await rpc(client,"optimizer_leader_refill_apply_uat_v1",{
+    p_leader_variant_id:input.leaderVariantId,p_source_variant_id:input.sourceVariantId,p_reason:input.reason,
+  }));
+}
+
 export async function validateLeaderAssignment(
   client: SupabaseClient,
   input: {
