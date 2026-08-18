@@ -2097,6 +2097,13 @@ export async function dragLeaderAssignment(
   p_target_issue_id:input.targetIssueId?Number(input.targetIssueId):null,p_reason:input.reason,
 }));}
 
+export async function setLeaderAssignmentLock(
+  client:SupabaseClient,input:{variantId:string;assignmentId:string;locked:boolean;reason:string},
+){return record(await rpc(client,"optimizer_leader_assignment_lock_uat_v1",{
+  p_variant_id:input.variantId,p_assignment_id:input.assignmentId,
+  p_locked:input.locked,p_reason:input.reason,
+}));}
+
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
   month: string,

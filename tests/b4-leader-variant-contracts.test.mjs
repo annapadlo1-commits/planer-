@@ -132,6 +132,20 @@ test("Studio drag operations move or swap assignments atomically and revalidate 
   assert.match(workspace,/targetIssueId:issues\[0\]\.id/);
 });
 
+test("leader can pin and unpin an assignment without exposing the protected table",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818203634_leader_studio_assignment_lock.sql",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(migration,/optimizer_leader_assignment_lock_uat_v1/);
+  assert.match(migration,/leaderLocked/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(migration,/LEADER_LOCK/);
+  assert.match(migration,/LEADER_UNLOCK/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_assignment_lock_uat_v1/);
+  assert.match(workspace,/Przypnij decyzję lidera/);
+  assert.match(workspace,/Odepnij decyzję lidera/);
+  assert.match(workspace,/draggable=\{leaderEditable&&!assignment\.locked\}/);
+});
+
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
