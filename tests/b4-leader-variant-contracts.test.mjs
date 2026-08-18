@@ -130,6 +130,20 @@ test("Studio lidera filters real candidates and previews impact before a mutatin
   assert.match(styles,/\.leader-change-preview/);
 });
 
+test("Studio lidera drags a real employee onto an exact shortage without mutating on drop", async () => {
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(workspace,/Pula pracowników/);
+  assert.match(workspace,/application\/x-grafik-employee/);
+  assert.match(workspace,/onDragStart/);
+  assert.match(workspace,/onDrop/);
+  assert.match(workspace,/placeStudioEmployee/);
+  assert.match(workspace,/openLeaderEdit\(\{issueId,preferredEmployeeId:employeeId\}\)/);
+  assert.match(workspace,/Upuszczenie niczego nie zapisuje/);
+  assert.match(styles,/\.leader-studio-pool/);
+  assert.match(styles,/\.studio-drop-target/);
+});
+
 test("the owner configures finance visibility by application role in one access policy", async () => {
   const migration=await readFile(new URL("../supabase/migrations/20260818190421_studio_finance_visibility_policy.sql",import.meta.url),"utf8");
   const editor=await readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8");
