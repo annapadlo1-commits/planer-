@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, Check, CircleDo
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { dragLeaderAssignment, emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, previewLeaderAssignmentDrag, removeLeaderAssignment, saveLeaderAssignment, setLeaderAssignmentLock, validateLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
+import { bulkLeaderAssignments, dragLeaderAssignment, emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, previewLeaderAssignmentDrag, removeLeaderAssignment, saveLeaderAssignment, setLeaderAssignmentLock, validateLeaderAssignment, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
 type Props = {
   workspace: SolverWorkspace;
@@ -225,6 +225,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderValidatedKey,setLeaderValidatedKey]=useState("");
   const [leaderBusy,setLeaderBusy]=useState(false);
+  const [bulkOperation,setBulkOperation]=useState<"LOCK"|"UNLOCK"|"REMOVE"|null>(null);
+  const [bulkReason,setBulkReason]=useState("");
   const [dragPreview,setDragPreview]=useState<{key:string;loading:boolean;valid:boolean;message:string}|null>(null);
   const [pendingAssignmentDrag,setPendingAssignmentDrag]=useState<{sourceAssignmentId:string;targetAssignmentId?:string;targetIssueId?:string}|null>(null);
   const [leaderCandidateView,setLeaderCandidateView]=useState<LeaderCandidateView>("ELIGIBLE");
@@ -586,6 +588,20 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
     finally{setLeaderBusy(false);}
   }
+  async function applyVisibleBulk(){
+    const variantId=workspace.variants[0]?.id;
+    const assignmentIds=scheduleEntries.map(entry=>entry.assignment.id);
+    const reason=bulkReason.trim();
+    if(!supabase||!leaderEditable||!variantId||leaderBusy||!assignmentIds.length||!bulkOperation||reason.length<3)return;
+    setLeaderBusy(true);
+    try{
+      await bulkLeaderAssignments(supabase,{variantId,assignmentIds,operation:bulkOperation,reason});
+      notify?.(`Operacja zbiorcza zakończona: ${assignmentIds.length} przydziałów zapisano jako jedną rewizję.`);
+      setBulkOperation(null);setBulkReason("");
+      await onLeaderChanged?.();await openWorkload(true);
+    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+    finally{setLeaderBusy(false);}
+  }
 
   const normalizedLeaderSearch=leaderSearch.trim().toLocaleLowerCase("pl-PL");
   const visibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>{
@@ -649,6 +665,8 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
       {(locationFilter||roleFilters.length>0)&&<button className="secondary-button" onClick={()=>{setLocationFilter("");setRoleFilters([]);}}><X/> Wyczyść filtry</button>}
       <small>Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji.</small>
     </div>}
+
+    {leaderEditable&&scheduleEntries.length>0&&<div className="leader-bulk-toolbar"><span><Users/><strong>Operacje dla widocznego zakresu</strong><small>{scheduleEntries.length} przydziałów po aktywnych filtrach roli i lokalu</small></span><div><button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("LOCK")}><LockKeyhole/> Przypnij widoczne</button><button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("UNLOCK")}><LockOpen/> Odepnij widoczne</button><button className="danger-button" disabled={leaderBusy} onClick={()=>setBulkOperation("REMOVE")}><Trash2/> Usuń widoczne</button></div>{bulkOperation&&<div className="leader-bulk-confirm"><strong>{bulkOperation==="LOCK"?"Przypnij":bulkOperation==="UNLOCK"?"Odepnij":"Usuń"} {scheduleEntries.length} widocznych przydziałów</strong><label>Powód operacji<textarea minLength={3} value={bulkReason} onChange={event=>setBulkReason(event.target.value)} placeholder="np. uzgodniona korekta grafiku"/></label>{bulkOperation==="REMOVE"&&<small>Wymagane miejsca pozostaną jako jawne wakaty do ponownego obsadzenia.</small>}<span><button className="secondary-button" onClick={()=>{setBulkOperation(null);setBulkReason("");}}>Anuluj</button><button className={bulkOperation==="REMOVE"?"danger-button":"primary-button"} disabled={leaderBusy||bulkReason.trim().length<3} onClick={()=>void applyVisibleBulk()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Potwierdź i zapisz rewizję</button></span></div>}<small>Najpierw ustaw role i lokal. Operacja obejmuje dokładnie widoczny, przefiltrowany zakres i tworzy jedną rewizję możliwą do cofnięcia.</small></div>}
 
     {leaderEditable&&<aside className="leader-studio-impact" aria-label="Wpływ zmian w Studio lidera">
       <header><BarChart3/><span><strong>Wpływ bieżącego szkicu</strong><small>{locationFilter||roleFilters.length?"Wyniki dla aktywnych filtrów":"Cały zakres wersji lidera"}</small></span></header>

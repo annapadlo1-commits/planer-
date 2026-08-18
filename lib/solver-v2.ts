@@ -2128,6 +2128,13 @@ export async function getRoleCompositeCandidates(
   }));
 }
 
+export async function bulkLeaderAssignments(client:SupabaseClient,input:{variantId:string;assignmentIds:string[];operation:"LOCK"|"UNLOCK"|"REMOVE";reason:string}){
+  return record(await rpc(client,"optimizer_leader_assignments_bulk_uat_v1",{
+    p_variant_id:input.variantId,p_assignment_ids:input.assignmentIds,
+    p_operation:input.operation,p_reason:input.reason,
+  }));
+}
+
 export type SolverLeaderDragPreview={
   valid:boolean;
   errorCode?:string;

@@ -174,6 +174,23 @@ test("leader workflow is durable, audited and owner-gated before merge",async()=
   assert.match(panel,/leaderWorkflow==="DRAFT"/);
 });
 
+test("bulk Studio operations affect exactly the visible filtered assignment range in one revision",async()=>{
+  const migration=await readFile(new URL("../supabase/migrations/20260818223000_leader_studio_bulk_assignments.sql",import.meta.url),"utf8");
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(migration,/optimizer_leader_assignments_bulk_uat_v1/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/v_operation not in \('LOCK','UNLOCK','REMOVE'\)/);
+  assert.match(migration,/UNFILLED_SLOT/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(migration,/LEADER_BULK_/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_assignments_bulk_uat_v1/);
+  assert.match(migration,/grant execute on function public\.optimizer_leader_assignments_bulk_uat_v1/);
+  assert.match(workspace,/Operacje dla widocznego zakresu/);
+  assert.match(workspace,/Przypnij widoczne/);
+  assert.match(workspace,/Usuń widoczne/);
+  assert.match(workspace,/const assignmentIds=scheduleEntries\.map/);
+});
+
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
