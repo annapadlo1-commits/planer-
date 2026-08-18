@@ -11,6 +11,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAppAuth } from "@/components/AppAuthProvider";
 import { ConfigurationJourney } from "@/components/ConfigurationJourney";
 import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProjectRef } from "@/lib/supabase/client";
+import { canonicalUrl, configuredCanonicalAppOrigin } from "@/lib/canonical-app-origin";
 import {ActiveModules,type ActiveWorkspace} from "@/components/ActiveModules";
 import {SolverV2Panel} from "@/components/SolverV2Panel";
 import {SolverV2Workspace} from "@/components/SolverV2Workspace";
@@ -237,6 +238,13 @@ export default function GrafikPro() {
   const canReadCompanyWorkspace=Boolean(access?.roles?.some(item=>
     ["OWNER","ADMIN","HR_FINANCE","VERIFIER","ROLE_MANAGER","LOCATION_MANAGER"].includes(item.app_role)
   ));
+
+  useEffect(()=>{
+    const canonicalOrigin=configuredCanonicalAppOrigin();
+    if(!canonicalOrigin||window.location.origin===canonicalOrigin)return;
+    const destination=canonicalUrl(window.location.pathname,window.location.search,window.location.hash);
+    if(destination)window.location.replace(destination);
+  },[]);
 
   const notify=(message:string)=>{setToast(message);window.setTimeout(()=>setToast(""),3200);};
   const load=useCallback(async()=>{

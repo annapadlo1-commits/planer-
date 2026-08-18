@@ -6,6 +6,7 @@ import {
   GOOGLE_OAUTH_RETURN_COOKIE,
   GOOGLE_OAUTH_STATE_COOKIE,
   authenticatedAppUser,
+  canonicalOAuthStartUrl,
   googleOAuthCallbackUrl,
   returnUrlWithStatus,
   safeReturnTo,
@@ -15,6 +16,8 @@ import {
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const canonicalStart = canonicalOAuthStartUrl(request);
+  if (canonicalStart) return NextResponse.redirect(canonicalStart);
   const returnTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"));
   if (!await authenticatedAppUser()) {
     return NextResponse.redirect(returnUrlWithStatus(request, returnTo, "app_auth_required"));

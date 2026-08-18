@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { NextRequest } from "next/server";
+import { configuredCanonicalAppOrigin } from "@/lib/canonical-app-origin";
 
 export const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID
   ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
@@ -18,7 +19,7 @@ export async function authenticatedAppUser() {
 }
 
 export function googleOAuthCallbackUrl(request: NextRequest) {
-  return new URL("/api/google-drive/oauth/callback", request.url).toString();
+  return new URL("/api/google-drive/oauth/callback", configuredCanonicalAppOrigin() ?? request.nextUrl.origin).toString();
 }
 
 export function safeReturnTo(value: string | null) {
@@ -27,9 +28,15 @@ export function safeReturnTo(value: string | null) {
 }
 
 export function returnUrlWithStatus(request: NextRequest, returnTo: string, status: string) {
-  const destination = new URL(safeReturnTo(returnTo), request.nextUrl.origin);
+  const destination = new URL(safeReturnTo(returnTo), configuredCanonicalAppOrigin() ?? request.nextUrl.origin);
   destination.searchParams.set("googleDriveAuth", status);
   return destination;
+}
+
+export function canonicalOAuthStartUrl(request: NextRequest) {
+  const origin = configuredCanonicalAppOrigin();
+  if (!origin || origin === request.nextUrl.origin) return null;
+  return new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin);
 }
 
 export function secureCookie(request: NextRequest) {

@@ -8,6 +8,8 @@ const oauthStart = await readFile(new URL("../app/api/google-drive/oauth/start/r
 const oauthCallback = await readFile(new URL("../app/api/google-drive/oauth/callback/route.ts", import.meta.url), "utf8");
 const serverUpload = await readFile(new URL("../app/api/google-drive/upload/route.ts", import.meta.url), "utf8");
 const oauthShared = await readFile(new URL("../app/api/google-drive/oauth-shared.ts", import.meta.url), "utf8");
+const canonicalOrigin = await readFile(new URL("../lib/canonical-app-origin.ts", import.meta.url), "utf8");
+const appPage = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 
 test("Google Sheets uses the public OAuth client and the least-privilege Drive scope", () => {
@@ -60,4 +62,12 @@ test("server upload is app-authenticated, one-use and least privilege", () => {
   assert.match(oauthCallback, /httpOnly: true/);
   assert.match(nextConfig, /Cross-Origin-Opener-Policy/);
   assert.match(nextConfig, /same-origin-allow-popups/);
+});
+
+test("UAT Google OAuth and application entry use one canonical host", () => {
+  assert.match(canonicalOrigin, /nhthrtpkfpmufmrmdyjg/);
+  assert.match(canonicalOrigin, /planer-git-codex-uat-consolidated-fixes-planner10\.vercel\.app/);
+  assert.match(oauthShared, /configuredCanonicalAppOrigin\(\)/);
+  assert.match(oauthStart, /canonicalOAuthStartUrl\(request\)/);
+  assert.match(appPage, /window\.location\.replace\(destination\)/);
 });
