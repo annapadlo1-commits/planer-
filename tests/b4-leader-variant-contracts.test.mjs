@@ -62,7 +62,11 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   ]);
   assert.match(panel, /Utwórz wersję lidera/);
   assert.match(panel, /Wybierz jako bazę/);
-  assert.match(panel, /Oryginalne trzy warianty powyżej pozostają niezmienione/);
+  assert.match(panel, /Osobna wersja robocza na bazie wariantu generatora/);
+  assert.match(panel, /className="leader-studio-fullscreen"/);
+  assert.match(panel, /aria-modal="true"/);
+  assert.match(panel, /initialView="CALENDAR"/);
+  assert.match(panel, /Pracownicy nie widzą zmian przed publikacją/);
   assert.equal((panel.match(/window\.confirm/g) ?? []).length, 1, "wybór i publikacja nie mogą otwierać blokujących okien przeglądarki");
   const solverClient = await readFile(new URL("../lib/solver-v2.ts", import.meta.url), "utf8");
   assert.match(solverClient, /source\.id \?\? source\.variantId/, "odpowiedź tworzenia kopii zwraca variantId, a odczyt istniejącej kopii id");
