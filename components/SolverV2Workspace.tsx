@@ -8,6 +8,7 @@ import { bulkLeaderAssignments, dragLeaderAssignment, emergencyAssignV2, getCand
 
 type Props = {
   workspace: SolverWorkspace;
+  baselineWorkspace?: SolverWorkspace | null;
   timezone: string;
   published?: boolean;
   operational?: boolean;
@@ -203,7 +204,7 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
   </article>;
 }
 
-export function SolverV2Workspace({ workspace, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc, initialView="CALENDAR" }: Props) {
+export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc, initialView="CALENDAR" }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
   const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
@@ -343,6 +344,12 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
     ? 1
     : Math.max(0,issue.requiredCount-(issue.assignedCount??0));
   const unfilledCount=unfilledIssues.reduce((sum,issue)=>sum+missingSeats(issue),0);
+  const baselineSlotEmployees=useMemo(()=>new Map((baselineWorkspace?.shifts??[]).flatMap(shift=>shift.assignments.map(assignment=>[assignment.slotKey,assignment.employee.id] as const))),[baselineWorkspace]);
+  const currentSlotEmployees=useMemo(()=>new Map(workspace.shifts.flatMap(shift=>shift.assignments.map(assignment=>[assignment.slotKey,assignment.employee.id] as const))),[workspace.shifts]);
+  const modifiedAssignmentCount=useMemo(()=>Array.from(new Set([...baselineSlotEmployees.keys(),...currentSlotEmployees.keys()])).filter(slot=>baselineSlotEmployees.get(slot)!==currentSlotEmployees.get(slot)).length,[baselineSlotEmployees,currentSlotEmployees]);
+  const baselineAssignmentCount=baselineSlotEmployees.size;
+  const baselineUnfilledCount=(baselineWorkspace?.issues??[]).filter(issue=>issue.code==="UNFILLED_SLOT").reduce((sum,issue)=>sum+missingSeats(issue),0);
+  const baselineCostMinor=baselineWorkspace?.finance?.totalCostMinor??null;
   const groupMissing=(label:(issue:SolverWorkspaceIssue)=>string)=>[...unfilledIssues.reduce((groups,issue)=>{
     const key=label(issue)||"Nieokreślone";
     groups.set(key,(groups.get(key)??0)+missingSeats(issue));
@@ -674,9 +681,12 @@ export function SolverV2Workspace({ workspace, timezone, published = false, oper
 
     {leaderEditable&&scheduleEntries.length>0&&<div className="leader-bulk-toolbar"><span><Users/><strong>Operacje dla zaznaczenia lub widocznego zakresu</strong><small>{selectedAssignmentIds.length?`${selectedAssignmentIds.length} zaznaczonych przydziałów`:`${scheduleEntries.length} przydziałów po aktywnych filtrach roli i lokalu`}</small></span><div><button className="secondary-button" disabled={leaderBusy} onClick={()=>setSelectedAssignmentIds(scheduleEntries.map(entry=>entry.assignment.id))}><Check/> Zaznacz widoczne</button>{selectedAssignmentIds.length>0&&<button className="secondary-button" onClick={()=>setSelectedAssignmentIds([])}><X/> Wyczyść zaznaczenie</button>}<button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("LOCK")}><LockKeyhole/> Przypnij</button><button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("UNLOCK")}><LockOpen/> Odepnij</button><button className="danger-button" disabled={leaderBusy} onClick={()=>setBulkOperation("REMOVE")}><Trash2/> Usuń</button></div>{bulkOperation&&<div className="leader-bulk-confirm"><strong>{bulkOperation==="LOCK"?"Przypnij":bulkOperation==="UNLOCK"?"Odepnij":"Usuń"} {selectedAssignmentIds.length||scheduleEntries.length} {selectedAssignmentIds.length?"zaznaczonych":"widocznych"} przydziałów</strong><label>Powód operacji<textarea minLength={3} value={bulkReason} onChange={event=>setBulkReason(event.target.value)} placeholder="np. uzgodniona korekta grafiku"/></label>{bulkOperation==="REMOVE"&&<small>Wymagane miejsca pozostaną jako jawne wakaty do ponownego obsadzenia.</small>}<span><button className="secondary-button" onClick={()=>{setBulkOperation(null);setBulkReason("");}}>Anuluj</button><button className={bulkOperation==="REMOVE"?"danger-button":"primary-button"} disabled={leaderBusy||bulkReason.trim().length<3} onClick={()=>void applyVisibleBulk()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Potwierdź i zapisz rewizję</button></span></div>}<small>Zaznacz konkretne kafelki albo użyj aktywnych filtrów. Jedna operacja tworzy jedną rewizję możliwą do cofnięcia.</small></div>}
 
+    {leaderEditable&&scheduleEntries.length>0&&<details className="leader-assignment-selector"><summary>Wybierz konkretne przydziały do operacji zbiorczej <small>{selectedAssignmentIds.length} zaznaczonych</small></summary><div>{scheduleEntries.map(({shift,assignment})=><button type="button" className={selectedAssignmentIds.includes(assignment.id)?"selected":""} aria-pressed={selectedAssignmentIds.includes(assignment.id)} onClick={()=>toggleAssignmentSelection(assignment.id)} key={assignment.id}><span>{selectedAssignmentIds.includes(assignment.id)?<Check/>:null}<strong>{assignment.employee.firstName} {assignment.employee.lastName}</strong></span><small>{shortDayLabel(shift.date)} • {timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name} • {assignment.role.name}</small></button>)}</div></details>}
+
     {leaderEditable&&<aside className="leader-studio-impact" aria-label="Wpływ zmian w Studio lidera">
       <header><BarChart3/><span><strong>Wpływ bieżącego szkicu</strong><small>{locationFilter||roleFilters.length?"Wyniki dla aktywnych filtrów":"Cały zakres wersji lidera"}</small></span></header>
       <div><span><small>Przydziały</small><b>{assignmentCount}</b></span><span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span><span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span><span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span><span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span><span><small>Nad celem</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>{workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Łączny koszt</small><b>{money(workspace.finance.totalCostMinor,workspace.finance.currency)}</b></span>}{workspace.finance&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.finance.budgetMinor!==null&&workspace.finance.totalCostMinor>workspace.finance.budgetMinor?"warning":"ok"}><small>Status budżetu</small><b>{workspace.finance.budgetMinor===null?"Bez limitu":workspace.finance.totalCostMinor<=workspace.finance.budgetMinor?"W budżecie":"Przekroczony"}</b></span>}</div>
+      {baselineWorkspace&&<section className="leader-baseline-delta"><strong>Zmiana względem wariantu bazowego</strong><div><span><small>Zmodyfikowane miejsca</small><b>{modifiedAssignmentCount}</b></span><span><small>Przydziały</small><b>{assignmentCount-baselineAssignmentCount>=0?"+":""}{assignmentCount-baselineAssignmentCount}</b></span><span><small>Braki</small><b>{unfilledCount-baselineUnfilledCount>=0?"+":""}{unfilledCount-baselineUnfilledCount}</b></span>{workspace.finance&&baselineCostMinor!==null&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Koszt</small><b>{workspace.finance.totalCostMinor-baselineCostMinor>=0?"+":""}{money(workspace.finance.totalCostMinor-baselineCostMinor,workspace.finance.currency)}</b></span>}</div></section>}
       <button type="button" className="secondary-button" disabled={workloadLoading} onClick={()=>void openWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz pełną analizę</button>
       <small>Po każdym zapisie szkic jest ponownie pobierany. Twarde reguły sprawdza serwer przed zapisem; świadome wyjątki pozostają w audycie.</small>
     </aside>}

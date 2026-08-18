@@ -190,6 +190,8 @@ test("bulk Studio operations affect exactly the visible filtered assignment rang
   assert.match(workspace,/> Przypnij</);
   assert.match(workspace,/> Usuń</);
   assert.match(workspace,/const visibleAssignmentIds=scheduleEntries\.map/);
+  assert.match(workspace,/Wybierz konkretne przydziały do operacji zbiorczej/);
+  assert.match(workspace,/toggleAssignmentSelection\(assignment\.id\)/);
 });
 
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
@@ -226,11 +228,14 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
 
 test("Studio lidera filters real candidates and previews impact before a mutating save", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
   const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
   assert.match(workspace,/type LeaderCandidateView="ELIGIBLE"\|"ALL"\|"BELOW_TARGET"\|"PREFERRED"/);
   assert.match(workspace,/Tylko możliwe/);
   assert.match(workspace,/Wszyscy z powodami/);
   assert.match(workspace,/Wpływ bieżącego szkicu/);
+  assert.match(workspace,/Zmiana względem wariantu bazowego/);
+  assert.match(panel,/baselineWorkspace=\{leaderBaselineWorkspace\}/);
   assert.match(workspace,/Skutek przed zapisem/);
   assert.match(workspace,/niemutującą kontrolę całego miesiąca/);
   assert.match(styles,/\.leader-studio-impact/);

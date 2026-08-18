@@ -194,6 +194,7 @@ export function SolverV2Panel({
   const [message, setMessage] = useState("");
   const [pollWarning, setPollWarning] = useState("");
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
+  const [leaderBaselineWorkspace,setLeaderBaselineWorkspace]=useState<SolverWorkspace|null>(null);
   const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
   const [leaderHistory,setLeaderHistory]=useState<SolverLeaderHistoryStatus|null>(null);
   const [leaderWorkflow,setLeaderWorkflow]=useState<SolverLeaderWorkflowStatus>("DRAFT");
@@ -284,7 +285,8 @@ export function SolverV2Panel({
       const leader=await getLeaderVariantForRun(supabase,runId);
       setLeaderVariant(leader);
       if(leader){
-        const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+        const [workspace,baseline]=await Promise.all([getLeaderVariantWorkspace(supabase,leader.id),leader.sourceVariantId?getVariantWorkspace(supabase,leader.sourceVariantId):Promise.resolve(null)]);
+        setLeaderBaselineWorkspace(baseline);
         setSelectedWorkspace(workspace);
         setPublicationName(workspace.context.name||leader.name);
       }else if(loadedVariants.some(variant => variant.selected)){
@@ -355,6 +357,7 @@ export function SolverV2Panel({
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
+    setLeaderBaselineWorkspace(null);
     setLeaderVariant(null);
     setInspectedWorkspace(null);
     setPublishedWorkspace(null);
@@ -503,10 +506,12 @@ export function SolverV2Panel({
         name:`Wersja lidera • ${scopeLabel} • ${month.slice(0,7)}`,
       });
       const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
+      const baseline=await getVariantWorkspace(supabase,generatedSelectedVariant.id);
       const summary=workspace.variants[0];
       setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??generatedSelectedVariant.assignmentCount,
         unfilledCount:summary?.unfilledCount??generatedSelectedVariant.unfilledCount});
       setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||leader.name);
+      setLeaderBaselineWorkspace(baseline);
       setMessage("Utworzono niezależną wersję lidera. Trzy warianty matematyczne pozostały bez zmian; możesz teraz poprawić obsadę i opublikować własną wersję.");
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
@@ -530,6 +535,7 @@ export function SolverV2Panel({
         assignmentCount:workspace.variants[0]?.assignmentCount??0,
         unfilledCount:workspace.variants[0]?.unfilledCount??created.leader.unfilledCount});
       setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||created.leader.name);
+      setLeaderBaselineWorkspace(null);
       setMessage("Otwarto Studio bez generatora. Wszystkie wymagane miejsca są widoczne jako braki; obsadzaj je ręcznie, a każda zmiana przejdzie kontrolę całego miesiąca.");
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
@@ -877,7 +883,7 @@ export function SolverV2Panel({
         <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
         <div>{leaderWorkflow==="DRAFT"&&<button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("REVIEW")}>Przekaż do sprawdzenia</button>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>void moveLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
       </nav>
-      <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"&&leaderWorkflow==="DRAFT"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
+      <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}:${leaderVariant.revision}`} workspace={selectedWorkspace} baselineWorkspace={leaderBaselineWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"&&leaderWorkflow==="DRAFT"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
     </section>}
 
     {previewWorkspace && !inspectedWorkspace && !leaderVariant && <div id="solver-variant-detail"><SolverV2Workspace key={`preview:${previewWorkspace.context.runId??previewWorkspace.context.scheduleId??previewWorkspace.variants[0]?.id??"workspace"}`} workspace={previewWorkspace} timezone={timezone} published={previewWorkspace.context.type === "PUBLISHED_SCHEDULE"||selectedVariant?.status==="PUBLISHED"} notify={setMessage} fail={setMessage}/></div>}
