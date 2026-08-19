@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, Check, CircleDollarSign, Edit3, LockKeyhole, LockOpen, MapPin, Plus, RefreshCw, Search, ShieldCheck, Trash2, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { bulkLeaderAssignments, dragLeaderAssignment, emergencyAssignV2, getCandidateDiagnostics, getEmployeeAvailabilityMonth, getLeaderAssignmentContext, getManagerStandbyMonth, getVariantIssueDiagnostics, getVariantStandbyPreview, getVariantWorkloadDistribution, previewLeaderAssignmentDrag, removeLeaderAssignment, saveLeaderAssignment, setLeaderAssignmentLock, solverErrorMessage, type SolverCandidateDiagnostic, type SolverCandidateDiagnostics, type SolverEmployeeDayAvailability, type SolverLeaderAssignmentContext, type SolverManagerStandby, type SolverVariantIssueDiagnostics, type SolverWorkloadDistributionRow, type SolverWorkspace, type SolverWorkspaceIssue } from "@/lib/solver-v2";
 
@@ -672,7 +673,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     </nav>
     {(!leaderEditable||!leaderContext)&&<div className="solver-global-filters">
       <label><MapPin/> Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{workspaceLocations.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label>
-      <fieldset><legend>Role</legend>{workspaceRoles.map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={roleFilters.includes(role.id)} onChange={event=>setRoleFilters(event.target.checked?[...roleFilters,role.id]:roleFilters.filter(id=>id!==role.id))}/>{role.name}</label>)}</fieldset>
+      <CheckboxDropdown label="Role" selectedCount={roleFilters.length} totalCount={workspaceRoles.length}>{workspaceRoles.map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={roleFilters.includes(role.id)} onChange={event=>setRoleFilters(event.target.checked?[...roleFilters,role.id]:roleFilters.filter(id=>id!==role.id))}/>{role.name}</label>)}</CheckboxDropdown>
       {(locationFilter||roleFilters.length>0)&&<button className="secondary-button" onClick={()=>{setLocationFilter("");setRoleFilters([]);}}><X/> Wyczyść filtry</button>}
       <small>Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji.</small>
     </div>}

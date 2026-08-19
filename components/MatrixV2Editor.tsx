@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAppAuth } from "@/components/AppAuthProvider";
+import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { configurationBlockerAction } from "@/lib/product-journey";
 import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
@@ -1073,7 +1074,7 @@ function MatrixSettingsCard({
             <label>Nazwa grupy<input disabled={!editable} value={group.name} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value,code:item.code||codeFrom(event.target.value)}:item))}/></label>
             <label>Kategoria<select disabled={!editable} value={group.categoryCode} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,categoryCode:event.target.value,roleCodes:[]}:item))}><option value="">Wybierz kategorię</option>{roleCategories.filter(item=>item.active).map(item=><option value={item.code} key={item.id}>{item.name}</option>)}</select></label>
             <label>Poziomy gotowości<select disabled={!editable} value={group.tiers} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,tiers:Number(event.target.value) as 1|2}:item))}><option value="1">1 osoba</option><option value="2">2 osoby</option></select></label>
-            <fieldset><legend>Role obsługiwane wspólnie</legend>{roles.map(role=><label className="check-label" key={role.id}><input type="checkbox" disabled={!editable} checked={group.roleCodes.includes(role.code)} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,roleCodes:event.target.checked?[...item.roleCodes,role.code]:item.roleCodes.filter(code=>code!==role.code)}:item))}/>{role.name}</label>)}</fieldset>
+            <CheckboxDropdown label="Role obsługiwane wspólnie" selectedCount={group.roleCodes.length} totalCount={roles.length}>{roles.map(role=><label className="check-label" key={role.id}><input type="checkbox" disabled={!editable} checked={group.roleCodes.includes(role.code)} onChange={event=>setStandbyGroups(standbyGroups.map((item,itemIndex)=>itemIndex===index?{...item,roleCodes:event.target.checked?[...item.roleCodes,role.code]:item.roleCodes.filter(code=>code!==role.code)}:item))}/>{role.name}</label>)}</CheckboxDropdown>
             <small>Na dzień powstaje jedna wspólna rezerwa dla tej grupy. Kandydat musi móc zastąpić co najmniej jedną z wybranych ról; przy aktywacji system ponownie sprawdza dokładną rolę, obowiązki, lokal i czas pracy. Jeżeli w grupie jest brak obsady, rezerwa nie zostanie utworzona kosztem tego braku.</small>
           </article>;
         })}</div>
@@ -1116,7 +1117,7 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
       <SectionHead title="Zmiany i obsada" description="Zacznij od konkretnej zmiany. Następnie przypisz rolę, opcjonalny obowiązek lub kompetencję i wymaganą liczbę osób." editable={editable} disabled={!data.locations.length} add={() => edit({kind: "SHIFT"})}/>
       <div className="matrix-v2-filterbar">
         <label>Lokal<select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">Wszystkie lokale</option>{data.locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-        <fieldset className="matrix-v2-role-filter"><legend>Role</legend>{data.roles.filter(role=>role.active).map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={shiftRoleIds.includes(role.id)} onChange={event=>setShiftRoleIds(event.target.checked?[...shiftRoleIds,role.id]:shiftRoleIds.filter(id=>id!==role.id))}/>{role.name}</label>)}</fieldset>
+        <CheckboxDropdown className="matrix-v2-role-filter" label="Role" selectedCount={shiftRoleIds.length} totalCount={data.roles.filter(role=>role.active).length}>{data.roles.filter(role=>role.active).map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={shiftRoleIds.includes(role.id)} onChange={event=>setShiftRoleIds(event.target.checked?[...shiftRoleIds,role.id]:shiftRoleIds.filter(id=>id!==role.id))}/>{role.name}</label>)}</CheckboxDropdown>
         <label>Szukaj<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nazwa lub godziny zmiany"/></label>
         <strong>{shifts.length} z {data.shiftTemplates.length} zmian</strong>
         <button type="button" className="secondary-button" disabled={!locationId&&!query&&!shiftRoleIds.length} onClick={()=>{setLocationId("");setQuery("");setShiftRoleIds([]);}}>Wyczyść filtry</button>

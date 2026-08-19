@@ -73,6 +73,37 @@ test("mobile opens as one compact login and reuses the approved people, shifts a
   assert.match(css, /\.portal-profile\s*\{[^}]*grid-template-columns:48px 1fr!important/s);
 });
 
+test("role checkbox filters use one compact dropdown instead of permanent fieldsets", () => {
+  const dropdown = read("components/CheckboxDropdown.tsx");
+  const solver = read("components/SolverV2Workspace.tsx");
+  const matrix = read("components/MatrixV2Editor.tsx");
+  const operations = read("components/ActiveModules.tsx");
+  const css = read("app/brand-streetart.css");
+  assert.match(dropdown, /<details className={`checkbox-dropdown/);
+  assert.match(dropdown, /<fieldset>/);
+  assert.match(solver, /<CheckboxDropdown label="Role"/);
+  assert.match(matrix, /<CheckboxDropdown className="matrix-v2-role-filter" label="Role"/);
+  assert.match(matrix, /<CheckboxDropdown label="Role obsługiwane wspólnie"/);
+  assert.match(operations, /<CheckboxDropdown label="Role"/);
+  assert.doesNotMatch(solver, /<fieldset><legend>Role<\/legend>/);
+  assert.doesNotMatch(matrix, /matrix-v2-role-filter"><legend>Role<\/legend>/);
+  assert.doesNotMatch(operations, /<fieldset><legend>Role<\/legend>/);
+  assert.match(css, /\.checkbox-dropdown>summary\s*\{[^}]*min-height:48px/s);
+  assert.match(css, /\.checkbox-dropdown>fieldset\s*\{[^}]*max-height:260px!important/s);
+});
+
+test("operations and mobile Leader Studio use the street-poster system without lavender controls", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /\.recovery-tabs\s*\{[^}]*var\(--brand-ink\)!important/s);
+  assert.match(css, /\.uat-master-persona-panel\s*\{[^}]*border:2px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.leader-assistant-tool\s*\{[^}]*var\(--brand-paper\)!important/s);
+  assert.match(css, /@media\(max-width:760px\)[\s\S]*\.leader-studio-fullscreen-head\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)!important/s);
+  assert.match(css, /\.leader-studio-history-actions\s*\{[^}]*grid-template-columns:repeat\(3,40px\) minmax\(80px,1fr\) 40px!important/s);
+  assert.match(css, /\.leader-studio>\.solver-workspace-summary\s*\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)!important/s);
+  assert.match(css, /\.leader-studio>\.solver-workspace-tabs\s*\{[^}]*grid-template-columns:repeat\(3,minmax\(155px,1fr\)\)!important/s);
+  assert.match(css, /\.configuration-next-icon svg\s*\{[^}]*var\(--brand-paper\)!important/s);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",
