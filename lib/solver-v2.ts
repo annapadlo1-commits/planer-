@@ -588,6 +588,25 @@ export type SolverPublication = {
   status: string;
   sourceType: string;
   reused: boolean;
+  changed?: number;
+  notified?: number;
+};
+
+export type SolverPublicationChangePreview = {
+  variantId: string;
+  baselineType: "ROLE" | "ROLE_PUBLICATIONS" | "COMPANY";
+  baselineFound: boolean;
+  changedCount: number;
+  notificationCount: number;
+  people: Array<{
+    employeeId: string;
+    employeeNo: string;
+    name: string;
+    changeType: "ADDED" | "REMOVED" | "CHANGED";
+    beforeAssignmentCount: number;
+    afterAssignmentCount: number;
+    willNotify: boolean;
+  }>;
 };
 
 export type SolverPublicationAuthorityStatus = {
@@ -1344,6 +1363,41 @@ export async function publishCompanyVariant(
     status: String(valueOf(payload, "status", "status", "PUBLISHED")),
     sourceType: String(valueOf(payload, "sourceType", "source_type", "COMPANY")),
     reused: Boolean(valueOf(payload, "reused", "reused", false)),
+    changed: numberOf(payload, "changed", "changed"),
+    notified: numberOf(payload, "notified", "notified"),
+  };
+}
+
+export async function getPublicationChangePreview(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverPublicationChangePreview> {
+  const payload=record(await rpc(client,"optimizer_publication_change_preview_uat_v1",{
+    p_variant_id:variantId,
+  }));
+  const people=Array.isArray(payload.people)?payload.people.map(value=>{
+    const person=record(value);
+    const changeType=String(person.changeType??"CHANGED");
+    if(!["ADDED","REMOVED","CHANGED"].includes(changeType))throw new Error("PUBLICATION_CHANGE_TYPE_INVALID");
+    return {
+      employeeId:String(person.employeeId??""),
+      employeeNo:String(person.employeeNo??""),
+      name:String(person.name??"Pracownik"),
+      changeType:changeType as SolverPublicationChangePreview["people"][number]["changeType"],
+      beforeAssignmentCount:numberOf(person,"beforeAssignmentCount","before_assignment_count"),
+      afterAssignmentCount:numberOf(person,"afterAssignmentCount","after_assignment_count"),
+      willNotify:Boolean(person.willNotify),
+    };
+  }):[];
+  const baselineType=String(payload.baselineType??"COMPANY");
+  if(!["ROLE","ROLE_PUBLICATIONS","COMPANY"].includes(baselineType))throw new Error("PUBLICATION_BASELINE_TYPE_INVALID");
+  return {
+    variantId:String(payload.variantId??variantId),
+    baselineType:baselineType as SolverPublicationChangePreview["baselineType"],
+    baselineFound:Boolean(payload.baselineFound),
+    changedCount:numberOf(payload,"changedCount","changed_count"),
+    notificationCount:numberOf(payload,"notificationCount","notification_count"),
+    people,
   };
 }
 
@@ -2064,6 +2118,33 @@ export async function applyLeaderRefill(client:SupabaseClient,input:{leaderVaria
   }));
 }
 
+export type SolverLeaderOptimizationMode="COST"|"FAIRNESS"|"PROPOSE_ONLY";
+
+export async function requestLeaderReoptimization(client:SupabaseClient,input:{
+  variantId:string;mode:SolverLeaderOptimizationMode;reason:string;idempotencyKey:string;
+}){
+  const payload=record(await rpc(client,"optimizer_leader_reoptimization_request_uat_v1",{
+    p_variant_id:input.variantId,p_mode:input.mode,p_reason:input.reason,
+    p_idempotency_key:input.idempotencyKey,
+  }));
+  const runId=String(payload.runId??"");
+  if(!runId)throw new Error("RUN_ID_MISSING");
+  return {
+    runId,mode:String(payload.mode??input.mode) as SolverLeaderOptimizationMode,
+    leaderRevision:numberOf(payload,"leaderRevision","leader_revision"),
+    lockedAssignments:numberOf(payload,"lockedAssignments","locked_assignments"),
+  };
+}
+
+export async function applyLeaderReoptimization(client:SupabaseClient,input:{
+  leaderVariantId:string;sourceVariantId:string;reason:string;
+}){
+  return record(await rpc(client,"optimizer_leader_reoptimization_apply_uat_v1",{
+    p_leader_variant_id:input.leaderVariantId,p_source_variant_id:input.sourceVariantId,
+    p_reason:input.reason,
+  }));
+}
+
 export async function validateLeaderAssignment(
   client: SupabaseClient,
   input: {
@@ -2097,7 +2178,7 @@ export async function removeLeaderAssignment(
 
 export type SolverLeaderHistoryStatus={
   canUndo:boolean;canRedo:boolean;
-  entries:Array<{seq:number;revision:number;label:string;createdAt:string;current:boolean}>;
+  entries:Array<{seq:number;revision:number;label:string;createdAt:string;current:boolean;isCheckpoint:boolean;checkpointName:string|null}>;
 };
 
 export type SolverLeaderWorkflowStatus="DRAFT"|"REVIEW"|"LEADER_APPROVED"|"READY_TO_MERGE"|"PUBLISHED";
@@ -2140,12 +2221,22 @@ export async function getLeaderHistoryStatus(
 ):Promise<SolverLeaderHistoryStatus>{
   const payload=record(await rpc(client,"optimizer_leader_history_status_uat_v1",{p_variant_id:variantId}));
   return {canUndo:Boolean(payload.canUndo),canRedo:Boolean(payload.canRedo),entries:Array.isArray(payload.entries)
-    ?payload.entries.map(value=>{const row=record(value);return{seq:numberOf(row,"seq","seq"),revision:numberOf(row,"revision","revision"),label:String(row.label??"Zmiana w Studio"),createdAt:String(row.createdAt??""),current:Boolean(row.current)};}):[]};
+    ?payload.entries.map(value=>{const row=record(value);return{seq:numberOf(row,"seq","seq"),revision:numberOf(row,"revision","revision"),label:String(row.label??"Zmiana w Studio"),createdAt:String(row.createdAt??""),current:Boolean(row.current),isCheckpoint:Boolean(row.isCheckpoint),checkpointName:row.checkpointName?String(row.checkpointName):null};}):[]};
 }
 
 export async function moveLeaderHistory(
   client:SupabaseClient,variantId:string,direction:"UNDO"|"REDO",
 ){return record(await rpc(client,"optimizer_leader_history_move_uat_v1",{p_variant_id:variantId,p_direction:direction}));}
+
+export async function createLeaderCheckpoint(
+  client:SupabaseClient,variantId:string,name:string,
+){return record(await rpc(client,"optimizer_leader_checkpoint_create_uat_v1",{p_variant_id:variantId,p_name:name}));}
+
+export async function restoreLeaderCheckpoint(
+  client:SupabaseClient,input:{variantId:string;historySeq:number;reason:string},
+){return record(await rpc(client,"optimizer_leader_checkpoint_restore_uat_v1",{
+  p_variant_id:input.variantId,p_history_seq:input.historySeq,p_reason:input.reason,
+}));}
 
 export async function dragLeaderAssignment(
   client:SupabaseClient,input:{variantId:string;sourceAssignmentId:string;
@@ -2314,7 +2405,7 @@ export async function publishRoleVariant(
     name: string;
     idempotencyKey: string;
   },
-): Promise<{ roleScheduleId: string; status: string; reused: boolean; notified: number }> {
+): Promise<{ roleScheduleId: string; status: string; reused: boolean; changed: number; notified: number }> {
   const payload = record(await rpc(client, "optimizer_publish_role_variant_uat_v2", {
     p_run_id: input.runId,
     p_variant_id: input.variantId,
@@ -2327,6 +2418,7 @@ export async function publishRoleVariant(
     roleScheduleId,
     status: String(valueOf(payload, "status", "status", "PUBLISHED")),
     reused: Boolean(valueOf(payload, "reused", "reused", false)),
+    changed: numberOf(payload, "changed", "changed"),
     notified: numberOf(payload, "notified", "notified"),
   };
 }
@@ -2588,9 +2680,16 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("COMPANY_RUN_NOT_READY")) return "Ten grafik nie jest jeszcze gotowy do publikacji.";
   if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
   if (normalized.includes("LEADER_VARIANT_NOT_EDITABLE") || normalized.includes("LEADER_VARIANT_NOT_FOUND")) return "Wersja lidera nie jest już edytowalna. Utwórz świeżą kopię z jednego z trzech wygenerowanych wariantów.";
+  if (normalized.includes("LEADER_REFILL_DRAFT_CHANGED") || normalized.includes("LEADER_OPTIMIZATION_DRAFT_CHANGED")) return "Szkic zmienił się podczas pracy generatora. Żaden wynik nie został zastosowany. Uruchom pomoc ponownie dla bieżącej rewizji Studia.";
+  if (normalized.includes("LEADER_REFILL_NO_VALID_VARIANT") || normalized.includes("LEADER_OPTIMIZATION_NO_VALID_VARIANT")) return "Generator nie zwrócił wariantu, który przeszedł twarde reguły. Szkic pozostał bez zmian; otwórz wynik zadania i sprawdź jego wyjaśnienia.";
+  if (normalized.includes("LEADER_OPTIMIZATION_LOCK_NOT_PRESERVED")) return "Wynik nie zachował co najmniej jednej przypiętej decyzji lidera, dlatego nie został zastosowany. Szkic pozostał bez zmian.";
+  if (normalized.includes("LEADER_OPTIMIZATION_SHIFT_MAPPING_MISSING") || normalized.includes("LEADER_OPTIMIZATION_ASSIGNMENT_COPY_INCOMPLETE")) return "Wynik generatora nie odpowiada dokładnie zmianom tego szkicu, dlatego nie został zastosowany. Szkic pozostał bez zmian; uruchom nowe przeliczenie z bieżącej wersji Studia.";
+  if (normalized.includes("LEADER_OPTIMIZATION_MODE_INVALID")) return "Wybrano nieobsługiwany tryb pomocy generatora. Wróć do Studia i wybierz koszt, sprawiedliwość albo samą propozycję.";
+  if (normalized.includes("LEADER_REFILL_SOURCE_INVALID") || normalized.includes("LEADER_REFILL_SOURCE_MISMATCH") || normalized.includes("LEADER_OPTIMIZATION_SOURCE_INVALID") || normalized.includes("LEADER_OPTIMIZATION_SOURCE_MISMATCH")) return "Wynik generatora nie należy do tego szkicu albo nie przeszedł kontroli. Niczego nie zapisano; uruchom pomoc ponownie z bieżącego Studia.";
   if (normalized.includes("LEADER_VARIANT_FORBIDDEN")) return "Nie masz uprawnień do przygotowania wersji lidera dla tego zespołu.";
   if (normalized.includes("LEADER_WORKFLOW_TRANSITION_INVALID")) return "Ten krok akceptacji nie jest dostępny z bieżącego etapu. Odśwież Studio i wybierz następną widoczną akcję.";
   if (normalized.includes("LEADER_READY_TO_MERGE_FORBIDDEN")) return "Tylko właściciel lub administrator może oznaczyć grafik jako gotowy do scalenia. Lider może wcześniej zatwierdzić swoją wersję.";
+  if (normalized.includes("LEADER_VARIANT_NOT_READY_TO_PUBLISH")) return "Wersja lidera nie jest jeszcze gotowa do publikacji. W Studio wybierz „Sprawdź cały grafik”, przejdź przez zatwierdzenie lidera i oznacz wersję jako gotową do scalenia.";
   if (normalized.includes("EDIT_REASON_REQUIRED")) return "Krótko opisz powód ręcznej zmiany. Zapiszemy go w historii wersji lidera.";
   if (normalized.includes("LOCKED_ASSIGNMENT_CANNOT_BE_REMOVED")) return "Tego przydziału nie można usunąć, ponieważ pochodzi z twardo zablokowanej decyzji.";
   if (normalized.includes("ASSIGNMENT_NOT_FOUND") || normalized.includes("UNFILLED_ISSUE_NOT_FOUND")) return "Wybrane miejsce zmieniło się. Odśwież wersję lidera i spróbuj ponownie.";

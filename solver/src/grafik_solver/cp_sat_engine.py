@@ -129,6 +129,18 @@ def _days(start: date, end: date) -> list[date]:
     ]
 
 
+def coverage_minimum_is_proven(
+    minimum_unfilled: int,
+    proven_lower_bound: int,
+    solver_status: Any,
+) -> bool:
+    """Return whether a displayed shortage is mathematically established."""
+    return (
+        solver_status == cp_model.OPTIMAL
+        or minimum_unfilled == proven_lower_bound
+    )
+
+
 @dataclass
 class _Artifacts:
     model: Any
@@ -582,9 +594,10 @@ class CpSatScheduleEngine:
                 solver_coverage_lower_bound,
             )
         )
-        coverage_minimum_proven = (
-            common_status == cp_model.OPTIMAL
-            or minimum_unfilled == proven_coverage_lower_bound
+        coverage_minimum_proven = coverage_minimum_is_proven(
+            minimum_unfilled,
+            proven_coverage_lower_bound,
+            common_status,
         )
         # A vacancy is a business claim. Never publish one when CP-SAT's own
         # lower bound says that a better-covered roster may still exist. This

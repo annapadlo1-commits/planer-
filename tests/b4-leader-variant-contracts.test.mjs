@@ -132,7 +132,7 @@ test("Studio drag operations move or swap assignments atomically and revalidate 
   assert.match(workspace,/application\/x-grafik-assignment/);
   assert.match(workspace,/applyAssignmentDrag/);
   assert.match(workspace,/targetAssignmentId:assignment\.id/);
-  assert.match(workspace,/targetIssueId:issues\[0\]\.id/);
+  assert.match(workspace,/targetIssueId:issue\.id/);
 });
 
 test("leader can pin and unpin an assignment without exposing the protected table",async()=>{
@@ -252,7 +252,7 @@ test("Studio lidera filters candidates and supports uninterrupted draft editing"
   assert.doesNotMatch(workspace,/Dodaj komentarz audytowy/);
   assert.match(styles,/\.leader-studio-impact/);
   assert.match(styles,/\.leader-change-preview/);
-  assert.match(styles,/leader-studio-candidate-panel>\.drawer-content\{overflow:visible\}/);
+  assert.match(styles,/leader-studio-candidate-panel>\.drawer-content\{[^}]*overflow-y:auto/);
 });
 
 test("the owner configures finance visibility by application role in one access policy", async () => {
@@ -307,6 +307,50 @@ test("B4F-101 closes legacy workspace, employer-cost and recovery finance routes
   assert.match(sql,/v_visibility<>'FULL'/);
 });
 
+test("B4F-101 blocks every publication route until a leader copy is ready to merge",async()=>{
+  const [sql,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(sql,/new\.variant_kind='LEADER_COPY'/);
+  assert.match(sql,/old\.leader_workflow_status is distinct from 'READY_TO_MERGE'/);
+  assert.match(sql,/LEADER_VARIANT_NOT_READY_TO_PUBLISH/);
+  assert.match(sql,/before update of status on public\.plan_variants_v2/);
+  assert.match(sql,/revoke all on function solver_private\.guard_leader_variant_publication_uat_v1/);
+  assert.match(panel,/const leaderPublicationReady =/);
+  assert.match(panel,/if \(!leaderPublicationReady\)/);
+  assert.match(panel,/oznacz (?:ją|wersję) jako gotową do scalenia/);
+  assert.match(panel,/selectedVariant\.status === "PUBLISHED" \|\| !leaderPublicationReady/);
+  assert.match(client,/LEADER_VARIANT_NOT_READY_TO_PUBLISH/);
+});
+
+test("B4F-101 previews exact changed people and notifies only affected linked accounts",async()=>{
+  const [sql,panel,client,styles]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/solver-v2.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(sql,/changed_variant_employees_uat_v1/);
+  assert.match(sql,/optimizer_publication_change_preview_uat_v1/);
+  assert.match(sql,/before_schedule jsonb/);
+  assert.match(sql,/after_schedule jsonb/);
+  assert.match(sql,/is distinct from coalesce\(new_row\.schedule/);
+  assert.match(sql,/join public\.employees employee on employee\.id=change\.employee_id/);
+  assert.match(sql,/where employee\.auth_user_id is not null/);
+  assert.match(sql,/'previousVariantId',v_previous_variant_id/);
+  assert.match(sql,/'changed',v_changed,'notified',v_notified/);
+  assert.match(sql,/revoke all on function solver_private\.changed_variant_employees_uat_v1/);
+  assert.match(client,/getPublicationChangePreview/);
+  assert.match(client,/optimizer_publication_change_preview_uat_v1/);
+  assert.match(panel,/Osoby objęte publikacją/);
+  assert.match(panel,/Zmienione osoby/);
+  assert.match(panel,/Otrzymają powiadomienie/);
+  assert.match(panel,/publicationChangesBusy \|\| !publicationChanges/);
+  assert.match(styles,/solver-publication-change-people/);
+});
+
 test("B4F-95 checks the whole Studio draft without mutation before an audited workflow decision",async()=>{
   const [migration,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260819110000_b4f95_final_draft_validation.sql",import.meta.url),"utf8"),
@@ -325,8 +369,9 @@ test("B4F-95 checks the whole Studio draft without mutation before an audited wo
 });
 
 test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{
-  const [migration,panel,client]=await Promise.all([
+  const [migration,runContract,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260819070912_b4f100_leader_refill_run_contract.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -341,15 +386,50 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   assert.match(migration,/revoke all on function public\.optimizer_leader_refill_request_uat_v1/);
   assert.doesNotMatch(migration,/delete from public\.plan_assignments_v2/,
     "uzupełnienie nie może usuwać ani zastępować decyzji lidera");
+  assert.match(runContract,/v_requested#>>'\{run,id\}'/,
+    "wrapper musi odczytać rzeczywisty kontrakt optimizer_request_v2.run.id");
+  assert.match(runContract,/'runId',v_refill_run_id/,
+    "RPC musi zwrócić klientowi stabilne pole runId do pollingu");
+  assert.match(runContract,/LEADER_REFILL_DRAFT_REQUIRED/);
   assert.match(client,/requestLeaderRefill/);
   assert.match(client,/applyLeaderRefill/);
   assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
+  assert.match(panel,/Nie udało się uruchomić uzupełnienia/,
+    "błąd RPC musi być widoczny bezpośrednio w pełnoekranowym Studio");
+  assert.match(panel,/Generator pracuje/);
   assert.match(panel,/Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów/);
   assert.match(panel,/key=\{`leader:\$\{selectedWorkspace\.context\.runId\?\?leaderVariant\.id\}`\}/,
     "odświeżenie rewizji nie może przemontować Studia i wyzerować perspektywy Stanowiska");
   assert.doesNotMatch(panel,/key=\{`leader:[^`]*leaderVariant\.revision/);
   assert.match(panel,/Wszystkie obecne przydziały lidera są zablokowane/);
   assert.match(panel,/result\.variants\.find\(item=>item\.recommended&&item\.hardViolations===0\)/);
+});
+
+test("B4F-100 can improve cost or fairness and prepare a proposal without changing explicit locks",async()=>{
+  const [migration,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819072223_b4f100_leader_reoptimization_modes.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/optimizer_leader_reoptimization_request_uat_v1/);
+  assert.match(migration,/v_mode not in \('COST','FAIRNESS','PROPOSE_ONLY'\)/);
+  assert.match(migration,/where assignment\.variant_id=p_variant_id and assignment\.locked/,
+    "przeliczenie może utrwalić tylko jawnie przypięte decyzje");
+  assert.match(migration,/baselineAssignments/);
+  assert.match(migration,/LEADER_OPTIMIZATION_DRAFT_CHANGED/);
+  assert.match(migration,/LEADER_OPTIMIZATION_LOCK_NOT_PRESERVED/);
+  assert.match(migration,/delete from public\.plan_assignments_v2 assignment[\s\S]*not assignment\.locked/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/revoke all on function public\.optimizer_leader_reoptimization_request_uat_v1/);
+  assert.match(client,/requestLeaderReoptimization/);
+  assert.match(client,/applyLeaderReoptimization/);
+  assert.match(panel,/Popraw koszt/);
+  assert.match(panel,/Popraw sprawiedliwość/);
+  assert.match(panel,/Tylko pokaż propozycję/);
+  assert.match(panel,/Propozycja bez automatycznego zapisu/);
+  assert.match(panel,/Szkic nie został zmieniony/);
+  assert.match(panel,/leaderVariant\.revision!==leaderOptimizationProposal\.leaderRevision/,
+    "starej propozycji nie wolno stosować do nowszej rewizji szkicu");
 });
 
 test("Studio role calendar exposes vacancies as drop targets and keeps analytics panels separate",async()=>{
@@ -360,6 +440,10 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
   assert.match(workspace,/const scheduleRoles=workspaceRoles/,
     "pusty ręczny szkic nadal musi pokazać wszystkie wymagane role");
   assert.match(workspace,/studio-role-vacancy studio-vacancy-target/);
+  assert.match(workspace,/studio-employee-vacancies/,
+    "perspektywa Pracownicy musi wystawiać jawne wakaty otwierające panel kandydatów");
+  assert.match(workspace,/solver-coverage-vacancies/,
+    "perspektywa Pokrycie obsady musi wystawiać osobne cele rola-zmiana zamiast niejednoznacznej karty zbiorczej");
   assert.match(workspace,/application\/x-grafik-employee/);
   assert.match(workspace,/applyEmployeeDrop\(issue\.id,employeeId\)/);
   assert.doesNotMatch(workspace,/Dodaj do szkicu/);
@@ -369,4 +453,49 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
   assert.match(styles,/\.studio-role-vacancy:hover/);
   assert.doesNotMatch(workspace,/onLeaderChanged\?\.\(\);await openWorkload\(true\)/,
     "zapis w Studio nie może sam przenosić lidera z kalendarza do rozkładu pracy");
+});
+
+test("B4F-100 stores named checkpoints and restores them as a new audited draft revision",async()=>{
+  const [migration,identityRestore,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819065501_b4f100_leader_named_checkpoints.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260819074736_b4f100_leader_history_identity_restore.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/is_checkpoint boolean not null default false/);
+  assert.match(migration,/optimizer_leader_checkpoint_create_uat_v1/);
+  assert.match(migration,/optimizer_leader_checkpoint_restore_uat_v1/);
+  assert.match(migration,/pg_advisory_xact_lock/);
+  assert.match(migration,/solver_private\.refresh_leader_variant_uat_v1/);
+  assert.match(identityRestore,/optimizer_leader_history_move_uat_v1/);
+  assert.match(identityRestore,/optimizer_leader_checkpoint_restore_uat_v1/);
+  assert.equal((identityRestore.match(/\) overriding system value/gi)??[]).length,2,
+    "zarówno Cofnij/Ponów, jak i punkt kontrolny muszą jawnie przywracać identyfikatory GENERATED ALWAYS");
+  assert.match(migration,/revoke all on function[\s\S]*public\.optimizer_leader_checkpoint_create_uat_v1\(uuid,text\)[\s\S]*from public,anon,authenticated/);
+  assert.match(migration,/revoke all on function[\s\S]*public\.optimizer_leader_checkpoint_restore_uat_v1\(uuid,bigint,text\)[\s\S]*from public,anon,authenticated/);
+  assert.match(client,/createLeaderCheckpoint/);
+  assert.match(client,/restoreLeaderCheckpoint/);
+  assert.match(panel,/Nazwa punktu kontrolnego/);
+  assert.match(panel,/Przywrócić punkt kontrolny\?/);
+  assert.match(panel,/Bieżący szkic zostanie zapisany w historii/);
+  assert.doesNotMatch(panel,/window\.confirm\([^)]*punkt kontrolny/i);
+});
+
+test("Studio keeps the employee side panel available while scrolling through later weeks",async()=>{
+  const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(styles,/leader-studio>\.leader-studio-candidate-panel\{[^}]*position:sticky/);
+  assert.match(styles,/leader-studio-candidate-panel>\.drawer-content\{[^}]*overflow-y:auto/);
+  assert.doesNotMatch(styles,/leader-studio>\.solver-global-filters,.leader-studio>\.leader-studio-candidate-panel,.leader-studio>\.leader-studio-impact\{position:static/);
+});
+
+test("current standby preview remains callable while the broken v3 employee wrapper is retired",async()=>{
+  const migration=await readFile(new URL(
+    "../supabase/migrations/20260819132000_b4f100_standby_preview_contract_cleanup.sql",
+    import.meta.url,
+  ),"utf8");
+  assert.match(migration,/optimizer_variant_standby_preview_uat_v2/);
+  assert.match(migration,/md5\(p_variant_id::text \|\| v_date::text \|\| \(v_group->>'code'\) \|\| v_tier::text\)/,
+    "kod grupy musi zostać odczytany przed konkatenacją identyfikatora podglądu");
+  assert.match(migration,/grant execute on function public\.optimizer_variant_standby_preview_uat_v2\(uuid\)[\s\S]*to authenticated/);
+  assert.match(migration,/revoke all on function public\.matrix_v2_employee_save_uat_v3\(uuid, jsonb\)[\s\S]*from public, anon, authenticated/);
 });

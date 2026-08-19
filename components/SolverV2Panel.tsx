@@ -12,9 +12,12 @@ import {
   createManualLeaderStudio,
   requestLeaderRefill,
   applyLeaderRefill,
+  requestLeaderReoptimization,
+  applyLeaderReoptimization,
   forgetPublishedSchedule,
   forgetSolverRun,
   getPublishedSchedule,
+  getPublicationChangePreview,
   getPublicationReadiness,
   getPublicationAuthorityStatus,
   getLeaderVariantForRun,
@@ -25,7 +28,9 @@ import {
   getVariantWorkspace,
   getSolverStatus,
   getSolverVariants,
+  createLeaderCheckpoint,
   moveLeaderHistory,
+  restoreLeaderCheckpoint,
   transitionLeaderWorkflow,
   validateLeaderDraft,
   isValidIdempotencyKey,
@@ -52,6 +57,8 @@ import {
   type SolverLeaderHistoryStatus,
   type SolverLeaderWorkflowStatus,
   type SolverLeaderDraftValidation,
+  type SolverLeaderOptimizationMode,
+  type SolverPublicationChangePreview,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -124,6 +131,25 @@ function aggregateVariantFingerprint(variant: SolverVariant) {
     totalCostMinor: variant.totalCostMinor ?? null,
     metrics,
   });
+}
+
+function leaderOptimizationSource(variants:SolverVariant[],mode:SolverLeaderOptimizationMode){
+  const valid=variants.filter(variant=>variant.hardViolations===0);
+  if(!valid.length)return null;
+  if(mode==="COST")return [...valid].sort((left,right)=>
+    (left.totalCostMinor??Number.MAX_SAFE_INTEGER)-(right.totalCostMinor??Number.MAX_SAFE_INTEGER)
+    ||left.unfilledCount-right.unfilledCount)[0];
+  if(mode==="FAIRNESS"){
+    const score=(variant:SolverVariant)=>{
+      for(const key of ["LOAD_UTILIZATION_SPREAD_BPS","LOAD_SPREAD_MINUTES","TARGET_DEVIATION_MINUTES"]){
+        const value=Number(variant.metrics[key]);
+        if(Number.isFinite(value))return value;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    return [...valid].sort((left,right)=>score(left)-score(right)||left.unfilledCount-right.unfilledCount)[0];
+  }
+  return valid.find(variant=>variant.recommended)??valid[0];
 }
 
 function publicationIssueTime(value:string|undefined,timezone:string){
@@ -201,17 +227,30 @@ export function SolverV2Panel({
   const [leaderBaselineWorkspace,setLeaderBaselineWorkspace]=useState<SolverWorkspace|null>(null);
   const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
   const [leaderHistory,setLeaderHistory]=useState<SolverLeaderHistoryStatus|null>(null);
+  const [leaderCheckpointName,setLeaderCheckpointName]=useState("");
+  const [leaderCheckpointRestoreSeq,setLeaderCheckpointRestoreSeq]=useState<number|null>(null);
+  const [leaderCheckpointRestoreReason,setLeaderCheckpointRestoreReason]=useState("");
   const [leaderWorkflow,setLeaderWorkflow]=useState<SolverLeaderWorkflowStatus>("DRAFT");
   const [pendingLeaderWorkflow,setPendingLeaderWorkflow]=useState<SolverLeaderWorkflowStatus|null>(null);
   const [leaderWorkflowReason,setLeaderWorkflowReason]=useState("");
   const [leaderDraftValidation,setLeaderDraftValidation]=useState<SolverLeaderDraftValidation|null>(null);
   const [leaderRefillReason,setLeaderRefillReason]=useState("");
   const [leaderRefillRun,setLeaderRefillRun]=useState<{runId:string;leaderRevision:number;reason:string}|null>(null);
+  const [leaderRefillStatus,setLeaderRefillStatus]=useState<{tone:"info"|"success"|"danger";title:string;detail:string}|null>(null);
   const leaderRefillApplyingRef=useRef(false);
+  const [leaderOptimizationMode,setLeaderOptimizationMode]=useState<SolverLeaderOptimizationMode>("COST");
+  const [leaderOptimizationReason,setLeaderOptimizationReason]=useState("");
+  const [leaderOptimizationRun,setLeaderOptimizationRun]=useState<{runId:string;leaderRevision:number;mode:SolverLeaderOptimizationMode;reason:string}|null>(null);
+  const [leaderOptimizationStatus,setLeaderOptimizationStatus]=useState<{tone:"info"|"success"|"danger";title:string;detail:string}|null>(null);
+  const [leaderOptimizationProposal,setLeaderOptimizationProposal]=useState<{sourceVariantId:string;workspace:SolverWorkspace;leaderRevision:number;reason:string}|null>(null);
+  const leaderOptimizationApplyingRef=useRef(false);
   const [inspectedWorkspace, setInspectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [inspectingVariantId, setInspectingVariantId] = useState<string | null>(null);
   const [publishedWorkspace, setPublishedWorkspace] = useState<SolverWorkspace | null>(null);
   const [publicationName, setPublicationName] = useState(name);
+  const [publicationChanges,setPublicationChanges]=useState<SolverPublicationChangePreview|null>(null);
+  const [publicationChangesBusy,setPublicationChangesBusy]=useState(false);
+  const [publicationChangesRetry,setPublicationChangesRetry]=useState(0);
   const [publicationReadiness,setPublicationReadiness]=useState<SolverPublicationReadiness|null>(null);
   const [pendingCompanyPublication,setPendingCompanyPublication]=useState<{warningCount:number;roleReplacementCount:number}|null>(null);
   const [publicationWarningReason,setPublicationWarningReason]=useState("");
@@ -242,6 +281,10 @@ export function SolverV2Panel({
     currency:selectedWorkspace.variants[0].finance?.currency??"PLN",
     metrics:{manualStudio:true},
   } : generatedSelectedVariant;
+  const leaderPublicationReady = !leaderVariant
+    || selectedVariant?.id!==leaderVariant.id
+    || leaderWorkflow==="READY_TO_MERGE"
+    || leaderWorkflow==="PUBLISHED";
   const selectedIsPublished = Boolean(
     selectedVariant
     && publishedWorkspace?.context.status === "PUBLISHED"
@@ -374,6 +417,7 @@ export function SolverV2Panel({
     setLeaderVariant(null);
     setInspectedWorkspace(null);
     setPublishedWorkspace(null);
+    setPublicationChanges(null);
     setMessage("");
     setPollWarning("");
     setPublicationReadiness(null);
@@ -402,6 +446,19 @@ export function SolverV2Panel({
     }
     return () => { disposed = true; };
   }, [context, engine, month, supabase, initialRunId, skipRecovery]);
+
+  useEffect(()=>{
+    if(!supabase||engine!=="ORTOOLS_V2"||!selectedVariant||selectedVariant.status==="PUBLISHED"||!leaderPublicationReady){
+      setPublicationChanges(null);setPublicationChangesBusy(false);return;
+    }
+    let disposed=false;
+    setPublicationChangesBusy(true);
+    void getPublicationChangePreview(supabase,selectedVariant.id)
+      .then(preview=>{if(!disposed)setPublicationChanges(preview);})
+      .catch(()=>{if(!disposed)setPublicationChanges(null);})
+      .finally(()=>{if(!disposed)setPublicationChangesBusy(false);});
+    return()=>{disposed=true;};
+  },[supabase,engine,selectedVariant?.id,selectedVariant?.status,leaderPublicationReady,publicationChangesRetry]);
 
   useEffect(() => {
     if (!pollingRunId) return;
@@ -590,14 +647,16 @@ export function SolverV2Panel({
     const reason=leaderRefillReason.trim();
     if(reason.length<3){setMessage("Podaj krótki powód automatycznego uzupełnienia wakatów — zostanie zapisany w audycie.");return;}
     setBusy(true);setMessage("");
+    setLeaderRefillStatus({tone:"info",title:"Przygotowuję automatyczne uzupełnienie",detail:"Tworzę osobne zadanie, które zachowa wszystkie ręczne decyzje i zajmie się wyłącznie wakatami."});
     try{
       const request=await requestLeaderRefill(supabase,{
         variantId:leaderVariant.id,reason,
         idempotencyKey:createIdempotencyKey(context,`leader-refill-r${leaderVariant.revision}`),
       });
       setLeaderRefillRun({runId:request.runId,leaderRevision:request.leaderRevision,reason});
+      setLeaderRefillStatus({tone:"info",title:"Generator otrzymał zadanie",detail:"Oczekuję na wynik. Przycisk pozostanie zablokowany, aby nie uruchomić drugiego uzupełnienia tego samego szkicu."});
       setMessage("Generator uzupełnia wyłącznie wolne miejsca. Wszystkie obecne przydziały lidera są zablokowane i pozostaną bez zmian.");
-    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    }catch(error){const detail=solverErrorMessage(errorText(error));setLeaderRefillStatus({tone:"danger",title:"Nie udało się uruchomić uzupełnienia",detail});setMessage(detail);}
     finally{setBusy(false);}
   }
 
@@ -612,6 +671,7 @@ export function SolverV2Panel({
         if(status.run.status==="READY"){
           if(leaderRefillApplyingRef.current)return;
           leaderRefillApplyingRef.current=true;
+          setLeaderRefillStatus({tone:"info",title:"Sprawdzam gotowy wynik",detail:"Generator zakończył obliczenia. Wybieram poprawny wariant i dopisuję tylko obsadzone wakaty."});
           const result=await getSolverVariants(supabase,leaderRefillRun.runId);
           const source=result.variants.find(item=>item.recommended&&item.hardViolations===0)
             ?? result.variants.find(item=>item.hardViolations===0);
@@ -623,23 +683,106 @@ export function SolverV2Panel({
           const added=Number(applied.addedAssignments??0);
           setLeaderRefillRun(null);setLeaderRefillReason("");
           await reloadLeaderWorkspace();
+          setLeaderRefillStatus({tone:"success",title:`Uzupełniono ${added} ${added===1?"miejsce":"miejsc"}`,detail:"Wcześniejsze przydziały lidera pozostały bez zmian, a cały miesiąc został ponownie sprawdzony."});
           setMessage(`Uzupełniono ${added} wolnych ${added===1?"miejsce":"miejsc"}. Wcześniejsze przydziały lidera pozostały bez zmian; cały miesiąc został ponownie sprawdzony.`);
           return;
         }
         if(["FAILED","CANCELLED","STALE_INPUT"].includes(status.run.status)){
           setLeaderRefillRun(null);
+          setLeaderRefillStatus({tone:"danger",title:"Automatyczne uzupełnienie nie zostało zastosowane",detail:`Zadanie zakończyło się statusem ${solverStatusLabel(status.run.status)}. Wersja lidera pozostała bez zmian.`});
           setMessage(`Nie zastosowano automatycznego uzupełnienia. Zadanie zakończyło się statusem ${solverStatusLabel(status.run.status)}; wersja lidera pozostała bez zmian.`);
           return;
         }
+        setLeaderRefillStatus({tone:"info",title:"Generator pracuje",detail:`${solverPhaseLabel(status.run.phase)} • ${Math.max(0,Math.min(100,status.run.progress??0))}%`});
         timer=setTimeout(poll,3000);
       }catch(error){
         if(cancelled)return;
-        setLeaderRefillRun(null);setMessage(solverErrorMessage(errorText(error)));
+        const detail=solverErrorMessage(errorText(error));
+        setLeaderRefillRun(null);setLeaderRefillStatus({tone:"danger",title:"Nie udało się dokończyć uzupełnienia",detail});setMessage(detail);
       }finally{leaderRefillApplyingRef.current=false;}
     };
     void poll();
     return()=>{cancelled=true;if(timer)clearTimeout(timer);};
   },[supabase,leaderRefillRun?.runId,leaderVariant?.id]);
+
+  async function startLeaderOptimization(){
+    if(!supabase||!leaderVariant||leaderWorkflow!=="DRAFT")return;
+    const reason=leaderOptimizationReason.trim();
+    if(reason.length<3){setMessage("Podaj krótki cel przeliczenia — zostanie zapisany w audycie.");return;}
+    setBusy(true);setMessage("");setLeaderOptimizationProposal(null);
+    setLeaderOptimizationStatus({tone:"info",title:"Przygotowuję bezpieczne przeliczenie",detail:"Przypięte decyzje pozostaną bez zmian. Generator otrzyma tylko niezablokowany zakres szkicu."});
+    try{
+      const request=await requestLeaderReoptimization(supabase,{
+        variantId:leaderVariant.id,mode:leaderOptimizationMode,reason,
+        idempotencyKey:createIdempotencyKey(context,`leader-${leaderOptimizationMode.toLowerCase()}-r${leaderVariant.revision}`),
+      });
+      setLeaderOptimizationRun({runId:request.runId,leaderRevision:request.leaderRevision,mode:request.mode,reason});
+      setLeaderOptimizationStatus({tone:"info",title:"Generator otrzymał zadanie",detail:`Zachowano ${request.lockedAssignments} przypiętych decyzji. Wersja lidera nie zmieni się przed zakończeniem obliczeń.`});
+    }catch(error){const detail=solverErrorMessage(errorText(error));setLeaderOptimizationStatus({tone:"danger",title:"Nie udało się uruchomić przeliczenia",detail});setMessage(detail);}
+    finally{setBusy(false);}
+  }
+
+  useEffect(()=>{
+    if(!supabase||!leaderOptimizationRun||!leaderVariant)return;
+    let cancelled=false;let timer:ReturnType<typeof setTimeout>|null=null;
+    const poll=async()=>{
+      try{
+        const status=await getSolverStatus(supabase,leaderOptimizationRun.runId);
+        if(cancelled)return;
+        if(status.run.status==="READY"){
+          if(leaderOptimizationApplyingRef.current)return;
+          leaderOptimizationApplyingRef.current=true;
+          const result=await getSolverVariants(supabase,leaderOptimizationRun.runId);
+          const source=leaderOptimizationSource(result.variants,leaderOptimizationRun.mode);
+          if(!source)throw new Error("LEADER_OPTIMIZATION_NO_VALID_VARIANT");
+          if(leaderOptimizationRun.mode==="PROPOSE_ONLY"){
+            const workspace=await getVariantWorkspace(supabase,source.id);
+            if(cancelled)return;
+            setLeaderOptimizationProposal({sourceVariantId:source.id,workspace,
+              leaderRevision:leaderOptimizationRun.leaderRevision,reason:leaderOptimizationRun.reason});
+            setLeaderOptimizationRun(null);
+            setLeaderOptimizationStatus({tone:"success",title:"Propozycja jest gotowa",detail:"Szkic nie został zmieniony. Możesz otworzyć porównanie, zastosować propozycję albo ją odrzucić."});
+            return;
+          }
+          setLeaderOptimizationStatus({tone:"info",title:"Wynik jest gotowy",detail:"Sprawdzam rewizję szkicu i zastępuję wyłącznie niezablokowane przydziały."});
+          const applied=await applyLeaderReoptimization(supabase,{leaderVariantId:leaderVariant.id,
+            sourceVariantId:source.id,reason:leaderOptimizationRun.reason});
+          if(cancelled)return;
+          const replaced=Number(applied.replacedAssignments??0);
+          setLeaderOptimizationRun(null);setLeaderOptimizationReason("");
+          await reloadLeaderWorkspace();
+          setLeaderOptimizationStatus({tone:"success",title:"Przeliczenie zastosowane",detail:`Zapisano ${replaced} niezablokowanych przydziałów. Przypięte decyzje pozostały bez zmian.`});
+          return;
+        }
+        if(["FAILED","CANCELLED","STALE_INPUT"].includes(status.run.status)){
+          setLeaderOptimizationRun(null);
+          setLeaderOptimizationStatus({tone:"danger",title:"Przeliczenie nie zostało zastosowane",detail:`Zadanie zakończyło się statusem ${solverStatusLabel(status.run.status)}. Szkic pozostał bez zmian.`});
+          return;
+        }
+        setLeaderOptimizationStatus({tone:"info",title:"Generator pracuje",detail:`${solverPhaseLabel(status.run.phase)} • ${Math.max(0,Math.min(100,status.run.progress??0))}%`});
+        timer=setTimeout(poll,3000);
+      }catch(error){
+        if(cancelled)return;
+        const detail=solverErrorMessage(errorText(error));setLeaderOptimizationRun(null);
+        setLeaderOptimizationStatus({tone:"danger",title:"Nie udało się dokończyć przeliczenia",detail});setMessage(detail);
+      }finally{leaderOptimizationApplyingRef.current=false;}
+    };
+    void poll();return()=>{cancelled=true;if(timer)clearTimeout(timer);};
+  },[supabase,leaderOptimizationRun?.runId,leaderVariant?.id]);
+
+  async function applyLeaderOptimizationProposal(){
+    if(!supabase||!leaderVariant||!leaderOptimizationProposal)return;
+    setBusy(true);setMessage("");
+    try{
+      const applied=await applyLeaderReoptimization(supabase,{leaderVariantId:leaderVariant.id,
+        sourceVariantId:leaderOptimizationProposal.sourceVariantId,reason:leaderOptimizationProposal.reason});
+      const replaced=Number(applied.replacedAssignments??0);
+      setLeaderOptimizationProposal(null);setLeaderOptimizationReason("");
+      await reloadLeaderWorkspace();
+      setLeaderOptimizationStatus({tone:"success",title:"Propozycja zastosowana",detail:`Zapisano ${replaced} niezablokowanych przydziałów. Przypięte decyzje pozostały bez zmian.`});
+    }catch(error){const detail=solverErrorMessage(errorText(error));setLeaderOptimizationStatus({tone:"danger",title:"Nie udało się zastosować propozycji",detail});setMessage(detail);}
+    finally{setBusy(false);}
+  }
 
   async function moveLeaderRevision(direction:"UNDO"|"REDO"){
     if(!supabase||!leaderVariant)return;
@@ -648,6 +791,34 @@ export function SolverV2Panel({
       await moveLeaderHistory(supabase,leaderVariant.id,direction);
       await reloadLeaderWorkspace();
       setMessage(direction==="UNDO"?"Cofnięto ostatnią zmianę. Cały grafik został ponownie sprawdzony.":"Ponowiono zmianę. Cały grafik został ponownie sprawdzony.");
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function saveLeaderCheckpoint(){
+    if(!supabase||!leaderVariant)return;
+    const checkpointName=leaderCheckpointName.trim();
+    if(checkpointName.length<3){setMessage("Nadaj punktowi kontrolnemu nazwę mającą co najmniej 3 znaki.");return;}
+    setBusy(true);setMessage("");
+    try{
+      await createLeaderCheckpoint(supabase,leaderVariant.id,checkpointName);
+      await reloadLeaderWorkspace();
+      setLeaderCheckpointName("");
+      setMessage(`Zapisano punkt kontrolny „${checkpointName}”. Możesz do niego wrócić bez publikowania grafiku.`);
+    }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function restoreSelectedLeaderCheckpoint(){
+    if(!supabase||!leaderVariant||leaderCheckpointRestoreSeq===null)return;
+    const reason=leaderCheckpointRestoreReason.trim();
+    if(reason.length<3){setMessage("Podaj krótki powód przywrócenia punktu kontrolnego — zostanie zapisany w audycie.");return;}
+    setBusy(true);setMessage("");
+    try{
+      await restoreLeaderCheckpoint(supabase,{variantId:leaderVariant.id,historySeq:leaderCheckpointRestoreSeq,reason});
+      await reloadLeaderWorkspace();
+      setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");
+      setMessage("Przywrócono wybrany punkt kontrolny. To nadal wersja robocza; pracownicy nie widzą zmian.");
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
   }
@@ -716,7 +887,7 @@ export function SolverV2Panel({
         setPublishedWorkspace(workspace);
         setMessage(publication.reused
           ? "Ten sam grafik był już opublikowany. Przywrócono jego aktualny podgląd."
-          : "Grafik został opublikowany i jest teraz obowiązującym grafikiem miesiąca.");
+          : `Grafik został opublikowany. Zmieniono przydziały ${publication.changed??0} osób i wysłano ${publication.notified??0} powiadomień.`);
       } catch {
         setMessage("Grafik został opublikowany, ale nie udało się odświeżyć jego podglądu. Użyj przycisku „Odśwież”.");
       }
@@ -770,6 +941,10 @@ export function SolverV2Panel({
 
   async function publishSelectedRole() {
     if (!supabase || !run || !selectedVariant || engine === "SHADOW" || scopeType !== "ROLE") return;
+    if (!leaderPublicationReady) {
+      setMessage("Wersja lidera nie jest jeszcze gotowa do publikacji. W Studio wybierz „Sprawdź cały grafik”, przejdź przez zatwierdzenie lidera i oznacz wersję jako gotową do scalenia.");
+      return;
+    }
     const trimmedName = publicationName.trim();
     if (!trimmedName) {
       setMessage("Nie udało się opublikować grafiku zespołu. Podaj jego nazwę.");
@@ -809,7 +984,7 @@ export function SolverV2Panel({
       await onVariantSelected?.({ ...selectedVariant, status: "PUBLISHED" });
       setMessage(publication.reused
         ? "Ten grafik zespołu był już opublikowany. Nie wysłano podwójnych powiadomień."
-        : `Grafik zespołu został opublikowany. Powiadomiono ${publication.notified} pracowników.`);
+        : `Grafik zespołu został opublikowany. Zmieniono przydziały ${publication.changed} osób i powiadomiono ${publication.notified} pracowników z połączonym kontem.`);
     } catch (error) {
       setMessage(solverErrorMessage(error instanceof Error ? error.message : String(error)));
     } finally {
@@ -832,6 +1007,15 @@ export function SolverV2Panel({
     setPublicationReadiness(null);
     setMessage("");
   }
+
+  const publicationChangePanel=selectedVariant&&selectedVariant.status!=="PUBLISHED"&&leaderPublicationReady
+    ?<section className="solver-publication-changes" aria-label="Różnice i powiadomienia przed publikacją">
+      <header><Users/><span><strong>Osoby objęte publikacją</strong><small>{publicationChanges?.baselineFound?"Porównanie z obecnie obowiązującym grafikiem.":"Pierwsza publikacja — wszyscy przydzieleni pracownicy są traktowani jako objęci zmianą."}</small></span></header>
+      {publicationChangesBusy?<p>Wyliczam różnice i zakres powiadomień…</p>:publicationChanges?<>
+        <div className="solver-publication-change-totals"><span><small>Zmienione osoby</small><b>{publicationChanges.changedCount}</b></span><span><small>Otrzymają powiadomienie</small><b>{publicationChanges.notificationCount}</b></span></div>
+        {publicationChanges.people.length>0?<div className="solver-publication-change-people">{publicationChanges.people.slice(0,8).map(person=><span key={person.employeeId}><b>{person.name}</b><small>{person.employeeNo} • {person.changeType==="ADDED"?"dodane przydziały":person.changeType==="REMOVED"?"usunięte przydziały":"zmienione przydziały"} • {person.beforeAssignmentCount} → {person.afterAssignmentCount}{person.willNotify?" • powiadomienie":" • brak połączonego konta"}</small></span>)}{publicationChanges.people.length>8&&<em>oraz {publicationChanges.people.length-8} kolejnych osób</em>}</div>:<p>Grafik nie różni się od obowiązującej wersji. Publikacja nie wyśle powiadomień pracownikom.</p>}
+      </>:<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Nie udało się wyliczyć zakresu publikacji</strong><small>Publikacja pozostaje zablokowana, aby nie wysłać niekontrolowanych powiadomień.</small></span><button type="button" className="secondary-button" onClick={()=>setPublicationChangesRetry(value=>value+1)}>Spróbuj ponownie</button></div>}
+    </section>:null;
 
   return <div className="solver-v2-panel">
     <div className="solver-v2-heading">
@@ -950,7 +1134,29 @@ export function SolverV2Panel({
       <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
-      <header className="leader-studio-fullscreen-head"><span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span><div className="leader-studio-history-actions"><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canUndo} onClick={()=>void moveLeaderRevision("UNDO")}><Undo2/> Cofnij</button><button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canRedo} onClick={()=>void moveLeaderRevision("REDO")}><Redo2/> Ponów</button><details><summary><History/> Historia</summary><div>{leaderHistory?.entries.map(entry=><span className={entry.current?"current":""} key={entry.seq}><b>{entry.label}</b><small>Rewizja {entry.revision}</small></span>)}</div></details><em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em><button type="button" className="icon-button" aria-label="Zamknij Studio lidera" onClick={()=>{setLeaderVariant(null);setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");}}><X/></button></div></header>
+      <header className="leader-studio-fullscreen-head">
+        <span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span>
+        <div className="leader-studio-history-actions">
+          <button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canUndo} onClick={()=>void moveLeaderRevision("UNDO")}><Undo2/> Cofnij</button>
+          <button type="button" className="secondary-button" disabled={busy||!leaderHistory?.canRedo} onClick={()=>void moveLeaderRevision("REDO")}><Redo2/> Ponów</button>
+          <details className="leader-history-menu">
+            <summary><History/> Historia</summary>
+            <div className="leader-history-menu-body">
+              {leaderWorkflow==="DRAFT"&&<form className="leader-checkpoint-create" onSubmit={event=>{event.preventDefault();void saveLeaderCheckpoint();}}>
+                <label>Nazwa punktu kontrolnego<input value={leaderCheckpointName} maxLength={80} onChange={event=>setLeaderCheckpointName(event.target.value)} placeholder="np. Obsadzona SALA"/></label>
+                <button type="submit" className="secondary-button" disabled={busy||leaderCheckpointName.trim().length<3}>Zapisz punkt</button>
+              </form>}
+              <div className="leader-history-list">{leaderHistory?.entries.map(entry=><article className={`${entry.current?"current ":""}${entry.isCheckpoint?"checkpoint":""}`} key={entry.seq}>
+                <span><b>{entry.checkpointName??entry.label}</b><small>Rewizja {entry.revision}{entry.current?" • bieżąca":""}</small></span>
+                {entry.isCheckpoint&&!entry.current&&leaderWorkflow==="DRAFT"&&<button type="button" className="link-button" disabled={busy} onClick={()=>{setLeaderCheckpointRestoreSeq(entry.seq);setLeaderCheckpointRestoreReason("");}}>Przywróć</button>}
+              </article>)}</div>
+            </div>
+          </details>
+          <em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em>
+          <button type="button" className="icon-button" aria-label="Zamknij Studio lidera" onClick={()=>{setLeaderVariant(null);setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");setLeaderRefillStatus(null);setLeaderOptimizationRun(null);setLeaderOptimizationStatus(null);setLeaderOptimizationProposal(null);}}><X/></button>
+        </div>
+      </header>
+      {leaderCheckpointRestoreSeq!==null&&<section className="leader-workflow-confirm leader-checkpoint-restore"><div><strong>Przywrócić punkt kontrolny?</strong><small>Bieżący szkic zostanie zapisany w historii, a wybrany układ stanie się nową rewizją roboczą. Nic nie trafi do pracowników.</small></div><label>Powód przywrócenia<textarea autoFocus minLength={3} value={leaderCheckpointRestoreReason} onChange={event=>setLeaderCheckpointRestoreReason(event.target.value)} placeholder="np. powrót do układu po obsadzeniu SALI"/></label><span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");}}>Anuluj</button><button type="button" className="primary-button" disabled={busy||leaderCheckpointRestoreReason.trim().length<3} onClick={()=>void restoreSelectedLeaderCheckpoint()}>{busy?<RefreshCw className="spin"/>:<History/>} Przywróć punkt</button></span></section>}
       <nav className="leader-studio-workflow" aria-label="Etap wersji roboczej">
         <span className={leaderWorkflow==="DRAFT"?"active":"done"}><b>1</b> Roboczy</span>
         <span className={leaderWorkflow==="REVIEW"?"active":["LEADER_APPROVED","READY_TO_MERGE","PUBLISHED"].includes(leaderWorkflow)?"done":""}><b>2</b> Do sprawdzenia</span>
@@ -959,7 +1165,15 @@ export function SolverV2Panel({
         <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
         <div>{leaderWorkflow==="DRAFT"&&<><button className="secondary-button" disabled={busy} onClick={()=>void checkLeaderDraft()}><Check/> Sprawdź cały grafik</button><button className="primary-button" disabled={busy||!leaderDraftValidation?.valid||leaderDraftValidation.revision!==leaderVariant.revision} title={!leaderDraftValidation?"Najpierw uruchom niemutującą kontrolę całego szkicu":!leaderDraftValidation.valid?"Najpierw popraw naruszenia twardych reguł":leaderDraftValidation.revision!==leaderVariant.revision?"Szkic zmienił się po kontroli — sprawdź go ponownie":"Przekaż sprawdzony szkic"} onClick={()=>setPendingLeaderWorkflow("REVIEW")}>Przekaż sprawdzony grafik</button></>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
       </nav>
-      {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Opcjonalna pomoc generatora: zachowa wszystkie ręczne przydziały i spróbuje obsadzić wyłącznie wakaty. Jeśli układasz grafik samodzielnie, pomiń tę akcję.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={Boolean(leaderRefillRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/><small>{leaderRefillReason.trim().length<3?"Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów.":"Gotowe — generator nie zmieni ręcznych decyzji lidera."}</small></label><span><button type="button" className="primary-button" disabled={busy||Boolean(leaderRefillRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()} title={leaderRefillReason.trim().length<3?"Najpierw wpisz powód uruchomienia":"Uzupełnij wyłącznie nieobsadzone miejsca"}>{leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span></section>}
+      {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Opcjonalna pomoc generatora: zachowa wszystkie ręczne przydziały i spróbuje obsadzić wyłącznie wakaty. Jeśli układasz grafik samodzielnie, pomiń tę akcję.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/><small>{leaderRefillReason.trim().length<3?"Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów.":"Gotowe — generator nie zmieni ręcznych decyzji lidera."}</small></label><span><button type="button" className="primary-button" disabled={busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()} title={leaderRefillReason.trim().length<3?"Najpierw wpisz powód uruchomienia":"Uzupełnij wyłącznie nieobsadzone miejsca"}>{leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span>{leaderRefillStatus&&<div className={`leader-refill-status ${leaderRefillStatus.tone}`} role="status" aria-live="polite">{leaderRefillStatus.tone==="danger"?<AlertTriangle/>:leaderRefillStatus.tone==="success"?<Check/>:<RefreshCw className={leaderRefillRun?"spin":""}/>}<span><strong>{leaderRefillStatus.title}</strong><small>{leaderRefillStatus.detail}</small></span></div>}</section>}
+      {leaderWorkflow==="DRAFT"&&<section className="leader-workflow-confirm leader-refill-action leader-optimization-action">
+        <div><strong>Przelicz niezablokowany zakres</strong><small>Przypięte przydziały pozostają bez zmian. Wybierz, czy generator ma poprawić koszt, sprawiedliwość, czy tylko przygotować propozycję bez zmiany szkicu.</small></div>
+        <label>Tryb przeliczenia<select disabled={Boolean(leaderOptimizationRun)} value={leaderOptimizationMode} onChange={event=>setLeaderOptimizationMode(event.target.value as SolverLeaderOptimizationMode)}><option value="COST">Popraw koszt</option><option value="FAIRNESS">Popraw sprawiedliwość</option><option value="PROPOSE_ONLY">Tylko pokaż propozycję</option></select></label>
+        <label>Cel przeliczenia<textarea minLength={3} disabled={Boolean(leaderOptimizationRun)} value={leaderOptimizationReason} onChange={event=>setLeaderOptimizationReason(event.target.value)} placeholder="np. wyrównanie godzin bez zmiany przypiętych decyzji"/></label>
+        <span><button type="button" className="secondary-button" disabled={busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderOptimizationReason.trim().length<3} onClick={()=>void startLeaderOptimization()}>{leaderOptimizationRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderOptimizationRun?"Przeliczam…":leaderOptimizationMode==="PROPOSE_ONLY"?"Przygotuj propozycję":"Uruchom przeliczenie"}</button></span>
+        {leaderOptimizationStatus&&<div className={`leader-refill-status ${leaderOptimizationStatus.tone}`} role="status" aria-live="polite">{leaderOptimizationStatus.tone==="danger"?<AlertTriangle/>:leaderOptimizationStatus.tone==="success"?<Check/>:<RefreshCw className={leaderOptimizationRun?"spin":""}/>}<span><strong>{leaderOptimizationStatus.title}</strong><small>{leaderOptimizationStatus.detail}</small></span></div>}
+        {leaderOptimizationProposal&&<article className="leader-optimization-proposal"><div><strong>Propozycja bez automatycznego zapisu</strong><small>Przydziały: {leaderOptimizationProposal.workspace.variants[0]?.assignmentCount??0} • braki: {leaderOptimizationProposal.workspace.variants[0]?.unfilledCount??0}. Bieżący szkic nadal ma rewizję {leaderVariant.revision}.</small></div><span><button type="button" className="secondary-button" onClick={()=>setInspectedWorkspace(leaderOptimizationProposal.workspace)}>Otwórz porównanie</button><button type="button" className="secondary-button" onClick={()=>{setLeaderOptimizationProposal(null);setLeaderOptimizationStatus(null);}}>Odrzuć</button><button type="button" className="primary-button" disabled={busy||leaderVariant.revision!==leaderOptimizationProposal.leaderRevision} title={leaderVariant.revision!==leaderOptimizationProposal.leaderRevision?"Szkic zmienił się po przygotowaniu propozycji — uruchom nowe przeliczenie":"Zastosuj propozycję do niezablokowanego zakresu"} onClick={()=>void applyLeaderOptimizationProposal()}>Zastosuj propozycję</button></span></article>}
+      </section>}
       {pendingLeaderWorkflow&&<section className="leader-workflow-confirm"><div><strong>Potwierdź zmianę etapu</strong><small>Powód zostanie zapisany w historii wersji lidera. Samo przejście etapu nie publikuje grafiku pracownikom.</small></div><label>Powód decyzji<textarea autoFocus minLength={3} value={leaderWorkflowReason} onChange={event=>setLeaderWorkflowReason(event.target.value)} placeholder="np. grafik sprawdzony przez lidera BAR"/></label><span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");}}>Anuluj</button><button type="button" className="primary-button" disabled={busy||leaderWorkflowReason.trim().length<3} onClick={()=>void moveLeaderWorkflow(pendingLeaderWorkflow)}>{busy?<RefreshCw className="spin"/>:<Check/>} Zapisz zmianę etapu</button></span></section>}
       <div className="leader-studio-fullscreen-body"><SolverV2Workspace key={`leader:${selectedWorkspace.context.runId??leaderVariant.id}`} workspace={selectedWorkspace} baselineWorkspace={leaderBaselineWorkspace} timezone={timezone} published={leaderVariant.status==="PUBLISHED"} leaderEditable={leaderVariant.status!=="PUBLISHED"&&leaderWorkflow==="DRAFT"} initialView="CALENDAR" onLeaderChanged={reloadLeaderWorkspace} onOpenAdHoc={onOpenAdHoc} notify={setMessage} fail={setMessage}/></div>
     </section>}
@@ -988,7 +1202,9 @@ export function SolverV2Panel({
         <label>Nazwa grafiku zespołu
           <input value={publicationName} maxLength={200} onChange={event => setPublicationName(event.target.value)}/>
         </label>
-        <button className="primary-button" disabled={busy || !publicationName.trim() || selectedVariant.status === "PUBLISHED"} onClick={() => void publishSelectedRole()}>
+        {publicationChangePanel}
+        {!leaderPublicationReady&&<small className="publication-workflow-blocker">Najpierw zakończ kontrolę wersji lidera i oznacz ją jako „Gotowa do scalenia”.</small>}
+        <button className="primary-button" disabled={busy || publicationChangesBusy || !publicationChanges || !publicationName.trim() || selectedVariant.status === "PUBLISHED" || !leaderPublicationReady} title={!leaderPublicationReady?"Publikacja wymaga etapu: Gotowy do scalenia":!publicationChanges?"Najpierw wylicz różnice i zakres powiadomień":"Opublikuj grafik zespołu"} onClick={() => void publishSelectedRole()}>
           {selectedVariant.status === "PUBLISHED"
             ? <><Check/> Grafik opublikowany</>
             : busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj dla zespołu</>}
@@ -1004,7 +1220,8 @@ export function SolverV2Panel({
         <label>Nazwa publikowanego grafiku
           <input value={publicationName} maxLength={200} onChange={event => setPublicationName(event.target.value)}/>
         </label>
-        <button className="primary-button" disabled={busy || !publicationName.trim()} onClick={() => void publishSelected()}>
+        {publicationChangePanel}
+        <button className="primary-button" disabled={busy || publicationChangesBusy || !publicationChanges || !publicationName.trim()} onClick={() => void publishSelected()}>
           {busy ? <><RefreshCw className="spin"/> Publikuję…</> : <><Upload/> Opublikuj wybrany wariant</>}
         </button>
       </div>}

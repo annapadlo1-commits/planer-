@@ -21,6 +21,7 @@ from grafik_solver.cp_sat_engine import (
     OptimizationError,
     OptimizationIncomplete,
     SolverUnavailable,
+    coverage_minimum_is_proven,
 )
 from grafik_solver.eligibility import EligibilityIndex
 from grafik_solver.lifecycle import WorkerRuntime
@@ -32,6 +33,18 @@ from grafik_solver.validator import validate_variant
 
 FIXTURE_PATH = ROOT / "tests" / "fixtures" / "small_snapshot.json"
 RUN_ID = "11111111-1111-4111-8111-111111111111"
+
+
+class CoveragePublicationGuardTests(unittest.TestCase):
+    def test_unproven_nonzero_shortage_is_not_publishable(self) -> None:
+        self.assertFalse(
+            coverage_minimum_is_proven(3, 0, cp_model.FEASIBLE)
+        )
+
+    def test_complete_or_bound_matching_roster_is_publishable(self) -> None:
+        self.assertTrue(coverage_minimum_is_proven(0, 0, cp_model.FEASIBLE))
+        self.assertTrue(coverage_minimum_is_proven(3, 3, cp_model.FEASIBLE))
+        self.assertTrue(coverage_minimum_is_proven(3, 0, cp_model.OPTIMAL))
 
 
 def load_raw() -> dict:
@@ -957,6 +970,30 @@ class SnapshotTests(unittest.TestCase):
 
 
 class SolverTests(unittest.TestCase):
+    def test_fill_remaining_preserves_every_locked_leader_assignment(self) -> None:
+        raw = load_raw()
+        raw["strategies"] = [raw["strategies"][0]]
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        locked_slot_id = raw["slots"][0]["slotId"]
+        raw["lockedAssignments"] = [
+            {"slotId": locked_slot_id, "employeeId": "employee-alice"}
+        ]
+
+        variant = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(
+            Snapshot.from_dict(raw)
+        )[0]
+        assignments = {
+            assignment.slot_id: assignment.employee_id
+            for assignment in variant.assignments
+        }
+
+        self.assertEqual(assignments[locked_slot_id], "employee-alice")
+        self.assertEqual(len(assignments), len(raw["slots"]))
+        self.assertEqual(variant.unfilled_slot_ids, ())
+
     def test_fairness_is_role_aware_in_every_category(self) -> None:
         """Every category uses the same per-role fairness contract.
 

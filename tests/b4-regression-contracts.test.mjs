@@ -468,12 +468,23 @@ test("team catalog uses the same explicit target and hard limit semantics as the
 });
 
 test("calendar comparison can preselect the compared employee for a server-validated replacement", async () => {
-  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const [workspace,styles]=await Promise.all([
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/product-journey.css",import.meta.url),"utf8"),
+  ]);
   assert.match(workspace,/preferredEmployeeId/);
   assert.match(workspace,/context\.candidates\.some\(candidate=>candidate\.employeeId===preferredEmployeeId&&candidate\.suggestionEligible\)/);
   assert.match(workspace,/Sprawdź, czy \{primary\.length\?comparisonEmployee\.firstName:employeeDetailShortName\} może przejąć tę zmianę/);
   assert.match(workspace,/rolę, lokal i obowiązek/);
   assert.match(workspace,/przejmie obowiązek/);
+  assert.match(workspace,/employee-unified-month-calendar/);
+  assert.match(workspace,/Dostępność, zmiany, obowiązki i lokale obu osób są warstwami tego samego dnia/);
+  assert.match(workspace,/Wolne w grafiku/);
+  assert.doesNotMatch(workspace,/employee-availability-comparison/,
+    "porównanie pracownika nie może renderować osobnego kalendarza dostępności nad grafikiem");
+  assert.doesNotMatch(workspace,/employee-compare-weeks/,
+    "grafik i dostępność mają być jedną siatką dat, a nie dwoma kalendarzami");
+  assert.match(styles,/\.employee-unified-weeks>section\{display:grid;grid-template-columns:repeat\(7,minmax\(0,1fr\)\)\}/);
 });
 
 test("shortage candidates open their calendar and an audited leader-only limit override", async () => {
