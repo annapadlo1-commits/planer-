@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { Check, Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   applicationEnvironmentLabel,
@@ -238,19 +238,15 @@ function LoginScreen() {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <img className="login-brand-lockup" src="/brand/primary_logo_lockup.png" alt="SZAFUNEK — Hide. Collect. Keep yours." />
-        <p className="eyebrow">GRAFIK. ZESPÓŁ. ZMIANY.</p>
-        <h1>Szanuj swój czas.<br/>Szanuj zespół.</h1>
-        <p>Grafiki, zmiany, wiadomości, raporty i ustawienia w jednym bezpiecznym miejscu.</p>
-        <div className="login-points">
-          <span><Check size={16} /> 76 pracowników demonstracyjnych</span>
-          <span><Check size={16} /> KRUCZA i PAWILONY</span>
-          <span><Check size={16} /> Dostęp według roli użytkownika</span>
+        <div className="login-brand-signature">
+          <img className="login-brand-lockup" src="/brand/szafunek-lockup-transparent.png" alt="SZAFUNEK" />
+          <span className="login-brand-role">PIZZAIOLO</span>
         </div>
+        <h1>OGARNIJ ZMIANY</h1>
       </section>
       <section className="login-panel">
         <div className="login-card">
-          <img className="login-cat" src="/brand/cat-symbol-exact.png" alt="" aria-hidden="true" />
+          <img className="login-app-icon" src="/icons/szafunek-192.png" alt="SZAFUNEK" />
           <div className="live-status environment-status online" title={`Projekt Supabase: ${supabaseProjectRef()}`}>
             <Database size={15} /><span><b>{applicationEnvironmentLabel()}</b><small>{supabaseProjectRef()}</small></span>
           </div>

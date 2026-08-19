@@ -1,4 +1,4 @@
-const CACHE_VERSION = "szafunek-shell-v1";
+const CACHE_VERSION = "szafunek-shell-v2-branding-fix";
 const SAFE_SHELL = [
   "/offline",
   "/manifest.webmanifest",
