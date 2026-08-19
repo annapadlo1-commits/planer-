@@ -557,22 +557,31 @@ test("employee portal uses one combined schedule and availability calendar", asy
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
   const uatCss=await readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8");
-  const publicationCalendar=await readFile(new URL("../supabase/migrations/20260809152000_b4_deduplicate_published_company_calendar.sql",import.meta.url),"utf8");
+  const publicationCalendar=await readFile(new URL("../supabase/migrations/20260819200000_b4f87_employee_category_calendar.sql",import.meta.url),"utf8");
   assert.match(modules,/Grafik i dostępność w jednym kalendarzu/);
   assert.match(modules,/employee-combined-calendar/);
   assert.match(css,/\.portal-grid\.portal-top\{grid-template-columns:minmax\(250px,320px\) minmax\(0,1fr\)\}/);
   assert.match(css,/\.employee-combined-calendar \.availability-calendar-content\{min-height:0;grid-template-columns:minmax\(560px,1\.55fr\) minmax\(310px,\.65fr\)\}/);
   assert.match(uatCss,/\.availability-calendar-content > \.availability-month-status \{\s*grid-column: 1 \/ -1;/);
   assert.match(modules,/publishedAssignments\.length/);
-  assert.match(modules,/portal\?\.employee\?\.id \|\| portal\?\.timeConstraints\?\.employeeId/);
+  assert.match(modules,/published_employee_category_calendar_uat_v3/);
+  assert.match(modules,/standby=\{portal\.standby\}/);
+  assert.match(modules,/swapAnnouncements=\{activeSwapAnnouncements\}/);
+  assert.match(modules,/onSelectDay=\{setSelectedDay\}/);
+  assert.doesNotMatch(modules,/<section className="employee-calendar-card">/);
   assert.match(modules,/Niedostępność zostanie zapisana PO publikacji/);
   assert.match(modules,/Zapisano niedostępność po publikacji/);
   assert.match(modules,/Konflikty z opublikowanym grafikiem:/);
-  assert.match(css,/\.employee-calendar-card\{display:none\}/);
+  assert.match(publicationCalendar,/published_employee_category_calendar_uat_v3/);
   assert.match(publicationCalendar,/distinct on\(role\.logical_id\)/);
   assert.match(publicationCalendar,/where not exists\(select 1 from company_variants\)/);
-  assert.match(publicationCalendar,/'locationId',location\.logical_id/);
-  assert.match(publicationCalendar,/'roleId',role\.logical_id/);
+  assert.match(publicationCalendar,/viewer_role\.category_id=role\.category_id/);
+  assert.match(publicationCalendar,/viewer_grant\.employee_id=v_employee/);
+  assert.match(publicationCalendar,/revoke all on function public\.published_company_calendar_uat_v2\(date\)\s+from authenticated/);
+  assert.match(publicationCalendar,/grant execute on function public\.published_company_calendar_uat_v2\(date\)\s+to service_role/);
+  assert.match(publicationCalendar,/'locationId',row_value\.location_id/);
+  assert.match(publicationCalendar,/'roleId',row_value\.role_id/);
+  assert.doesNotMatch(publicationCalendar,/'(?:cost|rate|absenceReason)'/i);
 });
 
 test("employee portal never calls the owner-only UAT MASTER persona preview", async () => {
@@ -647,12 +656,24 @@ test("merged company publication recovers category teams from durable publicatio
   assert.match(migration,/'\{missingRoleIds\}','\[\]'::jsonb/);
 });
 
+test("B4F-96 opens real team and vacancy details from the merge overview", async () => {
+  const panel=await readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8");
+  assert.match(panel,/Otwórz zespół/);
+  assert.match(panel,/onClick=\{\(\)=>void inspectRole\(role\.publicationId,role\.role\.name,"CALENDAR"\)\}/);
+  assert.match(panel,/Braki \{role\.unfilledCount\}/);
+  assert.match(panel,/disabled=\{role\.unfilledCount===0\}/);
+  assert.match(panel,/onClick=\{\(\)=>void inspectRole\(role\.publicationId,role\.role\.name,"ISSUES"\)\}/);
+  assert.match(panel,/SolverV2Workspace[^\n]+initialView=\{inspectedRoleInitialView\}/);
+  assert.match(panel,/aria-label="Zamknij szczegóły zespołu"/);
+});
+
 test("selecting a calendar day never forces the page to jump", async () => {
   const [modules,page]=await Promise.all([
     readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
   ]);
-  assert.match(modules,/onClick=\{\(\)=>setSelectedDay\(date\)\}/);
+  assert.match(modules,/onClick=\{\(\)=>clickDay\(date\)\}/);
+  assert.match(modules,/onSelectDay\?\.\(date\)/);
   assert.match(modules,/onClick=\{\(\) => setSelectedDate\(date\)\}/);
   assert.doesNotMatch(modules,/employeeDayRef/);
   assert.doesNotMatch(modules,/detailRef/);
@@ -660,8 +681,9 @@ test("selecting a calendar day never forces the page to jump", async () => {
   assert.match(page,/selectedDay=\{day\} onDay=\{setDay\}/);
   assert.match(page,/manager-day-summary/);
   assert.doesNotMatch(page,/onDay=\{\(d\)=>\{setDay\(d\);setActive\("grafik"\);\}\}/);
-  const combinedCalendar=modules.slice(modules.indexOf("availabilityWorkspace&&<AvailabilityCalendarDrawer embedded"),modules.indexOf("<section className=\"employee-calendar-card\""));
-  assert.doesNotMatch(combinedCalendar,/onSelectDay=\{setSelectedDay\}/);
+  const combinedCalendar=modules.slice(modules.indexOf("availabilityWorkspace&&<AvailabilityCalendarDrawer embedded"),modules.indexOf("{selectedDay&&<section className=\"employee-day-workspace\""));
+  assert.match(combinedCalendar,/onSelectDay=\{setSelectedDay\}/);
+  assert.doesNotMatch(combinedCalendar,/scrollIntoView/);
 });
 
 test("operational events and absence limits accept one audited date range", async () => {

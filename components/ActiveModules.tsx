@@ -159,9 +159,15 @@ type CompanyCalendarAssignment = {
   id: string; date: string; startsAt: string; endsAt: string;
   locationId: string; locationName: string; shiftName: string;
   roleId: string; roleName: string; employeeId: string;
+  categoryId?: string; categoryName?: string;
   employeeName: string; employeeNo: string; isSwap: boolean; swapAuditId?: string | null;
 };
-type CompanyCalendar = { month: string; assignments: CompanyCalendarAssignment[] };
+type CompanyCalendar = {
+  month: string;
+  employeeId?: string;
+  scopeCategories?: { id: string; name: string }[];
+  assignments: CompanyCalendarAssignment[];
+};
 type UatMasterEmployee = {
   id: string;
   employeeNo: string;
@@ -367,7 +373,7 @@ export function ActiveModules({
         ? supabase.rpc("shift_swap_board_uat_v2", { p_month: requestedMonth })
         : Promise.resolve({ data: null, error: null }),
       solverEngine === "ORTOOLS_V2"
-        ? supabase.rpc("published_company_calendar_uat_v2", { p_month: requestedMonth })
+        ? supabase.rpc("published_employee_category_calendar_uat_v3", { p_month: requestedMonth })
         : Promise.resolve({ data: null, error: null }),
     ]);
     if (token !== portalLoadToken.current || portalMonthRef.current !== requestedMonth) return;
@@ -679,6 +685,8 @@ export function ActiveModules({
       busy={busy}
       calendarContext={portal.calendarContext}
       assignments={portal.assignments}
+      standby={portal.standby}
+      swapAnnouncements={portal.swapBoard?.requests.filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status))??[]}
     />}
     {shiftPreferencesOpen && portal?.shiftPreferences && <ShiftPreferencesDrawer
       workspace={portal.shiftPreferences}
@@ -818,21 +826,11 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   const grouped = new Map<string, PortalAssignment[]>();
   portal.assignments.forEach((assignment) => grouped.set(assignment.date, [...(grouped.get(assignment.date) || []), assignment]));
   const selectedDayAssignments=selectedDay?grouped.get(selectedDay)||[]:[];
-  const employeeRoleIds=new Set(portal.assignments.map(assignment=>assignment.roleCode));
-  const selectedDayTeam=selectedDay?(portal.companyCalendar?.assignments??[]).filter(assignment=>assignment.date===selectedDay&&employeeRoleIds.has(assignment.roleId)&&assignment.employeeId!==employee?.id):[];
-  const standbyByDay = new Map<string, SolverEmployeeStandby[]>();
-  portal.standby.forEach((entry) => standbyByDay.set(entry.date, [...(standbyByDay.get(entry.date) || []), entry]));
-  const eventsByDay = new Map<string, WorkforceCalendarEvent[]>();
-  portal.calendarContext?.events.forEach((entry) => eventsByDay.set(entry.date, [...(eventsByDay.get(entry.date) || []), entry]));
-  const swapAnnouncementsByDay = new Map<string, ShiftSwapRequest[]>();
-  portal.swapBoard?.requests.filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)).forEach((entry)=>swapAnnouncementsByDay.set(entry.date,[...(swapAnnouncementsByDay.get(entry.date)||[]),entry]));
+  const portalEmployeeId=employee?.id??portal.timeConstraints?.employeeId??portal.companyCalendar?.employeeId;
+  const selectedDayTeam=selectedDay?(portal.companyCalendar?.assignments??[]).filter(assignment=>assignment.date===selectedDay&&assignment.employeeId!==portalEmployeeId):[];
+  const activeSwapAnnouncements=portal.swapBoard?.requests.filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status))??[];
   const monthlyMinutes = portal.assignments.reduce((sum, assignment) => sum + Math.max(0, Math.round((new Date(assignment.endsAt).getTime() - new Date(assignment.startsAt).getTime()) / 60_000)), 0);
-  const [year, monthNumber] = month.split("-").map(Number);
-  const first = new Date(Date.UTC(year, monthNumber - 1, 1, 12));
-  const offset = (first.getUTCDay() + 6) % 7;
-  const dayCount = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
-  const cells = Array.from({ length: offset + dayCount }, (_, index) => index < offset ? 0 : index - offset + 1);
-  const monthName = labelMonth(month, timezone);
+  const employeeCategoryLabel=portal.companyCalendar?.scopeCategories?.map(category=>category.name).join(", ")||"Twojej kategorii";
   const showMine = section === "overview" || section === "my-schedule";
   const showCompany = section === "overview" || section === "company-schedule";
   const showAvailability = section === "overview" || section === "availability";
@@ -861,14 +859,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
     <section className="employee-portal-callouts"><article><CalendarDays/><span><b>Grafik i dostępność razem</b><small>Na jednym dniu widzisz zmianę, lokal, rezerwę, wydarzenie i swoją deklarację.</small></span></article><article><ArrowLeftRight/><span><b>Zamiana bez przeklikiwania</b><small>Otwórz dzień ze zmianą i od razu opublikuj propozycję do wybranej osoby albo całej tablicy.</small></span></article><article><Megaphone/><span><b>Sprawy zespołu</b><small>Aktywne propozycje zamian są oznaczone również na kalendarzu.</small></span></article></section>
     {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Grafik i dostępność w jednym kalendarzu</h3><p>Zmiana, rezerwa, wydarzenie i Twoja deklaracja są nałożone na ten sam dzień. Edytor znajduje się bezpośrednio pod podsumowaniem.</p></section>}</div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
-    {availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments}/>} 
-    <section className="employee-calendar-card"><div className="matrix-demand-head"><div><h3>Moje opublikowane zmiany — {monthName}</h3><p>Wybierz dzień, aby od razu zobaczyć swoje zmiany i osoby pracujące razem z Tobą.</p></div></div><div className="role-calendar-week">{days.map((day) => <b key={day}>{day}</b>)}</div><div className="employee-month-calendar">{cells.map((day, index) => {
-    const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
-    const events = eventsByDay.get(date) || [];
-    const swapAnnouncements=swapAnnouncementsByDay.get(date)||[];
-    const assignments=grouped.get(date)||[];
-    return <section className={`${!day ? "blank" : ""} ${events.some(event => event.kind === "HOT_DAY") ? "has-hot-day" : ""} ${swapAnnouncements.length?"has-swap-announcement":""} ${selectedDay===date?"selected":""}`} key={index}>{day && <><button type="button" className="employee-day-open" onClick={()=>setSelectedDay(date)}><strong>{day}</strong><small>{assignments.length?`${assignments.length} ${assignments.length===1?"zmiana":"zmiany"}`:"Wolne"}</small></button>{swapAnnouncements.length>0&&<div className="portal-calendar-swap"><ArrowLeftRight/><span><b>Aktywna zamiana</b><small>{swapAnnouncements.length} {swapAnnouncements.length===1?"ogłoszenie":"ogłoszenia"}</small></span></div>}{events.map(event => <div key={event.id} className={`portal-calendar-event ${event.kind.toLowerCase()}`}>{event.kind === "HOT_DAY" ? <Flame /> : <Megaphone />}<span><b>{event.title}</b><small>{event.kind === "HOT_DAY" ? "Ograniczona niedostępność" : event.locationName || "Wydarzenie"}</small></span></div>)}{assignments.map((assignment) => <button key={assignment.id} onClick={() => setSelectedDay(date)} className="role-assignment"><b>{time(assignment.startsAt, assignmentTimezone(assignment, timezone))}–{time(assignment.endsAt, assignmentTimezone(assignment, timezone))}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}{(standbyByDay.get(date) || []).map((entry) => <div key={entry.id} className={`portal-standby tier-${entry.tier} ${entry.status.toLowerCase()}`}><b>Rezerwa {entry.tier}</b><small>{entry.roleName}{entry.status === "ACTIVATED" ? " • aktywowana" : " • gotowość dzienna"}</small></div>)}</>}</section>;
-  })}</div></section>
+    {availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} standby={portal.standby} swapAnnouncements={activeSwapAnnouncements} onSelectDay={setSelectedDay}/>}
     {selectedDay&&<section className="employee-day-workspace">
       <header><span><small>WYBRANY DZIEŃ</small><h3>{selectedDay}</h3><p>Twoje zmiany i osoby pracujące razem z Tobą.</p></span><button className="icon-button" aria-label="Zamknij widok dnia" onClick={()=>setSelectedDay(null)}><X/></button></header>
       <label className="day-workspace-search">Filtruj osoby<input value={daySearch} onChange={event=>setDaySearch(event.target.value)} placeholder="Imię, rola, lokal lub nazwa zmiany"/></label>
@@ -876,12 +867,12 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
         const query=daySearch.trim().toLocaleLowerCase("pl-PL");
         const coworkers=(assignment.coworkers||[]).filter(coworker=>!query||`${coworker.name} ${roleNames[coworker.role]??coworker.role} ${assignment.location} ${portalShiftLabel(assignment)}`.toLocaleLowerCase("pl-PL").includes(query));
         return <article key={assignment.id}><header><span><strong>{time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–{time(assignment.endsAt,assignmentTimezone(assignment,timezone))}</strong><small>{assignment.location} • {portalShiftLabel(assignment)}</small></span>{!masterMode&&<button className="secondary-button" disabled={busy||new Date(assignment.startsAt)<=new Date()} onClick={()=>setSelected(assignment)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</header><h4>Pracujesz z</h4><div className="employee-coworker-grid">{coworkers.length?coworkers.map((coworker,index)=><span style={roleCardStyle(coworker.role,roleColors[coworker.role])} key={`${coworker.name}:${index}`}><UserRound/><b>{coworker.name}</b><small>{dynamic?roleNames[coworker.role]??coworker.role:rolePl[coworker.role]||coworker.role}</small></span>):<p>{query?"Brak osób spełniających filtr.":"Na tej zmianie nie ma innych przypisanych osób."}</p>}</div></article>;
-      })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany. Poniżej widzisz osoby z Twojej roli, które pracują i mogą być punktem wyjścia do propozycji zamiany.</p>}</div>
-      <section className="employee-day-team"><h4>Zespół Twojej roli tego dnia • {selectedDayTeam.length} os.</h4>{selectedDayTeam.filter(item=>!daySearch.trim()||`${item.employeeName} ${item.roleName} ${item.locationName} ${item.shiftName}`.toLocaleLowerCase("pl-PL").includes(daySearch.trim().toLocaleLowerCase("pl-PL"))).map(item=><article key={item.id}><span><b>{item.employeeName} • {item.roleName}</b><small>{time(item.startsAt,timezone)}–{time(item.endsAt,timezone)} • {item.locationName} • {item.shiftName}</small></span>{!masterMode&&<button type="button" className="secondary-button" onClick={()=>setSwapTargetEmployeeId(item.employeeId)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</article>)}{!selectedDayTeam.length&&<p>W opublikowanym grafiku firmy nie ma tego dnia innej osoby z Twojej roli.</p>}</section>
+      })}{!selectedDayAssignments.length&&<p className="solver-workspace-empty">Tego dnia nie masz zaplanowanej zmiany. Poniżej widzisz osoby z Twojej kategorii, które pracują i mogą być punktem wyjścia do propozycji zamiany.</p>}</div>
+      <section className="employee-day-team"><h4>Zespół kategorii {employeeCategoryLabel} tego dnia • {selectedDayTeam.length} os.</h4>{selectedDayTeam.filter(item=>!daySearch.trim()||`${item.employeeName} ${item.roleName} ${item.locationName} ${item.shiftName}`.toLocaleLowerCase("pl-PL").includes(daySearch.trim().toLocaleLowerCase("pl-PL"))).map(item=><article key={item.id}><span><b>{item.employeeName} • {item.roleName}</b><small>{time(item.startsAt,timezone)}–{time(item.endsAt,timezone)} • {item.locationName} • {item.shiftName}</small></span>{!masterMode&&<button type="button" className="secondary-button" onClick={()=>setSwapTargetEmployeeId(item.employeeId)}><ArrowLeftRight/> Zaproponuj zamianę</button>}</article>)}{!selectedDayTeam.length&&<p>W opublikowanym grafiku nie ma tego dnia innej osoby z kategorii {employeeCategoryLabel}.</p>}</section>
       {swapTargetEmployeeId&&<section className="employee-swap-source-picker"><header><strong>Wybierz swoją zmianę, którą chcesz oddać w zamian</strong><button type="button" className="icon-button" onClick={()=>setSwapTargetEmployeeId("")}><X/></button></header>{portal.assignments.filter(assignment=>new Date(assignment.startsAt)>new Date()).map(assignment=><button type="button" key={assignment.id} onClick={()=>setSelected(assignment)}><b>{assignment.date} • {time(assignment.startsAt,timezone)}–{time(assignment.endsAt,timezone)}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}</section>}
     </section>}
     </>}
-    {showAvailability&&!showMine&&availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} onSelectDay={setSelectedDay}/>} 
+    {showAvailability&&!showMine&&availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} standby={portal.standby} swapAnnouncements={activeSwapAnnouncements} onSelectDay={setSelectedDay}/>}
     {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
     {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} roleColors={roleColors} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => {setSelected(null);setSwapTargetEmployeeId("");}} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} preferredTargetEmployeeId={swapTargetEmployeeId}/>} 
@@ -933,7 +924,8 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events, roleColors
     const key=`${item.locationId}:${item.startsAt}:${item.endsAt}:${item.shiftName}`;
     result.set(key,[...(result.get(key)||[]),item]);return result;
   },new Map<string,CompanyCalendarAssignment[]>()).values()];
-  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik firmy</h3><p>Wybierz dzień, a potem filtruj po osobie, roli lub lokalu. Widok służy także do znalezienia osoby do zamiany.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
+  const scopeLabel=calendar.scopeCategories?.map(category=>category.name).join(", ")||"kategorie przypisane do Twoich ról";
+  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik zespołu • {scopeLabel}</h3><p>Widzisz wyłącznie osoby z dozwolonych kategorii, bez cudzych kosztów, dostępności i powodów nieobecności. Wybierz dzień, a potem filtruj po osobie, roli lub lokalu.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
     const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
     const assignments = byDate.get(date) || [];
     return <button type="button" key={index} className={`${!day ? "blank" : ""} ${eventDates.has(date) ? "has-event" : ""} ${selectedDate === date ? "selected" : ""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day && <><b>{day}</b><strong>{assignments.length} os.</strong>{assignments.some(assignment => assignment.isSwap) && <small>Zamiana</small>}{eventDates.has(date) && <Megaphone />}</>}</button>;
@@ -946,7 +938,7 @@ function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { works
   return <><button className="drawer-scrim" onClick={close} /><aside className="drawer complete-drawer shift-preferences-drawer"><div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • PREFERENCJE</p><h2>Preferowane godziny • {labelMonth(month)}</h2></div><button className="icon-button" onClick={close}><X /></button></div><div className="drawer-content"><p>To starszy sposób zapisu preferencji. Dokładną dostępność ustaw w kalendarzu godzinowym.</p>{periods.map(([period, label]) => <section className="shift-preference-row" key={period}><span><strong>{label}</strong>{workspace.managerOverrides?.[period] ? <small><ShieldCheck /> Ustawienie pracodawcy: {preferenceLevelLabel(workspace.managerOverrides[period])}</small> : <small>Aktualne ustawienie: {preferenceLevelLabel(workspace.effective?.[period] ?? preferences[period])}</small>}</span><select value={preferences[period]} onChange={(event) => setPreferences((current) => ({ ...current, [period]: event.target.value as ShiftPreferenceLevel }))}><option value="PREFERRED">Preferuję</option><option value="NEUTRAL">Neutralnie</option><option value="AVOIDED">Wolę unikać</option></select></section>)}<button className="primary-button full" disabled={busy} onClick={() => void save(preferences)}><Save /> {busy ? "Zapisuję…" : "Zapisz preferencje"}</button></div></aside></>;
 }
 
-function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext, assignments, embedded=false, onSelectDay }: {
+function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, fail, busy, calendarContext, assignments, standby=[], swapAnnouncements=[], embedded=false, onSelectDay }: {
   workspace: PortalTimeConstraintsWorkspace;
   month: string;
   locations: MatrixItem[];
@@ -956,6 +948,8 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   busy: boolean;
   calendarContext?: WorkforceCalendarContext;
   assignments: PortalAssignment[];
+  standby?: SolverEmployeeStandby[];
+  swapAnnouncements?: ShiftSwapRequest[];
   embedded?:boolean;
   onSelectDay?:(date:string)=>void;
 }) {
@@ -1064,7 +1058,9 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           const events=calendarContext?.events.filter(event=>event.date===date)??[];
           const pending=calendarContext?.pendingReviews.some(review=>review.date===date)??false;
           const publishedAssignments=assignments.filter(assignment=>assignment.date===date);
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><AlertTriangle/> Opublikowany grafik: {publishedAssignments.map(assignment=>time(assignment.startsAt,assignmentTimezone(assignment,timezone))).join(", ")}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> Wydarzenie</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
+          const dayStandby=standby.filter(entry=>entry.date===date);
+          const daySwaps=swapAnnouncements.filter(request=>request.date===date);
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>

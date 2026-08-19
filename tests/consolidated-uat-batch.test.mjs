@@ -220,6 +220,26 @@ test("B4F-83 scopes persistent availability filters by category role and locatio
   assert.match(page,/workforce_calendar_context_uat_v4/);
 });
 
+test("B4F-85 B4F-86 and B4F-92 keep cumulative role filters through edits and every schedule perspective",async()=>{
+  const [editor,workspace]=await Promise.all([
+    read("components/MatrixV2Editor.tsx"),
+    read("components/SolverV2Workspace.tsx"),
+  ]);
+  assert.match(editor,/const \[shiftRoleIds,setShiftRoleIds\]=useState<string\[\]>\(\[\]\)/);
+  assert.match(editor,/shiftRoleIds\.includes\(rule\.role_id\)/);
+  assert.match(editor,/checked=\{shiftRoleIds\.includes\(role\.id\)\}/);
+  assert.match(editor,/setLocationId\(""\);setQuery\(""\);setShiftRoleIds\(\[\]\)/);
+  assert.match(workspace,/const \[roleFilters,setRoleFilters\]=useState<string\[\]>\(\[\]\)/);
+  assert.match(workspace,/const visibleIssues=workspace\.issues\.filter/);
+  assert.match(workspace,/\.filter\(assignment=>!roleFilters\.length\|\|roleFilters\.includes\(assignment\.role\.id\)\)/);
+  assert.match(workspace,/workspaceView==="CALENDAR"/);
+  assert.match(workspace,/workspaceView==="WORKLOAD"/);
+  assert.match(workspace,/workspaceView==="ISSUES"/);
+  assert.match(workspace,/Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji/);
+  const identityReset=workspace.slice(workspace.indexOf("// React reuses the drawer"),workspace.indexOf("},[initialView,workspaceIdentity]);"));
+  assert.doesNotMatch(identityReset,/setRoleFilters/);
+});
+
 test("B4F-84 exposes staffing risk by day role and location before and after publication",async()=>{
   const [workspace,analytics]=await Promise.all([
     read("components/SolverV2Workspace.tsx"),read("components/AnalyticsDashboard.tsx"),
