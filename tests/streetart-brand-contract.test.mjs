@@ -48,7 +48,8 @@ test("streetart character is implemented as a reusable UI layer, not a palette s
 test("final visual corrections cover short sidebars, login and deep management views", () => {
   const css = read("app/brand-streetart.css");
   assert.match(css, /\.product-shell \.product-sidebar\s*\{[^}]*height:100dvh[^}]*overflow:hidden!important/s);
-  assert.match(css, /\.product-shell \.product-sidebar nav\s*\{[^}]*flex:1 1 auto[^}]*overflow-y:auto/s);
+  assert.match(css, /\.product-shell \.product-sidebar nav\s*\{[^}]*flex:1 1 0!important[^}]*height:0[^}]*overflow-y:scroll!important[^}]*scrollbar-width:auto!important/s);
+  assert.match(css, /\.product-shell \.product-sidebar nav::\-webkit-scrollbar\s*\{[^}]*display:block!important[^}]*width:10px!important/s);
   assert.match(css, /\.product-shell \.product-sidebar \.sidebar-footer\s*\{[^}]*flex:0 0 auto/s);
   assert.match(css, /\.login-brand-signature\s*\{[^}]*padding:0!important[^}]*background:transparent!important[^}]*clip-path:none!important/s);
   assert.match(css, /\.login-brand-signature::before\s*\{[^}]*display:none!important/s);
