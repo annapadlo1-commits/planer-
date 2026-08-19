@@ -15,6 +15,7 @@ import "./product-journey.css";
 import "./recovery-center.css";
 import "./next-batch.css";
 import "./desktop-compact.css";
+import "./brand-streetart.css";
 
 export const metadata: Metadata = {
   title: {
@@ -34,8 +35,9 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/szafunek-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/szafunek-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
     ],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
@@ -45,7 +47,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#33203f",
+  themeColor: "#1A1A1A",
 };
 
 export default function RootLayout({

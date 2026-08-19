@@ -238,10 +238,10 @@ function LoginScreen() {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <span className="brand-mark">SZ</span>
-        <p className="eyebrow">SZAFUNEK</p>
-        <h1>Planowanie, które zna realia Twojego zespołu.</h1>
-        <p>Grafiki ról, dwa lokale, eventy, budżet, zastępstwa i rejestr czasu w jednym bezpiecznym miejscu.</p>
+        <img className="login-brand-lockup" src="/brand/primary_logo_lockup.png" alt="SZAFUNEK — Hide. Collect. Keep yours." />
+        <p className="eyebrow">GRAFIK. ZESPÓŁ. ZMIANY.</p>
+        <h1>Szanuj swój czas.<br/>Szanuj zespół.</h1>
+        <p>Grafiki, zmiany, wiadomości, raporty i ustawienia w jednym bezpiecznym miejscu.</p>
         <div className="login-points">
           <span><Check size={16} /> 76 pracowników demonstracyjnych</span>
           <span><Check size={16} /> KRUCZA i PAWILONY</span>
@@ -250,6 +250,7 @@ function LoginScreen() {
       </section>
       <section className="login-panel">
         <div className="login-card">
+          <img className="login-cat" src="/brand/cat-symbol-exact.png" alt="" aria-hidden="true" />
           <div className="live-status environment-status online" title={`Projekt Supabase: ${supabaseProjectRef()}`}>
             <Database size={15} /><span><b>{applicationEnvironmentLabel()}</b><small>{supabaseProjectRef()}</small></span>
           </div>

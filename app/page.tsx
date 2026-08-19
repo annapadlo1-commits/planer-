@@ -467,7 +467,7 @@ export default function GrafikPro() {
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
     <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
-      <div className="brand"><span>SZ</span><div><strong>SZAFUNEK</strong><small>PLANOWANIE I OPERACJE</small></div><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
+      <div className="brand"><img className="brand-lockup" src="/brand/primary_logo_lockup.png" alt="SZAFUNEK"/><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
       <div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>
       <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>{setMobileNavigationOpen(false);openProductSection(item.key);}}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
       <div className="sidebar-footer">

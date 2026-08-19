@@ -62,7 +62,7 @@ export function PwaInstall() {
 
   return (
     <aside className="pwa-install" aria-label="Instalacja aplikacji SZAFUNEK">
-      <div className="pwa-install-mark" aria-hidden="true">SZ</div>
+      <div className="pwa-install-mark" aria-hidden="true"><img src="/brand/cat-symbol-exact.png" alt="" /></div>
       <span>
         <strong>Zainstaluj SZAFUNEK</strong>
         <small>{isIos ? "Dodaj aplikację do ekranu początkowego." : "Uruchamiaj jak aplikację — bez sklepu i bez opłat."}</small>
