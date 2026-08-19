@@ -372,7 +372,7 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   const [migration,runContract,inputHashContract,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260819070912_b4f100_leader_refill_run_contract.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260819133300_b4f100_leader_optimizer_input_hash.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260819082931_b4f100_leader_optimizer_input_hash.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
