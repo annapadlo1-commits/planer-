@@ -30,7 +30,7 @@ const conditional=(purpose:string,input:string,allowedOrExample:string,exampleOr
   effect:applicationMaybe?effectOrBlank:exampleOrEffect,blank:applicationMaybe?blankOrApplication:effectOrBlank,application:applicationMaybe??blankOrApplication,
 });
 const system=(purpose:string,example:string,application:string):WorkbookFieldDefinition=>({
-  status:"SYSTEM",purpose,input:"Nie wpisuj dla nowego rekordu. Przy aktualizacji zachowaj wartość pobraną z aplikacji.",allowed:"Wartość nadawana przez GRAFIK PRO.",example,effect:"Pozwala bezpiecznie zaktualizować ten sam rekord zamiast tworzyć duplikat.",blank:"Dla nowego rekordu system utworzy identyfikator automatycznie.",application,
+  status:"SYSTEM",purpose,input:"Nie wpisuj dla nowego rekordu. Przy aktualizacji zachowaj wartość pobraną z aplikacji.",allowed:"Wartość nadawana przez SZAFUNEK.",example,effect:"Pozwala bezpiecznie zaktualizować ten sam rekord zamiast tworzyć duplikat.",blank:"Dla nowego rekordu system utworzy identyfikator automatycznie.",application,
 });
 
 export const QUICK_WORKBOOK_SHEETS:Record<string,WorkbookSheetDefinition>={

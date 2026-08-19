@@ -4,13 +4,13 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("manifest exposes an installable standalone GRAFIK PRO application", () => {
+test("manifest exposes an installable standalone SZAFUNEK application", () => {
   const manifest = read("app/manifest.ts");
-  assert.match(manifest, /name:\s*"GRAFIK PRO"/);
+  assert.match(manifest, /name:\s*"SZAFUNEK"/);
   assert.match(manifest, /display:\s*"standalone"/);
   assert.match(manifest, /start_url:\s*"\/\?source=pwa"/);
-  assert.match(manifest, /grafik-pro-192\.png/);
-  assert.match(manifest, /grafik-pro-512\.png/);
+  assert.match(manifest, /szafunek-192\.png/);
+  assert.match(manifest, /szafunek-512\.png/);
   assert.match(manifest, /purpose:\s*"maskable"/);
 });
 
@@ -43,9 +43,9 @@ test("mobile navigation is operable and no longer hidden", () => {
 
 test("required PNG icons exist and are non-empty", () => {
   for (const path of [
-    "public/icons/grafik-pro-192.png",
-    "public/icons/grafik-pro-512.png",
-    "public/icons/grafik-pro-maskable-512.png",
+    "public/icons/szafunek-192.png",
+    "public/icons/szafunek-512.png",
+    "public/icons/szafunek-maskable-512.png",
     "public/icons/apple-touch-icon.png",
   ]) {
     assert.ok(statSync(new URL(`../${path}`, import.meta.url)).size > 1_000, `${path} is missing or empty`);

@@ -170,7 +170,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   if (loading) {
-    return <div className="auth-loading"><Loader2 className="spin" size={28} /><strong>Łączenie z GRAFIK PRO…</strong><span>Sprawdzamy sesję i uprawnienia.</span></div>;
+    return <div className="auth-loading"><Loader2 className="spin" size={28} /><strong>Łączenie z SZAFUNEK…</strong><span>Sprawdzamy sesję i uprawnienia.</span></div>;
   }
 
   if (!user) {
@@ -238,8 +238,8 @@ function LoginScreen() {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <span className="brand-mark">G</span>
-        <p className="eyebrow">GRAFIK PRO 3.0</p>
+        <span className="brand-mark">SZ</span>
+        <p className="eyebrow">SZAFUNEK</p>
         <h1>Planowanie, które zna realia Twojego zespołu.</h1>
         <p>Grafiki ról, dwa lokale, eventy, budżet, zastępstwa i rejestr czasu w jednym bezpiecznym miejscu.</p>
         <div className="login-points">

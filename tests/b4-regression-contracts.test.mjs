@@ -232,7 +232,7 @@ test("bulk access and idempotent draft cancellation remain explicit UAT contract
     readFile(accessAndDraftMigrationUrl,"utf8"),
     readFile(sharedCoverageRollbackUrl,"utf8"),
   ]);
-  assert.match(editor,/grafik-pro-dostepy-do-aplikacji\.xlsx/);
+  assert.match(editor,/szafunek-dostepy-do-aplikacji\.xlsx/);
   assert.match(editor,/application_access_bulk_apply_uat_v1/);
   assert.match(editor,/matrix_v2_discard_current_draft_uat_v2/);
   assert.match(editor,/Anuluj wersję roboczą/);

@@ -1,4 +1,4 @@
-# GRAFIK PRO — pełny UAT E2E od onboardingu do analiz
+# SZAFUNEK — pełny UAT E2E od onboardingu do analiz
 
 Ten dokument jest wykonywalną bramką wydania, a nie raportem historycznym. Test dotyczy dokładnego commita wdrożonego na kanonicznym UAT i wyłącznie projektu Supabase `nhthrtpkfpmufmrmdyjg`.
 

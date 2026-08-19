@@ -1,10 +1,10 @@
-const CACHE_VERSION = "grafik-pro-shell-v1";
+const CACHE_VERSION = "szafunek-shell-v1";
 const SAFE_SHELL = [
   "/offline",
   "/manifest.webmanifest",
-  "/icons/grafik-pro-192.png",
-  "/icons/grafik-pro-512.png",
-  "/icons/grafik-pro-maskable-512.png",
+  "/icons/szafunek-192.png",
+  "/icons/szafunek-512.png",
+  "/icons/szafunek-maskable-512.png",
   "/icons/apple-touch-icon.png",
 ];
 

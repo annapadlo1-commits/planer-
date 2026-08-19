@@ -20,12 +20,12 @@ function clearGoogleToken(request: NextRequest, response: NextResponse) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!await authenticatedAppUser()) return jsonError("Sesja GRAFIK.PRO wygasła.", 401);
+  if (!await authenticatedAppUser()) return jsonError("Sesja SZAFUNEK wygasła.", 401);
   const token = request.cookies.get(GOOGLE_DRIVE_TOKEN_COOKIE)?.value;
   if (!token) return jsonError("Połączenie z Google wygasło.", 401);
 
-  const encodedName = request.headers.get("x-grafik-pro-file-name") ?? "grafik-pro.xlsx";
-  let fileName = "grafik-pro.xlsx";
+  const encodedName = request.headers.get("x-grafik-pro-file-name") ?? "szafunek.xlsx";
+  let fileName = "szafunek.xlsx";
   try { fileName = decodeURIComponent(encodedName); } catch { return jsonError("Nieprawidłowa nazwa pliku.", 400); }
   fileName = fileName.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").slice(0, 160);
   if (!fileName.toLocaleLowerCase("pl-PL").endsWith(".xlsx")) return jsonError("Wymagany jest plik XLSX.", 400);

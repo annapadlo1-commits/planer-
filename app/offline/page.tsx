@@ -3,7 +3,7 @@ export default function OfflinePage() {
     <main className="offline-page">
       <section>
         <div className="offline-mark" aria-hidden="true">GP</div>
-        <p className="eyebrow">GRAFIK PRO • TRYB OFFLINE</p>
+        <p className="eyebrow">SZAFUNEK • TRYB OFFLINE</p>
         <h1>Brak połączenia z internetem</h1>
         <p>
           Ze względów bezpieczeństwa grafiki, dane pracowników i ustawienia firmy nie są zapisywane offline.

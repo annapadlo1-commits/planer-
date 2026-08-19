@@ -175,7 +175,7 @@ export function googleDriveRedirectStatus() {
 
 export function googleDriveRedirectMessage(status: string | null) {
   if (status === "configuration_error") return "Połączenie z Google wymaga dokończenia konfiguracji OAuth na UAT. Administrator musi dodać sekret klienta i dozwolony adres powrotu.";
-  if (status === "app_auth_required") return "Sesja GRAFIK.PRO wygasła. Zaloguj się ponownie do aplikacji i ponów połączenie z Google.";
+  if (status === "app_auth_required") return "Sesja SZAFUNEK wygasła. Zaloguj się ponownie do aplikacji i ponów połączenie z Google.";
   if (status === "denied") return "Logowanie Google zostało anulowane przed udzieleniem zgody.";
   if (status === "state_error") return "Kontrola bezpieczeństwa logowania Google nie powiodła się. Rozpocznij połączenie ponownie z tego ekranu.";
   if (status === "token_error") return "Google nie potwierdził połączenia konta. Rozpocznij logowanie ponownie.";

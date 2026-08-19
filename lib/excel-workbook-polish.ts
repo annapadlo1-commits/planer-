@@ -123,7 +123,7 @@ function listFormula(listSheet:Worksheet,column:number,count:number){return `'${
 function addListValidation(sheet:Worksheet,column:number,formula:string,prompt:string){
   if(!column||/\$2:\$1$/u.test(formula))return;
   for(let row=2;row<=501;row++){
-    sheet.getCell(row,column).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Wybierz wartość z listy",error:"Ta wartość nie jest obsługiwana przez import.",showInputMessage:true,promptTitle:"GRAFIK PRO",prompt};
+    sheet.getCell(row,column).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Wybierz wartość z listy",error:"Ta wartość nie jest obsługiwana przez import.",showInputMessage:true,promptTitle:"SZAFUNEK",prompt};
   }
 }
 function writeList(sheet:Worksheet,column:number,title:string,values:string[]){
@@ -199,7 +199,7 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
     ["9","Opis pól","Przed wpisaniem danych otwórz zakładkę „Opis pól”. Każde pole ma cel, dozwolony format, przykład, skutek uzupełnienia i skutek pozostawienia pustego."],
     ["10","Sprawdzenie i import","Zapisz jako .xlsx. Plik działa w Excelu i Google Sheets; z Arkuszy Google pobierz go ponownie jako Microsoft Excel (.xlsx), a następnie użyj „Sprawdź plik”."],
   ];
-  const title=kind==="ACCESS"?"GRAFIK PRO — dostępy do aplikacji":kind==="FINANCE"?"GRAFIK PRO — finanse zespołu":"GRAFIK PRO — konfiguracja firmy krok po kroku";
+  const title=kind==="ACCESS"?"SZAFUNEK — dostępy do aplikacji":kind==="FINANCE"?"SZAFUNEK — finanse zespołu":"SZAFUNEK — konfiguracja firmy krok po kroku";
   const content=[
     [title,"", ""],
     ["KROK","GDZIE PRZEJŚĆ","CO ZROBIĆ"],

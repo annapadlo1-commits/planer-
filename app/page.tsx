@@ -467,7 +467,7 @@ export default function GrafikPro() {
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
     <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
-      <div className="brand"><span>GP</span><div><strong>GRAFIK PRO</strong><small>PLANOWANIE I OPERACJE</small></div><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
+      <div className="brand"><span>SZ</span><div><strong>SZAFUNEK</strong><small>PLANOWANIE I OPERACJE</small></div><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
       <div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>
       <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>{setMobileNavigationOpen(false);openProductSection(item.key);}}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
       <div className="sidebar-footer">
@@ -572,7 +572,7 @@ export default function GrafikPro() {
     </section>
     {monthlyBudgetOpen&&<MonthlyBudgetDrawer month={selectedMonthDate} matrix={matrixV2} currency={activeCurrency} close={()=>setMonthlyBudgetOpen(false)} notify={notify} fail={setError}/>}
     {modal&&<>{modal!=="plan"&&<button className="drawer-scrim" onClick={closeModal}/>}<aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
-      <div className="drawer-head"><div><p className="eyebrow">GRAFIK PRO • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
+      <div className="drawer-head"><div><p className="eyebrow">SZAFUNEK • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">
         {!solverConfiguration&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, dopóki konfiguracja nie zostanie poprawnie odczytana.</div>}
         {solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&solverConfiguration.solverVersion&&<SolverV2Panel

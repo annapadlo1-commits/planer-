@@ -81,7 +81,7 @@ test("every future UAT reset seeds the system-owned scenario and solver defaults
 test("quick workbook documents automatic identifiers and physically excludes advanced sheets", () => {
   const quickBuilder=editor.slice(editor.indexOf("async function buildQuickMatrixTemplate"),editor.indexOf("async function buildMatrixTemplate"));
   assert.match(editor, /System nada kolejny wolny numer GP-### automatycznie/);
-  assert.match(quickBuilder, /grafik-pro-prosta-konfiguracja-v/);
+  assert.match(quickBuilder, /szafunek-prosta-konfiguracja-v/);
   assert.match(quickBuilder, /QUICK_WORKBOOK_SHEETS/);
   assert.doesNotMatch(quickBuilder, /const hidden=new Set/);
   assert.doesNotMatch(quickBuilder, /Role pracowników|Lokale pracowników|Kompetencje pracowników|Kryteria strategii/);

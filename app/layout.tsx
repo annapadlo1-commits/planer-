@@ -18,24 +18,24 @@ import "./desktop-compact.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "GRAFIK PRO",
-    template: "%s • GRAFIK PRO",
+    default: "SZAFUNEK",
+    template: "%s • SZAFUNEK",
   },
   description: "Planowanie zespołu, budżetu i operacji",
-  applicationName: "GRAFIK PRO",
+  applicationName: "SZAFUNEK",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "GRAFIK PRO",
+    title: "SZAFUNEK",
   },
   formatDetection: {
     telephone: false,
   },
   icons: {
     icon: [
-      { url: "/icons/grafik-pro-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/grafik-pro-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/szafunek-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/szafunek-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },

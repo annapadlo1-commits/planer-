@@ -61,10 +61,10 @@ export function PwaInstall() {
   };
 
   return (
-    <aside className="pwa-install" aria-label="Instalacja aplikacji GRAFIK PRO">
-      <div className="pwa-install-mark" aria-hidden="true">GP</div>
+    <aside className="pwa-install" aria-label="Instalacja aplikacji SZAFUNEK">
+      <div className="pwa-install-mark" aria-hidden="true">SZ</div>
       <span>
-        <strong>Zainstaluj GRAFIK PRO</strong>
+        <strong>Zainstaluj SZAFUNEK</strong>
         <small>{isIos ? "Dodaj aplikację do ekranu początkowego." : "Uruchamiaj jak aplikację — bez sklepu i bez opłat."}</small>
       </span>
       <button className="pwa-install-action" type="button" onClick={() => void install()}>

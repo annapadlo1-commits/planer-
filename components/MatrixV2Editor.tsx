@@ -870,7 +870,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     const XLSX=await import("xlsx");
     const workbook=XLSX.utils.book_new();
     const instructions=XLSX.utils.aoa_to_sheet([
-      ["GRAFIK PRO — zbiorcze dostępy do aplikacji","Zasada"],
+      ["SZAFUNEK — zbiorcze dostępy do aplikacji","Zasada"],
       ["Jedna osoba — wiele funkcji","Powtórz adres e-mail w osobnych wierszach, jeśli ta sama osoba ma kilka rodzajów dostępu."],
       ["Zakres roli","Wymagany wyłącznie dla dostępu „Lider roli” (kod ROLE_MANAGER). Użyj kodu z arkusza Słowniki."],
       ["Zakres lokalu","Wymagany wyłącznie dla dostępu „Lider lokalu” (kod LOCATION_MANAGER). Użyj kodu z arkusza Słowniki."],
@@ -903,7 +903,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
     const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
     const {polishAccessWorkbook}=await import("@/lib/excel-workbook-polish");
-    return {bytes:await polishAccessWorkbook(raw),fileName:"grafik-pro-dostepy-do-aplikacji.xlsx"};
+    return {bytes:await polishAccessWorkbook(raw),fileName:"szafunek-dostepy-do-aplikacji.xlsx"};
   }
 
   async function saveFinanceVisibility(appRole:string,visibility:FinanceVisibility){
@@ -1836,7 +1836,7 @@ async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
     sheet["!cols"]=headers.map(header=>({wch:Math.min(36,Math.max(15,header.length+2))}));
     XLSX.utils.book_append_sheet(workbook,sheet,name);
   };
-  const instructions=XLSX.utils.aoa_to_sheet([["GRAFIK PRO — prosta konfiguracja firmy"]]);
+  const instructions=XLSX.utils.aoa_to_sheet([["SZAFUNEK — prosta konfiguracja firmy"]]);
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
   const settings=matrixV2Settings(data.matrixVersion);
   add("Firma",[[settings.currency,settings.timezone,settings.minimumRestMinutes/60,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE"]]);
@@ -1896,7 +1896,7 @@ async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"_LISTY");
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
   const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
-  return {bytes:await polishMatrixWorkbook(raw,"QUICK"),fileName:`grafik-pro-prosta-konfiguracja-v${data.matrixVersion.version}.xlsx`};
+  return {bytes:await polishMatrixWorkbook(raw,"QUICK"),fileName:`szafunek-prosta-konfiguracja-v${data.matrixVersion.version}.xlsx`};
 }
 
 async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
@@ -1911,7 +1911,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     XLSX.utils.book_append_sheet(workbook,sheet,name);
   };
   const instructions=XLSX.utils.aoa_to_sheet([
-    ["GRAFIK PRO — pełna kopia techniczna firmy","Zasada"],
+    ["SZAFUNEK — pełna kopia techniczna firmy","Zasada"],
     ["Nowy pracownik","Pozostaw Numer pracownika pusty. System nada kolejny wolny numer GP-### automatycznie."],
     ["Aktualizacja pracownika","Podaj istniejący numer lub e-mail. Nieistniejący numer zostanie odrzucony w podglądzie."],
     ["Kody","Kody ról, lokali, obowiązków i scenariuszy skopiuj z arkusza Słowniki."],
@@ -2042,14 +2042,14 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
   XLSX.utils.book_append_sheet(workbook,dictionarySheet,"Słowniki");
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
   const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
-  return {bytes:await polishMatrixWorkbook(raw,"FULL"),fileName:`grafik-pro-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`};
+  return {bytes:await polishMatrixWorkbook(raw,"FULL"),fileName:`szafunek-pelna-baza-firmy-v${data.matrixVersion.version}.xlsx`};
 }
 
 async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const instructions=XLSX.utils.aoa_to_sheet([
-    ["GRAFIK PRO — zbiorcza aktualizacja stawek","Zasada"],
+    ["SZAFUNEK — zbiorcza aktualizacja stawek","Zasada"],
     ["Co można zrobić","W jednym pliku dodasz nowe okresy stawek, poprawisz istniejące i wyłączysz błędne wpisy dla całego zespołu."],
     ["Tożsamość pracownika","Nie zmieniaj kolumny Numer pracownika. Imię, nazwisko i daty zatrudnienia są tylko informacją pomocniczą."],
     ["Nowa stawka","Dodaj nowy wiersz, pozostaw ID stawki puste i podaj Numer pracownika, okres, kwotę, walutę oraz aktywność. Forma współpracy pochodzi z profilu pracownika."],
@@ -2085,7 +2085,7 @@ async function buildWorkforceFinanceTemplate(data:MatrixV2Workspace){
   XLSX.utils.book_append_sheet(workbook,dictionaries,"Słowniki");
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
   const {polishFinanceWorkbook}=await import("@/lib/excel-workbook-polish");
-  return {bytes:await polishFinanceWorkbook(raw),fileName:`grafik-pro-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`};
+  return {bytes:await polishFinanceWorkbook(raw),fileName:`szafunek-finanse-pracownikow-${String(data.month??draftStart).slice(0,7)}.xlsx`};
 }
 
 function readStoredMatrixImport(matrixVersionId:string){
@@ -2244,7 +2244,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       {preview&&scope!=="FINANCE"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
         <p>{(preview as FullImportPreview).summary.total} wierszy konfiguracji oraz {(preview as FullImportPreview).summary.financeRows} okresów stawek: {(preview as FullImportPreview).summary.employees} pracowników, {(preview as FullImportPreview).summary.roles} ról, {(preview as FullImportPreview).summary.locations} lokali, {(preview as FullImportPreview).summary.shifts} zmian, {(preview as FullImportPreview).summary.staffingRules} reguł obsady i {(preview as FullImportPreview).summary.timeConstraints} wpisów dostępności.</p>
-        <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":scope==="TEAM"?"prosty plik startowy GRAFIK PRO":"pełny plik GRAFIK PRO"}. Tryb zastąpienia przyjmuje rzeczywisty skład z pliku — bez stałej liczby pracowników w kodzie.</p>
+        <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":scope==="TEAM"?"prosty plik startowy SZAFUNEK":"pełny plik SZAFUNEK"}. Tryb zastąpienia przyjmuje rzeczywisty skład z pliku — bez stałej liczby pracowników w kodzie.</p>
         <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as FullImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as FullImportPreview).summary.employeesToCreate??0}</b></span><span><small>Zmiany stawek</small><b>{(preview as FullImportPreview).summary.financeChanges}</b></span><span className={mode==="REPLACE"&&Number((preview as FullImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as FullImportPreview).summary.employeesToArchive??0}</b></span></div>
         {mode==="REPLACE"&&Boolean((preview as FullImportPreview).configuration.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as FullImportPreview).configuration.employeesToArchive?.length})</summary><ul>{(preview as FullImportPreview).configuration.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
         {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{importIssueMessage(issue)}</small></span></div>)}
