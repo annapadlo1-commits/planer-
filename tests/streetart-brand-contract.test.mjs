@@ -45,6 +45,34 @@ test("streetart character is implemented as a reusable UI layer, not a palette s
   assert.match(css, /clip-path:/);
 });
 
+test("final visual corrections cover short sidebars, login and deep management views", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /\.product-shell \.product-sidebar\s*\{[^}]*height:100dvh[^}]*overflow:hidden!important/s);
+  assert.match(css, /\.product-shell \.product-sidebar nav\s*\{[^}]*flex:1 1 auto[^}]*overflow-y:auto/s);
+  assert.match(css, /\.product-shell \.product-sidebar \.sidebar-footer\s*\{[^}]*flex:0 0 auto/s);
+  assert.match(css, /\.login-brand-signature\s*\{[^}]*padding:0!important[^}]*background:transparent!important[^}]*clip-path:none!important/s);
+  assert.match(css, /\.login-brand-signature::before\s*\{[^}]*display:none!important/s);
+  assert.match(css, /\.login-brand h1\s*\{[^}]*font-size:clamp\(36px,4vw,64px\)!important/s);
+  assert.match(css, /\.solver-manual-studio-entry>span\s*\{[^}]*var\(--brand-ink\)!important/s);
+  assert.match(css, /\.availability-daily-summary>summary svg[\s\S]*var\(--brand-ink\)!important/);
+  assert.match(css, /\.leader-studio-fullscreen\s*\{[^}]*--violet:var\(--brand-ink\)/s);
+  assert.match(css, /\.matrix-v2-shell\s*\{[^}]*--violet:var\(--brand-ink\)/s);
+  assert.match(css, /\.analytics-head\s*\{[^}]*var\(--brand-ink\)!important/s);
+});
+
+test("mobile opens as one compact login and reuses the approved people, shifts and message language", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /Mobile product language from the approved scheduling board/);
+  assert.match(css, /@media\(max-width:760px\)[\s\S]*\.login-page\s*\{[^}]*flex-direction:column[^}]*min-height:100dvh/s);
+  assert.match(css, /\.login-brand h1\s*\{display:none!important\}/);
+  assert.match(css, /\.login-brand-signature\s*\{[^}]*width:min\(330px,88vw\)!important/s);
+  assert.match(css, /\.pwa-install\s*\{[^}]*grid-template-columns:44px minmax\(0,1fr\) 38px!important/s);
+  assert.match(css, /\.workforce-catalog-list>article\s*\{[^}]*grid-template-columns:44px minmax\(0,1fr\) 42px!important/s);
+  assert.match(css, /\.message-avatar\s*\{[^}]*border-radius:50%!important[^}]*var\(--brand-sage\)!important/s);
+  assert.match(css, /\.employee-portal-callouts\s*\{display:none!important\}/);
+  assert.match(css, /\.portal-profile\s*\{[^}]*grid-template-columns:48px 1fr!important/s);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",
