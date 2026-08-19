@@ -30,6 +30,20 @@ test("brand boards and mockups are never used as application assets", () => {
   assert.match(css, /--brand-peach:#f6c8b6/i);
 });
 
+test("streetart character is implemented as a reusable UI layer, not a palette swap", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /SZAFUNEK street-poster layer/);
+  assert.match(css, /\.product-shell \.product-sidebar::after/);
+  assert.match(css, /\.product-shell \.product-sidebar \.brand::before/);
+  assert.match(css, /\.product-shell \.product-sidebar nav button\.active::after/);
+  assert.match(css, /\.product-shell \.topbar::after/);
+  assert.match(css, /\.configuration-next-action\s*\{[^}]*var\(--brand-peach\)/s);
+  assert.match(css, /\.schedule-role-first-intro::before/);
+  assert.match(css, /\.analytics-empty::before\s*\{[^}]*\/icons\/szafunek-192\.png/s);
+  assert.match(css, /\.pwa-install\s*\{[^}]*var\(--brand-ink\)/s);
+  assert.match(css, /clip-path:/);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",

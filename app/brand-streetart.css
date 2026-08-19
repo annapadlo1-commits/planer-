@@ -372,3 +372,530 @@ body{
   .pwa-install-close{grid-column:3;grid-row:1}
   .pwa-ios-help{grid-column:1/-1}
 }
+
+/*
+ * SZAFUNEK street-poster layer
+ * The reference boards define visual language only. No board/mockup raster is
+ * used here: grain, torn edges, tape and marker strokes are CSS-native.
+ */
+:root{
+  --brand-ink:#151b19;
+  --brand-paper-2:#f1ede5;
+  --brand-marker:#c96553;
+  --brand-shadow:rgba(21,27,25,.22);
+  --brand-display:"Arial Narrow","Franklin Gothic Medium",Impact,sans-serif;
+  --brand-note:"Segoe Print","Bradley Hand",cursive;
+}
+
+body{
+  background-color:var(--brand-cream);
+  background-image:
+    radial-gradient(circle at 15% 8%,rgba(31,42,39,.055) 0 .7px,transparent .8px),
+    radial-gradient(circle at 77% 58%,rgba(31,42,39,.035) 0 .6px,transparent .7px),
+    linear-gradient(96deg,transparent 0 49.8%,rgba(31,42,39,.025) 50%,transparent 50.2%);
+  background-size:7px 7px,11px 11px,100% 100%;
+}
+
+.product-shell,.product-shell .workspace,.product-shell .content{
+  background-color:transparent;
+}
+.product-shell .workspace{
+  background-image:
+    radial-gradient(circle at 15% 10%,rgba(31,42,39,.04) 0 .65px,transparent .75px),
+    linear-gradient(115deg,rgba(166,184,169,.08),transparent 22%);
+  background-size:8px 8px,100% 100%;
+}
+
+/* Dark xerox navigation with a torn paper logo and poster-like selection. */
+.product-shell .product-sidebar{
+  isolation:isolate;
+  overflow:visible;
+  border-right:0!important;
+  background-color:var(--brand-ink)!important;
+  background-image:
+    radial-gradient(rgba(246,244,239,.055) .65px,transparent .75px),
+    linear-gradient(165deg,rgba(166,184,169,.13),transparent 42%);
+  background-size:7px 7px,100% 100%;
+  box-shadow:7px 0 0 rgba(21,27,25,.11);
+}
+.product-shell .product-sidebar::after{
+  content:"";
+  position:absolute;
+  z-index:-1;
+  inset:0 -7px 0 auto;
+  width:10px;
+  background:var(--brand-ink);
+  clip-path:polygon(0 0,100% 1%,42% 4%,92% 8%,35% 13%,100% 18%,45% 24%,92% 29%,30% 36%,100% 42%,45% 49%,90% 55%,25% 62%,100% 68%,38% 74%,95% 81%,30% 88%,100% 94%,48% 100%,0 100%);
+}
+.product-shell .product-sidebar .brand{
+  position:relative;
+  overflow:visible;
+  margin:10px 7px 22px;
+  padding:17px 13px 15px!important;
+  border:2px solid var(--brand-ink)!important;
+  border-radius:0!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:4px 5px 0 rgba(0,0,0,.35)!important;
+  clip-path:polygon(1% 3%,98% 0,100% 95%,2% 100%);
+  transform:rotate(-.8deg);
+}
+.product-shell .product-sidebar .brand::before{
+  content:"";
+  position:absolute;
+  top:-10px;
+  right:22px;
+  width:62px;
+  height:18px;
+  background:rgba(217,152,126,.72);
+  box-shadow:inset 0 0 0 1px rgba(31,42,39,.08);
+  transform:rotate(5deg);
+  opacity:.82;
+}
+.product-shell .product-sidebar .brand-lockup{max-width:100%!important;filter:contrast(1.08)}
+.product-shell .product-sidebar .sidebar-role{
+  border:1px solid rgba(246,244,239,.28)!important;
+  border-radius:1px!important;
+  background:rgba(166,184,169,.13)!important;
+  box-shadow:3px 3px 0 rgba(246,244,239,.06);
+  font-family:var(--brand-display);
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.product-shell .product-sidebar nav{overflow:visible!important;padding-right:7px}
+.product-shell .product-sidebar nav button{
+  position:relative;
+  min-height:49px;
+  margin:3px 0;
+  border:0!important;
+  border-radius:0!important;
+  color:#d9dfd9!important;
+  background:transparent!important;
+  font-weight:850;
+}
+.product-shell .product-sidebar nav button:hover{
+  color:var(--brand-paper)!important;
+  background:rgba(166,184,169,.12)!important;
+  transform:translateX(3px) rotate(-.25deg);
+}
+.product-shell .product-sidebar nav button.active{
+  color:var(--brand-ink)!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:4px 4px 0 var(--brand-marker)!important;
+  clip-path:polygon(1% 5%,99% 0,100% 91%,2% 100%);
+  transform:translateX(3px) rotate(-.35deg);
+}
+.product-shell .product-sidebar nav button.active::after{
+  content:"";
+  position:absolute;
+  left:45px;
+  right:18px;
+  bottom:8px;
+  height:3px;
+  background:var(--brand-marker);
+  transform:rotate(-1.5deg);
+  opacity:.7;
+}
+
+/* Header becomes a pasted strip, while controls remain crisp and usable. */
+.product-shell .topbar{
+  position:relative;
+  border-bottom:3px solid var(--brand-ink)!important;
+  background:rgba(246,244,239,.97)!important;
+  box-shadow:0 5px 0 rgba(31,42,39,.07)!important;
+}
+.product-shell .topbar::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:-7px;
+  height:6px;
+  background:repeating-linear-gradient(93deg,var(--brand-ink) 0 15px,transparent 15px 18px,var(--brand-ink) 18px 29px,transparent 29px 33px);
+  clip-path:polygon(0 15%,7% 48%,15% 10%,23% 62%,34% 24%,45% 78%,57% 17%,68% 63%,79% 8%,91% 55%,100% 20%,100% 100%,0 100%);
+  opacity:.75;
+}
+.product-topbar-copy>small,.eyebrow{
+  color:var(--brand-sage-strong)!important;
+  font-family:"Courier New",monospace;
+  font-weight:900!important;
+  letter-spacing:.12em!important;
+}
+.product-topbar-copy h1{
+  position:relative;
+  display:inline-block;
+  font-family:var(--brand-display);
+  font-weight:950;
+  letter-spacing:-.035em;
+}
+.product-topbar-copy h1::after{
+  content:"";
+  position:absolute;
+  left:-2px;
+  right:6%;
+  bottom:-3px;
+  height:3px;
+  background:var(--brand-marker);
+  transform:rotate(-1deg);
+  opacity:.72;
+}
+.environment-status,.month-picker,.topbar-actions>button{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:2px!important;
+  box-shadow:2px 2px 0 rgba(31,42,39,.12);
+}
+.environment-status{background:var(--brand-eucalyptus)!important}
+
+/* Functional controls: screen-printed, slightly imperfect, never glossy. */
+.primary-button,.pwa-install-action,.login-card button[type="submit"]{
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  box-shadow:3px 4px 0 rgba(138,155,137,.65)!important;
+  clip-path:polygon(1% 3%,99% 0,100% 93%,2% 100%);
+  font-family:var(--brand-display);
+  font-weight:900!important;
+  letter-spacing:.025em;
+}
+.primary-button:hover,.pwa-install-action:hover,.login-card button[type="submit"]:hover{
+  color:var(--brand-ink)!important;
+  background:var(--brand-peach)!important;
+  transform:translate(2px,2px) rotate(-.2deg);
+  box-shadow:1px 2px 0 rgba(31,42,39,.5)!important;
+}
+.secondary-button,.ghost-button{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  color:var(--brand-ink)!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 rgba(31,42,39,.12)!important;
+}
+
+.product-section-tabs,.module-tabs{
+  padding:7px!important;
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-ink)!important;
+  box-shadow:4px 4px 0 rgba(166,184,169,.55)!important;
+  clip-path:polygon(.4% 4%,99.6% 0,100% 92%,.8% 100%);
+}
+.product-section-tabs button,.module-tabs button{color:#d8ded9!important;border-radius:0!important}
+.product-section-tabs button.active,.module-tabs button.active{
+  color:var(--brand-ink)!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:2px 2px 0 var(--brand-marker)!important;
+  transform:rotate(-.4deg);
+}
+
+/* Remove the rounded SaaS card language from leading/product surfaces. */
+.configuration-journey,.schedule-role-first-intro,.operational-calendar-panel,
+.operational-program-head,.analytics-empty,.feature-coming-card,
+.workforce-catalog-search,.operational-event-tools,.operational-empty{
+  position:relative;
+  border:2px solid var(--brand-ink)!important;
+  border-radius:2px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:5px 6px 0 rgba(31,42,39,.13)!important;
+}
+.configuration-journey::after,.schedule-role-first-intro::after,
+.operational-program-head::after,.analytics-empty::after{
+  content:"";
+  position:absolute;
+  width:78px;
+  height:18px;
+  top:-10px;
+  right:7%;
+  background:rgba(166,184,169,.76);
+  transform:rotate(3deg);
+  opacity:.9;
+}
+
+/* Configuration journey: zine cards, sage tape, peach marker; no purple. */
+.configuration-journey{border-color:var(--brand-ink)!important;background:var(--brand-paper)!important}
+.configuration-progress{
+  padding:9px 11px!important;
+  border:0!important;
+  border-radius:0!important;
+  color:var(--brand-ink)!important;
+  background:var(--brand-sage)!important;
+  box-shadow:3px 3px 0 rgba(31,42,39,.16);
+  clip-path:polygon(2% 5%,100% 0,98% 96%,0 100%);
+  transform:rotate(.5deg);
+}
+.configuration-progress strong{color:var(--brand-ink)!important;font-family:var(--brand-display)}
+.configuration-progress>span{background:rgba(31,42,39,.18)!important;border-radius:0!important}
+.configuration-progress>span i{background:var(--brand-ink)!important;border-radius:0!important}
+.configuration-next-action{
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-peach)!important;
+  box-shadow:3px 4px 0 rgba(31,42,39,.14)!important;
+  transform:rotate(-.12deg);
+}
+.configuration-next-icon{
+  border-radius:1px!important;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  box-shadow:3px 3px 0 var(--brand-sage);
+  transform:rotate(-2deg);
+}
+.configuration-next-action small,.configuration-current-guide small,
+.configuration-current-guide header small,.configuration-current-guide>div>p small{
+  color:var(--brand-ink)!important;
+  font-family:"Courier New",monospace;
+}
+.configuration-current-guide{
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:3px 4px 0 rgba(31,42,39,.12)!important;
+}
+.configuration-current-guide>header{
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-eucalyptus)!important;
+}
+.configuration-current-guide>div>p{border-radius:1px!important;color:#29473c!important;background:var(--brand-eucalyptus)!important}
+.configuration-steps li button{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 rgba(31,42,39,.12);
+}
+.configuration-steps li button:hover{border-color:var(--brand-ink)!important;box-shadow:4px 4px 0 var(--brand-sage)!important}
+.configuration-steps li.current button{
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:4px 5px 0 var(--brand-peach)!important;
+  transform:rotate(-.35deg);
+}
+.configuration-step-index,.configuration-steps li.complete .configuration-step-index{
+  border-radius:1px!important;
+  color:var(--brand-ink)!important;
+  background:var(--brand-sage)!important;
+}
+.configuration-steps li.current .configuration-step-index{color:var(--brand-paper)!important;background:var(--brand-ink)!important}
+.configuration-steps li em,.configuration-steps li.complete em{color:#3e5f52!important}
+
+/* Zespół: a practical index-card catalogue, not a violet dashboard. */
+.workforce-catalog-search{
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-eucalyptus)!important;
+  box-shadow:3px 4px 0 var(--brand-sage)!important;
+  clip-path:polygon(.3% 4%,100% 0,99.5% 96%,0 100%);
+}
+.workforce-catalog-search svg{color:var(--brand-ink)!important}
+.workforce-catalog-list>article{
+  border-color:var(--brand-border-strong)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 rgba(31,42,39,.07);
+}
+.workforce-catalog-list>article:nth-child(even){background:#f0eee7!important}
+.workforce-catalog-list>article:hover{border-color:var(--brand-ink)!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+
+/* Grafik: poster heading and clean operational canvas. Role colors remain semantic. */
+.schedule-role-first-intro{
+  overflow:hidden;
+  padding-left:28px!important;
+  background:var(--brand-paper)!important;
+}
+.schedule-role-first-intro::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:0;
+  bottom:0;
+  width:14px;
+  background:var(--brand-marker);
+  clip-path:polygon(0 0,100% 2%,70% 9%,100% 17%,72% 27%,100% 38%,68% 48%,100% 61%,75% 72%,100% 84%,65% 93%,100% 100%,0 100%);
+}
+.schedule-role-first-intro>span{
+  display:inline-block;
+  padding:4px 8px!important;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  font-family:"Courier New",monospace;
+  transform:rotate(-.35deg);
+}
+.operational-calendar-panel{background:var(--brand-paper)!important}
+.operational-additional-tools{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+}
+.operational-additional-tools summary svg,.operational-additional-tools>svg{color:var(--brand-ink)!important}
+.segmented-choice button.active,.operational-card-picker button.active{
+  color:var(--brand-paper)!important;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-ink)!important;
+  box-shadow:2px 2px 0 var(--brand-peach)!important;
+}
+
+/* Operacje: cards read like pasted notices; status colors remain functional. */
+.operational-programs{color:var(--brand-ink)!important}
+.operational-program-head{
+  overflow:hidden;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-eucalyptus)!important;
+}
+.operational-program-head::before{
+  content:"OPERACJE / TU I TERAZ";
+  position:absolute;
+  right:24px;
+  bottom:10px;
+  padding:5px 9px;
+  color:var(--brand-paper);
+  background:var(--brand-ink);
+  font-family:var(--brand-note);
+  font-size:11px;
+  transform:rotate(-2deg);
+  opacity:.72;
+}
+.operational-program-head p{color:var(--brand-muted)!important}
+.operational-program-kpis article,.operational-program-kpis button{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:3px 4px 0 rgba(31,42,39,.12);
+}
+.operational-program-kpis article:nth-child(2n),.operational-program-kpis button:nth-child(2n){background:var(--brand-eucalyptus)!important}
+.operational-program-kpis svg{
+  border-radius:1px!important;
+  color:var(--brand-ink)!important;
+  background:var(--brand-peach)!important;
+  transform:rotate(-2deg);
+}
+.operational-event-tools{background:var(--brand-paper)!important}
+.operational-event-list>article{
+  border-radius:1px!important;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-paper)!important;
+  box-shadow:3px 4px 0 rgba(31,42,39,.1);
+}
+.event-icon{border-radius:1px!important;color:var(--brand-ink)!important;background:var(--brand-eucalyptus)!important}
+
+/* Empty analytics is a deliberate poster, not an unfinished white card. */
+.analytics-empty{
+  overflow:hidden;
+  min-height:340px;
+  padding:70px 28px!important;
+  color:var(--brand-ink)!important;
+  background-color:var(--brand-paper)!important;
+  background-image:
+    radial-gradient(rgba(31,42,39,.045) .7px,transparent .8px),
+    linear-gradient(145deg,transparent 0 64%,rgba(166,184,169,.22) 64% 100%)!important;
+  background-size:7px 7px,100% 100%!important;
+  box-shadow:7px 8px 0 var(--brand-sage)!important;
+}
+.analytics-empty::before{
+  content:"";
+  width:112px;
+  height:112px;
+  margin-bottom:4px;
+  background:url('/icons/szafunek-192.png') center/contain no-repeat;
+  transform:rotate(-2deg);
+}
+.analytics-empty svg{display:none!important}
+.analytics-empty h2{
+  max-width:760px;
+  padding:8px 14px;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  font-family:var(--brand-display);
+  font-size:clamp(28px,4vw,52px)!important;
+  line-height:.98;
+  text-transform:uppercase;
+  box-shadow:5px 5px 0 var(--brand-marker);
+  transform:rotate(-.5deg);
+}
+.analytics-empty p{color:var(--brand-muted)!important;font-family:"Courier New",monospace}
+
+/* PWA/install prompt uses the approved cat icon and behaves like a pasted label. */
+.pwa-install{
+  border:3px solid var(--brand-paper)!important;
+  border-radius:1px!important;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  box-shadow:6px 7px 0 var(--brand-sage)!important;
+  clip-path:polygon(.5% 4%,99.7% 0,100% 92%,1% 100%);
+}
+.pwa-install::before{
+  content:"";
+  position:absolute;
+  top:-8px;
+  left:42%;
+  width:76px;
+  height:17px;
+  background:rgba(217,152,126,.82);
+  transform:rotate(-2deg);
+}
+.pwa-install-copy small,.pwa-install-close{color:#cfd7d1!important}
+.pwa-install-mark{border:2px solid var(--brand-paper)!important;border-radius:16%!important}
+
+/* Login/marketing area carries the dark xerox character. */
+.login-page{background:var(--brand-eucalyptus)!important}
+.login-brand{
+  color:var(--brand-ink)!important;
+  border-right:7px solid var(--brand-ink)!important;
+  background-color:var(--brand-cream)!important;
+  background-image:
+    radial-gradient(rgba(31,42,39,.045) .7px,transparent .8px),
+    linear-gradient(145deg,rgba(166,184,169,.25),transparent 42%)!important;
+  background-size:7px 7px,100% 100%!important;
+}
+.login-brand-signature{
+  position:relative;
+  padding:25px 23px 20px;
+  background:var(--brand-paper-2);
+  box-shadow:7px 8px 0 rgba(0,0,0,.35);
+  clip-path:polygon(1% 2%,99% 0,100% 94%,2% 100%);
+  transform:rotate(-.7deg);
+}
+.login-brand-signature::before{
+  content:"";
+  position:absolute;
+  top:-9px;
+  right:13%;
+  width:88px;
+  height:20px;
+  background:rgba(217,152,126,.84);
+  transform:rotate(4deg);
+}
+.login-brand h1{
+  position:relative;
+  z-index:1;
+  display:inline-block;
+  margin-top:46px;
+  padding:10px 14px 13px;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink);
+  font-family:var(--brand-display);
+  font-weight:950;
+  letter-spacing:-.045em;
+  box-shadow:7px 7px 0 var(--brand-marker);
+  clip-path:polygon(1% 4%,100% 0,98% 96%,0 100%);
+  transform:rotate(-.6deg);
+}
+.login-panel{background:var(--brand-eucalyptus)!important}
+.login-card{
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:7px 8px 0 rgba(31,42,39,.19)!important;
+  clip-path:polygon(.5% 1%,99.5% 0,100% 98%,1% 100%);
+}
+.login-card input{border-radius:1px!important}
+
+@media(max-width:980px){
+  .product-shell .product-sidebar::after{display:none}
+  .product-shell .product-sidebar .brand{margin-top:2px}
+}
+@media(max-width:760px){
+  .login-brand{min-height:330px;border-right:0!important;border-bottom:7px solid var(--brand-ink)!important}
+  .login-brand-signature{padding:18px 15px 15px}
+  .login-brand h1{margin-top:31px;padding:7px 10px 9px}
+  .configuration-journey::after,.schedule-role-first-intro::after,.operational-program-head::after,.analytics-empty::after{right:12%;width:54px}
+  .operational-program-head::before{display:none}
+  .analytics-empty{min-height:300px;padding:50px 20px!important}
+  .analytics-empty::before{width:86px;height:86px}
+}
