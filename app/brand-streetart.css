@@ -2384,7 +2384,7 @@ body{
   .solver-v2-icon{width:42px!important;height:42px!important}
   .solver-v2-notice{padding:10px!important;font-size:11px!important;line-height:1.4!important}
   .solver-manual-studio-entry{grid-template-columns:34px minmax(0,1fr)!important;gap:10px!important;padding:12px!important}
-  .solver-manual-studio-entry>span{width:34px!important;height:34px!important}
+  .solver-manual-studio-entry>span{display:grid!important;place-items:center!important;width:34px!important;height:34px!important}
   .solver-manual-studio-entry>div strong{font-size:14px!important}
   .solver-manual-studio-entry>div small{font-size:11px!important;line-height:1.4!important}
   .solver-manual-studio-entry>button{grid-column:1/-1!important;width:100%!important}
