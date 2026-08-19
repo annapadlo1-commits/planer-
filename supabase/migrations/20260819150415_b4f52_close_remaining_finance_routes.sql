@@ -2,6 +2,8 @@
 -- The application policy is authoritative even when a caller invokes an old
 -- workspace or optimizer function directly through PostgREST.
 
+begin;
+
 alter function public.plan_workspace(date,uuid)
   rename to plan_workspace_before_b4f52_uat_v1;
 
@@ -203,3 +205,5 @@ comment on function public.monthly_budgets_get_uat_v1(date) is
   'B4F-52 monthly budgets respect FULL, AGGREGATE, BUDGET_ONLY and NONE visibility.';
 
 notify pgrst,'reload schema';
+
+commit;
