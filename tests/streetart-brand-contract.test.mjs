@@ -109,6 +109,12 @@ test("operations and mobile Leader Studio use the street-poster system without l
   assert.match(css, /\.solver-manual-studio-entry>span\s*\{[^}]*display:grid!important[^}]*width:34px!important/s);
   assert.match(css, /\.solver-workspace:not\(\.leader-studio\)\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
   assert.match(css, /\.solver-workspace:not\(\.leader-studio\)>\.solver-workspace-tabs button\.active\s*\{[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /section\.live-module:has\(>\.real-month\)\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.message-thread-placeholder>svg\s*\{[^}]*color:var\(--brand-paper\)!important[^}]*background:var\(--brand-ink\)!important/s);
+  assert.match(css, /\.employee-combined-calendar,\s*\.employee-day-workspace\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.availability-state-calendar button\.selected\s*\{[^}]*outline:2px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.matrix-v2-drawer \.matrix-import-mode button\.active\s*\{[^}]*background:var\(--brand-eucalyptus\)!important/s);
+  assert.match(css, /\.matrix-v2-drawer \.matrix-import-trust\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-eucalyptus\)!important/s);
 });
 
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
