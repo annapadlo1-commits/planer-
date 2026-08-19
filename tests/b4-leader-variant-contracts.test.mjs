@@ -171,7 +171,7 @@ test("leader workflow is durable, audited and owner-gated before merge",async()=
   assert.match(migration,/public\.has_app_role\('OWNER'\).*public\.has_app_role\('ADMIN'\)/s);
   assert.match(migration,/LEADER_WORKFLOW_TRANSITION/);
   assert.match(migration,/revoke all on function public\.optimizer_leader_workflow_status_uat_v1/);
-  assert.match(panel,/Przekaż do sprawdzenia/);
+  assert.match(panel,/Przekaż sprawdzony grafik/);
   assert.match(panel,/Zatwierdź jako lider/);
   assert.match(panel,/Oznacz jako gotowy do scalenia/);
   assert.match(panel,/leaderWorkflow==="DRAFT"/);
@@ -270,6 +270,58 @@ test("the owner configures finance visibility by application role in one access 
   assert.match(workspace,/financeVisibility==="FULL"/);
   assert.match(workspace,/financeVisibility==="BUDGET_ONLY"/);
   assert.match(workspace,/setFinanceVisibility\("NONE"\)/);
+});
+
+test("B4F-101 enforces finance visibility in the server payload, not only in React",async()=>{
+  const [migration,client,workspace]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819103000_b4f101_server_finance_redaction.sql",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/redact_workspace_finance_uat_v1/);
+  assert.match(migration,/v_assignment-'costMinor'-'cost_minor'/);
+  assert.match(migration,/v_visibility='BUDGET_ONLY'/);
+  assert.match(migration,/'budgetStatus'/);
+  assert.match(migration,/v_visibility<>'NONE'/);
+  assert.match(migration,/optimizer_variant_workspace_uat_v2/);
+  assert.match(migration,/optimizer_leader_variant_workspace_uat_v1/);
+  assert.match(migration,/optimizer_selected_variant_workspace_v2/);
+  assert.match(migration,/optimizer_published_schedule_v2/);
+  assert.match(migration,/optimizer_variants_v2/);
+  assert.match(migration,/optimizer_runs_catalog_before_b4f101_alpha16/);
+  assert.match(migration,/revoke all on function solver_private\.redact_workspace_finance_uat_v1/);
+  assert.match(client,/budgetStatus:/);
+  assert.match(workspace,/workspace\.budgetStatus/);
+  assert.doesNotMatch(workspace,/workspace\.finance&&financeVisibility==="BUDGET_ONLY"/);
+});
+
+test("B4F-101 closes legacy workspace, employer-cost and recovery finance routes",async()=>{
+  const sql=await readFile(new URL("../supabase/migrations/20260819123000_b4f101_close_legacy_finance_routes.sql",import.meta.url),"utf8");
+  for(const name of ["complete_workspace","employer_cost_workspace_uat_v1","recovery_center_workspace_uat_v1","recovery_incident_detail_uat_v1"]){
+    assert.match(sql,new RegExp(`create function public\\.${name}`));
+  }
+  assert.match(sql,/application_finance_visibility_current_uat_v1\(\)/);
+  assert.match(sql,/v_employee-'finance'/);
+  assert.match(sql,/v_person-'rateMinor'-'currency'/);
+  assert.match(sql,/v_rate-'proposedRateMinor'-'approvedRateMinor'-'currency'/);
+  assert.match(sql,/v_visibility<>'FULL'/);
+});
+
+test("B4F-95 checks the whole Studio draft without mutation before an audited workflow decision",async()=>{
+  const [migration,panel,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819110000_b4f95_final_draft_validation.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  assert.match(migration,/optimizer_leader_draft_validate_uat_v1/);
+  assert.match(migration,/stable security definer/);
+  assert.match(migration,/materialized_variant_payload_v2/);
+  assert.match(migration,/validate_variant_v2/);
+  assert.match(migration,/v_target in \('REVIEW','LEADER_APPROVED','READY_TO_MERGE'\)/);
+  assert.match(client,/validateLeaderDraft/);
+  assert.match(panel,/Sprawdź cały grafik/);
+  assert.match(panel,/Przekaż sprawdzony grafik/);
+  assert.match(panel,/leaderDraftValidation\.revision!==leaderVariant\.revision/);
 });
 
 test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{

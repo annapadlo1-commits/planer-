@@ -503,7 +503,6 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     const selectedCandidate=context.candidates.find(candidate=>candidate.employeeId===employeeId);
     if(!selectedCandidate?.suggestionEligible){setLeaderFeedback("Ta osoba nie jest bezpieczną sugestią dla tej zmiany. Sprawdź status dostępności i pokrycie obowiązku.");return;}
     setLeaderBusy(true);
-    setLeaderFeedback("Dodaję zmianę do roboczego szkicu…");
     try{
       await saveLeaderAssignment(supabase,{variantId:context.variantId,
         assignmentId:context.assignmentId,issueId:context.issueId,
@@ -669,7 +668,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
 
     {leaderEditable&&<aside className="leader-studio-impact" aria-label="Wpływ zmian w Studio lidera">
       <header><BarChart3/><span><strong>Wpływ bieżącego szkicu</strong><small>{locationFilter||roleFilters.length?"Wyniki dla aktywnych filtrów":"Cały zakres wersji lidera"}</small></span></header>
-      <div><span><small>Przydziały</small><b>{assignmentCount}</b></span><span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span><span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span><span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span><span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span><span><small>Nad celem</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>{workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Łączny koszt</small><b>{money(workspace.finance.totalCostMinor,workspace.finance.currency)}</b></span>}{workspace.finance&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.finance.budgetMinor!==null&&workspace.finance.totalCostMinor>workspace.finance.budgetMinor?"warning":"ok"}><small>Status budżetu</small><b>{workspace.finance.budgetMinor===null?"Bez limitu":workspace.finance.totalCostMinor<=workspace.finance.budgetMinor?"W budżecie":"Przekroczony"}</b></span>}</div>
+      <div><span><small>Przydziały</small><b>{assignmentCount}</b></span><span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span><span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span><span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span><span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span><span><small>Nad celem</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>{workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Łączny koszt</small><b>{money(workspace.finance.totalCostMinor,workspace.finance.currency)}</b></span>}{workspace.budgetStatus&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.budgetStatus.withinBudget===false?"warning":"ok"}><small>Status budżetu</small><b>{!workspace.budgetStatus.configured?"Bez limitu":workspace.budgetStatus.withinBudget?"W budżecie":"Przekroczony"}</b></span>}</div>
       {baselineWorkspace&&<section className="leader-baseline-delta"><strong>Zmiana względem wariantu bazowego</strong><div><span><small>Zmodyfikowane miejsca</small><b>{modifiedAssignmentCount}</b></span><span><small>Przydziały</small><b>{assignmentCount-baselineAssignmentCount>=0?"+":""}{assignmentCount-baselineAssignmentCount}</b></span><span><small>Braki</small><b>{unfilledCount-baselineUnfilledCount>=0?"+":""}{unfilledCount-baselineUnfilledCount}</b></span>{workspace.finance&&baselineCostMinor!==null&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Koszt</small><b>{workspace.finance.totalCostMinor-baselineCostMinor>=0?"+":""}{money(workspace.finance.totalCostMinor-baselineCostMinor,workspace.finance.currency)}</b></span>}</div></section>}
       <button type="button" className="secondary-button" disabled={workloadLoading} onClick={()=>void loadWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz pełną analizę</button>
       <small>Po każdym zapisie szkic jest ponownie pobierany. Twarde reguły sprawdza serwer przed zapisem; świadome wyjątki pozostają w audycie.</small>
@@ -707,8 +706,8 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
       <div><span><small>Łączny koszt</small><strong>{money(workspace.finance.totalCostMinor, workspace.finance.currency)}</strong></span></div>
       <div><span><small>Budżet scenariusza</small><strong>{money(workspace.finance.budgetMinor, workspace.finance.currency)}</strong></span></div>
     </div>}
-    {workspace.finance && financeVisibility==="BUDGET_ONLY" && <div className="solver-workspace-finance budget-only">
-      <div><CircleDollarSign/><span><small>Status budżetu scenariusza</small><strong>{workspace.finance.budgetMinor===null?"Brak ustawionego limitu":workspace.finance.totalCostMinor<=workspace.finance.budgetMinor?"Koszt mieści się w budżecie":"Koszt przekracza budżet"}</strong></span></div>
+    {workspace.budgetStatus && financeVisibility==="BUDGET_ONLY" && <div className="solver-workspace-finance budget-only">
+      <div><CircleDollarSign/><span><small>Status budżetu scenariusza</small><strong>{!workspace.budgetStatus.configured?"Brak ustawionego limitu":workspace.budgetStatus.withinBudget?"Koszt mieści się w budżecie":"Koszt przekracza budżet"}</strong></span></div>
     </div>}
 
     {workspaceView==="WORKLOAD"&&<section className="solver-workload-content" aria-label="Rozkład pracy zespołu">

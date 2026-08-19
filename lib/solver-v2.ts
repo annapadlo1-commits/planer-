@@ -192,6 +192,7 @@ export type SolverWorkspace = {
   shifts: SolverWorkspaceShift[];
   issues: SolverWorkspaceIssue[];
   finance: SolverWorkspaceFinance | null;
+  budgetStatus: { configured: boolean; withinBudget: boolean | null } | null;
 };
 
 export type SolverWorkloadDistributionRow = {
@@ -877,6 +878,14 @@ function normalizeWorkspace(value: unknown): SolverWorkspace {
     shifts: shifts.map(normalizeWorkspaceShift),
     issues: issues.map(normalizeWorkspaceIssue),
     finance: normalizeWorkspaceFinance(payload.finance),
+    budgetStatus: payload.budgetStatus && typeof payload.budgetStatus === "object" && !Array.isArray(payload.budgetStatus)
+      ? {
+          configured: Boolean(record(payload.budgetStatus).configured),
+          withinBudget: record(payload.budgetStatus).withinBudget === null
+            ? null
+            : Boolean(record(payload.budgetStatus).withinBudget),
+        }
+      : null,
   };
 }
 
@@ -2092,6 +2101,28 @@ export type SolverLeaderHistoryStatus={
 };
 
 export type SolverLeaderWorkflowStatus="DRAFT"|"REVIEW"|"LEADER_APPROVED"|"READY_TO_MERGE"|"PUBLISHED";
+
+export type SolverLeaderDraftValidation={
+  variantId:string;
+  revision:number;
+  valid:boolean;
+  hardViolations:number;
+  unfilledCount:number;
+  assignmentCount:number;
+};
+
+export async function validateLeaderDraft(client:SupabaseClient,variantId:string):Promise<SolverLeaderDraftValidation>{
+  const payload=record(await rpc(client,"optimizer_leader_draft_validate_uat_v1",{p_variant_id:variantId}));
+  const validation=record(payload.validation);
+  return {
+    variantId:String(payload.variantId??variantId),
+    revision:numberOf(payload,"revision","revision"),
+    valid:Boolean(payload.valid),
+    hardViolations:numberOf(validation,"hardViolations","hard_violations"),
+    unfilledCount:numberOf(validation,"unfilledCount","unfilled_count"),
+    assignmentCount:numberOf(validation,"assignmentCount","assignment_count"),
+  };
+}
 
 export async function getLeaderWorkflowStatus(client:SupabaseClient,variantId:string):Promise<SolverLeaderWorkflowStatus>{
   const value=record(await rpc(client,"optimizer_leader_workflow_status_uat_v1",{p_variant_id:variantId}));

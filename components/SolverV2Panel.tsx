@@ -27,6 +27,7 @@ import {
   getSolverVariants,
   moveLeaderHistory,
   transitionLeaderWorkflow,
+  validateLeaderDraft,
   isValidIdempotencyKey,
   isSolverRunTerminal,
   publicationAttemptStorageKey,
@@ -50,6 +51,7 @@ import {
   type SolverLeaderVariant,
   type SolverLeaderHistoryStatus,
   type SolverLeaderWorkflowStatus,
+  type SolverLeaderDraftValidation,
   type SolverPublicationReadiness,
   type SolverScenario,
   type SolverScope,
@@ -202,6 +204,7 @@ export function SolverV2Panel({
   const [leaderWorkflow,setLeaderWorkflow]=useState<SolverLeaderWorkflowStatus>("DRAFT");
   const [pendingLeaderWorkflow,setPendingLeaderWorkflow]=useState<SolverLeaderWorkflowStatus|null>(null);
   const [leaderWorkflowReason,setLeaderWorkflowReason]=useState("");
+  const [leaderDraftValidation,setLeaderDraftValidation]=useState<SolverLeaderDraftValidation|null>(null);
   const [leaderRefillReason,setLeaderRefillReason]=useState("");
   const [leaderRefillRun,setLeaderRefillRun]=useState<{runId:string;leaderRevision:number;reason:string}|null>(null);
   const leaderRefillApplyingRef=useRef(false);
@@ -558,11 +561,27 @@ export function SolverV2Panel({
       const workspace=await getLeaderVariantWorkspace(supabase,leaderVariant.id);
       const summary=workspace.variants[0];
       setSelectedWorkspace(workspace);
+      setLeaderDraftValidation(current=>current?.revision===workspace.context.revision?current:null);
       setLeaderHistory(await getLeaderHistoryStatus(supabase,leaderVariant.id));
       setLeaderVariant(current=>current?{...current,revision:workspace.context.revision??current.revision,
         assignmentCount:summary?.assignmentCount??current.assignmentCount,
         unfilledCount:summary?.unfilledCount??current.unfilledCount,lastEditedAt:workspace.context.lastEditedAt}:current);
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
+    finally{setBusy(false);}
+  }
+
+  async function checkLeaderDraft(){
+    if(!supabase||!leaderVariant)return;
+    setBusy(true);setMessage("");
+    try{
+      const result=await validateLeaderDraft(supabase,leaderVariant.id);
+      setLeaderDraftValidation(result);
+      setMessage(result.valid
+        ? result.unfilledCount>0
+          ? `Kontrola zakończona: brak naruszeń twardych. Pozostało ${result.unfilledCount} wakatów wymagających świadomej decyzji.`
+          : "Kontrola zakończona: cały szkic spełnia twarde reguły i nie ma wakatów."
+        : `Kontrola wykryła ${result.hardViolations} naruszeń twardych. Popraw wskazane miejsca przed przekazaniem grafiku.`);
+    }catch(error){setLeaderDraftValidation(null);setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
   }
 
@@ -938,7 +957,7 @@ export function SolverV2Panel({
         <span className={leaderWorkflow==="LEADER_APPROVED"?"active":["READY_TO_MERGE","PUBLISHED"].includes(leaderWorkflow)?"done":""}><b>3</b> Zatwierdzony przez lidera</span>
         <span className={leaderWorkflow==="READY_TO_MERGE"?"active":leaderWorkflow==="PUBLISHED"?"done":""}><b>4</b> Gotowy do scalenia</span>
         <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
-        <div>{leaderWorkflow==="DRAFT"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("REVIEW")}>Przekaż do sprawdzenia</button>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
+        <div>{leaderWorkflow==="DRAFT"&&<><button className="secondary-button" disabled={busy} onClick={()=>void checkLeaderDraft()}><Check/> Sprawdź cały grafik</button><button className="primary-button" disabled={busy||!leaderDraftValidation?.valid||leaderDraftValidation.revision!==leaderVariant.revision} title={!leaderDraftValidation?"Najpierw uruchom niemutującą kontrolę całego szkicu":!leaderDraftValidation.valid?"Najpierw popraw naruszenia twardych reguł":leaderDraftValidation.revision!==leaderVariant.revision?"Szkic zmienił się po kontroli — sprawdź go ponownie":"Przekaż sprawdzony szkic"} onClick={()=>setPendingLeaderWorkflow("REVIEW")}>Przekaż sprawdzony grafik</button></>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
       </nav>
       {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Opcjonalna pomoc generatora: zachowa wszystkie ręczne przydziały i spróbuje obsadzić wyłącznie wakaty. Jeśli układasz grafik samodzielnie, pomiń tę akcję.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={Boolean(leaderRefillRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/><small>{leaderRefillReason.trim().length<3?"Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów.":"Gotowe — generator nie zmieni ręcznych decyzji lidera."}</small></label><span><button type="button" className="primary-button" disabled={busy||Boolean(leaderRefillRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()} title={leaderRefillReason.trim().length<3?"Najpierw wpisz powód uruchomienia":"Uzupełnij wyłącznie nieobsadzone miejsca"}>{leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span></section>}
       {pendingLeaderWorkflow&&<section className="leader-workflow-confirm"><div><strong>Potwierdź zmianę etapu</strong><small>Powód zostanie zapisany w historii wersji lidera. Samo przejście etapu nie publikuje grafiku pracownikom.</small></div><label>Powód decyzji<textarea autoFocus minLength={3} value={leaderWorkflowReason} onChange={event=>setLeaderWorkflowReason(event.target.value)} placeholder="np. grafik sprawdzony przez lidera BAR"/></label><span><button type="button" className="secondary-button" disabled={busy} onClick={()=>{setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");}}>Anuluj</button><button type="button" className="primary-button" disabled={busy||leaderWorkflowReason.trim().length<3} onClick={()=>void moveLeaderWorkflow(pendingLeaderWorkflow)}>{busy?<RefreshCw className="spin"/>:<Check/>} Zapisz zmianę etapu</button></span></section>}
