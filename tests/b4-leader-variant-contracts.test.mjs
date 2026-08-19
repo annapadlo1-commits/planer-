@@ -369,9 +369,10 @@ test("B4F-95 checks the whole Studio draft without mutation before an audited wo
 });
 
 test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{
-  const [migration,runContract,panel,client]=await Promise.all([
+  const [migration,runContract,inputHashContract,panel,client]=await Promise.all([
     readFile(new URL("../supabase/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
     readFile(new URL("../supabase/migrations/20260819070912_b4f100_leader_refill_run_contract.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260819133300_b4f100_leader_optimizer_input_hash.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -391,6 +392,12 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   assert.match(runContract,/'runId',v_refill_run_id/,
     "RPC musi zwrócić klientowi stabilne pole runId do pollingu");
   assert.match(runContract,/LEADER_REFILL_DRAFT_REQUIRED/);
+  assert.match(inputHashContract,/optimizer_leader_refill_request_uat_v1/);
+  assert.match(inputHashContract,/optimizer_leader_reoptimization_request_uat_v1/);
+  assert.match(inputHashContract,/update solver_private\.optimization_snapshots_v2 set snapshot=v_snapshot,snapshot_hash=v_hash/,
+    "worker musi dostać hash pełnego snapshotu z blokadami lidera");
+  assert.doesNotMatch(inputHashContract,/update public\.optimization_runs_v2 set snapshot_hash=v_hash/,
+    "run musi zachować bazowy hash konfiguracji używany przez kontrolę STALE_INPUT");
   assert.match(client,/requestLeaderRefill/);
   assert.match(client,/applyLeaderRefill/);
   assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
