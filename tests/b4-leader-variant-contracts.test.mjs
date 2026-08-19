@@ -492,6 +492,36 @@ test("B4F-107 keeps optional generator tools compact until the leader expands on
     "dopiero świadomie rozwinięty formularz może zająć pełną szerokość");
 });
 
+test("B4F-74 binds the Studio impact to one revision and one authoritative monthly balance",async()=>{
+  const [migration,workspace,client]=await Promise.all([
+    readFile(new URL("../supabase/migrations/20260819183425_b4f74_leader_impact_summary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+  ]);
+  for(const field of ["revision","eligibleLocationIds","externalMinutes","totalMonthlyMinutes","overtimeMinutes","preferenceViolations","assignmentImpacts"]){
+    assert.match(migration,new RegExp(`'${field}'`),`kontrakt rozkładu musi zwracać ${field}`);
+    assert.match(client,new RegExp(field),`klient musi normalizować ${field}`);
+  }
+  assert.match(migration,/security definer[\s\S]*set search_path = ''/);
+  assert.match(migration,/solver_private\.can_access_run_v2/);
+  assert.match(migration,/revoke all on function public\.optimizer_variant_workload_distribution_uat_v1\(uuid\)[\s\S]*from public,anon,authenticated/);
+  assert.match(migration,/grant execute on function public\.optimizer_variant_workload_distribution_uat_v1\(uuid\)[\s\S]*to authenticated/);
+  assert.match(migration,/'costMinor',case when v_finance_visibility='FULL'/,
+    "koszt pojedynczej osoby nie może wyciec poza poziom FULL");
+  assert.match(migration,/externalAssignments/);
+  assert.match(migration,/preferredShiftTemplateIds/);
+  assert.match(migration,/preferredLocationIds/);
+  assert.match(migration,/softDayOffDates/);
+  assert.match(migration,/workPatterns/);
+  assert.match(workspace,/row\.totalMonthlyMinutes>row\.maximumMonthlyMinutes/,
+    "twardy limit musi obejmować bieżący szkic i inne grafiki miesiąca");
+  assert.match(workspace,/Naruszenia preferencji/);
+  assert.match(workspace,/Koszt tej osoby/);
+  assert.match(workspace,/studioAnalysisRevision/);
+  assert.match(workspace,/shift\.assignments\.filter\(assignment=>!roleFilters\.length\|\|roleFilters\.includes\(assignment\.role\.id\)\)/,
+    "filtr roli nie może doliczać przydziałów pozostałych ról na tej samej zmianie");
+});
+
 test("Studio role calendar exposes vacancies as drop targets and keeps analytics panels separate",async()=>{
   const [workspace,styles]=await Promise.all([
     readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),

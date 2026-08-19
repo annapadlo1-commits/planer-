@@ -65,7 +65,7 @@ function workloadHours(minutes:number){
 }
 
 function workloadReason(row:SolverWorkloadDistributionRow){
-  if(row.maximumMonthlyMinutes>0&&row.plannedMinutes>row.maximumMonthlyMinutes)return `BŁĄD: grafik przekracza twardy limit o ${workloadHours(row.plannedMinutes-row.maximumMonthlyMinutes)}. Tego wariantu nie wolno publikować.`;
+  if(row.maximumMonthlyMinutes>0&&row.totalMonthlyMinutes>row.maximumMonthlyMinutes)return `BŁĄD: łączny bilans miesiąca przekracza twardy limit o ${workloadHours(row.totalMonthlyMinutes-row.maximumMonthlyMinutes)}. Tego wariantu nie wolno publikować.`;
   if(row.reasonCode==="AVAILABILITY_LIMITED")return `Ograniczenie dostępności: ${row.hardUnavailableDays} dni twardej niedostępności w tym miesiącu.`;
   if(row.reasonCode==="AVAILABILITY_WINDOW_LIMITED")return `Pracownik podał konkretne okna dostępności w ${row.availableWindowDays} dniach; silnik mógł planować tylko wewnątrz nich.`;
   if(row.reasonCode==="MAXIMUM_REACHED")return "Osiągnięto twardy miesięczny limit godzin. Silnik nie może dodać kolejnego przydziału.";
@@ -76,7 +76,7 @@ function workloadReason(row:SolverWorkloadDistributionRow){
 }
 
 function workloadReasonCode(row:SolverWorkloadDistributionRow){
-  return row.maximumMonthlyMinutes>0&&row.plannedMinutes>row.maximumMonthlyMinutes?"ABOVE_MAXIMUM":row.reasonCode;
+  return row.maximumMonthlyMinutes>0&&row.totalMonthlyMinutes>row.maximumMonthlyMinutes?"ABOVE_MAXIMUM":row.reasonCode;
 }
 
 type WorkspaceView="CALENDAR"|"WORKLOAD"|"ISSUES";
@@ -326,7 +326,9 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   }
   const dates = [...shiftsByDate.entries()].sort(([left], [right]) => left.localeCompare(right));
   const weeks=monthWeeks(workspace.context.month);
-  const scheduleEntries=visibleShifts.flatMap(shift=>shift.assignments.map(assignment=>({shift,assignment})));
+  const scheduleEntries=visibleShifts.flatMap(shift=>shift.assignments
+    .filter(assignment=>!roleFilters.length||roleFilters.includes(assignment.role.id))
+    .map(assignment=>({shift,assignment})));
   const assignedRoleNamesByEmployee=scheduleEntries.reduce((roles,entry)=>{
     const current=roles.get(entry.assignment.employee.id)??new Set<string>();
     current.add(entry.assignment.role.name);
@@ -377,14 +379,14 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     const assignedRoleNames=[...(assignedRoleNamesByEmployee.get(row.employeeId)??[])];
     const searchable=normalize(`${row.employeeName} ${row.employeeNo} ${row.roleNames.join(" ")} ${assignedRoleNames.join(" ")}`);
     return (!search||searchable.includes(search))
-      &&(!locationFilter||row.locations.some(location=>location.id===locationFilter))
+      &&(!locationFilter||row.eligibleLocationIds.includes(locationFilter))
       &&(!roleFilters.length||row.roleNames.some(name=>workspaceRoles.some(role=>roleFilters.includes(role.id)&&role.name===name)))
       &&(!workloadReasonFilter||row.reasonCode===workloadReasonFilter);
-  }).sort((left,right)=>workloadSort==="HOURS_ASC"?left.plannedMinutes-right.plannedMinutes
+  }).sort((left,right)=>workloadSort==="HOURS_ASC"?left.totalMonthlyMinutes-right.totalMonthlyMinutes
     :workloadSort==="DIFFERENCE"?Math.abs(right.differenceMinutes)-Math.abs(left.differenceMinutes)
-    :right.plannedMinutes-left.plannedMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
-  const workloadMinutes=filteredWorkload.map(row=>row.plannedMinutes).sort((a,b)=>a-b);
-  const workloadOverMaximum=filteredWorkload.filter(row=>row.maximumMonthlyMinutes>0&&row.plannedMinutes>row.maximumMonthlyMinutes).length;
+    :right.totalMonthlyMinutes-left.totalMonthlyMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
+  const workloadMinutes=filteredWorkload.map(row=>row.totalMonthlyMinutes).sort((a,b)=>a-b);
+  const workloadOverMaximum=filteredWorkload.filter(row=>row.maximumMonthlyMinutes>0&&row.totalMonthlyMinutes>row.maximumMonthlyMinutes).length;
   const workloadMedian=workloadMinutes.length?(workloadMinutes[Math.floor((workloadMinutes.length-1)/2)]+workloadMinutes[Math.ceil((workloadMinutes.length-1)/2)])/2:0;
 
   async function loadWorkload(force=false){
@@ -617,10 +619,23 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   const eligibleLeaderCandidates=(leaderContext?.candidates??[]).filter(candidate=>candidate.suggestionEligible).length;
   const blockedLeaderCandidates=(leaderContext?.candidates??[]).length-eligibleLeaderCandidates;
   const selectedLeaderCandidate=(leaderContext?.candidates??[]).find(candidate=>candidate.employeeId===leaderEmployeeId)??null;
-  const studioZeroHours=filteredWorkload.filter(row=>row.plannedMinutes===0&&row.nominalMonthlyMinutes>0).length;
-  const studioBelowTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes<row.nominalMonthlyMinutes).length;
-  const studioAboveTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.plannedMinutes>row.nominalMonthlyMinutes).length;
-  const studioOvertimeMinutes=filteredWorkload.reduce((sum,row)=>sum+Math.max(0,row.plannedMinutes-row.nominalMonthlyMinutes),0);
+  const studioZeroHours=filteredWorkload.filter(row=>row.totalMonthlyMinutes===0&&row.nominalMonthlyMinutes>0).length;
+  const studioBelowTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes<row.nominalMonthlyMinutes).length;
+  const studioAboveTarget=filteredWorkload.filter(row=>row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes>row.nominalMonthlyMinutes).length;
+  const studioOvertimeMinutes=filteredWorkload.reduce((sum,row)=>sum+row.overtimeMinutes,0);
+  const studioVisibleImpacts=filteredWorkload.flatMap(row=>row.assignmentImpacts.filter(impact=>(!locationFilter||impact.locationId===locationFilter)
+    &&(!roleFilters.length||roleFilters.includes(impact.roleId))));
+  const studioPreferenceViolations=studioVisibleImpacts.reduce((sum,impact)=>sum+impact.preferenceViolations,0);
+  const studioScopedCostMinor=studioVisibleImpacts.every(impact=>impact.costMinor!==null)
+    ? studioVisibleImpacts.reduce((sum,impact)=>sum+(impact.costMinor??0),0)
+    : null;
+  const hasActiveStudioFilters=Boolean(locationFilter||roleFilters.length);
+  const studioDisplayedCostMinor=financeVisibility==="FULL"&&hasActiveStudioFilters
+    ? studioScopedCostMinor
+    : workspace.finance?.totalCostMinor??null;
+  const studioBudgetMinor=workspace.finance?.budgetMinor??null;
+  const studioBudgetVariance=studioBudgetMinor===null||!workspace.finance?null:studioBudgetMinor-workspace.finance.totalCostMinor;
+  const studioAnalysisRevision=currentWorkloadRows?.[0]?.variantRevision??null;
   const employeeDetailWorkload=(currentWorkloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
   const employeeDetail=scheduleEmployees.find(employee=>employee.id===employeeDetailId)??(
     employeeDetailSeed?.id===employeeDetailId
@@ -668,10 +683,22 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
 
     {leaderEditable&&<aside className="leader-studio-impact" aria-label="Wpływ zmian w Studio lidera">
       <header><BarChart3/><span><strong>Wpływ bieżącego szkicu</strong><small>{locationFilter||roleFilters.length?"Wyniki dla aktywnych filtrów":"Cały zakres wersji lidera"}</small></span></header>
-      <div><span><small>Przydziały</small><b>{assignmentCount}</b></span><span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span><span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span><span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span><span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span><span><small>Nad celem</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>{workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Łączny koszt</small><b>{money(workspace.finance.totalCostMinor,workspace.finance.currency)}</b></span>}{workspace.budgetStatus&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.budgetStatus.withinBudget===false?"warning":"ok"}><small>Status budżetu</small><b>{!workspace.budgetStatus.configured?"Bez limitu":workspace.budgetStatus.withinBudget?"W budżecie":"Przekroczony"}</b></span>}</div>
+      <div>
+        <span><small>Przydziały</small><b>{assignmentCount}</b></span>
+        <span className={unfilledCount?"warning":"ok"}><small>Braki</small><b>{unfilledCount}</b></span>
+        <span className={studioZeroHours?"warning":"ok"}><small>Osoby z 0 h</small><b>{studioZeroHours}</b></span>
+        <span><small>Poniżej celu</small><b>{studioBelowTarget}</b></span>
+        <span><small>Powyżej celu</small><b>{studioAboveTarget}</b></span>
+        <span className={studioOvertimeMinutes?"warning":"ok"}><small>Nadgodziny</small><b>{workloadHours(studioOvertimeMinutes)}</b></span>
+        <span className={studioPreferenceViolations?"warning":"ok"}><small>Naruszenia preferencji</small><b>{studioPreferenceViolations}</b></span>
+        {workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&studioDisplayedCostMinor!==null&&<span><small>{hasActiveStudioFilters&&financeVisibility==="FULL"?"Koszt widocznego zakresu":"Łączny koszt szkicu"}</small><b>{money(studioDisplayedCostMinor,workspace.finance.currency)}</b></span>}
+        {workspace.finance&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Budżet szkicu</small><b>{money(studioBudgetMinor,workspace.finance.currency)}</b></span>}
+        {workspace.finance&&studioBudgetVariance!==null&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span className={studioBudgetVariance<0?"warning":"ok"}><small>{studioBudgetVariance<0?"Przekroczenie budżetu":"Pozostało w budżecie"}</small><b>{money(Math.abs(studioBudgetVariance),workspace.finance.currency)}</b></span>}
+        {workspace.budgetStatus&&financeVisibility==="BUDGET_ONLY"&&<span className={workspace.budgetStatus.withinBudget===false?"warning":"ok"}><small>Status budżetu</small><b>{!workspace.budgetStatus.configured?"Bez limitu":workspace.budgetStatus.withinBudget?"W budżecie":"Przekroczony"}</b></span>}
+      </div>
       {baselineWorkspace&&<section className="leader-baseline-delta"><strong>Zmiana względem wariantu bazowego</strong><div><span><small>Zmodyfikowane miejsca</small><b>{modifiedAssignmentCount}</b></span><span><small>Przydziały</small><b>{assignmentCount-baselineAssignmentCount>=0?"+":""}{assignmentCount-baselineAssignmentCount}</b></span><span><small>Braki</small><b>{unfilledCount-baselineUnfilledCount>=0?"+":""}{unfilledCount-baselineUnfilledCount}</b></span>{workspace.finance&&baselineCostMinor!==null&&(financeVisibility==="AGGREGATE"||financeVisibility==="FULL")&&<span><small>Koszt</small><b>{workspace.finance.totalCostMinor-baselineCostMinor>=0?"+":""}{money(workspace.finance.totalCostMinor-baselineCostMinor,workspace.finance.currency)}</b></span>}</div></section>}
       <button type="button" className="secondary-button" disabled={workloadLoading} onClick={()=>void loadWorkload(true)}><RefreshCw className={workloadLoading?"spin":""}/> Przelicz pełną analizę</button>
-      <small>Po każdym zapisie szkic jest ponownie pobierany. Twarde reguły sprawdza serwer przed zapisem; świadome wyjątki pozostają w audycie.</small>
+      <small>{studioAnalysisRevision===null?"Trwa pobieranie pełnej analizy bieżącej rewizji.":`Pełna analiza dotyczy dokładnie rewizji ${studioAnalysisRevision}.`} Nadgodziny uwzględniają przydziały tego szkicu i wcześniejsze grafiki zapisane w migawce. Twarde reguły sprawdza serwer; świadome wyjątki pozostają w audycie.</small>
     </aside>}
 
     {workspaceView==="ISSUES"&&<section className="solver-issues-view">
@@ -730,8 +757,8 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
           <label>Sortowanie<select value={workloadSort} onChange={event=>setWorkloadSort(event.target.value as typeof workloadSort)}><option value="HOURS_DESC">Najwięcej godzin</option><option value="HOURS_ASC">Najmniej godzin</option><option value="DIFFERENCE">Największa różnica od wymiaru</option></select></label>
         </div>
         <div className="solver-workload-list">{filteredWorkload.map(row=><article key={row.employeeId}>
-          <header><span><strong>{row.employeeName}</strong><small>{row.employeeNo} • {row.roleNames.join(", ")||"Rola w analizowanym grafiku"}</small></span><b>{workloadHours(row.plannedMinutes)}</b></header>
-          <div className="solver-workload-kpis"><span><small>Zmiany</small><strong>{row.shiftCount}</strong></span><span><small>Cel godzinowy</small><strong>{row.nominalMonthlyMinutes?workloadHours(row.nominalMonthlyMinutes):"Brak"}</strong></span><span><small>Twardy limit</small><strong>{row.maximumMonthlyMinutes?workloadHours(row.maximumMonthlyMinutes):"Brak"}</strong></span><span><small>Różnica od celu</small><strong className={row.differenceMinutes>0?"over":row.differenceMinutes<0?"under":""}>{row.nominalMonthlyMinutes?`${row.differenceMinutes>0?"+":""}${workloadHours(row.differenceMinutes)}`:"—"}</strong></span></div>
+          <header><span><strong>{row.employeeName}</strong><small>{row.employeeNo} • {row.roleNames.join(", ")||"Rola w analizowanym grafiku"}</small></span><b>{workloadHours(row.totalMonthlyMinutes)}</b></header>
+          <div className="solver-workload-kpis"><span><small>Zmiany w szkicu</small><strong>{row.shiftCount} • {workloadHours(row.plannedMinutes)}</strong></span>{row.externalMinutes>0&&<span><small>Inne grafiki miesiąca</small><strong>{workloadHours(row.externalMinutes)}</strong></span>}<span><small>Cel godzinowy</small><strong>{row.nominalMonthlyMinutes?workloadHours(row.nominalMonthlyMinutes):"Brak"}</strong></span><span><small>Twardy limit</small><strong>{row.maximumMonthlyMinutes?workloadHours(row.maximumMonthlyMinutes):"Brak"}</strong></span><span><small>Różnica od celu</small><strong className={row.differenceMinutes>0?"over":row.differenceMinutes<0?"under":""}>{row.nominalMonthlyMinutes?`${row.differenceMinutes>0?"+":""}${workloadHours(row.differenceMinutes)}`:"—"}</strong></span><span className={row.overtimeMinutes?"critical":""}><small>Nadgodziny</small><strong>{workloadHours(row.overtimeMinutes)}</strong></span><span className={row.preferenceViolations?"warning":""}><small>Naruszenia preferencji</small><strong>{row.preferenceViolations}</strong></span>{financeVisibility==="FULL"&&row.costMinor!==null&&workspace.finance&&<span><small>Koszt tej osoby</small><strong>{money(row.costMinor,workspace.finance.currency)}</strong></span>}</div>
           <div className="solver-workload-locations">{row.locations.length?row.locations.map(location=><span key={location.id}><MapPin/>{location.name}: <b>{workloadHours(location.minutes)}</b> • {location.shiftCount} zmian</span>):<span>Brak przydziałów w lokalach</span>}</div>
           <p className={`reason-${workloadReasonCode(row).toLowerCase()}`}><strong>Dlaczego taki wynik?</strong> {workloadReason(row)}</p>
           <button className="secondary-button employee-calendar-open" onClick={()=>openEmployeeCalendar({employeeId:row.employeeId,employeeName:row.employeeName,employeeNo:row.employeeNo})}><CalendarDays/> Otwórz kalendarz i porównaj</button>
@@ -773,7 +800,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
             </div>;
           })}</div>)}
         </div>}
-        {schedulePerspective==="COVERAGE"&&<div className="solver-coverage-days">{week.filter(date=>date.slice(0,7)===workspace.context.month.slice(0,7)).map(date=>{const dayShifts=visibleShifts.filter(shift=>shift.date===date);return <section key={date}><header><CalendarDays/><strong>{shortDayLabel(date)}</strong><small>{dayShifts.length} zmian</small></header><div>{dayShifts.sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.location.name.localeCompare(b.location.name,"pl-PL")).map(shift=>{const issues=visibleIssues.filter(issue=>issue.code==="UNFILLED_SLOT"&&issue.shift?.id===shift.id);const assigned=shift.assignments.length;const missing=issues.reduce((sum,issue)=>sum+missingSeats(issue),0);const required=assigned+missing;const noDemand=required===0;return <article style={locationStyle(shift.location.id)} className={noDemand?"no-demand":missing?"shortage":"complete"} key={shift.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><strong>{noDemand?"—":`${assigned}/${required}`}</strong><em>{noDemand?"Brak wymaganego zapotrzebowania":missing?`Brakuje ${missing}`:"Pełna obsada"}</em>{issues.length>0&&leaderEditable&&<div className="solver-coverage-vacancies">{issues.map(issue=>{const issueMissing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{issue.duty?.name??"Bez dodatkowego obowiązku"}</small></span><em>Wakat {issueMissing>1?`× ${issueMissing}`:""} — pokaż pracowników</em></button>})}</div>}</article>})}{!dayShifts.length&&<p>Brak zaplanowanych zmian tego dnia.</p>}</div></section>})}</div>}
+        {schedulePerspective==="COVERAGE"&&<div className="solver-coverage-days">{week.filter(date=>date.slice(0,7)===workspace.context.month.slice(0,7)).map(date=>{const dayShifts=visibleShifts.filter(shift=>shift.date===date);return <section key={date}><header><CalendarDays/><strong>{shortDayLabel(date)}</strong><small>{dayShifts.length} zmian</small></header><div>{dayShifts.sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.location.name.localeCompare(b.location.name,"pl-PL")).map(shift=>{const issues=visibleIssues.filter(issue=>issue.code==="UNFILLED_SLOT"&&issue.shift?.id===shift.id);const assigned=shift.assignments.filter(assignment=>!roleFilters.length||roleFilters.includes(assignment.role.id)).length;const missing=issues.reduce((sum,issue)=>sum+missingSeats(issue),0);const required=assigned+missing;const noDemand=required===0;return <article style={locationStyle(shift.location.id)} className={noDemand?"no-demand":missing?"shortage":"complete"} key={shift.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><strong>{noDemand?"—":`${assigned}/${required}`}</strong><em>{noDemand?"Brak wymaganego zapotrzebowania":missing?`Brakuje ${missing}`:"Pełna obsada"}</em>{issues.length>0&&leaderEditable&&<div className="solver-coverage-vacancies">{issues.map(issue=>{const issueMissing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{issue.duty?.name??"Bez dodatkowego obowiązku"}</small></span><em>Wakat {issueMissing>1?`× ${issueMissing}`:""} — pokaż pracowników</em></button>})}</div>}</article>})}{!dayShifts.length&&<p>Brak zaplanowanych zmian tego dnia.</p>}</div></section>})}</div>}
       </article>)}
     </section>}
 

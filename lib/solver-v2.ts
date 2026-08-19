@@ -196,17 +196,31 @@ export type SolverWorkspace = {
 };
 
 export type SolverWorkloadDistributionRow = {
+  variantRevision: number;
   employeeId: string;
   employeeNo: string;
   employeeName: string;
   roleNames: string[];
+  eligibleLocationIds: string[];
   plannedMinutes: number;
+  externalMinutes: number;
+  totalMonthlyMinutes: number;
+  overtimeMinutes: number;
   shiftCount: number;
   nominalMonthlyMinutes: number;
   maximumMonthlyMinutes: number;
   differenceMinutes: number;
   hardUnavailableDays: number;
   availableWindowDays: number;
+  preferenceViolations: number;
+  costMinor: number | null;
+  assignmentImpacts: Array<{
+    roleId: string;
+    locationId: string;
+    plannedMinutes: number;
+    costMinor: number | null;
+    preferenceViolations: number;
+  }>;
   reasonCode: "AVAILABILITY_LIMITED" | "AVAILABILITY_WINDOW_LIMITED" | "MAXIMUM_REACHED" | "TARGET_NOT_SET" | "SOLVER_DISTRIBUTION" | "ABOVE_NOMINAL" | "ON_TARGET" | string;
   locations: { id: string; name: string; minutes: number; shiftCount: number }[];
 };
@@ -219,20 +233,39 @@ export async function getVariantWorkloadDistribution(
     p_variant_id:variantId,
   }));
   if(!Array.isArray(payload.employees))return [];
+  const variantRevision=numberOf(payload,"revision","revision");
   return payload.employees.map(value=>{
     const row=record(value);
     return {
+      variantRevision,
       employeeId:String(row.employeeId??""),
       employeeNo:String(row.employeeNo??""),
       employeeName:String(row.employeeName??""),
       roleNames:Array.isArray(row.roleNames)?row.roleNames.map(String):[],
+      eligibleLocationIds:Array.isArray(row.eligibleLocationIds)?row.eligibleLocationIds.map(String):[],
       plannedMinutes:numberOf(row,"plannedMinutes","planned_minutes"),
+      externalMinutes:numberOf(row,"externalMinutes","external_minutes"),
+      totalMonthlyMinutes:numberOf(row,"totalMonthlyMinutes","total_monthly_minutes",
+        numberOf(row,"plannedMinutes","planned_minutes")),
+      overtimeMinutes:numberOf(row,"overtimeMinutes","overtime_minutes"),
       shiftCount:numberOf(row,"shiftCount","shift_count"),
       nominalMonthlyMinutes:numberOf(row,"nominalMonthlyMinutes","nominal_monthly_minutes"),
       maximumMonthlyMinutes:numberOf(row,"maximumMonthlyMinutes","maximum_monthly_minutes"),
       differenceMinutes:numberOf(row,"differenceMinutes","difference_minutes"),
       hardUnavailableDays:numberOf(row,"hardUnavailableDays","hard_unavailable_days"),
       availableWindowDays:numberOf(row,"availableWindowDays","available_window_days"),
+      preferenceViolations:numberOf(row,"preferenceViolations","preference_violations"),
+      costMinor:nullableNumberOf(row,"costMinor","cost_minor"),
+      assignmentImpacts:Array.isArray(row.assignmentImpacts)?row.assignmentImpacts.map(value=>{
+        const impact=record(value);
+        return {
+          roleId:String(impact.roleId??""),
+          locationId:String(impact.locationId??""),
+          plannedMinutes:numberOf(impact,"plannedMinutes","planned_minutes"),
+          costMinor:nullableNumberOf(impact,"costMinor","cost_minor"),
+          preferenceViolations:numberOf(impact,"preferenceViolations","preference_violations"),
+        };
+      }):[],
       reasonCode:String(row.reasonCode??"SOLVER_DISTRIBUTION"),
       locations:Array.isArray(row.locations)?row.locations.map(value=>{
         const location=record(value);
