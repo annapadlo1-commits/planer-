@@ -107,6 +107,8 @@ test("operations and mobile Leader Studio use the street-poster system without l
   assert.match(css, /\.solver-v2-progress i\s*\{[^}]*background:var\(--brand-ink\)!important/s);
   assert.match(css, /@media\(max-width:760px\)[\s\S]*\.solver-v2-actions\s*\{[^}]*grid-template-columns:1fr 1fr!important/s);
   assert.match(css, /\.solver-manual-studio-entry>span\s*\{[^}]*display:grid!important[^}]*width:34px!important/s);
+  assert.match(css, /\.solver-workspace:not\(\.leader-studio\)\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.solver-workspace:not\(\.leader-studio\)>\.solver-workspace-tabs button\.active\s*\{[^}]*background:var\(--brand-paper\)!important/s);
 });
 
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
