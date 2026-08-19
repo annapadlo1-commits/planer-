@@ -117,6 +117,19 @@ test("operations and mobile Leader Studio use the street-poster system without l
   assert.match(css, /\.matrix-v2-drawer \.matrix-import-trust\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-eucalyptus\)!important/s);
 });
 
+test("deep schedule, generator and configuration views do not fall back to lavender SaaS cards", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /\.solver-workspace \.solver-schedule-perspectives button\.active\s*\{[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.solver-workspace \.solver-workload-summary>span\s*\{[^}]*border:1px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper-2\)!important/s);
+  assert.match(css, /\.solver-workspace \.solver-standby-days>article\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.operational-additional-tools\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.live-overview\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.generator-v2-scenarios,\s*\.generator-v2-catalog\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.matrix-v2-workforce \.workforce-profile-readiness\s*\{[^}]*background:var\(--brand-eucalyptus\)!important/s);
+  assert.match(css, /\.matrix-v2-finance-banner\s*\{[^}]*background:var\(--brand-eucalyptus\)!important/s);
+  assert.match(css, /\.finance-access-policy\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper-2\)!important/s);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",
