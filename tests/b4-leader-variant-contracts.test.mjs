@@ -429,7 +429,7 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
     "run musi zachować bazowy hash konfiguracji używany przez kontrolę STALE_INPUT");
   assert.match(client,/requestLeaderRefill/);
   assert.match(client,/applyLeaderRefill/);
-  assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
+  assert.match(panel,/Uzupełnij tylko wakaty/);
   assert.match(panel,/Nie udało się uruchomić uzupełnienia/,
     "błąd RPC musi być widoczny bezpośrednio w pełnoekranowym Studio");
   assert.match(panel,/Kliknięcie przyjęte — uruchamiam zadanie/,
@@ -473,6 +473,23 @@ test("B4F-100 can improve cost or fairness and prepare a proposal without changi
   assert.match(panel,/Szkic nie został zmieniony/);
   assert.match(panel,/leaderVariant\.revision!==leaderOptimizationProposal\.leaderRevision/,
     "starej propozycji nie wolno stosować do nowszej rewizji szkicu");
+});
+
+test("B4F-107 keeps optional generator tools compact until the leader expands one",async()=>{
+  const [panel,styles]=await Promise.all([
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/product-journey.css",import.meta.url),"utf8"),
+  ]);
+  assert.match(panel,/className="leader-assistant-tools" aria-label="Opcjonalne narzędzia generatora"/);
+  assert.equal((panel.match(/<details className="leader-assistant-tool/g)??[]).length,2,
+    "uzupełnienie wakatów i przeliczenie muszą być dwoma niezależnie rozwijanymi narzędziami");
+  assert.doesNotMatch(panel,/<details className="leader-assistant-tool[^>]*\sopen(?:=|\s|>)/,
+    "narzędzia mają być domyślnie zwinięte, aby kalendarz był widoczny na pierwszym ekranie");
+  assert.match(styles,/\.leader-assistant-tools\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)[^}]*padding:8px 18px/);
+  assert.match(styles,/\.leader-assistant-tool>summary\{[^}]*min-height:48px/,
+    "zwinięte narzędzie nie może ponownie zabierać dużej części wysokości Studia");
+  assert.match(styles,/\.leader-assistant-tool:only-child,\.leader-assistant-tool\[open\]\{grid-column:1\/-1\}/,
+    "dopiero świadomie rozwinięty formularz może zająć pełną szerokość");
 });
 
 test("Studio role calendar exposes vacancies as drop targets and keeps analytics panels separate",async()=>{
