@@ -481,12 +481,14 @@ test("B4F-107 keeps optional generator tools compact until the leader expands on
     readFile(new URL("../app/product-journey.css",import.meta.url),"utf8"),
   ]);
   assert.match(panel,/className="leader-assistant-tools" aria-label="Opcjonalne narzędzia generatora"/);
-  assert.equal((panel.match(/<details className="leader-assistant-tool/g)??[]).length,2,
+  assert.equal((panel.match(/<details name="leader-studio-assistant" className="leader-assistant-tool/g)??[]).length,2,
     "uzupełnienie wakatów i przeliczenie muszą być dwoma niezależnie rozwijanymi narzędziami");
+  assert.equal((panel.match(/name="leader-studio-assistant"/g)??[]).length,2,
+    "natywna grupa details ma pozwalać rozwinąć najwyżej jedno narzędzie naraz");
   assert.doesNotMatch(panel,/<details className="leader-assistant-tool[^>]*\sopen(?:=|\s|>)/,
     "narzędzia mają być domyślnie zwinięte, aby kalendarz był widoczny na pierwszym ekranie");
-  assert.match(styles,/\.leader-assistant-tools\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)[^}]*padding:8px 18px/);
-  assert.match(styles,/\.leader-assistant-tool>summary\{[^}]*min-height:48px/,
+  assert.match(styles,/\.leader-assistant-tools\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)[^}]*padding:5px 18px/);
+  assert.match(styles,/\.leader-assistant-tool>summary\{[^}]*min-height:38px/,
     "zwinięte narzędzie nie może ponownie zabierać dużej części wysokości Studia");
   assert.match(styles,/\.leader-assistant-tool:only-child,\.leader-assistant-tool\[open\]\{grid-column:1\/-1\}/,
     "dopiero świadomie rozwinięty formularz może zająć pełną szerokość");
