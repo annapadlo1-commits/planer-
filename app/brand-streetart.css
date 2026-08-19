@@ -693,6 +693,15 @@ body{
 .workforce-catalog-list>article:nth-child(even){background:#f0eee7!important}
 .workforce-catalog-list>article:hover{border-color:var(--brand-ink)!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
 
+.matrix-v2-summary>span{
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-eucalyptus)!important;
+  box-shadow:2px 3px 0 rgba(31,42,39,.12);
+}
+.matrix-v2-summary>span:nth-child(even){background:var(--brand-paper-2)!important}
+.matrix-v2-summary svg{color:var(--brand-ink)!important}
+
 /* Grafik: poster heading and clean operational canvas. Role colors remain semantic. */
 .schedule-role-first-intro{
   overflow:hidden;

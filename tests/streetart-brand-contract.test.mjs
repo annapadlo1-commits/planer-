@@ -39,6 +39,7 @@ test("streetart character is implemented as a reusable UI layer, not a palette s
   assert.match(css, /\.product-shell \.topbar::after/);
   assert.match(css, /\.configuration-next-action\s*\{[^}]*var\(--brand-peach\)/s);
   assert.match(css, /\.schedule-role-first-intro::before/);
+  assert.match(css, /\.matrix-v2-summary svg\s*\{[^}]*var\(--brand-ink\)/s);
   assert.match(css, /\.analytics-empty::before\s*\{[^}]*\/icons\/szafunek-192\.png/s);
   assert.match(css, /\.pwa-install\s*\{[^}]*var\(--brand-ink\)/s);
   assert.match(css, /clip-path:/);
