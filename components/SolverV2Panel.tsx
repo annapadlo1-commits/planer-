@@ -235,6 +235,7 @@ export function SolverV2Panel({
   const [leaderWorkflowReason,setLeaderWorkflowReason]=useState("");
   const [leaderDraftValidation,setLeaderDraftValidation]=useState<SolverLeaderDraftValidation|null>(null);
   const [leaderRefillReason,setLeaderRefillReason]=useState("");
+  const [leaderRefillSubmitting,setLeaderRefillSubmitting]=useState(false);
   const [leaderRefillRun,setLeaderRefillRun]=useState<{runId:string;leaderRevision:number;reason:string}|null>(null);
   const [leaderRefillStatus,setLeaderRefillStatus]=useState<{tone:"info"|"success"|"danger";title:string;detail:string}|null>(null);
   const leaderRefillApplyingRef=useRef(false);
@@ -262,9 +263,12 @@ export function SolverV2Panel({
   const active = Boolean(run && !isSolverRunTerminal(run.status));
   const recovering = Boolean(pollingRunId && !run);
   const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant;
-  const generatedSelectedVariant = variants.find(variant => variant.selected)
-    ?? (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
+  const generatedSelectedVariant = (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
+    ?? variants.find(variant => variant.selected)
     ?? null;
+  const leaderStudioSourceVariants = run?.status === "READY"
+    ? variants.filter(variant=>variant.hardViolations===0)
+    : [];
   const selectedVariant = generatedSelectedVariant && leaderVariant ? {
     ...generatedSelectedVariant,
     id:leaderVariant.id,
@@ -567,22 +571,23 @@ export function SolverV2Panel({
     }
   }
 
-  async function createLeaderCopy(){
-    if(!supabase||!run||!generatedSelectedVariant)return;
+  async function createLeaderCopy(sourceVariant:SolverVariant){
+    if(!supabase||!run)return;
     setBusy(true);setMessage("");
     try{
       const leader=await createLeaderVariant(supabase,{
-        runId:run.id,sourceVariantId:generatedSelectedVariant.id,
+        runId:run.id,sourceVariantId:sourceVariant.id,
         name:`Wersja lidera • ${scopeLabel} • ${month.slice(0,7)}`,
       });
       const workspace=await getLeaderVariantWorkspace(supabase,leader.id);
-      const baseline=await getVariantWorkspace(supabase,generatedSelectedVariant.id);
+      const baseline=await getVariantWorkspace(supabase,sourceVariant.id);
       const summary=workspace.variants[0];
-      setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??generatedSelectedVariant.assignmentCount,
-        unfilledCount:summary?.unfilledCount??generatedSelectedVariant.unfilledCount});
+      setVariants(current=>current.map(variant=>({...variant,selected:variant.id===sourceVariant.id})));
+      setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??sourceVariant.assignmentCount,
+        unfilledCount:summary?.unfilledCount??sourceVariant.unfilledCount});
       setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||leader.name);
       setLeaderBaselineWorkspace(baseline);
-      setMessage("Utworzono niezależną wersję lidera. Trzy warianty matematyczne pozostały bez zmian; możesz teraz poprawić obsadę i opublikować własną wersję.");
+      setMessage(`Otwarto osobną wersję lidera na bazie strategii „${sourceVariant.strategy.name}”. Warianty generatora pozostały bez zmian; możesz teraz dowolnie poprawiać szkic przed wspólną kontrolą.`);
     }catch(error){setMessage(solverErrorMessage(errorText(error)));}
     finally{setBusy(false);}
   }
@@ -643,11 +648,18 @@ export function SolverV2Panel({
   }
 
   async function startLeaderRefill(){
-    if(!supabase||!leaderVariant||leaderWorkflow!=="DRAFT")return;
+    if(!supabase){
+      const detail="Brak połączenia z backendem UAT. Odśwież stronę, ponownie otwórz Studio lidera i spróbuj jeszcze raz.";
+      setLeaderRefillStatus({tone:"danger",title:"Nie można uruchomić generatora",detail});setMessage(detail);return;
+    }
+    if(!leaderVariant||leaderWorkflow!=="DRAFT"){
+      const detail="Automatyczne uzupełnianie działa wyłącznie w otwartej wersji roboczej. Wróć do etapu „Roboczy” i spróbuj ponownie.";
+      setLeaderRefillStatus({tone:"danger",title:"Szkic nie jest gotowy do edycji",detail});setMessage(detail);return;
+    }
     const reason=leaderRefillReason.trim();
     if(reason.length<3){setMessage("Podaj krótki powód automatycznego uzupełnienia wakatów — zostanie zapisany w audycie.");return;}
-    setBusy(true);setMessage("");
-    setLeaderRefillStatus({tone:"info",title:"Przygotowuję automatyczne uzupełnienie",detail:"Tworzę osobne zadanie, które zachowa wszystkie ręczne decyzje i zajmie się wyłącznie wakatami."});
+    setLeaderRefillSubmitting(true);setBusy(true);setMessage("");
+    setLeaderRefillStatus({tone:"info",title:"Kliknięcie przyjęte — uruchamiam zadanie",detail:"Łączę szkic z generatorem. Wszystkie ręczne decyzje pozostaną zablokowane, a zadanie obejmie wyłącznie wakaty."});
     try{
       const request=await requestLeaderRefill(supabase,{
         variantId:leaderVariant.id,reason,
@@ -657,7 +669,7 @@ export function SolverV2Panel({
       setLeaderRefillStatus({tone:"info",title:"Generator otrzymał zadanie",detail:"Oczekuję na wynik. Przycisk pozostanie zablokowany, aby nie uruchomić drugiego uzupełnienia tego samego szkicu."});
       setMessage("Generator uzupełnia wyłącznie wolne miejsca. Wszystkie obecne przydziały lidera są zablokowane i pozostaną bez zmian.");
     }catch(error){const detail=solverErrorMessage(errorText(error));setLeaderRefillStatus({tone:"danger",title:"Nie udało się uruchomić uzupełnienia",detail});setMessage(detail);}
-    finally{setBusy(false);}
+    finally{setLeaderRefillSubmitting(false);setBusy(false);}
   }
 
   useEffect(()=>{
@@ -1052,7 +1064,7 @@ export function SolverV2Panel({
       </button>
     </div>}
 
-    {canOpenManualStudio&&<section className="solver-manual-studio-entry"><span><Edit3/></span><div><strong>Studio lidera — ułóż grafik bez generatora</strong><small>Możesz rozpocząć od pustej obsady także po zakończonym lub nieudanym generowaniu. Internet oraz backend są nadal potrzebne; pomijamy wyłącznie automatyczne generowanie.</small></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz Studio</button></section>}
+    {canOpenManualStudio&&(run?.status!=="READY"||leaderStudioSourceVariants.length===0)&&<section className="solver-manual-studio-entry"><span><Edit3/></span><div><strong>Studio lidera — ułóż grafik bez generatora</strong><small>Możesz rozpocząć od pustej obsady także po zakończonym lub nieudanym generowaniu. Internet oraz backend są nadal potrzebne; pomijamy wyłącznie automatyczne generowanie.</small></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz Studio</button></section>}
 
     {run && <div className="solver-v2-run">
       <div className="solver-v2-run-head">
@@ -1130,8 +1142,12 @@ export function SolverV2Panel({
       </div>
     </div>}
 
-    {engine==="ORTOOLS_V2"&&generatedSelectedVariant&&!leaderVariant&&<section className="solver-leader-flow">
-      <span><Edit3/></span><div><small>KROK 2 • DECYZJA LIDERA</small><h3>Chcesz poprawić wybrany wariant przed publikacją?</h3><p>Utworzymy osobną kopię roboczą. Wszystkie trzy wyniki silnika zostaną bez zmian do porównania, a każda ręczna korekta przejdzie pełną kontrolę reguł.</p></div><button className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Utwórz wersję lidera</button>
+    {engine==="ORTOOLS_V2"&&run?.status==="READY"&&!leaderVariant&&leaderStudioSourceVariants.length>0&&<section className="solver-studio-start-options">
+      <header><span><Edit3/></span><div><small>STUDIO LIDERA • PUNKT STARTOWY</small><h3>Wybierz bazę roboczego grafiku</h3><p>Każda opcja tworzy osobny szkic. Warianty generatora pozostają bez zmian, a pracownicy niczego nie zobaczą przed publikacją.</p></div></header>
+      <div className="solver-studio-start-grid">
+        {leaderStudioSourceVariants.map(variant=><article key={variant.id}><span><Sparkles/></span><div><small>WARIANT GENERATORA</small><strong>{variant.strategy.name}</strong><p>{variant.assignmentCount} przydziałów • {variant.unfilledCount} braków{variant.recommended?" • rekomendowany":""}</p></div><button type="button" className="primary-button" disabled={busy} onClick={()=>void createLeaderCopy(variant)}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz ten wariant</button></article>)}
+        <article className="manual"><span><CalendarDays/></span><div><small>BEZ GENERATORA</small><strong>Utwórz pusty grafik ręcznie</strong><p>System przygotuje wymagane zmiany i wakaty; ludzi przypisujesz samodzielnie w Studio.</p></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz pusty szkic</button></article>
+      </div>
     </section>}
     {leaderVariant&&selectedWorkspace&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
       <header className="leader-studio-fullscreen-head">
@@ -1165,7 +1181,7 @@ export function SolverV2Panel({
         <span className={leaderWorkflow==="PUBLISHED"?"active":""}><b>5</b> Opublikowany</span>
         <div>{leaderWorkflow==="DRAFT"&&<><button className="secondary-button" disabled={busy} onClick={()=>void checkLeaderDraft()}><Check/> Sprawdź cały grafik</button><button className="primary-button" disabled={busy||!leaderDraftValidation?.valid||leaderDraftValidation.revision!==leaderVariant.revision} title={!leaderDraftValidation?"Najpierw uruchom niemutującą kontrolę całego szkicu":!leaderDraftValidation.valid?"Najpierw popraw naruszenia twardych reguł":leaderDraftValidation.revision!==leaderVariant.revision?"Szkic zmienił się po kontroli — sprawdź go ponownie":"Przekaż sprawdzony szkic"} onClick={()=>setPendingLeaderWorkflow("REVIEW")}>Przekaż sprawdzony grafik</button></>}{leaderWorkflow==="REVIEW"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("LEADER_APPROVED")}>Zatwierdź jako lider</button></>}{leaderWorkflow==="LEADER_APPROVED"&&<><button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Wróć do edycji</button><button className="primary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("READY_TO_MERGE")}>Oznacz jako gotowy do scalenia</button></>}{leaderWorkflow==="READY_TO_MERGE"&&<button className="secondary-button" disabled={busy} onClick={()=>setPendingLeaderWorkflow("DRAFT")}>Cofnij do edycji</button>}</div>
       </nav>
-      {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Opcjonalna pomoc generatora: zachowa wszystkie ręczne przydziały i spróbuje obsadzić wyłącznie wakaty. Jeśli układasz grafik samodzielnie, pomiń tę akcję.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/><small>{leaderRefillReason.trim().length<3?"Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów.":"Gotowe — generator nie zmieni ręcznych decyzji lidera."}</small></label><span><button type="button" className="primary-button" disabled={busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()} title={leaderRefillReason.trim().length<3?"Najpierw wpisz powód uruchomienia":"Uzupełnij wyłącznie nieobsadzone miejsca"}>{leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span>{leaderRefillStatus&&<div className={`leader-refill-status ${leaderRefillStatus.tone}`} role="status" aria-live="polite">{leaderRefillStatus.tone==="danger"?<AlertTriangle/>:leaderRefillStatus.tone==="success"?<Check/>:<RefreshCw className={leaderRefillRun?"spin":""}/>}<span><strong>{leaderRefillStatus.title}</strong><small>{leaderRefillStatus.detail}</small></span></div>}</section>}
+      {leaderWorkflow==="DRAFT"&&selectedVariant&&selectedVariant.unfilledCount>0&&<section className="leader-workflow-confirm leader-refill-action"><div><strong>Uzupełnij automatycznie tylko pozostałe miejsca</strong><small>Opcjonalna pomoc generatora: zachowa wszystkie ręczne przydziały i spróbuje obsadzić wyłącznie wakaty. Jeśli układasz grafik samodzielnie, pomiń tę akcję.</small></div><label>Powód uruchomienia<textarea minLength={3} disabled={leaderRefillSubmitting||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)} value={leaderRefillReason} onChange={event=>setLeaderRefillReason(event.target.value)} placeholder="np. uzupełnienie pozostałych wakatów po ręcznej korekcie"/><small>{leaderRefillReason.trim().length<3?"Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów.":"Gotowe — generator nie zmieni ręcznych decyzji lidera."}</small></label><span><button type="button" className="primary-button" disabled={!supabase||leaderRefillSubmitting||busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderRefillReason.trim().length<3} onClick={()=>void startLeaderRefill()} title={!supabase?"Brak połączenia z backendem UAT":leaderRefillReason.trim().length<3?"Najpierw wpisz powód uruchomienia":"Uzupełnij wyłącznie nieobsadzone miejsca"}>{leaderRefillSubmitting||leaderRefillRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderRefillSubmitting?"Uruchamiam zadanie…":leaderRefillRun?"Uzupełniam wolne miejsca…":"Uzupełnij tylko wakaty"}</button></span>{leaderRefillStatus&&<div className={`leader-refill-status ${leaderRefillStatus.tone}`} role="status" aria-live="assertive">{leaderRefillStatus.tone==="danger"?<AlertTriangle/>:leaderRefillStatus.tone==="success"?<Check/>:<RefreshCw className={leaderRefillSubmitting||leaderRefillRun?"spin":""}/>}<span><strong>{leaderRefillStatus.title}</strong><small>{leaderRefillStatus.detail}</small></span></div>}</section>}
       {leaderWorkflow==="DRAFT"&&<section className="leader-workflow-confirm leader-refill-action leader-optimization-action">
         <div><strong>Przelicz niezablokowany zakres</strong><small>Przypięte przydziały pozostają bez zmian. Wybierz, czy generator ma poprawić koszt, sprawiedliwość, czy tylko przygotować propozycję bez zmiany szkicu.</small></div>
         <label>Tryb przeliczenia<select disabled={Boolean(leaderOptimizationRun)} value={leaderOptimizationMode} onChange={event=>setLeaderOptimizationMode(event.target.value as SolverLeaderOptimizationMode)}><option value="COST">Popraw koszt</option><option value="FAIRNESS">Popraw sprawiedliwość</option><option value="PROPOSE_ONLY">Tylko pokaż propozycję</option></select></label>

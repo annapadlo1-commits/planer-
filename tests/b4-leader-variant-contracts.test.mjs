@@ -60,7 +60,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/MatrixV2Editor.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(panel, /Utwórz wersję lidera/);
+  assert.match(panel, /Otwórz ten wariant/);
   assert.match(panel, /Wybierz jako bazę/);
   assert.match(panel, /Osobna wersja robocza na bazie wariantu generatora/);
   assert.match(panel, /className="leader-studio-fullscreen"/);
@@ -213,7 +213,7 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
   assert.match(panel,/Studio lidera — ułóż grafik bez generatora/);
   assert.match(panel,/Internet oraz backend są nadal potrzebne/);
   assert.match(panel,/const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant/);
-  assert.match(panel,/\{canOpenManualStudio&&<section className="solver-manual-studio-entry">/,
+  assert.match(panel,/\{canOpenManualStudio&&\(run\?\.status!=="READY"\|\|leaderStudioSourceVariants\.length===0\)&&<section className="solver-manual-studio-entry">/,
     "Studio ma pozostać dostępne po zakończonym lub nieudanym uruchomieniu generatora");
   assert.doesNotMatch(panel,/\{engine==="ORTOOLS_V2"&&<section className="solver-manual-studio-entry">/,
     "Studio nie może być zagnieżdżone wyłącznie w formularzu widocznym przed pierwszym generowaniem");
@@ -227,6 +227,19 @@ test("B4F-93 opens an auditable leader studio without dispatching the generator"
   assert.doesNotMatch(authoritySql,/v\.status='PUBLISHED'/,
     "historyczne oznaczenie wariantu nie jest źródłem obowiązującego grafiku");
   assert.doesNotMatch(authoritySql,/bdybebzvzapihjdauehg/);
+});
+
+test("B4F-97 exposes direct Studio entry from every valid generator variant or a blank draft",async()=>{
+  const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
+  assert.match(panel,/STUDIO LIDERA • PUNKT STARTOWY/);
+  assert.match(panel,/leaderStudioSourceVariants\.map\(variant/);
+  assert.match(panel,/createLeaderCopy\(variant\)/);
+  assert.match(panel,/Utwórz pusty grafik ręcznie/);
+  assert.match(panel,/Otwórz pusty szkic/);
+  assert.match(panel,/async function createLeaderCopy\(sourceVariant:SolverVariant\)/);
+  assert.match(panel,/sourceVariantId:sourceVariant\.id/);
+  assert.match(panel,/getVariantWorkspace\(supabase,sourceVariant\.id\)/);
+  assert.doesNotMatch(panel,/async function createLeaderCopy\(\)\{/);
 });
 
 test("Studio lidera filters candidates and supports uninterrupted draft editing", async () => {
@@ -305,6 +318,22 @@ test("B4F-101 closes legacy workspace, employer-cost and recovery finance routes
   assert.match(sql,/v_person-'rateMinor'-'currency'/);
   assert.match(sql,/v_rate-'proposedRateMinor'-'approvedRateMinor'-'currency'/);
   assert.match(sql,/v_visibility<>'FULL'/);
+});
+
+test("B4F-52 closes the remaining legacy finance RPC and optimizer bypasses",async()=>{
+  const sql=await readFile(new URL("../supabase/migrations/20260819150415_b4f52_close_remaining_finance_routes.sql",import.meta.url),"utf8");
+  for(const name of ["plan_workspace","matrix_v2_workspace","monthly_budgets_get_uat_v1","optimizer_variants_v3"]){
+    assert.match(sql,new RegExp(`create function public\\.${name}`));
+  }
+  assert.match(sql,/application_finance_visibility_current_uat_v1\(\)/);
+  assert.match(sql,/v_assignment-'cost'/);
+  assert.match(sql,/v_worker-'base_rate_minor'-'rateMinor'-'approved_rate_minor'-'currency'/);
+  assert.match(sql,/jsonb_set\(v_payload,'\{employeePayRates\}','\[\]'::jsonb,true\)/);
+  assert.match(sql,/v_variant-'score'-'metrics'/);
+  assert.match(sql,/public\.optimizer_finalize_v3\(uuid,text,jsonb\)/);
+  assert.match(sql,/public\.optimizer_complete_finalize_v4\(uuid\)/);
+  assert.match(sql,/from public,anon,authenticated/);
+  assert.match(sql,/grant execute on function public\.plan_workspace\(date,uuid\)/);
 });
 
 test("B4F-101 blocks every publication route until a leader copy is ready to merge",async()=>{
@@ -403,6 +432,13 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
   assert.match(panel,/Uzupełnij automatycznie tylko pozostałe miejsca/);
   assert.match(panel,/Nie udało się uruchomić uzupełnienia/,
     "błąd RPC musi być widoczny bezpośrednio w pełnoekranowym Studio");
+  assert.match(panel,/Kliknięcie przyjęte — uruchamiam zadanie/,
+    "kliknięcie musi dać natychmiastową, jednoznaczną odpowiedź jeszcze przed wynikiem RPC");
+  assert.match(panel,/leaderRefillSubmitting\?"Uruchamiam zadanie…"/,
+    "etykieta przycisku nie może wyglądać na bezczynną podczas uruchamiania RPC");
+  assert.match(panel,/Brak połączenia z backendem UAT/,
+    "chwilowy brak klienta backendu nie może kończyć obsługi kliknięcia po cichu");
+  assert.match(panel,/aria-live="assertive"/);
   assert.match(panel,/Generator pracuje/);
   assert.match(panel,/Wpisz co najmniej 3 znaki, aby uruchomić generator tylko dla wakatów/);
   assert.match(panel,/key=\{`leader:\$\{selectedWorkspace\.context\.runId\?\?leaderVariant\.id\}`\}/,
@@ -454,6 +490,9 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
   assert.match(workspace,/application\/x-grafik-employee/);
   assert.match(workspace,/applyEmployeeDrop\(issue\.id,employeeId\)/);
   assert.doesNotMatch(workspace,/Dodaj do szkicu/);
+  assert.match(workspace,/event\.key==="Enter"/,
+    "kandydat musi dać się przydzielić klawiaturą bez przywracania dodatkowego guzika zapisu");
+  assert.match(workspace,/Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter/);
   assert.match(workspace,/Obsada i wolne miejsca/);
   assert.match(workspace,/workspaceView==="ISSUES"&&<section className="solver-issues-view">/);
   assert.match(styles,/leader-studio>\.solver-issues-view\{grid-column:2;grid-row:3/);

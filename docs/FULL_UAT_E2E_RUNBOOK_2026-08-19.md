@@ -10,6 +10,20 @@ Ten dokument jest wykonywalną bramką wydania, a nie raportem historycznym. Tes
 - Nie wolno zmieniać `main`, produkcyjnego Vercel ani Supabase `bdybebzvzapihjdauehg`.
 - Końcową kontrolę wykonuje `npm run test:full-uat-evidence`. Polecenie celowo zwraca błąd, dopóki choć jeden etap lub UAT właścicielki nie ma pełnego dowodu `PASS`.
 
+## Bramka środowiska przed testem Google Sheets
+
+Przed etapem `google_sheets_export_import` potwierdź na tym samym wdrożeniu UAT:
+
+- kanoniczny host to `https://uat.szafunek.pl`; `https://szafunek.pl` jest produkcją i nie wolno używać go do UAT;
+- `NEXT_PUBLIC_CANONICAL_APP_ORIGIN` i `GOOGLE_OAUTH_REDIRECT_ORIGIN` wskazują dokładnie ten sam publiczny host HTTPS;
+- host nie jest technicznym, zmiennym adresem pojedynczego deploymentu;
+- `GOOGLE_OAUTH_CLIENT_ID`/`NEXT_PUBLIC_GOOGLE_CLIENT_ID` odpowiadają klientowi Google Cloud używanemu w UAT;
+- `GOOGLE_OAUTH_CLIENT_SECRET` istnieje wyłącznie jako sekret środowiska UAT;
+- Google Cloud ma dokładnie dozwolony callback `https://uat.szafunek.pl/api/google-drive/oauth/callback`;
+- oba konta testowe są odbiorcami aplikacji OAuth, jeżeli ekran zgody pozostaje w trybie testowym.
+
+Brak któregokolwiek punktu oznacza `BLOCKED`, a nie błąd konta użytkownika. Nie testuj OAuth na losowym adresie preview.
+
 ## Etapy
 
 1. `onboarding_import_excel` — pobierz prosty plik, uzupełnij strukturę i zespół, sprawdź, zastosuj, opublikuj konfigurację oraz pobierz ponownie plik; potwierdź automatyczne numery GP i brak błędów formuł.

@@ -11,6 +11,7 @@ const oauthShared = await readFile(new URL("../app/api/google-drive/oauth-shared
 const canonicalOrigin = await readFile(new URL("../lib/canonical-app-origin.ts", import.meta.url), "utf8");
 const appPage = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+const envExample = await readFile(new URL("../.env.example", import.meta.url), "utf8");
 
 test("Google Sheets uses the public OAuth client and the least-privilege Drive scope", () => {
   assert.match(integration, /371272025154-p2am6470as5adbdp7di90tnbsq61iotp\.apps\.googleusercontent\.com/);
@@ -71,4 +72,19 @@ test("UAT Google OAuth and application entry use one canonical host", () => {
   assert.match(oauthShared, /configuredCanonicalAppOrigin\(\)/);
   assert.match(oauthStart, /canonicalOAuthStartUrl\(request\)/);
   assert.match(appPage, /window\.location\.replace\(destination\)/);
+});
+
+test("the deployment template lists every canonical-host and Google OAuth setting", () => {
+  for (const name of [
+    "NEXT_PUBLIC_CANONICAL_APP_ORIGIN",
+    "GOOGLE_OAUTH_REDIRECT_ORIGIN",
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+  ]) {
+    assert.match(envExample, new RegExp(`^${name}=`, "m"), `${name} must be documented for UAT deployment`);
+  }
+  assert.match(envExample, /^NEXT_PUBLIC_CANONICAL_APP_ORIGIN=https:\/\/uat\.szafunek\.pl$/m);
+  assert.match(envExample, /^GOOGLE_OAUTH_REDIRECT_ORIGIN=https:\/\/uat\.szafunek\.pl$/m);
+  assert.doesNotMatch(envExample, /bdybebzvzapihjdauehg/);
 });
