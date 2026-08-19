@@ -278,7 +278,11 @@ function validateHeartbeat(args: JsonObject): void {
 
 function validateCostComponent(value: unknown): void {
   assertObject(value, "COST_COMPONENT");
-  assertExactKeys(value, ["ruleId", "calculationType", "costUnits"]);
+  assertExactKeys(
+    value,
+    ["ruleId", "calculationType", "costUnits"],
+    ["costCategory"],
+  );
   if (
     value.ruleId !== "BASE" &&
     (typeof value.ruleId !== "string" ||
@@ -293,6 +297,14 @@ function validateCostComponent(value: unknown): void {
     fail(400, "INVALID_CALCULATION_TYPE");
   }
   assertInteger(value.costUnits, "COST_UNITS", 0, Number.MAX_SAFE_INTEGER);
+  if (Object.hasOwn(value, "costCategory")) {
+    if (
+      typeof value.costCategory !== "string" ||
+      !CODE_PATTERN.test(value.costCategory)
+    ) {
+      fail(400, "INVALID_COST_CATEGORY");
+    }
+  }
 }
 
 function validateAssignment(value: unknown): void {

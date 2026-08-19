@@ -277,6 +277,63 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
   assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
 });
 
+test("accepts versioned cost categories emitted by the current worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.assignments = [{
+    slotId: "slot-2026-09-01-host-1",
+    employeeId: "55555555-5555-4555-8555-555555555555",
+    costUnits: 19_200,
+    costComponents: [{
+      ruleId: "BASE",
+      calculationType: "BASE_HOURLY",
+      costUnits: 19_200,
+      costCategory: "WAGE",
+    }],
+  }];
+  variant.metrics.TOTAL_COST = 19_200;
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_save_variant_v2", args }]);
+});
+
+test("rejects malformed worker cost categories", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.assignments = [{
+    slotId: "slot-2026-09-01-host-1",
+    employeeId: "55555555-5555-4555-8555-555555555555",
+    costUnits: 19_200,
+    costComponents: [{
+      ruleId: "BASE",
+      calculationType: "BASE_HOURLY",
+      costUnits: 19_200,
+      costCategory: "wage with spaces",
+    }],
+  }];
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "INVALID_COST_CATEGORY" });
+  assert.equal(calls.length, 0);
+});
+
 test("accepts overtime gate diagnostics emitted by the worker", async () => {
   const calls = [];
   const handler = handlerWith(calls);
