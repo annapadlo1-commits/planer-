@@ -136,6 +136,10 @@ test("employee swaps and message counters use the street-poster notification lan
   assert.match(css, /\.employee-recovery-offers>header>svg\s*\{[^}]*color:var\(--brand-ink\)!important[^}]*background:var\(--brand-peach\)!important/s);
   assert.match(css, /\.employee-recovery-offers \.recovery-empty\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
   assert.match(css, /\.message-center \.conversation-list>button>i\s*\{[^}]*color:var\(--brand-ink\)!important[^}]*background:var\(--brand-peach\)!important/s);
+  assert.match(css, /\.employee-day-shifts>article,\s*\.employee-day-team\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.complete-drawer\s*\{[^}]*--violet:var\(--brand-ink\)[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.swap-request-form\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper-2\)!important/s);
+  assert.match(css, /\.swap-candidate-list>button\.active\s*\{[^}]*background:var\(--brand-peach\)!important/s);
 });
 
 test("approved small application icon is copied byte-for-byte to every small surface", () => {

@@ -3326,9 +3326,133 @@ section.live-module:has(>.real-month) .mini-people .avatar.violet{color:var(--br
   transform:rotate(-2deg);
 }
 
+/* Employee day and swap drawer: one compact paper workflow from shift to publication. */
+.employee-day-workspace>header{
+  padding-bottom:11px!important;
+  border-bottom:1.5px solid var(--brand-ink)!important;
+}
+.employee-day-workspace>header small{
+  color:var(--brand-ink)!important;
+  font-family:var(--brand-mono)!important;
+  letter-spacing:.06em!important;
+}
+.employee-day-workspace>header :is(h3,p){color:var(--brand-ink)!important}
+.employee-day-workspace>header .icon-button{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+.employee-day-shifts>article,
+.employee-day-team{
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:3px 3px 0 var(--brand-sage)!important;
+}
+.employee-day-shifts>article>header{border-bottom:1px solid var(--brand-ink)!important}
+.employee-coworker-grid>span{
+  color:var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-eucalyptus)!important;
+}
+.employee-day-team>article{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-border-strong)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+}
+.employee-day-workspace .secondary-button{
+  color:var(--brand-ink)!important;
+  border-color:var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+
+.complete-drawer{
+  --violet:var(--brand-ink);
+  --violet-soft:var(--brand-eucalyptus);
+  color:var(--brand-ink)!important;
+  border-left:2px solid var(--brand-ink)!important;
+  background:var(--brand-paper)!important;
+}
+.complete-drawer>.drawer-head{
+  color:var(--brand-ink)!important;
+  border-bottom:2px solid var(--brand-ink)!important;
+  background:var(--brand-eucalyptus)!important;
+}
+.complete-drawer>.drawer-head :is(.eyebrow,h2,small,svg){color:var(--brand-ink)!important}
+.complete-drawer>.drawer-head .icon-button{
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+.complete-drawer>.drawer-content{background:var(--brand-paper)!important}
+.swap-request-form{
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:4px 4px 0 var(--brand-sage)!important;
+}
+.swap-request-form h3{
+  margin:-14px -14px 0!important;
+  padding:13px 14px!important;
+  color:var(--brand-paper)!important;
+  background:var(--brand-ink)!important;
+  font-family:var(--brand-display)!important;
+  letter-spacing:.02em!important;
+}
+.swap-request-form :is(label,label>small,details,summary,p){color:var(--brand-ink)!important}
+.swap-request-form :is(input,textarea){
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+}
+.swap-candidate-list{gap:7px!important}
+.swap-candidate-list>button{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+.swap-candidate-list>button:hover{background:var(--brand-eucalyptus)!important}
+.swap-candidate-list>button.active{
+  color:var(--brand-ink)!important;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-peach)!important;
+  box-shadow:inset 0 -4px var(--brand-ink),2px 2px 0 var(--brand-sage)!important;
+}
+.swap-candidate-list>button :is(b,small){color:var(--brand-ink)!important}
+.swap-form-actions{padding-top:3px;border-top:1px solid var(--brand-ink)!important}
+.swap-form-actions .primary-button{border-radius:1px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+.complete-drawer .coworker-list>div{
+  color:var(--brand-ink)!important;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-paper)!important;
+}
+
 @media(max-width:760px){
   .employee-recovery-offers{padding:16px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
   .employee-recovery-offers>header>svg{width:38px!important;height:38px!important}
   .employee-recovery-offers .recovery-empty{min-height:180px!important;padding:24px 16px!important}
   .message-center .conversation-list>button>i{min-width:24px!important;height:24px!important}
+  .employee-day-workspace{padding:10px!important}
+  .employee-day-shifts>article,.employee-day-team{box-shadow:2px 2px 0 var(--brand-sage)!important}
+  .employee-day-team>article{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important}
+  .employee-day-team>article .secondary-button{width:100%!important;justify-content:center!important}
+  .complete-drawer{width:100%!important;border-left:0!important}
+  .complete-drawer>.drawer-head{padding:14px!important}
+  .complete-drawer>.drawer-content{padding:14px!important}
+  .swap-request-form{padding:12px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+  .swap-request-form h3{margin:-12px -12px 0!important;padding:12px!important}
+  .swap-candidate-list{grid-template-columns:1fr!important;max-height:240px!important}
+  .swap-form-actions{display:grid!important;grid-template-columns:1fr!important}
+  .swap-form-actions :is(button,.primary-button,.secondary-button){width:100%!important;justify-content:center!important}
 }
