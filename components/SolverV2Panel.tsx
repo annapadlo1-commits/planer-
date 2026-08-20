@@ -734,6 +734,16 @@ export function SolverV2Panel({
     finally{setBusy(false);}
   }
 
+  async function cancelLeaderOptimization(){
+    if(!supabase||!leaderOptimizationRun)return;
+    setBusy(true);
+    try{
+      await requestSolverCancellation(supabase,leaderOptimizationRun.runId);
+      setLeaderOptimizationStatus({tone:"info",title:"Zatrzymuję przeliczenie",detail:"Wysłano bezpieczne zatrzymanie. Wersja lidera pozostaje bez zmian; status zadania zostanie odświeżony automatycznie."});
+    }catch(error){const detail=solverErrorMessage(errorText(error));setLeaderOptimizationStatus({tone:"danger",title:"Nie udało się zatrzymać przeliczenia",detail});setMessage(detail);}
+    finally{setBusy(false);}
+  }
+
   useEffect(()=>{
     if(!supabase||!leaderOptimizationRun||!leaderVariant)return;
     let cancelled=false;let timer:ReturnType<typeof setTimeout>|null=null;
@@ -1195,7 +1205,7 @@ export function SolverV2Panel({
           <div className="leader-assistant-tool-body">
             <label>Tryb przeliczenia<select disabled={Boolean(leaderOptimizationRun)} value={leaderOptimizationMode} onChange={event=>setLeaderOptimizationMode(event.target.value as SolverLeaderOptimizationMode)}><option value="COST">Popraw koszt</option><option value="FAIRNESS">Popraw sprawiedliwość</option><option value="PROPOSE_ONLY">Tylko pokaż propozycję</option></select></label>
             <label className="leader-assistant-reason">Cel przeliczenia<textarea minLength={3} disabled={Boolean(leaderOptimizationRun)} value={leaderOptimizationReason} onChange={event=>setLeaderOptimizationReason(event.target.value)} placeholder="np. wyrównanie godzin bez zmiany przypiętych decyzji"/></label>
-            <span><button type="button" className="secondary-button" disabled={busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderOptimizationReason.trim().length<3} onClick={()=>void startLeaderOptimization()}>{leaderOptimizationRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderOptimizationRun?"Przeliczam…":leaderOptimizationMode==="PROPOSE_ONLY"?"Przygotuj propozycję":"Uruchom przeliczenie"}</button></span>
+            <span><button type="button" className="secondary-button" disabled={busy||Boolean(leaderRefillRun)||Boolean(leaderOptimizationRun)||leaderOptimizationReason.trim().length<3} onClick={()=>void startLeaderOptimization()}>{leaderOptimizationRun?<RefreshCw className="spin"/>:<Sparkles/>} {leaderOptimizationRun?"Przeliczam…":leaderOptimizationMode==="PROPOSE_ONLY"?"Przygotuj propozycję":"Uruchom przeliczenie"}</button>{leaderOptimizationRun&&<button type="button" className="danger-button" disabled={busy} onClick={()=>void cancelLeaderOptimization()}><X/> Zatrzymaj przeliczenie</button>}</span>
             {leaderOptimizationStatus&&<div className={`leader-refill-status ${leaderOptimizationStatus.tone}`} role="status" aria-live="polite">{leaderOptimizationStatus.tone==="danger"?<AlertTriangle/>:leaderOptimizationStatus.tone==="success"?<Check/>:<RefreshCw className={leaderOptimizationRun?"spin":""}/>}<span><strong>{leaderOptimizationStatus.title}</strong><small>{leaderOptimizationStatus.detail}</small></span></div>}
             {leaderOptimizationProposal&&<article className="leader-optimization-proposal"><div><strong>Propozycja bez automatycznego zapisu</strong><small>Przydziały: {leaderOptimizationProposal.workspace.variants[0]?.assignmentCount??0} • braki: {leaderOptimizationProposal.workspace.variants[0]?.unfilledCount??0}. Bieżący szkic nadal ma rewizję {leaderVariant.revision}.</small></div><span><button type="button" className="secondary-button" onClick={()=>setInspectedWorkspace(leaderOptimizationProposal.workspace)}>Otwórz porównanie</button><button type="button" className="secondary-button" onClick={()=>{setLeaderOptimizationProposal(null);setLeaderOptimizationStatus(null);}}>Odrzuć</button><button type="button" className="primary-button" disabled={busy||leaderVariant.revision!==leaderOptimizationProposal.leaderRevision} title={leaderVariant.revision!==leaderOptimizationProposal.leaderRevision?"Szkic zmienił się po przygotowaniu propozycji — uruchom nowe przeliczenie":"Zastosuj propozycję do niezablokowanego zakresu"} onClick={()=>void applyLeaderOptimizationProposal()}>Zastosuj propozycję</button></span></article>}
           </div>

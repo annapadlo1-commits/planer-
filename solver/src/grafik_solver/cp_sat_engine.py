@@ -1094,7 +1094,41 @@ class CpSatScheduleEngine:
             # contract accepts objective tiers only in the 0..100000 range;
             # using a negative synthetic tier made an otherwise valid SALA
             # result fail only when the worker tried to persist it.
-            guard_tier = 0
+            # Keep the zero-hour decision as its own first search stage.  The
+            # previous single weighted expression mixed zero-hour employees,
+            # minimum utilization and all role/location spreads.  On the real
+            # monthly SALA model that search exhausted its short budget before
+            # it improved the warm start, then the relaxed-mode fallback froze
+            # four employees at 0 h as a valid FEASIBLE result.  A dedicated
+            # stage is both much smaller and auditable: zero is a mathematical
+            # optimum; a positive value may only be accepted with an OPTIMAL
+            # certificate proving that hard constraints make it unavoidable.
+            zero_hour_guard_tier = -2
+            if artifacts.metric_bounds["ZERO_TARGET_EMPLOYEE_COUNT"] > 0:
+                tiers[zero_hour_guard_tier].append(
+                    artifacts.metrics["ZERO_TARGET_EMPLOYEE_COUNT"]
+                )
+                tier_upper_bounds[zero_hour_guard_tier] = artifacts.metric_bounds[
+                    "ZERO_TARGET_EMPLOYEE_COUNT"
+                ]
+                tier_tolerances[zero_hour_guard_tier] = 0
+                tier_terms[zero_hour_guard_tier].append(
+                    {
+                        "metric": "ZERO_TARGET_EMPLOYEE_COUNT",
+                        "direction": "MIN",
+                        "weight": 1,
+                        "tolerance": 0,
+                        "parameters": {},
+                        "normalizationCoefficient": 1,
+                        "metricUpperBound": artifacts.metric_bounds[
+                            "ZERO_TARGET_EMPLOYEE_COUNT"
+                        ],
+                    }
+                )
+
+            # Negative values are internal ordering keys only.  Persisted
+            # objective tiers remain non-negative for the gateway contract.
+            guard_tier = -1
             guard_metric = "COMMON_FAIRNESS_GUARD_SCORE"
             guard_bound = artifacts.metric_bounds[guard_metric]
             if guard_bound > 0:
@@ -1206,8 +1240,14 @@ class CpSatScheduleEngine:
                         allowed_degradation = tier_tolerances[tier]
                         stage_results.append(
                             {
-                                "tier": tier,
-                                "name": f"TIER_{tier}",
+                                "tier": 0 if tier < 0 else tier,
+                                "name": (
+                                    "ZERO_HOUR_GUARD"
+                                    if tier == zero_hour_guard_tier
+                                    else "COMMON_FAIRNESS_GUARD"
+                                    if tier == guard_tier
+                                    else f"TIER_{tier}"
+                                ),
                                 "value": 0,
                                 "status": "OPTIMAL",
                                 "bestBound": 0.0,
@@ -1242,8 +1282,14 @@ class CpSatScheduleEngine:
                         allowed_degradation = tier_tolerances[tier]
                         stage_results.append(
                             {
-                                "tier": tier,
-                                "name": f"TIER_{tier}",
+                                "tier": 0 if tier < 0 else tier,
+                                "name": (
+                                    "ZERO_HOUR_GUARD"
+                                    if tier == zero_hour_guard_tier
+                                    else "COMMON_FAIRNESS_GUARD"
+                                    if tier == guard_tier
+                                    else f"TIER_{tier}"
+                                ),
                                 "value": exact_value,
                                 "status": "OPTIMAL",
                                 "bestBound": float(exact_value),
@@ -1300,7 +1346,7 @@ class CpSatScheduleEngine:
                             0.001,
                             usable_tier_budget / max(1, remaining_tier_count),
                         )
-                        if tier == guard_tier:
+                        if tier in (zero_hour_guard_tier, guard_tier):
                             tier_time_budget = min(
                                 tier_time_budget,
                                 MAX_RELAXED_COMMON_FAIRNESS_SECONDS,
@@ -1320,6 +1366,7 @@ class CpSatScheduleEngine:
                         disable_presolve=(
                             not snapshot.settings.require_optimal
                             and feasible_fallback_solver is not None
+                            and tier != zero_hour_guard_tier
                         ),
                     )
                     used_fallback = False
@@ -1354,6 +1401,15 @@ class CpSatScheduleEngine:
                         if used_fallback
                         else int(final_solver.value(expression))
                     )
+                    if (
+                        tier == zero_hour_guard_tier
+                        and exact_value > 0
+                        and final_status != cp_model.OPTIMAL
+                    ):
+                        raise OptimizationIncomplete(
+                            f"{strategy.code}:ZERO_HOUR_GUARD_UNPROVEN:"
+                            f"{exact_value}"
+                        )
                     allowed_degradation = tier_tolerances[tier]
                     incumbent = {
                         variable.index: int(final_solver.value(variable))
@@ -1362,8 +1418,14 @@ class CpSatScheduleEngine:
                     feasible_fallback_solver = final_solver
                     stage_results.append(
                         {
-                            "tier": tier,
-                            "name": f"TIER_{tier}",
+                            "tier": 0 if tier < 0 else tier,
+                            "name": (
+                                "ZERO_HOUR_GUARD"
+                                if tier == zero_hour_guard_tier
+                                else "COMMON_FAIRNESS_GUARD"
+                                if tier == guard_tier
+                                else f"TIER_{tier}"
+                            ),
                             "value": exact_value,
                             "status": final_solver.status_name(final_status),
                             **(

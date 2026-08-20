@@ -1287,6 +1287,18 @@ class SolverTests(unittest.TestCase):
         }
         self.assertEqual(len(zero_counts), 1)
         for variant in variants:
+            zero_hour_stage = next(
+                stage
+                for stage in variant.stage_objectives
+                if any(
+                    term.get("metric") == "ZERO_TARGET_EMPLOYEE_COUNT"
+                    for term in stage.get("terms", [])
+                )
+            )
+            self.assertEqual(zero_hour_stage["name"], "ZERO_HOUR_GUARD")
+            self.assertEqual(zero_hour_stage["status"], "OPTIMAL")
+            self.assertEqual(zero_hour_stage["value"], 0)
+            self.assertEqual(zero_hour_stage["tier"], 0)
             guard_stage = next(
                 stage
                 for stage in variant.stage_objectives

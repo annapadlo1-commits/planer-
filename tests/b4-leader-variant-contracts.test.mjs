@@ -471,6 +471,9 @@ test("B4F-100 can improve cost or fairness and prepare a proposal without changi
   assert.match(panel,/Tylko pokaż propozycję/);
   assert.match(panel,/Propozycja bez automatycznego zapisu/);
   assert.match(panel,/Szkic nie został zmieniony/);
+  assert.match(panel,/Zatrzymaj przeliczenie/,
+    "lider musi móc zwolnić Studio z trwającego lub zawieszonego zadania pomocniczego");
+  assert.match(panel,/requestSolverCancellation\(supabase,leaderOptimizationRun\.runId\)/);
   assert.match(panel,/leaderVariant\.revision!==leaderOptimizationProposal\.leaderRevision/,
     "starej propozycji nie wolno stosować do nowszej rewizji szkicu");
 });
@@ -538,9 +541,10 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
     "perspektywa Pokrycie obsady musi wystawiać osobne cele rola-zmiana zamiast niejednoznacznej karty zbiorczej");
   assert.match(workspace,/application\/x-grafik-employee/);
   assert.match(workspace,/applyEmployeeDrop\(issue\.id,employeeId\)/);
-  assert.doesNotMatch(workspace,/Dodaj do szkicu/);
+  assert.match(workspace,/Zapisz zmianę: przypisz/,
+    "kliknięcie kandydata musi prowadzić do jawnego zapisu, a nie kończyć się na niewidocznym podglądzie");
   assert.match(workspace,/event\.key==="Enter"/,
-    "kandydat musi dać się przydzielić klawiaturą bez przywracania dodatkowego guzika zapisu");
+    "kandydat nadal musi dać się przydzielić klawiaturą");
   assert.match(workspace,/Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter/);
   assert.match(workspace,/Obsada i wolne miejsca/);
   assert.match(workspace,/workspaceView==="ISSUES"&&<section className="solver-issues-view">/);
