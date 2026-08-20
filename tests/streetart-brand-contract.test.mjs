@@ -142,6 +142,16 @@ test("employee swaps and message counters use the street-poster notification lan
   assert.match(css, /\.swap-candidate-list>button\.active\s*\{[^}]*background:var\(--brand-peach\)!important/s);
 });
 
+test("operations creator and employee company day abandon legacy violet surfaces", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /\.operational-creator\s*\{[^}]*--violet:var\(--brand-ink\)[^}]*border:2px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.operational-creator>header>span\s*\{[^}]*background:var\(--brand-peach\)!important/s);
+  assert.match(css, /\.operational-scope-picker button\.selected\s*\{[^}]*background:var\(--brand-ink\)!important/s);
+  assert.match(css, /\.company-day-workspace\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.company-day-filters\s*\{[^}]*background:var\(--brand-eucalyptus\)!important/s);
+  assert.match(css, /\.company-day-person\s*\{[^}]*background:var\(--brand-paper\)!important/s);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",

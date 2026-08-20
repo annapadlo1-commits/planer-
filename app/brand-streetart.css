@@ -3456,3 +3456,123 @@ section.live-module:has(>.real-month) .mini-people .avatar.violet{color:var(--br
   .swap-form-actions{display:grid!important;grid-template-columns:1fr!important}
   .swap-form-actions :is(button,.primary-button,.secondary-button){width:100%!important;justify-content:center!important}
 }
+
+/* Operational event creator: replace the legacy violet wizard with a pasted paper form. */
+.operational-creator{
+  --violet:var(--brand-ink);
+  --violet-soft:var(--brand-eucalyptus);
+  gap:16px!important;
+  color:var(--brand-ink)!important;
+  border:2px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:5px 5px 0 var(--brand-sage)!important;
+}
+.operational-creator>header{
+  padding-bottom:13px!important;
+  border-bottom:1.5px solid var(--brand-ink)!important;
+}
+.operational-creator>header .eyebrow{
+  color:var(--brand-ink)!important;
+  font-family:var(--brand-mono)!important;
+  letter-spacing:.08em!important;
+}
+.operational-creator>header h3{color:var(--brand-ink)!important;font-family:var(--brand-display)!important}
+.operational-creator>header>span{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-peach)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+  font-family:var(--brand-mono)!important;
+}
+.operational-creator label{color:var(--brand-ink)!important}
+.operational-creator :is(input,select,textarea){
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:2px 2px 0 rgba(166,179,160,.58)!important;
+}
+.operational-creator :is(input,select,textarea):focus{outline:2px solid var(--brand-peach)!important;outline-offset:1px!important}
+.operational-scope-picker,
+.operational-form-grid .private-field{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-eucalyptus)!important;
+}
+.operational-scope-picker legend{color:var(--brand-ink)!important;font-family:var(--brand-mono)!important}
+.operational-scope-picker button{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+.operational-scope-picker button:hover{background:var(--brand-peach)!important}
+.operational-scope-picker button.selected{
+  color:var(--brand-paper)!important;
+  border-color:var(--brand-ink)!important;
+  background:var(--brand-ink)!important;
+  box-shadow:inset 0 -4px var(--brand-peach),2px 2px 0 var(--brand-sage)!important;
+}
+.operational-analyze{border-radius:1px!important;box-shadow:4px 4px 0 var(--brand-sage)!important}
+
+/* Employee company schedule: compact day staffing cards in the same ink-and-paper system. */
+.company-day-workspace{
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:5px 5px 0 var(--brand-sage)!important;
+}
+.company-day-workspace>header{padding-bottom:11px!important;border-bottom:1.5px solid var(--brand-ink)!important}
+.company-day-workspace>header small{color:var(--brand-ink)!important;font-family:var(--brand-mono)!important;letter-spacing:.07em!important}
+.company-day-workspace>header :is(h3,p){color:var(--brand-ink)!important}
+.company-day-workspace>header .icon-button{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+}
+.company-day-filters{
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-eucalyptus)!important;
+  box-shadow:3px 3px 0 var(--brand-sage)!important;
+  backdrop-filter:none!important;
+}
+.company-day-filters label{color:var(--brand-ink)!important}
+.company-day-filters :is(input,select){color:var(--brand-ink)!important;border-color:var(--brand-ink)!important;border-radius:1px!important;background:var(--brand-paper)!important}
+.company-day-filters .secondary-button{border-radius:1px!important;background:var(--brand-paper)!important}
+.company-day-groups>article{
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:3px 3px 0 var(--brand-sage)!important;
+}
+.company-day-groups>article>header{color:var(--brand-ink)!important;border-bottom:1px solid var(--brand-ink)!important;background:var(--brand-eucalyptus)!important}
+.company-day-groups>article>header :is(b,small,strong){color:var(--brand-ink)!important}
+.company-day-person{
+  color:var(--brand-ink)!important;
+  border-top:1px solid var(--brand-ink)!important;
+  border-right:1px solid var(--brand-ink)!important;
+  border-bottom:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+}
+.company-day-person:nth-child(even){background:var(--brand-eucalyptus)!important}
+.company-day-person :is(svg,b,small){color:var(--brand-ink)!important}
+
+@media(max-width:760px){
+  .operational-creator{padding:14px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+  .operational-creator>header>span{justify-self:start!important}
+  .operational-scope-picker>div{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .operational-scope-picker button{width:100%!important}
+  .company-day-workspace{padding:10px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+  .company-day-filters{grid-template-columns:1fr!important;position:static!important}
+  .company-day-groups{grid-template-columns:1fr!important}
+}
