@@ -1316,6 +1316,295 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(guard_stage["tolerance"], 0)
             self.assertEqual(guard_stage["tier"], 0)
 
+    def test_backup_role_hours_do_not_satisfy_primary_role_guard(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-04"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = False
+        raw["roles"] = [
+            {"id": "role-kelner", "code": "KELNER"},
+            {"id": "role-host", "code": "HOST"},
+        ]
+        raw["duties"] = []
+        raw["shiftTemplates"] = [
+            {
+                "id": "shift-kelner",
+                "locationId": "location-rooftop",
+                "startTime": "08:00",
+                "endTime": "12:00",
+                "weekdays": [6, 7, 1, 2],
+            },
+            {
+                "id": "shift-host",
+                "locationId": "location-rooftop",
+                "startTime": "16:00",
+                "endTime": "20:00",
+                "weekdays": [6],
+            },
+        ]
+        raw["demand"] = [
+            {
+                "id": "demand-kelner",
+                "shiftTemplateId": "shift-kelner",
+                "roleId": "role-kelner",
+                "dutyIds": [],
+                "requiredCount": 1,
+                "dates": ["2026-08-02", "2026-08-03", "2026-08-04"],
+            },
+            {
+                "id": "demand-host",
+                "shiftTemplateId": "shift-host",
+                "roleId": "role-host",
+                "dutyIds": [],
+                "requiredCount": 1,
+                "dates": ["2026-08-01"],
+            },
+        ]
+
+        employee_template = raw["employees"][0]
+        common_employee = {
+            **employee_template,
+            "roleIds": ["role-kelner"],
+            "roleGrants": [
+                {
+                    "roleId": "role-kelner",
+                    "assignmentMode": "STANDARD",
+                    "backupPriority": 100,
+                }
+            ],
+            "dutyIds": [],
+            "locationIds": ["location-rooftop"],
+            "nominalMonthlyMinutes": 480,
+            "maximumMonthlyMinutes": 960,
+            "maximumWeeklyMinutes": 960,
+            "maximumShiftsPerDay": 1,
+            "softDayOffDates": [],
+        }
+        raw["employees"] = [
+            {
+                **common_employee,
+                "id": "employee-tejlor",
+                "roleIds": ["role-kelner", "role-host"],
+                "roleGrants": [
+                    {
+                        "roleId": "role-kelner",
+                        "assignmentMode": "STANDARD",
+                        "backupPriority": 100,
+                    },
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "BACKUP",
+                        "backupPriority": 1,
+                    },
+                ],
+                "baseHourlyRateMinor": 10_000,
+                "preferredShiftTemplateIds": ["shift-host"],
+            },
+            {
+                **common_employee,
+                "id": "employee-kelner-a",
+                "baseHourlyRateMinor": 1_000,
+                "preferredShiftTemplateIds": ["shift-kelner"],
+            },
+            {
+                **common_employee,
+                "id": "employee-kelner-b",
+                "baseHourlyRateMinor": 1_000,
+                "preferredShiftTemplateIds": ["shift-kelner"],
+            },
+        ]
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        # No employee has HOST as STANDARD, so this single BACKUP use is a
+        # genuine structural shortage rather than a cheaper replacement for
+        # ordinary HOST capacity.
+        raw["lockedAssignments"] = []
+        raw["baselineAssignments"] = []
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["strategies"] = [
+            {
+                "id": "strategy-balanced",
+                "code": "BALANCED",
+                "label": "Zrownowazony",
+                "sortOrder": 0,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "NOMINAL_DEVIATION_MINUTES",
+                        "weight": 1,
+                        "direction": "MIN",
+                    }
+                ],
+            },
+            {
+                "id": "strategy-cost",
+                "code": "COST",
+                "label": "Minimalny koszt",
+                "sortOrder": 1,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "TOTAL_COST",
+                        "weight": 1,
+                        "direction": "MIN",
+                    }
+                ],
+            },
+            {
+                "id": "strategy-preference",
+                "code": "PREFERENCE",
+                "label": "Preferencje i rowny podzial",
+                "sortOrder": 2,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "PREFERENCE_VIOLATIONS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    }
+                ],
+            },
+        ]
+
+        unproven_snapshot = Snapshot.from_dict(raw)
+        unproven_engine = CpSatScheduleEngine(max_total_seconds=90)
+        original_solve_model = unproven_engine._solve_model
+
+        def downgrade_backup_proof(*args, **kwargs):
+            solver, status = original_solve_model(*args, **kwargs)
+            if kwargs.get("stage_name") == "UNFILLED":
+                return solver, cp_model.FEASIBLE
+            return solver, status
+
+        with (
+            patch.object(
+                unproven_engine,
+                "_solve_model",
+                side_effect=downgrade_backup_proof,
+            ),
+            self.assertRaisesRegex(
+                OptimizationIncomplete,
+                "ROLE_BACKUP_PENALTY_UNPROVEN",
+            ),
+        ):
+            unproven_engine.solve(unproven_snapshot)
+
+        # A positive guard result is a business claim that hard constraints
+        # made the missing hours unavoidable.  In relaxed planning it may only
+        # be exposed after CP-SAT proves that positive minimum optimal.  The
+        # two smaller rosters force respectively one missing STANDARD-role
+        # assignment and one globally zero-hour employee.
+        for guard_stage, kelner_dates, error_code in [
+            (
+                "TIER_-2",
+                ["2026-08-02", "2026-08-03"],
+                "PRIMARY_ROLE_GUARD_UNPROVEN",
+            ),
+            (
+                "TIER_-3",
+                ["2026-08-02"],
+                "ZERO_HOUR_GUARD_UNPROVEN",
+            ),
+        ]:
+            guard_raw = copy.deepcopy(raw)
+            guard_raw["demand"][0]["dates"] = kelner_dates
+            guard_snapshot = Snapshot.from_dict(guard_raw)
+            guard_engine = CpSatScheduleEngine(max_total_seconds=90)
+            original_guard_solve_model = guard_engine._solve_model
+
+            def downgrade_guard_proof(*args, **kwargs):
+                solver, status = original_guard_solve_model(*args, **kwargs)
+                if kwargs.get("stage_name") == guard_stage:
+                    return solver, cp_model.FEASIBLE
+                return solver, status
+
+            with (
+                self.subTest(guard=error_code),
+                patch.object(
+                    guard_engine,
+                    "_solve_model",
+                    side_effect=downgrade_guard_proof,
+                ),
+                self.assertRaisesRegex(OptimizationIncomplete, error_code),
+            ):
+                guard_engine.solve(guard_snapshot)
+
+        snapshot = Snapshot.from_dict(raw)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        variants = CpSatScheduleEngine(max_total_seconds=90).solve(snapshot)
+
+        self.assertEqual(len(variants), 3)
+        for variant in variants:
+            with self.subTest(strategy=variant.strategy_code):
+                tejlor_roles = [
+                    slots[assignment.slot_id].role_id
+                    for assignment in variant.assignments
+                    if assignment.employee_id == "employee-tejlor"
+                ]
+                self.assertIn("role-host", tejlor_roles)
+                self.assertIn("role-kelner", tejlor_roles)
+                self.assertEqual(
+                    variant.metrics["ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"], 0
+                )
+                self.assertEqual(variant.metrics["ROLE_BACKUP_PENALTY"], 1)
+                primary_guard_stage = next(
+                    stage
+                    for stage in variant.stage_objectives
+                    if any(
+                        term.get("metric")
+                        == "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"
+                        for term in stage.get("terms", [])
+                    )
+                )
+                self.assertEqual(primary_guard_stage["name"], "PRIMARY_ROLE_GUARD")
+                self.assertEqual(primary_guard_stage["value"], 0)
+                self.assertEqual(primary_guard_stage["status"], "OPTIMAL")
+
+        standard_capacity_raw = copy.deepcopy(raw)
+        standard_capacity_raw["employees"].append(
+            {
+                **common_employee,
+                "id": "employee-host-standard",
+                "roleIds": ["role-host"],
+                "roleGrants": [
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "STANDARD",
+                        "backupPriority": 100,
+                    }
+                ],
+                "baseHourlyRateMinor": 20_000,
+                "preferredShiftTemplateIds": ["shift-host"],
+            }
+        )
+        standard_snapshot = Snapshot.from_dict(standard_capacity_raw)
+        standard_slots = {
+            slot.id: slot for slot in generate_slots(standard_snapshot)
+        }
+        standard_variants = CpSatScheduleEngine(max_total_seconds=90).solve(
+            standard_snapshot
+        )
+        for variant in standard_variants:
+            with self.subTest(strategy=variant.strategy_code, host_capacity="STANDARD"):
+                tejlor_roles = [
+                    standard_slots[assignment.slot_id].role_id
+                    for assignment in variant.assignments
+                    if assignment.employee_id == "employee-tejlor"
+                ]
+                self.assertIn("role-kelner", tejlor_roles)
+                self.assertNotIn("role-host", tejlor_roles)
+                self.assertEqual(variant.metrics["ROLE_BACKUP_PENALTY"], 0)
+                self.assertEqual(
+                    variant.metrics["ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"], 0
+                )
+
     def test_all_strategies_share_work_by_achievable_target_in_role_location_pool(self) -> None:
         raw = load_raw()
         raw.pop("slots")

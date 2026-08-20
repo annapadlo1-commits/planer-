@@ -482,19 +482,36 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       sourceMetadata:{source:"MATRIX_WORKBOOK_IMPORT"},
     };
   });
-  const roleDuties=functionRows.length?functionRows.filter(row=>importBoolean(importCell(row,"AKTYWNA"),true)&&!["DOWOLNA",""].includes(importCell(row,"ROLA_WYMAGANA"))).map(row=>{
-    const sourceMode=importCell(row,"TYP_PRZYDZIAŁU","ASSIGNMENT_MODE").toLocaleUpperCase("pl-PL");
-    const assignmentMode=["WYMÓG_ZMIANY","REQUIRED"].includes(sourceMode)?"REQUIRED":["OPCJONALNY","OPTIONAL"].includes(sourceMode)?"OPTIONAL":"";
-    return {
-      roleCode:normalizeRoleCode(importCell(row,"ROLA_WYMAGANA")),dutyCode:importCell(row,"KOD"),assignmentMode,
-      minimumCount:assignmentMode==="REQUIRED"?"1":"0",shiftObligation:assignmentMode==="REQUIRED",
-      shiftPeriod:importCell(row,"PORA","SHIFT_PERIOD").toUpperCase(),active:true,
-    };
-  }):rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]).map(row=>({
-    roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode")),dutyCode:importCell(row,"Kod obowiązku","dutyCode"),assignmentMode:importCell(row,"Znaczenie","assignmentMode").toUpperCase(),
-    minimumCount:importCell(row,"Minimum","minimumCount"),shiftObligation:importBoolean(importCell(row,"Obowiązek zmianowy","shiftObligation")),
-    shiftPeriod:importCell(row,"Pora","shiftPeriod").toUpperCase(),active:importBoolean(importCell(row,"Aktywne","active"),true),
-  }));
+  const competencyRows=functionRows.length?functionRows:rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]);
+  const competencySheet=functionRows.length?"FUNKCJE_DODATKOWE":matchingSheetName(["Role-Obowiązki","Role Duties","Obowiązki ról"])??"Role-Obowiązki";
+  const roleDuties=competencyRows
+    .map((row,index)=>({row,sourceRow:index+2}))
+    .filter(({row})=>functionRows.length
+      ?importBoolean(importCell(row,"AKTYWNA"),true)&&!["DOWOLNA",""].includes(importCell(row,"ROLA_WYMAGANA"))
+      :true)
+    .map(({row,sourceRow})=>{
+      const assignmentModeValue=importCell(row,"Znaczenie","assignmentMode","TYP_PRZYDZIAŁU","ASSIGNMENT_MODE");
+      const assignmentMode=assignmentModeValue.toLocaleUpperCase("pl-PL");
+      const normalizedAssignmentMode=assignmentMode==="OPCJONALNY"?"OPTIONAL":assignmentMode;
+      const assignmentModeColumn=functionRows.length?"TYP_PRZYDZIAŁU":"Znaczenie";
+      const minimumCount=importCell(row,"Minimum","minimumCount");
+      const shiftObligation=importBoolean(importCell(row,"Obowiązek zmianowy","shiftObligation"));
+      const shiftPeriod=importCell(row,"Pora","shiftPeriod","PORA","SHIFT_PERIOD").toUpperCase();
+      const hasLegacyMinimum=minimumCount!==""&&(!/^\d+$/.test(minimumCount)||Number(minimumCount)!==0);
+      if(["REQUIRED","WYMÓG_ZMIANY"].includes(assignmentMode)||hasLegacyMinimum||shiftObligation||Boolean(shiftPeriod)){
+        throw new Error(`${competencySheet} • wiersz ${sourceRow} • pola „Znaczenie / Minimum / Pora”: stary szeroki wymóg rola–obowiązek nie jest już obsługiwany, ponieważ mógł objąć kilka zmian o tej samej porze. Przenieś wymaganą liczbę osób do arkusza „Obsada” i wskaż dokładny „Kod zmiany”, „Kod roli” oraz opcjonalnie „Kod obowiązku”. Tutaj pozostaw wyłącznie relację kompetencyjną bez minimum.`);
+      }
+      if(!["","OPTIONAL","EXTRA"].includes(normalizedAssignmentMode)){
+        throw new Error(`${competencySheet} • wiersz ${sourceRow} • kolumna „${assignmentModeColumn}”: wartość „${assignmentModeValue}” jest nieprawidłowa. Pozostaw pole puste albo wpisz OPTIONAL lub EXTRA.`);
+      }
+      return {
+        roleCode:normalizeRoleCode(importCell(row,"Kod roli","roleCode","ROLA_WYMAGANA")),
+        dutyCode:normalizeDutyCode(importCell(row,"Kod obowiązku","dutyCode","KOD")),
+        assignmentMode:normalizedAssignmentMode==="EXTRA"?"EXTRA":"OPTIONAL",
+        minimumCount:"0",shiftObligation:false,shiftPeriod:"",
+        active:importBoolean(importCell(row,"Aktywne","active","AKTYWNA"),true),
+      };
+    });
 
   const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>{
     const isPrimary=importBoolean(importCell(row,"Podstawowa","isPrimary"));

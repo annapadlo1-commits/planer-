@@ -8,7 +8,7 @@ export type ManagementSection = "start" | "team" | "schedule" | "operations" | "
 export type EmployeeSection = "my-schedule" | "company-schedule" | "availability" | "swaps" | "messages" | "time";
 export type ProductSection = ManagementSection | EmployeeSection;
 export type SetupSection = "structure" | "workforce" | "strategies" | "finance";
-export type SetupStepKey = "company" | "roles" | "shifts" | "employees" | "variants" | "readiness";
+export type SetupStepKey = "company" | "roles" | "shifts" | "employees" | "variants" | "readiness" | "publication";
 export type SetupStepState = "complete" | "current" | "blocked";
 
 export type ProductNavigationItem = {
@@ -241,7 +241,9 @@ export function configurationJourney(
     activeEmployees.length > 0 && completeEmployees.length === activeEmployees.length,
     defaultScenarios.length === 1 && linkedStrategies.length > 0,
   ];
-  const readinessComplete = baseComplete.every(Boolean) && (data.editable ? serverReadiness?.ready === true : true);
+  const activeConfiguration = data.matrixVersion.status === "ACTIVE";
+  const readinessComplete = baseComplete.every(Boolean)
+    && (activeConfiguration || serverReadiness?.ready === true);
   const rawSteps: Omit<ConfigurationStep, "state">[] = [
     {
       key: "company", label: "Firma i lokale", section: "structure", complete: baseComplete[0],
@@ -271,9 +273,22 @@ export function configurationJourney(
     {
       key: "readiness", label: "Kontrola gotowości", section: "structure", complete: readinessComplete,
       description: "Serwer sprawdza blokery przed publikacją i uruchomieniem solvera.",
-      detail: serverReadiness
+      detail: activeConfiguration
+        ? `Aktywna konfiguracja v${data.matrixVersion.version}`
+        : serverReadiness
         ? serverReadiness.ready ? "Brak blokad serwera" : `${serverReadiness.blockers.length} blokad serwera`
-        : data.editable ? "Oczekiwanie na kontrolę serwera" : "Aktywna konfiguracja",
+        : data.editable
+          ? "Oczekiwanie na kontrolę serwera"
+          : "Wersja robocza — kontrolę i publikację wykonuje właściciel lub administrator",
+    },
+    {
+      key: "publication", label: "Publikacja konfiguracji", section: "structure", complete: activeConfiguration,
+      description: "Opublikuj sprawdzoną wersję, zanim generator odczyta jej dane.",
+      detail: activeConfiguration
+        ? `Aktywna konfiguracja v${data.matrixVersion.version}`
+        : data.editable
+          ? "Wersja robocza czeka na publikację"
+          : "Wersja robocza — publikację wykonuje właściciel lub administrator",
     },
   ];
   const steps = withSequentialState(rawSteps);

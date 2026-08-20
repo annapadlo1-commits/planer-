@@ -33,7 +33,11 @@ test("role duty editor no longer asks for a broad time-of-day bucket",()=>{
   const end=component.indexOf('if (kind === "EMPLOYEE_ROLE")',start);
   const roleDuty=component.slice(start,end);
   assert.doesNotMatch(roleDuty,/shiftPeriod|MORNING|MIDDLE|EVENING/);
+  assert.doesNotMatch(roleDuty,/name="assignmentMode"|name="minimumCount"/);
+  assert.match(roleDuty,/wyłącznie relacja kompetencyjna/);
+  assert.match(roleDuty,/wybierz dokładną zmianę/);
   assert.match(component,/shiftObligation:false,shiftPeriod:null/);
+  assert.match(component,/assignmentMode:item\?\.assignment_mode==="EXTRA"\?"EXTRA":"OPTIONAL",minimumCount:0/);
 });
 
 test("unified RPC links duties and writes staffing under one transaction lock",()=>{

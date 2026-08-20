@@ -511,7 +511,10 @@ test("every opened variant owns fresh workload and diagnostic state", async () =
   assert.match(workspace,/const workspaceIdentity=/);
   assert.match(workspace,/setWorkloadRows\(null\)/);
   assert.match(workspace,/workloadVariantId===workspaceVariantId/);
-  assert.match(workspace,/setWorkloadVariantId\(workspaceVariantId\)/);
+  assert.match(workspace,/setWorkloadVariantId\(workload\.variantId\)/);
+  assert.match(workspace,/setWorkloadRevision\(workload\.revision\)/);
+  assert.match(workspace,/const requestId=\+\+workloadRequestSequence\.current/);
+  assert.match(workspace,/requestId===workloadRequestSequence\.current&&variantId===workspaceVariantIdRef\.current/);
   assert.match(workspace,/setComparisonAvailability\(\[\]\)/);
 });
 

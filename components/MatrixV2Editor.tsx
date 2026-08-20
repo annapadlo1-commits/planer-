@@ -77,9 +77,6 @@ type FinanceAccessPolicyPayload={levels:FinanceVisibility[];policies:FinanceAcce
 type AccessImportRow={row:number;email:string;appRole:string;roleId:string|null;locationId:string|null;active:boolean};
 type AccessImportPreview={rows:AccessImportRow[];errors:string[];fileName:string};
 
-const assignmentModeLabel: Record<string, string> = {
-  REQUIRED: "Wymagany", OPTIONAL: "Opcjonalny", EXTRA: "Dodatkowy",
-};
 const operationLabel: Record<string, string> = {
   SET: "Ustaw", ADD: "Dodaj", MULTIPLY: "Pomnóż", REMOVE: "Usuń wymaganie",
 };
@@ -607,7 +604,7 @@ export function MatrixV2Editor({
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return false; }
     const saved=result.data as {id?:string;employeeNo?:string}|null;
-    setEmployeeEdit(null);
+    if(!employeeId)setEmployeeEdit(null);
     if(!employeeId&&saved?.id){
       selectTab("workforce");
       setWorkforceFocusEmployeeId(saved.id);
@@ -685,7 +682,7 @@ export function MatrixV2Editor({
   ));
 
   return <section className="matrix-v2-shell">
-    <header className="matrix-v2-header">
+    <header className="matrix-v2-header" id="configuration-step-publication">
       <div>
         <p className="eyebrow">KONFIGURACJA FIRMY • MODEL DYNAMICZNY</p>
         <h2>Konfiguracja firmy • wersja {data.matrixVersion.version}</h2>
@@ -735,7 +732,7 @@ export function MatrixV2Editor({
     {edit && (
       <MatrixV2Drawer key={`${edit.kind}:${String((edit.item as {id?: string} | undefined)?.id ?? "new")}`} target={edit} data={data} month={month} busy={busy} close={() => setEdit(null)} save={async (kind, id, payload) => {
         const ok = await save(kind, id, payload);
-        if (ok) setEdit(null);
+        if (ok && !id) setEdit(null);
         return ok;
       }}/>
     )}
@@ -1162,7 +1159,7 @@ function RoleDutyOverview({data,editable,edit}:{data:MatrixV2Workspace;editable:
   return <section id="configuration-step-roles" className="matrix-v2-card matrix-v2-role-duty-overview"><SectionHead title="Role i opcjonalne obowiązki" description="Najpierw zdefiniuj role. Obowiązek przypisz tylko wtedy, gdy dana rola ma dodatkową kompetencję potrzebną w obsadzie." editable={editable} add={()=>edit({kind:"ROLE"})}/><div className="matrix-v2-role-duty-grid">{data.roles.map(role=>{
     const links=data.roleDuties.filter(link=>link.role_id===role.id);
     const activeLinks=links.filter(link=>link.active);
-    return <article key={role.id}><header><span><i style={{background:role.color??"#7257d8"}}/><div><h4>{role.name}</h4><small>{activeLinks.length?`${activeLinks.length} ${activeLinks.length===1?"opcjonalny obowiązek":"opcjonalne obowiązki"}`:"Bez dodatkowych obowiązków — poprawna konfiguracja"}</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>{assignmentModeLabel[link.assignment_mode]}</small></button>)}{!links.length&&<small>Ta rola nie wymaga dodatkowego obowiązku.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Dodaj opcjonalny obowiązek</button>}</article>;
+    return <article key={role.id}><header><span><i style={{background:role.color??"#7257d8"}}/><div><h4>{role.name}</h4><small>{activeLinks.length?`${activeLinks.length} ${activeLinks.length===1?"powiązana kompetencja":"powiązane kompetencje"}`:"Bez dodatkowych kompetencji — poprawna konfiguracja"}</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>Kompetencja roli • bez zapotrzebowania</small></button>)}{!links.length&&<small>Ta rola nie ma dodatkowej kompetencji.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Powiąż kompetencję z rolą</button>}</article>;
   })}</div><div className="matrix-v2-duty-dictionary"><span><strong>Słownik obowiązków</strong><small>Edytuj nazwę lub dodaj kompetencję, a potem przypisz ją do właściwych ról.</small></span><div>{data.duties.map(duty=><button key={duty.id} disabled={!editable} onClick={()=>editable&&edit({kind:"DUTY",item:duty})}>{duty.name}</button>)}{editable&&<button onClick={()=>edit({kind:"DUTY"})}><Plus/> Nowy obowiązek</button>}</div></div></section>;
 }
 
@@ -1986,7 +1983,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
     return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
   }));
-  add("Role-Obowiązki",["Kod roli","Kod obowiązku","Znaczenie","Minimum","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.assignment_mode,link.minimum_count,link.active?"TAK":"NIE"]));
+  add("Role-Obowiązki",["Kod roli","Kod obowiązku","Aktywne"],data.roleDuties.map(link=>[data.roles.find(item=>item.id===link.role_id)?.code??"",data.duties.find(item=>item.id===link.duty_id)?.code??"",link.active?"TAK":"NIE"]));
   add("Role pracowników",["Numer pracownika","Kod roli","Podstawowa","Sposób użycia","Priorytet rezerwowy","Może zatwierdzać","Obowiązuje od","Obowiązuje do","Aktywna"],data.employeeRoles.map(link=>[
     data.employees.find(item=>item.id===link.employee_id)?.employeeNo??"",data.roles.find(item=>item.id===link.role_id)?.code??"",link.is_primary?"TAK":"NIE",link.assignment_mode??"STANDARD",link.backup_priority??100,link.can_lead?"TAK":"NIE",link.valid_from??"",link.valid_to??"",link.active?"TAK":"NIE",
   ]));
@@ -2403,9 +2400,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     {item?.id&&<><input type="hidden" name="roleId" value={String(item.role_id)}/><input type="hidden" name="dutyId" value={String(item.duty_id)}/></>}
     <label>Rola<select name="roleId" required disabled={Boolean(item?.id)} defaultValue={String(item?.role_id ?? "")}>{data.roles.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
     <label>Obowiązek<select name="dutyId" required disabled={Boolean(item?.id)} defaultValue={String(item?.duty_id ?? "")}>{data.duties.filter(x=>x.active).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-    <label>Znaczenie<select name="assignmentMode" defaultValue={String(item?.assignment_mode ?? "OPTIONAL")}><option value="REQUIRED">Wymagany</option><option value="OPTIONAL">Opcjonalny</option><option value="EXTRA">Dodatkowy</option></select></label>
-    <label>Minimalna liczba na zmianie<input name="minimumCount" type="number" min="0" defaultValue={Number(item?.minimum_count ?? 0)}/><small>Dla obowiązku wymaganego minimum musi wynosić co najmniej 1.</small></label>
-    <p className="matrix-v2-form-hint">Konkretną zmianę i wymaganą liczbę osób ustawiasz niżej w tej samej sekcji „Zmiany i obsada”.</p>
+    <div className="matrix-v2-form-hint"><strong>To jest wyłącznie relacja kompetencyjna.</strong> Nie zwiększa obsady i nie dotyczy automatycznie wszystkich zmian o podobnej godzinie. Jeżeli ta kompetencja ma być wymagana, przejdź do „Zmiany i obsada”, wybierz dokładną zmianę, rolę, tę kompetencję i liczbę osób.</div>
     <ActiveToggle item={item}/>
   </>;
   if (kind === "EMPLOYEE_ROLE") return <>
@@ -2699,7 +2694,7 @@ function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<
   const data=new FormData(form);const name=formText(form,"name");const code=formText(form,"code")||codeFrom(name);const common=()=>({code,name,sortOrder:requiredNumber(formText(form,"sortOrder")||"0"),active:checked(form,"active")});
   if(["ROLE","LOCATION","DUTY","STRATEGY"].includes(kind)){if(!name||!code)throw new Error("Podaj nazwę elementu.");if(kind==="ROLE"){const categoryId=formText(form,"categoryId");if(!categoryId)throw new Error("Wybierz kategorię grafiku dla tej roli.");return{...common(),color:formText(form,"color"),categoryId};}if(kind==="LOCATION"){const timezone=formText(form,"timezone");if(!timezone)throw new Error("Wybierz strefę czasową lokalu.");try{new Intl.DateTimeFormat("en",{timeZone:timezone}).format(new Date(0));}catch{throw new Error("Podaj prawidłową strefę czasową IANA, np. Europe/Warsaw.");}return{...common(),timezone};}if(kind==="DUTY")return{...common(),description:formText(form,"description"),color:formText(form,"color")};return{...common(),description:formText(form,"description"),solverCode:"CP_SAT"};}
   if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const startsAt=parseTime24(formText(form,"startsAt"),"Godzina rozpoczęcia") as string;const endsAt=parseTime24(formText(form,"endsAt"),"Godzina zakończenia") as string;return{...common(),locationId:formText(form,"locationId"),shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt,endsNextDay:checked(form,"endsNextDay"),days};}
-  if(kind==="ROLE_DUTY"){const assignmentMode=formText(form,"assignmentMode"),minimumCount=requiredNumber(formText(form,"minimumCount")||"0");if(assignmentMode==="REQUIRED"&&minimumCount<1)throw new Error("Obowiązek wymagany musi mieć minimalną liczbę co najmniej 1.");return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode,minimumCount,shiftObligation:false,shiftPeriod:null,active:checked(form,"active")};}
+  if(kind==="ROLE_DUTY")return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode:item?.assignment_mode==="EXTRA"?"EXTRA":"OPTIONAL",minimumCount:0,shiftObligation:false,shiftPeriod:null,active:checked(form,"active")};
   if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isPrimary=checked(form,"isPrimary");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początku.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary,assignmentMode:isPrimary?"STANDARD":"BACKUP",backupPriority:isPrimary?100:Number(item?.backup_priority??100),canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:true,overtimeAllowed:false,homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_DUTY"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początku.");return{employeeId:formText(form,"employeeId"),dutyId:formText(form,"dutyId"),roleId:null,locationId:null,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}

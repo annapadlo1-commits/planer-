@@ -74,7 +74,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
   assert.match(workspace, /open=\{!leaderEditable&&workspace\.issues\.length > 0\}/);
   assert.match(workspace, /leader-studio-candidate-panel/);
   assert.match(workspace, /application\/x-grafik-employee/);
-  assert.match(workspace, /draggable=\{candidate\.suggestionEligible\}/);
+  assert.match(workspace, /draggable=\{candidate\.suggestionEligible&&!leaderBusy\}/);
   assert.match(workspace, /studio-vacancy-target/);
   assert.match(workspace, /onDrop=\{event=>/);
   assert.match(styles, /\.leader-studio>\.leader-studio-candidate-panel\{grid-column:1/);
@@ -259,7 +259,7 @@ test("Studio lidera filters candidates and supports uninterrupted draft editing"
   assert.doesNotMatch(panel,/window\.prompt/);
   assert.match(workspace,/Skutek w szkicu/);
   assert.match(workspace,/Pełną kontrolę uruchamiasz raz/);
-  assert.match(workspace,/Upuszczenie kafelka od razu zmienia roboczy szkic/);
+  assert.match(workspace,/Każda kompletna para od razu zmienia roboczy szkic/);
   assert.doesNotMatch(workspace,/Szkic zaktualizowany\. Możesz kontynuować/);
   assert.doesNotMatch(workspace,/Zastosuj sprawdzoną zmianę/);
   assert.doesNotMatch(workspace,/Dodaj komentarz audytowy/);
@@ -394,7 +394,9 @@ test("B4F-95 checks the whole Studio draft without mutation before an audited wo
   assert.match(client,/validateLeaderDraft/);
   assert.match(panel,/Sprawdź cały grafik/);
   assert.match(panel,/Przekaż sprawdzony grafik/);
-  assert.match(panel,/leaderDraftValidation\.revision!==leaderVariant\.revision/);
+  assert.match(panel,/leaderDraftValidation\?\.variantId===leaderVariant\.id/);
+  assert.match(panel,/leaderDraftValidation\.revision===leaderVariant\.revision/);
+  assert.match(panel,/!leaderDraftValidationCurrent/);
 });
 
 test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{
@@ -527,6 +529,25 @@ test("B4F-74 binds the Studio impact to one revision and one authoritative month
     "filtr roli nie może doliczać przydziałów pozostałych ról na tej samej zmianie");
 });
 
+test("Studio workload refresh is latest-request-wins across variant and revision changes",async()=>{
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+
+  assert.match(workspace,/const workspaceWorkloadIdentity=`\$\{workspaceIdentity\}:\$\{workspaceRevision\}`/,
+    "tożsamość analizy musi obejmować rewizję szkicu");
+  assert.match(workspace,/workloadRequestSequence\.current\+=1;\s*workloadRequestInFlight\.current=false;/,
+    "zmiana tożsamości musi unieważnić starą odpowiedź i odblokować nowe pobranie");
+  assert.match(workspace,/setWorkloadLoading\(false\);\s*setWorkloadRows\(null\);\s*setWorkloadVariantId\(""\);\s*setWorkloadRevision\(null\);/,
+    "po zmianie wariantu lub rewizji nie wolno pokazywać starego bilansu");
+  assert.match(workspace,/const currentWorkloadRows=workloadVariantId===workspaceVariantId&&workloadRevision===workspaceRevision\?workloadRows:null/,
+    "widoczny bilans musi należeć jednocześnie do wariantu i jego dokładnej rewizji");
+  assert.match(workspace,/if\(force\)\{setWorkloadRows\(null\);setWorkloadVariantId\(""\);setWorkloadRevision\(null\);\}/,
+    "wymuszone odświeżenie ma usunąć poprzedni wynik przed wywołaniem RPC");
+  assert.match(workspace,/setWorkloadRows\(workload\.employees\);setWorkloadVariantId\(workload\.variantId\);setWorkloadRevision\(workload\.revision\)/,
+    "komponent ma zachować kopertę wariantu i rewizji także przy pustej liście osób");
+  assert.match(workspace,/catch\(error\)[\s\S]*setWorkloadRows\(null\);setWorkloadVariantId\(""\);setWorkloadRevision\(null\);setWorkloadError/,
+    "błąd odświeżenia nie może pozostawić starego wyniku pod bieżącym nagłówkiem");
+});
+
 test("Studio role calendar exposes vacancies as drop targets and keeps analytics panels separate",async()=>{
   const [workspace,styles]=await Promise.all([
     readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
@@ -540,9 +561,13 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
   assert.match(workspace,/solver-coverage-vacancies/,
     "perspektywa Pokrycie obsady musi wystawiać osobne cele rola-zmiana zamiast niejednoznacznej karty zbiorczej");
   assert.match(workspace,/application\/x-grafik-employee/);
-  assert.match(workspace,/applyEmployeeDrop\(issue\.id,employeeId\)/);
-  assert.match(workspace,/Zapisz zmianę: przypisz/,
-    "kliknięcie kandydata musi prowadzić do jawnego zapisu, a nie kończyć się na niewidocznym podglądzie");
+  assert.match(workspace,/applyEmployeeDrop\(\{issueId:issue\.id\},employeeId\)/);
+  assert.match(workspace,/applyEmployeeDrop\(\{assignmentId:assignment\.id\},employeeId\)/,
+    "pracownika można upuścić zarówno na wakat, jak i na istniejący dokładny przydział");
+  assert.match(workspace,/leader-employee-pool/,
+    "desktop musi wystawiać stałą pulę osób, aby przeciąganie mogło zacząć się od pracownika");
+  assert.doesNotMatch(workspace,/Zapisz zmianę: przypisz/,
+    "rutynowy przydział nie może wymagać przycisku zapisu po przeciągnięciu ani po parze tapnięć");
   assert.match(workspace,/event\.key==="Enter"/,
     "kandydat nadal musi dać się przydzielić klawiaturą");
   assert.match(workspace,/Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter/);
@@ -552,6 +577,34 @@ test("Studio role calendar exposes vacancies as drop targets and keeps analytics
   assert.match(styles,/\.studio-role-vacancy:hover/);
   assert.doesNotMatch(workspace,/onLeaderChanged\?\.\(\);await openWorkload\(true\)/,
     "zapis w Studio nie może sam przenosić lidera z kalendarza do rozkładu pracy");
+});
+
+test("Studio touch pairs an employee and an exact target in either order without per-change save",async()=>{
+  const [workspace,panel]=await Promise.all([
+    readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.match(workspace,/function directPointerTap\(/);
+  assert.match(workspace,/onPointerDownCapture=\{event=>\{lastLeaderPointerType\.current=event\.pointerType;/,
+    "tryb dotykowy ma wynikać z faktycznego pointerType, także na urządzeniu hybrydowym");
+  assert.match(workspace,/mobileLeaderEmployeeId/,
+    "wybór pracownika musi przetrwać odświeżenie szkicu i umożliwiać serię kolejnych zmian");
+  assert.match(workspace,/Wyczyść wybór osoby/,
+    "po seryjnym przypisywaniu użytkownik musi móc wrócić do trybu zmiana → inna osoba");
+  assert.match(workspace,/commitPreferredEmployee:Boolean\(preferredEmployeeId\)/,
+    "tap pracownik → zmiana ma natychmiast uruchamiać istniejącą walidowaną mutację");
+  assert.match(workspace,/onPointerUp=\{event=>\{if\(event\.pointerType==="touch"\|\|event\.pointerType==="pen"\)/,
+    "tap zmiana → pracownik ma natychmiast uruchamiać tę samą mutację");
+  assert.match(workspace,/onPointerUp=\{event=>\{if\(event\.pointerType!=="mouse"/,
+    "dotknięcie istniejącego dokładnego przydziału musi działać bez małej ikony edycji");
+  assert.match(workspace,/if\(leaderInteractionInFlight\.current\)return false/,
+    "szybki podwójny tap nie może uruchomić dwóch mutacji i dwóch rewizji");
+  assert.match(workspace,/Ta osoba jest już przypisana do tej zmiany\. Szkic nie został zmieniony/,
+    "ruch bez zmiany nie może tworzyć pustej rewizji");
+  assert.match(workspace,/requestId===workloadRequestSequence\.current/,
+    "starsza odpowiedź analizy nie może nadpisać godzin po nowszej mutacji");
+  assert.match(panel,/Sprawdź cały grafik/,
+    "niemutująca kontrola całego szkicu pozostaje osobnym końcowym krokiem");
 });
 
 test("B4F-100 stores named checkpoints and restores them as a new audited draft revision",async()=>{

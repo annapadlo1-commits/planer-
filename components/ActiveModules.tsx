@@ -500,10 +500,8 @@ export function ActiveModules({
       p_preferences: preferences,
     });
     if (!result) return false;
-    setShiftPreferencesOpen(false);
     notify("Preferencje zmianowe zostały zapisane.");
     await loadPortal();
-    await reload();
     return true;
   }
 

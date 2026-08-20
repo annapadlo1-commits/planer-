@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, Check, CircleDollarSign, Edit3, LockKeyhole, LockOpen, MapPin, Plus, RefreshCw, Search, ShieldCheck, Trash2, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -18,6 +18,7 @@ type Props = {
   fail?:(message:string)=>void;
   leaderEditable?:boolean;
   onLeaderChanged?:()=>void|Promise<void>;
+  onLeaderBusyChange?:(busy:boolean)=>void;
   onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void;
   initialView?:WorkspaceView;
 };
@@ -84,6 +85,11 @@ type WorkspaceView="CALENDAR"|"WORKLOAD"|"ISSUES";
 type SchedulePerspective="EMPLOYEES"|"ROLES"|"COVERAGE";
 type LeaderCandidateView="ELIGIBLE"|"ALL"|"BELOW_TARGET"|"PREFERRED";
 type FinanceVisibility="NONE"|"BUDGET_ONLY"|"AGGREGATE"|"FULL";
+
+function directPointerTap(event:{nativeEvent?:Event}){
+  const pointerType=(event.nativeEvent as PointerEvent|undefined)?.pointerType;
+  return pointerType==="touch"||pointerType==="pen";
+}
 
 const rolePalette=[
   {accent:"#6848d8",background:"#f0ebff"},
@@ -182,12 +188,12 @@ function publicationStatus(value?: string) {
 const hardReasonLabels:Record<string,string>={ROLE_REQUIRED:"Brak wymaganej roli",LOCATION_NOT_ALLOWED:"Lokal nie jest dozwolony w zwykłym limicie",LOCATION_REQUIRED:"Lokal nie jest dozwolony w zwykłym limicie",DUTY_REQUIRED:"Brak wymaganej kompetencji",SHIFT_OVERLAP:"Nakładająca się zmiana",OVERLAPPING_SHIFT:"Nakładająca się zmiana",ONE_PRIMARY_SHIFT_PER_DAY:"Osiągnięty dzienny limit zmian z konfiguracji firmy",CONSECUTIVE_SHIFT_SEQUENCE:"To byłaby ostatnia zmiana dnia, a następnego dnia pierwsza — albo pierwsza po ostatniej zmianie poprzedniego dnia",STANDBY_TIER_1_RESERVED:"Pracownik jest tego dnia opublikowany jako pierwszy rezerwowy",STANDBY_TIER_2_RESERVED:"Pracownik jest tego dnia opublikowany jako drugi rezerwowy",DECLARED_UNAVAILABLE:"Pracownik zgłosił twardą niedostępność, urlop albo L4",TIME_CONSTRAINT:"Niedostępność, urlop lub L4",OUTSIDE_AVAILABILITY_WINDOW:"Zmiana poza zadeklarowanym oknem dostępności",MISSING_AVAILABILITY:"Brak deklaracji dostępności, gdy konfiguracja firmy jawnie jej wymaga",OUTSIDE_EMPLOYMENT:"Data poza okresem współpracy",WEEKEND_BLOCKED:"Pracownik ma zablokowane weekendy",REST_AFTER_PREVIOUS_SHIFT:"Za krótki odpoczynek po poprzedniej zmianie",REST_BEFORE_NEXT_SHIFT:"Za krótki odpoczynek przed następną zmianą",MINIMUM_REST:"Za krótki odpoczynek",MONTHLY_LIMIT:"Przekroczony indywidualny limit miesięczny",WEEKLY_LIMIT:"Przekroczony indywidualny limit tygodniowy",MAX_CONSECUTIVE_DAYS:"Przekroczona maksymalna liczba kolejnych dni pracy",MANAGER_SHIFT_BLOCK:"Pracodawca zablokował tę zmianę w konfiguracji firmy"};
 const softReasonLabels:Record<string,string>={SHIFT_PREFERENCE_AVOIDED:"Pracownik prosi, aby unikać tej pory",SHIFT_AVOIDED:"Pracownik prosi, aby unikać tej pory",OVERTIME_AFTER_ASSIGNMENT:"Po dopisaniu przekroczy nominał miesięczny",MONTHLY_OVERTIME:"Po dopisaniu przekroczy nominał miesięczny"};
 function reasonLabel(value:string){return hardReasonLabels[value]??softReasonLabels[value]??value;}
-function availabilityLabel(value:string){return ({AVAILABLE:"Dostępny • wolne okno i limit dzienny",SOFT_AVOID:"Dostępny, ale woli nie pracować",HARD_UNAVAILABLE:"Twarda niedostępność / urlop / L4",SHIFT_CONFLICT:"Ma już zmianę w tym czasie",DAILY_LIMIT:"Osiągnięty dzienny limit zmian",OUTSIDE_AVAILABLE_WINDOW:"Poza zgłoszonym oknem dostępności"} as Record<string,string>)[value]??"Wymaga sprawdzenia";}
+function availabilityLabel(value:string){return ({AVAILABLE:"Dostępny • wolne okno i limit dzienny",SOFT_AVOID:"Dostępny, ale woli nie pracować",HARD_UNAVAILABLE:"Twarda niedostępność / urlop / L4",PERMANENT_WORK_PATTERN:"Stały wzorzec pracy blokuje tę zmianę",SHIFT_CONFLICT:"Ma już zmianę w tym czasie",DAILY_LIMIT:"Osiągnięty dzienny limit zmian",OUTSIDE_AVAILABLE_WINDOW:"Poza zgłoszonym oknem dostępności"} as Record<string,string>)[value]??"Wymaga sprawdzenia";}
 function preferenceLevelLabel(value:string){
   return ({PREFERRED:"preferowana",NEUTRAL:"neutralna",AVOIDED:"unikać",BLOCKED:"zablokowana"} as Record<string,string>)[value]??value;
 }
 
-function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader,onOpenAdHoc}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string)=>void;onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void}){
+function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,explainPreview,previewAvailable,leaderEditable,editLeader,onOpenAdHoc}:{issue:SolverWorkspaceIssue;timezone:string;operational:boolean;published:boolean;busy:boolean;inspect:(id:string)=>void;explainPreview:(id:string)=>void;previewAvailable:boolean;leaderEditable:boolean;editLeader:(id:string,directTap:boolean)=>void;onOpenAdHoc?:(context:{roleId:string|null;date:string|null})=>void}){
   const shift=issue.shift;
   const shiftTimezone=shift?.location.timezone??timezone;
   const required=issue.requiredCount;
@@ -200,12 +206,12 @@ function WorkspaceIssueCard({issue,timezone,operational,published,busy,inspect,e
     {required!==null&&<div className="solver-issue-staffing"><span>Wymagane <b>{required}</b></span><span>Przypisane <b>{assigned??0}</b></span><span>Brakuje <b>{missing}</b></span></div>}
     {operational&&published&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>inspect(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Dlaczego nikt nie został przypisany?</button>}
     {!operational&&previewAvailable&&issue.code==="UNFILLED_SLOT"&&<button className="secondary-button" disabled={busy} onClick={()=>explainPreview(issue.id)}>{busy?<RefreshCw className="spin"/>:<Users/>} Co blokowało kandydatów?</button>}
-    {leaderEditable&&issue.code==="UNFILLED_SLOT"&&<button className="primary-button" disabled={busy} onClick={()=>editLeader(issue.id)}><Plus/> Uzupełnij w wersji lidera</button>}
+    {leaderEditable&&issue.code==="UNFILLED_SLOT"&&<button className="primary-button" disabled={busy} onClick={event=>editLeader(issue.id,directPointerTap(event))}><Plus/> Uzupełnij w wersji lidera</button>}
     {leaderEditable&&issue.code==="UNFILLED_SLOT"&&onOpenAdHoc&&<button className="secondary-button" disabled={busy} onClick={()=>onOpenAdHoc({roleId:issue.role?.id??null,date:issue.shift?.date??null})}><Users/> Sprawdź pulę ad-hoc</button>}
   </article>;
 }
 
-export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onOpenAdHoc, initialView="CALENDAR" }: Props) {
+export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone, published = false, operational=false, onOperationalChanged, notify, fail, leaderEditable=false, onLeaderChanged, onLeaderBusyChange, onOpenAdHoc, initialView="CALENDAR" }: Props) {
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [diagnostics,setDiagnostics]=useState<SolverCandidateDiagnostics|null>(null);
   const [variantDiagnostics,setVariantDiagnostics]=useState<SolverVariantIssueDiagnostics|null>(null);
@@ -220,11 +226,14 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   const [standbyReason,setStandbyReason]=useState("");
   const [leaderContext,setLeaderContext]=useState<SolverLeaderAssignmentContext|null>(null);
   const [leaderEmployeeId,setLeaderEmployeeId]=useState("");
+  const [mobileLeaderEmployeeId,setMobileLeaderEmployeeId]=useState("");
   const [leaderSearch,setLeaderSearch]=useState("");
   const [leaderFeedback,setLeaderFeedback]=useState("");
   const [leaderLimitWarning,setLeaderLimitWarning]=useState("");
   const [leaderOvertimeWarning,setLeaderOvertimeWarning]=useState(false);
   const [leaderBusy,setLeaderBusy]=useState(false);
+  const leaderInteractionInFlight=useRef(false);
+  const lastLeaderPointerType=useRef("");
   const [bulkOperation,setBulkOperation]=useState<"LOCK"|"UNLOCK"|"REMOVE"|null>(null);
   const [bulkReason,setBulkReason]=useState("");
   const [selectedAssignmentIds,setSelectedAssignmentIds]=useState<string[]>([]);
@@ -241,14 +250,21 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   const [comparisonAvailabilityLoading,setComparisonAvailabilityLoading]=useState(false);
   const [workloadRows,setWorkloadRows]=useState<SolverWorkloadDistributionRow[]|null>(null);
   const [workloadVariantId,setWorkloadVariantId]=useState("");
+  const [workloadRevision,setWorkloadRevision]=useState<number|null>(null);
   const [workloadLoading,setWorkloadLoading]=useState(false);
   const [workloadError,setWorkloadError]=useState("");
+  const workloadRequestInFlight=useRef(false);
+  const workloadRequestSequence=useRef(0);
   const [workloadSearch,setWorkloadSearch]=useState("");
   const [workloadReasonFilter,setWorkloadReasonFilter]=useState("");
   const [workloadSort,setWorkloadSort]=useState<"HOURS_DESC"|"HOURS_ASC"|"DIFFERENCE">("HOURS_DESC");
   const [financeVisibility,setFinanceVisibility]=useState<FinanceVisibility>("NONE");
   const workspaceVariantId=workspace.variants[0]?.id??"";
+  const workspaceVariantIdRef=useRef(workspaceVariantId);
+  workspaceVariantIdRef.current=workspaceVariantId;
+  const workspaceRevision=workspace.context.revision??0;
   const workspaceIdentity=`${workspace.context.type}:${workspace.context.runId??workspace.context.scheduleId??workspace.context.sourceVariantId??workspaceVariantId}:${workspaceVariantId}`;
+  const workspaceWorkloadIdentity=`${workspaceIdentity}:${workspaceRevision}`;
   const scopeRoleId=workspace.variants[0]?.scope.role?.id??null;
   useEffect(()=>{
     let active=true;
@@ -269,9 +285,6 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     setWorkspaceView(initialView);
     setSchedulePerspective("EMPLOYEES");
     setLocationFilter("");
-    setWorkloadRows(null);
-    setWorkloadVariantId("");
-    setWorkloadError("");
     setWorkloadSearch("");
     setWorkloadReasonFilter("");
     setEmployeeDetailId("");
@@ -281,18 +294,28 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     setDiagnostics(null);
     setVariantDiagnostics(null);
     setLeaderContext(null);
+    setMobileLeaderEmployeeId("");
   },[initialView,workspaceIdentity]);
   useEffect(()=>{
-    if(initialView!=="WORKLOAD"||!supabase||!workspaceVariantId)return;
-    let active=true;
-    setWorkloadLoading(true);
+    // A different variant or draft revision invalidates both the visible
+    // result and any request that was started for the previous identity. Reset
+    // the in-flight latch synchronously so the next effect can fetch the new
+    // draft instead of being skipped behind an obsolete request.
+    workloadRequestSequence.current+=1;
+    workloadRequestInFlight.current=false;
+    setWorkloadLoading(false);
+    setWorkloadRows(null);
+    setWorkloadVariantId("");
+    setWorkloadRevision(null);
     setWorkloadError("");
-    void getVariantWorkloadDistribution(supabase,workspaceVariantId)
-      .then(rows=>{if(active){setWorkloadRows(rows);setWorkloadVariantId(workspaceVariantId);}})
-      .catch(error=>{if(active)setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));})
-      .finally(()=>{if(active)setWorkloadLoading(false);});
-    return()=>{active=false;};
-  },[initialView,supabase,workspaceIdentity,workspaceVariantId]);
+  },[workspaceWorkloadIdentity]);
+  useEffect(()=>{
+    if(initialView!=="WORKLOAD"||!supabase||!workspaceVariantId)return;
+    void loadWorkload(true);
+  // `loadWorkload` uses a latest-request-wins token, so a response from the
+  // previous draft identity can never overwrite the current analysis.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[initialView,supabase,workspaceWorkloadIdentity,workspaceVariantId]);
   useEffect(()=>{
     const variantId=workspace.variants[0]?.id;
     const employeeIds=[employeeDetailId,comparisonEmployeeId].filter(Boolean);
@@ -373,7 +396,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     .sort((left,right)=>left.coverage-right.coverage||right.missing-left.missing||left.date.localeCompare(right.date));
   const publishedAt = timestampLabel(workspace.context.publishedAt, timezone);
   const activeDiagnosticIssue=diagnostics?workspace.issues.find(issue=>issue.id===diagnostics.issue.id)??null:null;
-  const currentWorkloadRows=workloadVariantId===workspaceVariantId?workloadRows:null;
+  const currentWorkloadRows=workloadVariantId===workspaceVariantId&&workloadRevision===workspaceRevision?workloadRows:null;
   const filteredWorkload=(currentWorkloadRows??[]).filter(row=>{
     const normalize=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("pl-PL");
     const search=normalize(workloadSearch.trim());
@@ -386,21 +409,42 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   }).sort((left,right)=>workloadSort==="HOURS_ASC"?left.totalMonthlyMinutes-right.totalMonthlyMinutes
     :workloadSort==="DIFFERENCE"?Math.abs(right.differenceMinutes)-Math.abs(left.differenceMinutes)
     :right.totalMonthlyMinutes-left.totalMonthlyMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
+  const leaderPoolEmployees=(currentWorkloadRows??[]).filter(row=>(!locationFilter||row.eligibleLocationIds.includes(locationFilter))
+    &&(!roleFilters.length||row.roleNames.some(name=>workspaceRoles.some(role=>roleFilters.includes(role.id)&&role.name===name))))
+    .sort((left,right)=>left.totalMonthlyMinutes-right.totalMonthlyMinutes||left.employeeName.localeCompare(right.employeeName,"pl-PL"));
   const workloadMinutes=filteredWorkload.map(row=>row.totalMonthlyMinutes).sort((a,b)=>a-b);
   const workloadOverMaximum=filteredWorkload.filter(row=>row.maximumMonthlyMinutes>0&&row.totalMonthlyMinutes>row.maximumMonthlyMinutes).length;
   const workloadMedian=workloadMinutes.length?(workloadMinutes[Math.floor((workloadMinutes.length-1)/2)]+workloadMinutes[Math.ceil((workloadMinutes.length-1)/2)])/2:0;
 
+  function beginLeaderInteraction(){
+    if(leaderInteractionInFlight.current)return false;
+    leaderInteractionInFlight.current=true;
+    setLeaderBusy(true);
+    onLeaderBusyChange?.(true);
+    return true;
+  }
+  function endLeaderInteraction(){
+    leaderInteractionInFlight.current=false;
+    setLeaderBusy(false);
+    onLeaderBusyChange?.(false);
+  }
+
+  useEffect(()=>()=>onLeaderBusyChange?.(false),[onLeaderBusyChange]);
+
   async function loadWorkload(force=false){
-    if(currentWorkloadRows&&!force||workloadLoading)return;
-    const variantId=workspace.variants[0]?.id;
-    if(!supabase||!variantId){setWorkloadError("Ten widok nie wskazuje wariantu do analizy.");return;}
+    if(currentWorkloadRows&&!force||workloadRequestInFlight.current&&!force)return;
+    const variantId=workspaceVariantId;
+    if(!supabase||!variantId){setWorkloadRows(null);setWorkloadVariantId("");setWorkloadRevision(null);setWorkloadError("Ten widok nie wskazuje wariantu do analizy.");return;}
+    const requestId=++workloadRequestSequence.current;
+    workloadRequestInFlight.current=true;
+    if(force){setWorkloadRows(null);setWorkloadVariantId("");setWorkloadRevision(null);}
     setWorkloadLoading(true);setWorkloadError("");
     try{
-      const rows=await getVariantWorkloadDistribution(supabase,variantId);
-      if(variantId===workspaceVariantId){setWorkloadRows(rows);setWorkloadVariantId(variantId);}
+      const workload=await getVariantWorkloadDistribution(supabase,variantId);
+      if(requestId===workloadRequestSequence.current&&variantId===workspaceVariantIdRef.current){setWorkloadRows(workload.employees);setWorkloadVariantId(workload.variantId);setWorkloadRevision(workload.revision);}
     }
-    catch(error){setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));}
-    finally{setWorkloadLoading(false);}
+    catch(error){if(requestId===workloadRequestSequence.current&&variantId===workspaceVariantIdRef.current){setWorkloadRows(null);setWorkloadVariantId("");setWorkloadRevision(null);setWorkloadError(solverErrorMessage(error instanceof Error?error.message:String(error)));}}
+    finally{if(requestId===workloadRequestSequence.current){workloadRequestInFlight.current=false;setWorkloadLoading(false);}}
   }
 
   async function openWorkload(force=false){
@@ -485,33 +529,44 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     await onOperationalChanged?.();
   }
 
-  async function openLeaderEdit(input:{assignmentId?:string;issueId?:string;preferredEmployeeId?:string}){
+  async function openLeaderEdit(input:{assignmentId?:string;issueId?:string;preferredEmployeeId?:string;commitPreferredEmployee?:boolean;retainMobileSelection?:boolean}){
     const variantId=workspace.variants[0]?.id;
-    if(!supabase||!leaderEditable||!variantId)return;
-    setLeaderBusy(true);setLeaderContext(null);setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);
+    if(!supabase||!leaderEditable||!variantId||!beginLeaderInteraction())return;
+    setLeaderContext(null);setLeaderSearch("");setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);
     try{
-      const {preferredEmployeeId,...contextInput}=input;
+      const {preferredEmployeeId,commitPreferredEmployee=false,retainMobileSelection=false,...contextInput}=input;
       const context=await getLeaderAssignmentContext(supabase,{variantId,...contextInput});
       const preferredCandidate=preferredEmployeeId&&context.candidates.some(candidate=>candidate.employeeId===preferredEmployeeId&&candidate.suggestionEligible);
       setLeaderContext(context);setLeaderEmployeeId(preferredCandidate?preferredEmployeeId:context.currentEmployeeId??"");
       if(preferredEmployeeId&&!preferredCandidate){const candidate=context.candidates.find(item=>item.employeeId===preferredEmployeeId);setLeaderFeedback(candidate?`Ta osoba nie jest bezpieczną sugestią: ${availabilityLabel(candidate.availabilityStatus)}${candidate.dutyCoverageMode==="NOT_COVERED"?"; po zamianie nikt nie pokryłby wymaganego obowiązku":""}.`:"Porównywana osoba nie ma wymaganej roli lub dostępu do lokalu.");}
+      if(preferredCandidate&&commitPreferredEmployee)await applyLeaderCandidate(false,false,preferredEmployeeId,context,true,retainMobileSelection);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
-    finally{setLeaderBusy(false);}
+    finally{endLeaderInteraction();}
   }
-  async function applyLeaderCandidate(allowLimitOverride=false,approveOvertime=false,employeeIdOverride?:string,contextOverride?:SolverLeaderAssignmentContext){
+  async function openLeaderTarget(input:{assignmentId?:string;issueId?:string},directTap=lastLeaderPointerType.current==="touch"||lastLeaderPointerType.current==="pen"){
+    const preferredEmployeeId=directTap?mobileLeaderEmployeeId:"";
+    await openLeaderEdit({...input,
+      preferredEmployeeId:preferredEmployeeId||undefined,
+      commitPreferredEmployee:Boolean(preferredEmployeeId),
+      retainMobileSelection:Boolean(preferredEmployeeId),
+    });
+  }
+  async function applyLeaderCandidate(allowLimitOverride=false,approveOvertime=false,employeeIdOverride?:string,contextOverride?:SolverLeaderAssignmentContext,interactionAlreadyLocked=false,retainMobileSelection=false){
     const context=contextOverride??leaderContext;
     const employeeId=employeeIdOverride??leaderEmployeeId;
     if(!supabase||!context)return;
     if(!employeeId){setLeaderFeedback("Wybierz pracownika z listy kandydatów.");return;}
     const selectedCandidate=context.candidates.find(candidate=>candidate.employeeId===employeeId);
     if(!selectedCandidate?.suggestionEligible){setLeaderFeedback("Ta osoba nie jest bezpieczną sugestią dla tej zmiany. Sprawdź status dostępności i pokrycie obowiązku.");return;}
-    setLeaderBusy(true);
+    if(context.assignmentId&&context.currentEmployeeId===employeeId){setLeaderFeedback("Ta osoba jest już przypisana do tej zmiany. Szkic nie został zmieniony.");return;}
+    const ownsInteraction=!interactionAlreadyLocked;
+    if(ownsInteraction&&!beginLeaderInteraction())return;
     try{
       await saveLeaderAssignment(supabase,{variantId:context.variantId,
         assignmentId:context.assignmentId,issueId:context.issueId,
-        employeeId,reason:"Edycja robocza metodą przeciągnij i upuść w Studio lidera",allowLimitOverride,
+        employeeId,reason:allowLimitOverride&&approveOvertime?"Świadomy wyjątek limitu i zatwierdzenie nadgodzin w Studio lidera":allowLimitOverride?"Świadomy wyjątek od limitu w Studio lidera":approveOvertime?"Zatwierdzenie nadgodzin w Studio lidera":"Natychmiastowa edycja roboczego szkicu w Studio lidera",allowLimitOverride,
         dutyTransferAssignmentId:selectedCandidate.dutyTransferAssignmentId,approveOvertime});
-      setLeaderContext(null);await onLeaderChanged?.();await loadWorkload(true);
+      setMobileLeaderEmployeeId(retainMobileSelection?employeeId:"");setLeaderContext(null);await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){
       const raw=error instanceof Error?error.message:String(error);
       if(raw.toUpperCase().includes("LEADER_OVERTIME_APPROVAL_REQUIRED")){
@@ -522,11 +577,11 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
       }
       if(raw.toUpperCase().includes("LEADER_LIMIT_OVERRIDE_REQUIRED")){
         const detail=raw.split("LEADER_LIMIT_OVERRIDE_REQUIRED:")[1]?.split("\n")[0]?.trim()??"Przypisanie przekroczy twardy limit godzin.";
-        setLeaderLimitWarning(detail);setLeaderFeedback("Automatyczny grafik nie może przekroczyć limitu. Jako lider możesz świadomie zapisać ten wyjątek, ponieważ podałeś powód zmiany.");return;
+        setLeaderLimitWarning(detail);setLeaderFeedback("Automatyczny grafik nie może przekroczyć limitu. Wyjątek wymaga osobnej, jawnej decyzji lidera zapisanej w audycie.");return;
       }
       const message=solverErrorMessage(raw);setLeaderFeedback(message);fail?.(message);
     }
-    finally{setLeaderBusy(false);}
+    finally{if(ownsInteraction)endLeaderInteraction();}
   }
 
   useEffect(()=>{
@@ -536,22 +591,20 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   // are deliberately not dependencies, so changing them never refetches or
   // resets the user's working context.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[leaderEditable,workspaceIdentity,workspaceVariantId]);
+  },[leaderEditable,workspaceWorkloadIdentity,workspaceVariantId]);
   async function removeLeaderEdit(){
-    if(!supabase||!leaderContext?.assignmentId)return;
-    setLeaderBusy(true);
+    if(!supabase||!leaderContext?.assignmentId||!beginLeaderInteraction())return;
     try{
       await removeLeaderAssignment(supabase,{variantId:leaderContext.variantId,
         assignmentId:leaderContext.assignmentId,reason:"Usunięcie przydziału w roboczym szkicu Studio lidera"});
       notify?.("Przydział usunięto z wersji lidera. Miejsce jest widoczne jako brak do uzupełnienia.");
       setLeaderContext(null);await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
-    finally{setLeaderBusy(false);}
+    finally{endLeaderInteraction();}
   }
   async function applyAssignmentDrag(input:{sourceAssignmentId:string;targetAssignmentId?:string;targetIssueId?:string}){
     const variantId=workspace.variants[0]?.id;
-    if(!supabase||!leaderEditable||!variantId||leaderBusy)return;
-    setLeaderBusy(true);
+    if(!supabase||!leaderEditable||!variantId||!beginLeaderInteraction())return;
     try{
       const result=await previewLeaderAssignmentDrag(supabase,{variantId,...input});
       if(!result.valid){setDragPreview({key:`${input.sourceAssignmentId}:${input.targetAssignmentId??input.targetIssueId??""}`,loading:false,valid:false,message:solverErrorMessage(result.errorCode??"VARIANT_MATERIALIZATION_HASH_MISMATCH")});return;}
@@ -559,28 +612,22 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
         "Zamiana pracowników przez przeciągnięcie w Studio lidera":"Przeniesienie pracownika na wakat w Studio lidera"});
       setDragPreview(null);await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){const message=solverErrorMessage(error instanceof Error?error.message:String(error));setDragPreview({key:"error",loading:false,valid:false,message});fail?.(message);}
-    finally{setLeaderBusy(false);}
+    finally{endLeaderInteraction();}
   }
 
-  async function applyEmployeeDrop(issueId:string,employeeId:string){
-    const variantId=workspace.variants[0]?.id;
-    if(!supabase||!leaderEditable||!variantId||leaderBusy)return;
-    try{
-      const context=leaderContext?.issueId===issueId?leaderContext:await getLeaderAssignmentContext(supabase,{variantId,issueId});
-      await applyLeaderCandidate(false,false,employeeId,context);
-    }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
+  async function applyEmployeeDrop(target:{assignmentId?:string;issueId?:string},employeeId:string){
+    await openLeaderEdit({...target,preferredEmployeeId:employeeId,commitPreferredEmployee:true,retainMobileSelection:false});
   }
   async function toggleAssignmentLock(assignmentId:string,locked:boolean){
     const variantId=workspace.variants[0]?.id;
-    if(!supabase||!leaderEditable||!variantId||leaderBusy)return;
-    setLeaderBusy(true);
+    if(!supabase||!leaderEditable||!variantId||!beginLeaderInteraction())return;
     try{
       await setLeaderAssignmentLock(supabase,{variantId,assignmentId,locked,
         reason:locked?"Przypięcie świadomej decyzji lidera":"Odpięcie decyzji lidera"});
       notify?.(locked?"Przydział przypięto. Kolejne przeliczenie nie może go zmienić.":"Przydział odpięto i może ponownie uczestniczyć w optymalizacji.");
       await onLeaderChanged?.();
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
-    finally{setLeaderBusy(false);}
+    finally{endLeaderInteraction();}
   }
   async function applyVisibleBulk(){
     const variantId=workspace.variants[0]?.id;
@@ -588,15 +635,14 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     const selectedVisibleIds=selectedAssignmentIds.filter(id=>visibleAssignmentIds.includes(id));
     const assignmentIds=selectedVisibleIds.length?selectedVisibleIds:visibleAssignmentIds;
     const reason=bulkReason.trim();
-    if(!supabase||!leaderEditable||!variantId||leaderBusy||!assignmentIds.length||!bulkOperation||reason.length<3)return;
-    setLeaderBusy(true);
+    if(!supabase||!leaderEditable||!variantId||!assignmentIds.length||!bulkOperation||reason.length<3||!beginLeaderInteraction())return;
     try{
       await bulkLeaderAssignments(supabase,{variantId,assignmentIds,operation:bulkOperation,reason});
       notify?.(`Operacja zbiorcza zakończona: ${assignmentIds.length} przydziałów zapisano jako jedną rewizję.`);
       setBulkOperation(null);setBulkReason("");setSelectedAssignmentIds([]);
       await onLeaderChanged?.();await loadWorkload(true);
     }catch(error){fail?.(solverErrorMessage(error instanceof Error?error.message:String(error)));}
-    finally{setLeaderBusy(false);}
+    finally{endLeaderInteraction();}
   }
   function toggleAssignmentSelection(assignmentId:string){
     setSelectedAssignmentIds(current=>current.includes(assignmentId)?current.filter(id=>id!==assignmentId):[...current,assignmentId]);
@@ -636,7 +682,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     : workspace.finance?.totalCostMinor??null;
   const studioBudgetMinor=workspace.finance?.budgetMinor??null;
   const studioBudgetVariance=studioBudgetMinor===null||!workspace.finance?null:studioBudgetMinor-workspace.finance.totalCostMinor;
-  const studioAnalysisRevision=currentWorkloadRows?.[0]?.variantRevision??null;
+  const studioAnalysisRevision=currentWorkloadRows===null?null:workloadRevision;
   const employeeDetailWorkload=(currentWorkloadRows??[]).find(row=>row.employeeId===employeeDetailId)??null;
   const employeeDetail=scheduleEmployees.find(employee=>employee.id===employeeDetailId)??(
     employeeDetailSeed?.id===employeeDetailId
@@ -648,7 +694,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
   const comparisonEmployee=scheduleEmployees.find(employee=>employee.id===comparisonEmployeeId)??null;
   const employeeEntries=(employeeId:string,date:string)=>scheduleEntries.filter(entry=>entry.assignment.employee.id===employeeId&&entry.shift.date===date);
 
-  return <section className={`solver-workspace ${published ? "published" : ""} ${leaderEditable?"leader-studio":""}`}>
+  return <section className={`solver-workspace ${published ? "published" : ""} ${leaderEditable?"leader-studio":""}`} onPointerDownCapture={event=>{lastLeaderPointerType.current=event.pointerType;}} onKeyDownCapture={()=>{lastLeaderPointerType.current="";}}>
     <div className="solver-workspace-head">
       <span>
         <small>{published ? publicationStatus(workspace.context.status) : "Podgląd wybranego wariantu"}</small>
@@ -676,6 +722,15 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
       <CheckboxDropdown label="Role" selectedCount={roleFilters.length} totalCount={workspaceRoles.length}>{workspaceRoles.map(role=><label className="check-label" key={role.id}><input type="checkbox" checked={roleFilters.includes(role.id)} onChange={event=>setRoleFilters(event.target.checked?[...roleFilters,role.id]:roleFilters.filter(id=>id!==role.id))}/>{role.name}</label>)}</CheckboxDropdown>
       {(locationFilter||roleFilters.length>0)&&<button className="secondary-button" onClick={()=>{setLocationFilter("");setRoleFilters([]);}}><X/> Wyczyść filtry</button>}
       <small>Te filtry zmieniają grafik, rozkład godzin, statystyki, koszty i listę braków; nie zerują się po edycji.</small>
+      {leaderEditable&&<section className="leader-employee-pool" aria-label="Pracownicy do ręcznego ułożenia">
+        <header><Users/><span><strong>Pracownicy do ułożenia</strong><small>Desktop: złap osobę i upuść ją na dokładną zmianę. Telefon: dotknij osoby, potem zmiany — albo najpierw zmiany, potem osoby.</small></span>{mobileLeaderEmployeeId&&<button type="button" className="secondary-button" disabled={leaderBusy} onClick={()=>{setMobileLeaderEmployeeId("");setLeaderEmployeeId("");}}>Wyczyść wybór osoby</button>}</header>
+        <div>{leaderPoolEmployees.map(employee=><button type="button" draggable={!leaderBusy} disabled={leaderBusy} aria-pressed={mobileLeaderEmployeeId===employee.employeeId} className={mobileLeaderEmployeeId===employee.employeeId?"selected":""} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-employee",employee.employeeId);event.dataTransfer.effectAllowed="copy";setLeaderEmployeeId(employee.employeeId);}} onClick={()=>{const next=mobileLeaderEmployeeId===employee.employeeId?"":employee.employeeId;setMobileLeaderEmployeeId(next);setLeaderEmployeeId(next);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);}} key={employee.employeeId}>
+          <span><strong>{employee.employeeName}</strong><small>{employee.employeeNo} • {employee.roleNames.join(", ")||"Brak przypisanej roli"}</small></span><em>{workloadHours(employee.totalMonthlyMinutes)} / {employee.nominalMonthlyMinutes?workloadHours(employee.nominalMonthlyMinutes):"brak celu"}</em>
+        </button>)}</div>
+        {workloadError&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Nie udało się pobrać puli pracowników</strong><small>{workloadError}</small></span><button type="button" className="secondary-button" disabled={workloadLoading} onClick={()=>void loadWorkload(true)}>Spróbuj ponownie</button></div>}
+        {!workloadLoading&&!workloadError&&!leaderPoolEmployees.length&&<small>Brak pracowników pasujących do aktywnych filtrów.</small>}
+        {workloadLoading&&<small>Ładowanie aktualnej puli pracowników…</small>}
+      </section>}
     </div>}
 
     {leaderEditable&&scheduleEntries.length>0&&<div className="leader-bulk-toolbar"><span><Users/><strong>Operacje dla zaznaczenia lub widocznego zakresu</strong><small>{selectedAssignmentIds.length?`${selectedAssignmentIds.length} zaznaczonych przydziałów`:`${scheduleEntries.length} przydziałów po aktywnych filtrach roli i lokalu`}</small></span><div><button className="secondary-button" disabled={leaderBusy} onClick={()=>setSelectedAssignmentIds(scheduleEntries.map(entry=>entry.assignment.id))}><Check/> Zaznacz widoczne</button>{selectedAssignmentIds.length>0&&<button className="secondary-button" onClick={()=>setSelectedAssignmentIds([])}><X/> Wyczyść zaznaczenie</button>}<button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("LOCK")}><LockKeyhole/> Przypnij</button><button className="secondary-button" disabled={leaderBusy} onClick={()=>setBulkOperation("UNLOCK")}><LockOpen/> Odepnij</button><button className="danger-button" disabled={leaderBusy} onClick={()=>setBulkOperation("REMOVE")}><Trash2/> Usuń</button></div>{bulkOperation&&<div className="leader-bulk-confirm"><strong>{bulkOperation==="LOCK"?"Przypnij":bulkOperation==="UNLOCK"?"Odepnij":"Usuń"} {selectedAssignmentIds.length||scheduleEntries.length} {selectedAssignmentIds.length?"zaznaczonych":"widocznych"} przydziałów</strong><label>Powód operacji<textarea minLength={3} value={bulkReason} onChange={event=>setBulkReason(event.target.value)} placeholder="np. uzgodniona korekta grafiku"/></label>{bulkOperation==="REMOVE"&&<small>Wymagane miejsca pozostaną jako jawne wakaty do ponownego obsadzenia.</small>}<span><button className="secondary-button" onClick={()=>{setBulkOperation(null);setBulkReason("");}}>Anuluj</button><button className={bulkOperation==="REMOVE"?"danger-button":"primary-button"} disabled={leaderBusy||bulkReason.trim().length<3} onClick={()=>void applyVisibleBulk()}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Potwierdź i zapisz rewizję</button></span></div>}<small>Zaznacz konkretne kafelki albo użyj aktywnych filtrów. Jedna operacja tworzy jedną rewizję możliwą do cofnięcia.</small></div>}
@@ -723,7 +778,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
       {visibleIssues.length === 0
         ? <p>{locationFilter?"Brak braków i uwag dla wybranego lokalu.":"Nie zgłoszono braków ani uwag do tego wariantu."}</p>
         : <div>
-          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={id=>void openLeaderEdit({issueId:id})} onOpenAdHoc={onOpenAdHoc}/>)}
+          {visibleIssues.map(issue => <WorkspaceIssueCard key={issue.id} issue={issue} timezone={timezone} operational={operational} published={published} busy={diagnosticsLoading||variantDiagnosticsLoading||leaderBusy} inspect={id=>void inspectIssue(id)} explainPreview={id=>void inspectVariantIssue(id)} previewAvailable={Boolean(workspace.variants[0]?.id)} leaderEditable={leaderEditable} editLeader={(id,directTap)=>void openLeaderTarget({issueId:id},directTap)} onOpenAdHoc={onOpenAdHoc}/>)}
         </div>}
     </details>
     </section>}
@@ -789,19 +844,19 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
         <header><strong>Tydzień {weekIndex+1}</strong><small>{shortDayLabel(week[0])} – {shortDayLabel(week[6])}</small></header>
         {schedulePerspective!=="COVERAGE"&&<div className="solver-roster-scroll">
           <div className="solver-roster-grid solver-roster-head"><b>{schedulePerspective==="EMPLOYEES"?"Pracownik":"Stanowisko"}</b>{week.map(date=><span className={date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""} key={date}>{shortDayLabel(date)}</span>)}</div>
-          {schedulePerspective==="EMPLOYEES"&&leaderEditable&&<div className="solver-roster-grid solver-roster-row studio-employee-vacancies"><header><strong>Wakaty</strong><small>Kliknij miejsce, aby otworzyć panel pracowników</small></header>{week.map(date=>{const vacancies=unfilledIssues.filter(issue=>issue.shift?.date===date);return <div className={["solver-roster-cell","solver-role-day-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${issue.role?.name??"rola"} • brakuje ${missing}`} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""}</em></button>})}{!vacancies.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>}
-          {schedulePerspective==="EMPLOYEES"&&scheduleEmployees.map(employee=><div className="solver-roster-grid solver-roster-row" key={employee.id}><button className="solver-roster-person" onClick={()=>{setEmployeeDetailId(employee.id);setComparisonEmployeeId("");}}><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.nominalMonthlyMinutes?workloadHours(employee.nominalMonthlyMinutes)+" wymiaru":"Brak wymiaru"}</small><em><Search/> Porównaj</em></button>{week.map(date=>{const entries=employeeEntries(employee.id,date);return <div className={["solver-roster-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{entries.map(({shift,assignment})=><article className={`solver-roster-assignment studio-assignment-drag ${assignment.locked?"leader-locked":""}`} style={assignmentStyle(assignment.role.id,shift.location.id)} draggable={leaderEditable&&!assignment.locked} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-assignment",assignment.id);event.dataTransfer.effectAllowed="move";}} onDragOver={event=>{if(leaderEditable&&event.dataTransfer.types.includes("application/x-grafik-assignment")){event.preventDefault();event.dataTransfer.dropEffect="move";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");if(sourceAssignmentId&&sourceAssignmentId!==assignment.id){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetAssignmentId:assignment.id});}}} key={assignment.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.location.name} • {assignment.role.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<span className="studio-assignment-actions"><button aria-label={assignment.locked?"Odepnij decyzję lidera":"Przypnij decyzję lidera"} disabled={leaderBusy} onClick={()=>void toggleAssignmentLock(assignment.id,!assignment.locked)}>{assignment.locked?<LockKeyhole/>:<LockOpen/>}</button><button aria-label={"Zmień przydział: "+employee.firstName+" "+employee.lastName} disabled={leaderBusy||assignment.locked} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button></span>}</article>)}{!entries.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>)}
+          {schedulePerspective==="EMPLOYEES"&&leaderEditable&&<div className="solver-roster-grid solver-roster-row studio-employee-vacancies"><header><strong>Wakaty</strong><small>Przeciągnij osobę albo dotknij miejsca i pracownika</small></header>{week.map(date=>{const vacancies=unfilledIssues.filter(issue=>issue.shift?.date===date);return <div className={["solver-roster-cell","solver-role-day-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${issue.role?.name??"rola"} • brakuje ${missing}`} onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop({issueId:issue.id},employeeId);}}} onClick={()=>void openLeaderTarget({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""}</em></button>})}{!vacancies.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>}
+          {schedulePerspective==="EMPLOYEES"&&scheduleEmployees.map(employee=><div className="solver-roster-grid solver-roster-row" key={employee.id}><button className="solver-roster-person" onClick={()=>{setEmployeeDetailId(employee.id);setComparisonEmployeeId("");}}><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.nominalMonthlyMinutes?workloadHours(employee.nominalMonthlyMinutes)+" wymiaru":"Brak wymiaru"}</small><em><Search/> Porównaj</em></button>{week.map(date=>{const entries=employeeEntries(employee.id,date);return <div className={["solver-roster-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date}>{entries.map(({shift,assignment})=><article className={`solver-roster-assignment studio-assignment-drag ${assignment.locked?"leader-locked":""}`} style={assignmentStyle(assignment.role.id,shift.location.id)} draggable={leaderEditable&&!assignment.locked} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-assignment",assignment.id);event.dataTransfer.effectAllowed="move";}} onDragOver={event=>{if(leaderEditable&&!assignment.locked&&(event.dataTransfer.types.includes("application/x-grafik-assignment")||event.dataTransfer.types.includes("application/x-grafik-employee"))){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId&&sourceAssignmentId!==assignment.id){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetAssignmentId:assignment.id});}else if(employeeId&&!assignment.locked){event.preventDefault();void applyEmployeeDrop({assignmentId:assignment.id},employeeId);}}} onPointerUp={event=>{if(event.pointerType!=="mouse"&&!assignment.locked&&!(event.target as HTMLElement).closest("button"))void openLeaderTarget({assignmentId:assignment.id},true);}} key={assignment.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.location.name} • {assignment.role.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<span className="studio-assignment-actions"><button aria-label={assignment.locked?"Odepnij decyzję lidera":"Przypnij decyzję lidera"} disabled={leaderBusy} onClick={()=>void toggleAssignmentLock(assignment.id,!assignment.locked)}>{assignment.locked?<LockKeyhole/>:<LockOpen/>}</button><button aria-label={"Zmień przydział: "+employee.firstName+" "+employee.lastName} disabled={leaderBusy||assignment.locked} onClick={()=>void openLeaderTarget({assignmentId:assignment.id})}><Edit3/></button></span>}</article>)}{!entries.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}</div>})}</div>)}
           {schedulePerspective==="ROLES"&&scheduleRoles.map(role=><div className="solver-roster-grid solver-roster-row" key={role.id}><header style={roleStyle(role.id)}><strong>{role.name}</strong><small>Obsada i wolne miejsca</small></header>{week.map(date=>{
             const entries=scheduleEntries.filter(entry=>entry.assignment.role.id===role.id&&entry.shift.date===date);
             const vacancies=unfilledIssues.filter(issue=>issue.role?.id===role.id&&issue.shift?.date===date);
             return <div className={["solver-roster-cell","solver-role-day-cell",date.slice(0,7)!==workspace.context.month.slice(0,7)?"outside-month":""].join(" ")} key={date} title={vacancies.length?`${vacancies.length} wymagań do obsadzenia dla roli ${role.name}`:`Obsada roli ${role.name}`}>
-              {entries.map(({shift,assignment})=><article className={`solver-role-assignment studio-assignment-drag ${assignment.locked?"leader-locked":""}`} style={assignmentStyle(role.id,shift.location.id)} draggable={leaderEditable&&!assignment.locked} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-assignment",assignment.id);event.dataTransfer.effectAllowed="move";}} onDragOver={event=>{if(leaderEditable&&event.dataTransfer.types.includes("application/x-grafik-assignment")){event.preventDefault();event.dataTransfer.dropEffect="move";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");if(sourceAssignmentId&&sourceAssignmentId!==assignment.id){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetAssignmentId:assignment.id});}}} key={assignment.id}><span><b>{assignment.employee.firstName} {assignment.employee.lastName}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<span className="studio-assignment-actions"><button aria-label={assignment.locked?"Odepnij decyzję lidera":"Przypnij decyzję lidera"} disabled={leaderBusy} onClick={()=>void toggleAssignmentLock(assignment.id,!assignment.locked)}>{assignment.locked?<LockKeyhole/>:<LockOpen/>}</button><button aria-label="Edytuj przydział" disabled={leaderBusy||assignment.locked} onClick={()=>void openLeaderEdit({assignmentId:assignment.id})}><Edit3/></button></span>}</article>)}
-              {vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${role.name} • brakuje ${missing}`} onDragOver={event=>{if(leaderEditable){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""} — pokaż kandydatów</em></button>})}
+              {entries.map(({shift,assignment})=><article className={`solver-role-assignment studio-assignment-drag ${assignment.locked?"leader-locked":""}`} style={assignmentStyle(role.id,shift.location.id)} draggable={leaderEditable&&!assignment.locked} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-assignment",assignment.id);event.dataTransfer.effectAllowed="move";}} onDragOver={event=>{if(leaderEditable&&!assignment.locked&&(event.dataTransfer.types.includes("application/x-grafik-assignment")||event.dataTransfer.types.includes("application/x-grafik-employee"))){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId&&sourceAssignmentId!==assignment.id){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetAssignmentId:assignment.id});}else if(employeeId&&!assignment.locked){event.preventDefault();void applyEmployeeDrop({assignmentId:assignment.id},employeeId);}}} onPointerUp={event=>{if(event.pointerType!=="mouse"&&!assignment.locked&&!(event.target as HTMLElement).closest("button"))void openLeaderTarget({assignmentId:assignment.id},true);}} key={assignment.id}><span><b>{assignment.employee.firstName} {assignment.employee.lastName}</b><small>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)} • {shift.location.name}</small></span>{assignment.duties.length>0&&<span className="solver-week-duties">{assignment.duties.map(duty=><em style={dutyStyle(duty.id)} key={duty.id}>{duty.name}</em>)}</span>}{leaderEditable&&<span className="studio-assignment-actions"><button aria-label={assignment.locked?"Odepnij decyzję lidera":"Przypnij decyzję lidera"} disabled={leaderBusy} onClick={()=>void toggleAssignmentLock(assignment.id,!assignment.locked)}>{assignment.locked?<LockKeyhole/>:<LockOpen/>}</button><button aria-label="Edytuj przydział" disabled={leaderBusy||assignment.locked} onClick={()=>void openLeaderTarget({assignmentId:assignment.id})}><Edit3/></button></span>}</article>)}
+              {vacancies.map(issue=>{const shift=issue.shift!;const missing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" style={locationStyle(shift.location.id)} title={`${shift.shiftTemplate.name} • ${timeLabel(shift.startsAt,shift.location.timezone??timezone)}–${timeLabel(shift.endsAt,shift.location.timezone??timezone)} • ${shift.location.name} • ${role.name} • brakuje ${missing}`} onDragOver={event=>{if(leaderEditable){event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop({issueId:issue.id},employeeId);}}} onClick={()=>void openLeaderTarget({issueId:issue.id})} key={issue.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><em>Wakat {missing>1?`× ${missing}`:""} — pokaż kandydatów</em></button>})}
               {!entries.length&&!vacancies.length&&date.slice(0,7)===workspace.context.month.slice(0,7)&&<span className="solver-roster-empty">—</span>}
             </div>;
           })}</div>)}
         </div>}
-        {schedulePerspective==="COVERAGE"&&<div className="solver-coverage-days">{week.filter(date=>date.slice(0,7)===workspace.context.month.slice(0,7)).map(date=>{const dayShifts=visibleShifts.filter(shift=>shift.date===date);return <section key={date}><header><CalendarDays/><strong>{shortDayLabel(date)}</strong><small>{dayShifts.length} zmian</small></header><div>{dayShifts.sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.location.name.localeCompare(b.location.name,"pl-PL")).map(shift=>{const issues=visibleIssues.filter(issue=>issue.code==="UNFILLED_SLOT"&&issue.shift?.id===shift.id);const assigned=shift.assignments.filter(assignment=>!roleFilters.length||roleFilters.includes(assignment.role.id)).length;const missing=issues.reduce((sum,issue)=>sum+missingSeats(issue),0);const required=assigned+missing;const noDemand=required===0;return <article style={locationStyle(shift.location.id)} className={noDemand?"no-demand":missing?"shortage":"complete"} key={shift.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><strong>{noDemand?"—":`${assigned}/${required}`}</strong><em>{noDemand?"Brak wymaganego zapotrzebowania":missing?`Brakuje ${missing}`:"Pełna obsada"}</em>{issues.length>0&&leaderEditable&&<div className="solver-coverage-vacancies">{issues.map(issue=>{const issueMissing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop(issue.id,employeeId);}}} onClick={()=>void openLeaderEdit({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{issue.duty?.name??"Bez dodatkowego obowiązku"}</small></span><em>Wakat {issueMissing>1?`× ${issueMissing}`:""} — pokaż pracowników</em></button>})}</div>}</article>})}{!dayShifts.length&&<p>Brak zaplanowanych zmian tego dnia.</p>}</div></section>})}</div>}
+        {schedulePerspective==="COVERAGE"&&<div className="solver-coverage-days">{week.filter(date=>date.slice(0,7)===workspace.context.month.slice(0,7)).map(date=>{const dayShifts=visibleShifts.filter(shift=>shift.date===date);return <section key={date}><header><CalendarDays/><strong>{shortDayLabel(date)}</strong><small>{dayShifts.length} zmian</small></header><div>{dayShifts.sort((a,b)=>a.startsAt.localeCompare(b.startsAt)||a.location.name.localeCompare(b.location.name,"pl-PL")).map(shift=>{const issues=visibleIssues.filter(issue=>issue.code==="UNFILLED_SLOT"&&issue.shift?.id===shift.id);const assigned=shift.assignments.filter(assignment=>!roleFilters.length||roleFilters.includes(assignment.role.id)).length;const missing=issues.reduce((sum,issue)=>sum+missingSeats(issue),0);const required=assigned+missing;const noDemand=required===0;return <article style={locationStyle(shift.location.id)} className={noDemand?"no-demand":missing?"shortage":"complete"} key={shift.id}><span><b>{timeLabel(shift.startsAt,shift.location.timezone??timezone)}–{timeLabel(shift.endsAt,shift.location.timezone??timezone)}</b><small>{shift.shiftTemplate.name} • {shift.location.name}</small></span><strong>{noDemand?"—":`${assigned}/${required}`}</strong><em>{noDemand?"Brak wymaganego zapotrzebowania":missing?`Brakuje ${missing}`:"Pełna obsada"}</em>{issues.length>0&&leaderEditable&&<div className="solver-coverage-vacancies">{issues.map(issue=>{const issueMissing=missingSeats(issue);return <button type="button" className="studio-role-vacancy studio-vacancy-target" onDragOver={event=>{event.preventDefault();event.dataTransfer.dropEffect=event.dataTransfer.types.includes("application/x-grafik-assignment")?"move":"copy";}} onDrop={event=>{const sourceAssignmentId=event.dataTransfer.getData("application/x-grafik-assignment");const employeeId=event.dataTransfer.getData("application/x-grafik-employee");if(sourceAssignmentId){event.preventDefault();void applyAssignmentDrag({sourceAssignmentId,targetIssueId:issue.id});}else if(employeeId){event.preventDefault();void applyEmployeeDrop({issueId:issue.id},employeeId);}}} onClick={()=>void openLeaderTarget({issueId:issue.id})} key={issue.id}><span><b>{issue.role?.name??"Wymagana rola"}</b><small>{issue.duty?.name??"Bez dodatkowego obowiązku"}</small></span><em>Wakat {issueMissing>1?`× ${issueMissing}`:""} — pokaż pracowników</em></button>})}</div>}</article>})}{!dayShifts.length&&<p>Brak zaplanowanych zmian tego dnia.</p>}</div></section>})}</div>}
       </article>)}
     </section>}
 
@@ -843,22 +898,21 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
     {leaderContext&&<>{!leaderEditable&&<button className="drawer-scrim top" onClick={()=>setLeaderContext(null)}/>}<aside className={leaderEditable?"leader-studio-candidate-panel":"drawer role-drawer top leader-assignment-drawer"}>
       <div className="drawer-head"><div><p className="eyebrow">WERSJA LIDERA • EDYCJA PRZED PUBLIKACJĄ</p><h2>{leaderContext.shift.date} • {leaderContext.shift.shiftName}</h2><small>{leaderContext.shift.locationName} • {leaderContext.role.name} • {timeLabel(leaderContext.shift.startsAt,timezone)}–{timeLabel(leaderContext.shift.endsAt,timezone)}</small></div><button className="icon-button" onClick={()=>setLeaderContext(null)}><X/></button></div>
       <div className="drawer-content">
-        <div className="solver-v2-notice"><ShieldCheck/><span><strong>Oryginalne warianty nie zostaną zmienione</strong><small>Ta korekta dotyczy tylko kopii lidera. Przed zapisem serwer ponownie sprawdzi cały miesiąc, wszystkie twarde reguły oraz koszty.</small></span></div>
+        <div className="solver-v2-notice"><ShieldCheck/><span><strong>Oryginalne warianty nie zostaną zmienione</strong><small>Każde przeciągnięcie lub kompletna para tapnięć od razu aktualizuje kopię lidera. Serwer blokuje twarde naruszenia; pełną niemutującą kontrolę uruchamiasz raz po ułożeniu całego szkicu.</small></span></div>
         <div className="leader-candidate-picker">
           <label>Znajdź pracownika<input value={leaderSearch} onChange={event=>setLeaderSearch(event.target.value)} placeholder="Wpisz nazwisko, numer, rolę, lokal lub obowiązek"/></label>
           <div className="leader-candidate-view" role="tablist" aria-label="Filtr kandydatów"><button type="button" className={leaderCandidateView==="ELIGIBLE"?"active":""} onClick={()=>setLeaderCandidateView("ELIGIBLE")}>Tylko możliwe</button><button type="button" className={leaderCandidateView==="BELOW_TARGET"?"active":""} onClick={()=>setLeaderCandidateView("BELOW_TARGET")}>Poniżej celu</button><button type="button" className={leaderCandidateView==="PREFERRED"?"active":""} onClick={()=>setLeaderCandidateView("PREFERRED")}>Dostępni</button><button type="button" className={leaderCandidateView==="ALL"?"active":""} onClick={()=>setLeaderCandidateView("ALL")}>Wszyscy z powodami</button></div>
           <div className="leader-candidate-summary"><span><b>{eligibleLeaderCandidates}</b> można bezpiecznie sprawdzić</span><span><b>{blockedLeaderCandidates}</b> ma blokadę lub brak pokrycia obowiązku</span></div>
-          <div>{visibleLeaderCandidates.map(candidate=><button type="button" draggable={candidate.suggestionEligible} disabled={!candidate.suggestionEligible} aria-label={`${candidate.employeeName}. ${candidate.suggestionEligible?"Przeciągnij na wakat albo naciśnij Enter, aby przydzielić do wybranego miejsca":"Przydział zablokowany"}.`} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-employee",candidate.employeeId);event.dataTransfer.effectAllowed="copy";setLeaderEmployeeId(candidate.employeeId);}} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();setLeaderEmployeeId(candidate.employeeId);void applyLeaderCandidate(false,false,candidate.employeeId);}}} onClick={()=>{setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);}} key={candidate.employeeId}>
+          <div>{visibleLeaderCandidates.map(candidate=><button type="button" draggable={candidate.suggestionEligible&&!leaderBusy} disabled={leaderBusy||!candidate.suggestionEligible} aria-label={`${candidate.employeeName}. ${candidate.suggestionEligible?"Przeciągnij na zmianę, naciśnij Enter albo dotknij na telefonie, aby od razu przydzielić":"Przydział zablokowany"}.`} className={`${leaderEmployeeId===candidate.employeeId?"selected":""} ${candidate.suggestionEligible?"eligible":"blocked"}`} onDragStart={event=>{event.dataTransfer.setData("application/x-grafik-employee",candidate.employeeId);event.dataTransfer.effectAllowed="copy";setLeaderEmployeeId(candidate.employeeId);}} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();setLeaderEmployeeId(candidate.employeeId);void applyLeaderCandidate(false,false,candidate.employeeId,undefined,false,false);}}} onPointerUp={event=>{if(event.pointerType==="touch"||event.pointerType==="pen"){event.preventDefault();const retainMobileSelection=Boolean(mobileLeaderEmployeeId);setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);void applyLeaderCandidate(false,false,candidate.employeeId,undefined,false,retainMobileSelection);}}} onClick={event=>{if(directPointerTap(event))return;setLeaderEmployeeId(candidate.employeeId);setLeaderFeedback("");setLeaderLimitWarning("");setLeaderOvertimeWarning(false);}} key={candidate.employeeId}>
             <span><strong>{candidate.employeeName}</strong><small>{candidate.employeeNo}{candidate.current?" • obecnie":""} • {availabilityLabel(candidate.availabilityStatus)}</small><em>{candidate.dutyCoverageMode==="DIRECT"?(leaderContext.duty?`Ma obowiązek: ${leaderContext.duty.name}`:"Rola i lokal pasują"):candidate.dutyCoverageMode==="TRANSFER"?`${candidate.dutyTransferEmployeeName} przejmie obowiązek „${leaderContext.duty?.name}”`:`Brak pokrycia obowiązku „${leaderContext.duty?.name}”`}</em>{candidate.addedOvertimeMinutes>0&&<em className={candidate.overtimeBlocked?"overtime-blocked":candidate.overtimeApprovalRequired?"overtime-approval":"overtime-allowed"}>{candidate.overtimeBlocked?"Nadgodziny niedozwolone":candidate.overtimeApprovalRequired?"Nadgodziny wymagają decyzji lidera":"Nadgodziny dozwolone przez pracownika"} • +{workloadHours(candidate.addedOvertimeMinutes)}</em>}</span>
             {leaderEmployeeId===candidate.employeeId&&<Check/>}
           </button>)}</div>
           {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie i wybrany filtr. Wybierz „Wszyscy z powodami”, aby zobaczyć konkretne blokady.</p>}
-          <small>Przeciągnij dostępną osobę bezpośrednio na wakat w kalendarzu. Upuszczenie kafelka od razu zmienia roboczy szkic — bez komentarza, potwierdzenia i dodatkowego przycisku. Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter. Wyszarzone osoby mają konkretną twardą blokadę.</small>
+          <small>Desktop: przeciągnij dostępną osobę bezpośrednio na dokładne miejsce w kalendarzu. Telefon: dotknij zmiany i osoby w dowolnej kolejności. Każda kompletna para od razu zmienia roboczy szkic — bez osobnego zapisu. Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter. Wyszarzone osoby mają konkretną twardą blokadę.</small>
         </div>
         {selectedLeaderCandidate&&<section className="leader-change-preview">
           <header><BarChart3/><span><strong>Skutek w szkicu</strong><small>Podgląd dla {selectedLeaderCandidate.employeeName}. Pełną kontrolę uruchamiasz raz, kiedy cały układ jest gotowy.</small></span></header>
           <div><span><small>Godziny przed</small><b>{workloadHours(selectedLeaderCandidate.currentMonthlyMinutes)}</b></span><span><small>Godziny po</small><b>{workloadHours(selectedLeaderCandidate.projectedMonthlyMinutes)}</b></span><span><small>Cel miesięczny</small><b>{selectedLeaderCandidate.nominalMonthlyMinutes?workloadHours(selectedLeaderCandidate.nominalMonthlyMinutes):"Brak"}</b></span><span><small>Realizacja celu</small><b>{selectedLeaderCandidate.nominalMonthlyMinutes?`${Math.round(selectedLeaderCandidate.projectedMonthlyMinutes/selectedLeaderCandidate.nominalMonthlyMinutes*100)}%`:"—"}</b></span>{financeVisibility==="FULL"&&<span><small>Zmiana kosztu</small><b>{selectedLeaderCandidate.addedCostMinor>=0?"+":""}{money(selectedLeaderCandidate.addedCostMinor,selectedLeaderCandidate.currency)}</b></span>}<span><small>Dostępność</small><b>{availabilityLabel(selectedLeaderCandidate.availabilityStatus)}</b></span></div>
-          <button type="button" className="primary-button" disabled={leaderBusy||!selectedLeaderCandidate.suggestionEligible} onClick={()=>void applyLeaderCandidate(false,false,selectedLeaderCandidate.employeeId)}>{leaderBusy?<RefreshCw className="spin"/>:<Check/>} Zapisz zmianę: przypisz {selectedLeaderCandidate.employeeName}</button>
         </section>}
         {selectedLeaderCandidate&&selectedLeaderCandidate.addedOvertimeMinutes>0&&<div className={`leader-overtime-quote ${selectedLeaderCandidate.overtimeBlocked?"blocked":selectedLeaderCandidate.overtimeApprovalRequired?"approval":"allowed"}`}>
           <header><CircleDollarSign/><span><strong>{selectedLeaderCandidate.overtimeBlocked?"Ta osoba nie może mieć nadgodzin":selectedLeaderCandidate.overtimeApprovalRequired?"Propozycja nadgodzin do zatwierdzenia":"Nadgodziny dozwolone przez pracownika"}</strong><small>Wycena obejmuje cały wariant po tej zmianie, w tym reguły zależne od umowy, dnia i pory.</small></span></header>
@@ -866,7 +920,9 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
           {selectedLeaderCandidate.overtimeBlocked&&<p>Ustawienie „NIE” jest twardą blokadą. Zwykły zapis ani wyjątek od limitu nie mogą jej ominąć.</p>}
         </div>}
         {leaderFeedback&&<div className="solver-v2-notice warning" role="status"><AlertTriangle/><span><strong>Status szkicu</strong><small>{leaderFeedback}</small></span></div>}
-        {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Najpierw sprawdź wyjątek, a potem wybierz „Przypisz mimo limitu”; decyzja i powód pozostaną w audycie.</small></span></div>}
+        {leaderLimitWarning&&<div className="solver-v2-notice danger" role="alert"><AlertTriangle/><span><strong>Świadomy wyjątek od limitu</strong><small>{leaderLimitWarning} Solver automatyczny nadal nie wykona takiego przydziału. Wyjątek wymaga osobnego potwierdzenia, a decyzja i powód pozostaną w audycie.</small></span></div>}
+        {leaderOvertimeWarning&&<div className="solver-v2-notice warning" role="alert"><AlertTriangle/><span><strong>Wymagana zgoda lidera na nadgodziny</strong><small>Pracownik dopuszcza nadgodziny wyłącznie po zatwierdzeniu. Sprawdź bilans i koszt powyżej; decyzja zostanie zapisana w audycie.</small></span></div>}
+        {(leaderLimitWarning||leaderOvertimeWarning)&&selectedLeaderCandidate&&<div className="leader-edit-actions"><button type="button" className="danger-button" disabled={leaderBusy} onClick={()=>void applyLeaderCandidate(Boolean(leaderLimitWarning),leaderOvertimeWarning,selectedLeaderCandidate.employeeId)}>{leaderBusy?<RefreshCw className="spin"/>:<AlertTriangle/>} {leaderLimitWarning&&leaderOvertimeWarning?"Zatwierdź oba wyjątki i przypisz":leaderLimitWarning?"Przypisz mimo limitu":"Zatwierdź nadgodziny i przypisz"}</button></div>}
         {leaderContext.assignmentId&&<div className="leader-edit-actions"><button className="danger-button" disabled={leaderBusy} onClick={()=>void removeLeaderEdit()}><Trash2/> Usuń ze szkicu</button></div>}
       </div>
     </aside></>}

@@ -229,7 +229,9 @@ function LoginScreen() {
       return;
     }
     if (mode === "signup" && !result.data.session) {
-      setMessage("Konto utworzone. Sprawdź e-mail i potwierdź rejestrację.");
+      setMessage("Konto utworzone. Potwierdź adres e-mail. Dostęp do firmy nadaje jej właściciel lub administrator.");
+    } else if (mode === "signup") {
+      setMessage("Konto utworzone. Dostęp do firmy nadaje jej właściciel lub administrator.");
     } else {
       setMessage("Logowanie zakończone.");
     }
@@ -252,16 +254,16 @@ function LoginScreen() {
           </div>
           <span className="login-lock"><LockKeyhole size={24} /></span>
           <p className="eyebrow">BEZPIECZNY DOSTĘP</p>
-          <h2>{mode === "login" ? "Zaloguj się" : "Utwórz pierwsze konto demo"}</h2>
-          <p>{mode === "login" ? "Otwórz swój zakres aplikacji." : "Pierwsze konto otrzyma rolę właściciela demo."}</p>
+          <h2>{mode === "login" ? "Zaloguj się" : "Utwórz konto"}</h2>
+          <p>{mode === "login" ? "Otwórz swój zakres aplikacji." : "Po rejestracji właściciel lub administrator firmy nada Ci właściwy dostęp."}</p>
           <form onSubmit={submit}>
             <label>E-mail<div className="input-with-icon"><Mail size={16} /><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anna@firma.pl" /></div></label>
             <label>Hasło<div className="input-with-icon"><ShieldCheck size={16} /><input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 6 znaków" /></div></label>
             {message && <div className={`auth-message ${isError ? "error" : ""}`}>{message}</div>}
-            <button className="primary-button full" disabled={busy}>{busy ? <><Loader2 className="spin" size={17} /> Przetwarzanie…</> : mode === "login" ? "Zaloguj się" : "Utwórz konto demo"}</button>
+            <button className="primary-button full" disabled={busy}>{busy ? <><Loader2 className="spin" size={17} /> Przetwarzanie…</> : mode === "login" ? "Zaloguj się" : "Utwórz konto"}</button>
           </form>
           <button className="login-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(""); }}>
-            {mode === "login" ? "Pierwsze uruchomienie? Utwórz konto demo" : "Masz już konto? Zaloguj się"}
+            {mode === "login" ? "Nie masz konta? Utwórz je" : "Masz już konto? Zaloguj się"}
           </button>
           <small>Hasła i sesje obsługuje Supabase Auth. Aplikacja nie przechowuje haseł.</small>
         </div>

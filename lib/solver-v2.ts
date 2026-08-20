@@ -225,16 +225,27 @@ export type SolverWorkloadDistributionRow = {
   locations: { id: string; name: string; minutes: number; shiftCount: number }[];
 };
 
+export type SolverWorkloadDistribution = {
+  variantId: string;
+  revision: number;
+  employees: SolverWorkloadDistributionRow[];
+};
+
 export async function getVariantWorkloadDistribution(
   client: SupabaseClient,
   variantId: string,
-): Promise<SolverWorkloadDistributionRow[]> {
+): Promise<SolverWorkloadDistribution> {
   const payload=record(await rpc(client,"optimizer_variant_workload_distribution_uat_v1",{
     p_variant_id:variantId,
   }));
-  if(!Array.isArray(payload.employees))return [];
-  const variantRevision=numberOf(payload,"revision","revision");
-  return payload.employees.map(value=>{
+  const responseVariantId=String(payload.variantId??payload.variant_id??"").trim();
+  if(!responseVariantId)throw new Error("WORKLOAD_VARIANT_ID_INVALID");
+  if(responseVariantId!==variantId){
+    throw new Error(`WORKLOAD_VARIANT_MISMATCH:${variantId}:${responseVariantId}`);
+  }
+  const variantRevision=requiredRevisionOf(payload,"WORKLOAD_REVISION_INVALID");
+  if(!Array.isArray(payload.employees))throw new Error("WORKLOAD_EMPLOYEES_INVALID");
+  const employees=payload.employees.map(value=>{
     const row=record(value);
     return {
       variantRevision,
@@ -273,6 +284,7 @@ export async function getVariantWorkloadDistribution(
       }):[],
     };
   });
+  return {variantId:responseVariantId,revision:variantRevision,employees};
 }
 
 export type SolverLeaderVariant = {
@@ -766,6 +778,14 @@ function valueOf<T>(source: Record<string, unknown>, camel: string, snake: strin
 function numberOf(source: Record<string, unknown>, camel: string, snake: string, fallback = 0) {
   const value = Number(valueOf(source, camel, snake, fallback));
   return Number.isFinite(value) ? value : fallback;
+}
+
+function requiredRevisionOf(source:Record<string,unknown>,errorCode:string){
+  const raw=source.revision;
+  if(raw===undefined||raw===null||raw==="")throw new Error(errorCode);
+  const revision=Number(raw);
+  if(!Number.isSafeInteger(revision)||revision<0)throw new Error(errorCode);
+  return revision;
 }
 
 function nullableNumberOf(source: Record<string, unknown>, camel: string, snake: string) {
@@ -2219,22 +2239,44 @@ export type SolverLeaderWorkflowStatus="DRAFT"|"REVIEW"|"LEADER_APPROVED"|"READY
 export type SolverLeaderDraftValidation={
   variantId:string;
   revision:number;
+  workloadRevision:number;
   valid:boolean;
   hardViolations:number;
   unfilledCount:number;
   assignmentCount:number;
+  zeroHoursCount:number;
+  belowTargetCount:number;
+  overtimeMinutes:number;
+  preferenceViolations:number;
 };
 
 export async function validateLeaderDraft(client:SupabaseClient,variantId:string):Promise<SolverLeaderDraftValidation>{
-  const payload=record(await rpc(client,"optimizer_leader_draft_validate_uat_v1",{p_variant_id:variantId}));
+  const [rawValidation,workload]=await Promise.all([
+    rpc(client,"optimizer_leader_draft_validate_uat_v1",{p_variant_id:variantId}),
+    getVariantWorkloadDistribution(client,variantId),
+  ]);
+  const payload=record(rawValidation);
   const validation=record(payload.validation);
+  const revision=requiredRevisionOf(payload,"LEADER_DRAFT_VALIDATION_REVISION_INVALID");
+  const workloadRevision=workload.revision;
+  if(workloadRevision!==revision){
+    throw new Error(`LEADER_DRAFT_VALIDATION_REVISION_MISMATCH:${revision}:${workloadRevision}`);
+  }
+  const workloadRows=workload.employees;
   return {
     variantId:String(payload.variantId??variantId),
-    revision:numberOf(payload,"revision","revision"),
+    revision,
+    workloadRevision,
     valid:Boolean(payload.valid),
     hardViolations:numberOf(validation,"hardViolations","hard_violations"),
     unfilledCount:numberOf(validation,"unfilledCount","unfilled_count"),
     assignmentCount:numberOf(validation,"assignmentCount","assignment_count"),
+    zeroHoursCount:workloadRows.filter(row=>
+      row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes===0).length,
+    belowTargetCount:workloadRows.filter(row=>
+      row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes<row.nominalMonthlyMinutes).length,
+    overtimeMinutes:workloadRows.reduce((total,row)=>total+row.overtimeMinutes,0),
+    preferenceViolations:workloadRows.reduce((total,row)=>total+row.preferenceViolations,0),
   };
 }
 
@@ -2672,6 +2714,12 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_MISMATCH")) return "Szkic zmienił się podczas kontroli całego grafiku. Wynik nie został uznany za aktualny — uruchom „Sprawdź cały grafik” ponownie dla bieżącej rewizji.";
+  if (normalized.includes("WORKLOAD_VARIANT_MISMATCH") || normalized.includes("WORKLOAD_VARIANT_ID_INVALID")) return "Serwer zwrócił analizę godzin dla innego lub nieoznaczonego wariantu. Dane nie zostały pokazane. Odśwież Studio lidera i ponów pełną analizę bieżącego szkicu.";
+  if (normalized.includes("WORKLOAD_REVISION_INVALID") || normalized.includes("WORKLOAD_EMPLOYEES_INVALID") || normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_INVALID")) return "Serwer zwrócił niepełną analizę godzin bez prawidłowej rewizji lub listy pracowników. Dane nie zostały uznane za aktualne. Odśwież Studio lidera i uruchom „Sprawdź cały grafik” ponownie.";
+  if (normalized.includes("ROLE_BACKUP_PENALTY_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że użycie roli dodatkowej było konieczne do uniknięcia braku obsady. Ponów generowanie albo zwiększ czas obliczeń.";
+  if (normalized.includes("PRIMARY_ROLE_GUARD_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że brak zmiany w aktywnej roli podstawowej lub standardowej był nieunikniony. Ponów generowanie albo zwiększ czas obliczeń.";
+  if (normalized.includes("ZERO_HOUR_GUARD_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że pozostawienie pracownika z 0 h w miesiącu było nieuniknione. Ponów generowanie albo zwiększ czas obliczeń.";
   if (normalized.includes("CONSTRAINT REFERENCES MISSING EMPLOYEE")) return "Generator wykrył niespójność danych wejściowych kategorii: ograniczenie pracownika znalazło się poza listą osób tego grafiku. Ten przebieg nie zmienił żadnych danych. Odśwież aplikację po wdrożeniu poprawki i uruchom nowe generowanie.";
   if (normalized.includes("OVERTIME_PAY_RULE_MISSING")) return "Co najmniej jedna osoba ma zgodę „TAK” lub „TYLKO PO ZATWIERDZENIU”, ale nie ustawiono reguły dodatku po indywidualnym nominale. Przejdź do Ustawienia → Reguły płacowe, dodaj regułę miesięczną z progiem „Indywidualny nominał pracownika” i dopiero potem uruchom grafik.";
   if (normalized.includes("STRATEGY_RESULT_DOMINATED")) return "Generator odrzucił wariant, ponieważ inny wynik był od niego lepszy we wszystkich celach tej strategii. Żaden mylący wariant nie został udostępniony. Uruchom generowanie ponownie; jeśli problem wróci, przekaż kod STRATEGY_RESULT_DOMINATED administratorowi UAT.";

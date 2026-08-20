@@ -34,6 +34,7 @@ const stepIcons = {
   employees: Users,
   variants: SlidersHorizontal,
   readiness: ShieldCheck,
+  publication: CheckCircle2,
 } satisfies Record<SetupStepKey, typeof Building2>;
 
 const stepGuidance: Record<SetupStepKey, { purpose: string; actions: string[]; result: string }> = {
@@ -66,6 +67,11 @@ const stepGuidance: Record<SetupStepKey, { purpose: string; actions: string[]; r
     purpose: "Ostatnia kontrola łączy wszystkie dane i wskazuje dokładne miejsce każdego problemu.",
     actions: ["Otwórz wskazany problem", "Po naprawie uruchom kontrolę ponownie"],
     result: "Dopiero pozytywny wynik odblokuje publikację konfiguracji i generator.",
+  },
+  publication: {
+    purpose: "Generator czyta wyłącznie opublikowaną konfigurację właściwą dla wybranego miesiąca.",
+    actions: ["Kliknij „Opublikuj konfigurację”", "Potwierdź datę obowiązywania i sprawdzoną wersję"],
+    result: "Po ponownym odczycie aktywnej wersji aplikacja odblokuje tworzenie grafiku.",
   },
 };
 
@@ -164,7 +170,7 @@ export function ConfigurationJourney({
     <header className="configuration-journey-head">
       <div>
         <p className="eyebrow">PROWADZONA KONFIGURACJA</p>
-        <h2 id="configuration-journey-title">{journey.ready ? "Firma jest gotowa do planowania" : "Dokończ konfigurację firmy"}</h2>
+        <h2 id="configuration-journey-title">{journey.ready ? "Firma jest gotowa do planowania" : next?.key === "publication" ? "Opublikuj gotową konfigurację" : "Dokończ konfigurację firmy"}</h2>
         <p>System odczytuje rzeczywiste dane i zawsze wskazuje jeden następny krok. Możesz wrócić w dowolnym momencie.</p>
       </div>
       <div className={`configuration-progress ${journey.ready ? "ready" : ""}`} aria-label={`Ukończono ${journey.completed} z ${journey.total} etapów`}>

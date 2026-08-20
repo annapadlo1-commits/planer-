@@ -458,6 +458,7 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("EMPLOYEE_NUMBER_ALREADY_EXISTS")) return "Ten numer pracownika jest już używany.";
   if (value.includes("EMPLOYEE_EMAIL_ALREADY_EXISTS")) return "Ten adres e-mail jest już przypisany do innego pracownika.";
   if (value.includes("EMPLOYEE_IDENTITY_REQUIRED")) return "Podaj numer pracownika, imię i nazwisko.";
+  if (value.includes("ROLE_DUTY_COMPETENCY_ONLY_USE_EXACT_SHIFT_STAFFING") || value.includes("LEGACY_PERIOD_DEMAND_REJECTED")) return "Powiązanie roli i obowiązku opisuje wyłącznie kompetencję i nie ustawia liczby osób. W sekcji „Zmiany i obsada” wybierz dokładną zmianę, rolę, opcjonalny obowiązek oraz wymaganą liczbę osób.";
   if (value.includes("INVALID_SHIFT_PERIOD") || value.includes("SHIFT_PERIOD_REQUIRED")) return "Wybierz okres zmiany: poranna, środek albo wieczorna.";
   if (value.includes("INVALID_SHIFT_PERIOD_PREFERENCES") || value.includes("INVALID_SHIFT_PREFERENCE_LEVEL")) return "Preferencje okresów zmian zawierają nieprawidłową wartość.";
   if (value.includes("MATRIX_IMPORT_HAS_ERRORS")) return "Import zawiera błędy. Wróć do podglądu i popraw wskazane wiersze.";

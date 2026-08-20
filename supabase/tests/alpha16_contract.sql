@@ -31,8 +31,10 @@ begin
       'anon','public.employee_shift_preferences_save_self_v2(date,jsonb)','execute')
     or has_function_privilege(
       'anon','public.optimizer_emergency_assign_alpha16(uuid,bigint,uuid,boolean,text,boolean)','execute')
-    or not has_function_privilege(
+    or has_function_privilege(
       'authenticated','public.matrix_v2_employee_save_alpha16(uuid,jsonb)','execute')
+    or has_function_privilege(
+      'service_role','public.matrix_v2_employee_save_alpha16(uuid,jsonb)','execute')
     or not has_function_privilege(
       'authenticated','public.matrix_v2_import_preview_alpha16(jsonb)','execute')
     or not has_function_privilege(
@@ -97,6 +99,18 @@ begin
   v_definition:=pg_get_functiondef(
     'public.optimizer_candidate_diagnostics_alpha16(uuid,bigint)'::regprocedure
   );
+  if position('optimizer_candidate_diagnostics_before_role_scope_alpha16' in v_definition)=0 then
+    raise exception 'ALPHA16_CANDIDATE_DIAGNOSTICS_CHAIN_INCOMPLETE';
+  end if;
+  v_definition:=pg_get_functiondef(
+    'public.optimizer_candidate_diagnostics_before_role_scope_alpha16(uuid,bigint)'::regprocedure
+  );
+  if position('optimizer_candidate_diagnostics_before_primary_rules_alpha16' in v_definition)=0 then
+    raise exception 'ALPHA16_CANDIDATE_DIAGNOSTICS_CHAIN_INCOMPLETE';
+  end if;
+  v_definition:=v_definition||E'\n'||pg_get_functiondef(
+    'public.optimizer_candidate_diagnostics_before_primary_rules_alpha16(uuid,bigint)'::regprocedure
+  );
   if position('DECLARED_UNAVAILABLE' in v_definition)=0
     or position('OUTSIDE_AVAILABILITY_WINDOW' in v_definition)=0
     or position('REST_AFTER_PREVIOUS_SHIFT' in v_definition)=0
@@ -141,18 +155,19 @@ do $$
 declare
   v_employee uuid;
   v_matrix uuid;
-  v_month date:=date_trunc('month',current_date)::date;
+  v_month date;
 begin
   select employee.id into v_employee
   from public.employees employee
   where employee.active and employee.archived_at is null
     and employee.auth_user_id is null
   order by employee.id limit 1;
-  select matrix.id into v_matrix
+  select matrix.id,date_trunc('month',matrix.effective_from)::date
+  into v_matrix,v_month
   from public.matrix_versions matrix
   where matrix.status in ('ACTIVE','ARCHIVED') and matrix.schema_version>=2
-    and matrix.effective_from<=v_month
-  order by matrix.effective_from desc,matrix.version desc limit 1;
+  order by case matrix.status when 'ACTIVE' then 0 else 1 end,
+    matrix.effective_from desc,matrix.version desc limit 1;
   if v_employee is null or v_matrix is null then
     raise exception 'ALPHA16_SELF_SERVICE_FIXTURE_MISSING';
   end if;
@@ -168,6 +183,7 @@ begin
       'period','MORNING','level','BLOCKED','matrixVersionId',v_matrix
     ),'MANAGER',false,'ACTIVE'
   );
+  perform set_config('alpha16.contract_month',v_month::text,true);
 end;
 $$;
 
@@ -179,7 +195,7 @@ set local role authenticated;
 
 do $$
 declare
-  v_month date:=date_trunc('month',current_date)::date;
+  v_month date:=current_setting('alpha16.contract_month')::date;
   v_draft uuid;
   v_role uuid;
   v_duty uuid;
@@ -193,7 +209,7 @@ declare
   v_directory jsonb;
   v_preview jsonb;
   v_payload jsonb;
-  v_role_duty uuid;
+  v_message text;
   v_index integer;
 begin
   if auth.uid() is null then raise exception 'ALPHA16_OWNER_TEST_IDENTITY_MISSING'; end if;
@@ -234,7 +250,9 @@ begin
     v_duty:=(v_result->>'id')::uuid;
   end if;
 
-  v_result:=public.matrix_v2_employee_save_alpha16(null,jsonb_build_object(
+  -- Alpha16 remains an internal implementation. Exercise its compatibility
+  -- behavior through the current, remotely supported employee writer.
+  v_result:=public.matrix_v2_employee_save_uat_v4(null,jsonb_build_object(
     'firstName','Automatyczny','lastName','Numer Jeden',
     'email','alpha16-one@example.invalid','employmentStart',current_date,
     'nominalMonthlyMinutes',9600,'maximumMonthlyMinutes',12000,
@@ -250,7 +268,7 @@ begin
   v_employee_one:=(v_result->>'id')::uuid;
   v_employee_no_one:=v_result->>'employeeNo';
 
-  v_result:=public.matrix_v2_employee_save_alpha16(null,jsonb_build_object(
+  v_result:=public.matrix_v2_employee_save_uat_v4(null,jsonb_build_object(
     'firstName','Automatyczny','lastName','Numer Dwa',
     'email','alpha16-two@example.invalid','employmentStart',current_date,
     'nominalMonthlyMinutes',9600,'maximumMonthlyMinutes',12000,
@@ -307,18 +325,33 @@ begin
     raise exception 'ALPHA16_DYNAMIC_SHIFT_COUNT_LIMITED';
   end if;
 
+  begin
+    perform public.matrix_v2_admin_save_alpha16(
+      'ROLE_DUTY',null,jsonb_build_object(
+        'roleId',v_role,'dutyId',v_duty,'assignmentMode','REQUIRED',
+        'minimumCount',1,'active',true,
+        'shiftObligation',true,'shiftPeriod','MIDDLE'
+      )
+    );
+    raise exception 'ALPHA16_BROAD_ROLE_DUTY_DEMAND_ACCEPTED';
+  exception when others then
+    get stacked diagnostics v_message=message_text;
+    if position('ROLE_DUTY_COMPETENCY_ONLY_USE_EXACT_SHIFT_STAFFING' in v_message)=0 then
+      raise;
+    end if;
+  end;
   v_result:=public.matrix_v2_admin_save_alpha16(
     'ROLE_DUTY',null,jsonb_build_object(
-      'roleId',v_role,'dutyId',v_duty,'assignmentMode','REQUIRED',
-      'minimumCount',1,'active',true,
-      'shiftObligation',true,'shiftPeriod','MIDDLE'
+      'roleId',v_role,'dutyId',v_duty,'assignmentMode','OPTIONAL',
+      'minimumCount',0,'active',true,
+      'shiftObligation',false,'shiftPeriod',null
     )
   );
-  v_role_duty:=(v_result->>'id')::uuid;
   if not exists(select 1 from public.matrix_role_duties_v2 link
-      where link.id=v_role_duty and link.shift_obligation
-        and link.shift_period='MIDDLE') then
-    raise exception 'ALPHA16_ROLE_DUTY_PERIOD_NOT_SAVED';
+      where link.id=(v_result->>'id')::uuid and link.assignment_mode='OPTIONAL'
+        and link.minimum_count=0 and not link.shift_obligation
+        and link.shift_period is null) then
+    raise exception 'ALPHA16_COMPETENCY_ROLE_DUTY_NOT_CANONICAL';
   end if;
 
   v_preview:=public.matrix_v2_import_preview_alpha16('{}'::jsonb);
@@ -326,6 +359,25 @@ begin
     or not exists(select 1 from jsonb_array_elements(v_preview->'errors') error_row
       where error_row.value->>'code'='EMPTY_IMPORT') then
     raise exception 'ALPHA16_EMPTY_IMPORT_NOT_REJECTED: %',v_preview;
+  end if;
+
+  v_payload:=jsonb_build_object(
+    'employees','[]'::jsonb,'shifts','[]'::jsonb,
+    'staffingRules','[]'::jsonb,
+    'roleDuties',jsonb_build_array(jsonb_build_object(
+      'roleCode',(select role_row.code from public.matrix_roles_v2 role_row
+        where role_row.id=v_role),
+      'dutyCode',(select duty_row.code from public.matrix_duties_v2 duty_row
+        where duty_row.id=v_duty),
+      'assignmentMode','REQUIRED','minimumCount',1,
+      'shiftObligation',true,'shiftPeriod','MIDDLE','active',true
+    ))
+  );
+  v_preview:=public.matrix_v2_import_preview_alpha16(v_payload);
+  if (v_preview->>'valid')::boolean
+    or not exists(select 1 from jsonb_array_elements(v_preview->'errors') error_row
+      where error_row.value->>'code'='LEGACY_PERIOD_DEMAND_REJECTED') then
+    raise exception 'ALPHA16_LEGACY_PERIOD_IMPORT_NOT_EXPLAINED: %',v_preview;
   end if;
 
   v_payload:=jsonb_build_object(
@@ -389,7 +441,7 @@ $$;
 
 do $$
 declare
-  v_month date:=date_trunc('month',current_date)::date;
+  v_month date:=current_setting('alpha16.contract_month')::date;
   v_preferences jsonb;
 begin
   perform public.employee_shift_preferences_save_self_v2(

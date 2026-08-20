@@ -574,6 +574,21 @@ class CpSatScheduleEngine:
         minimum_role_backup_penalty = int(
             common_solver.value(common.metrics["ROLE_BACKUP_PENALTY"])
         )
+        # Complete coverage alone does not prove that a BACKUP assignment was
+        # necessary.  A zero backup penalty is a mathematical lower bound; a
+        # positive value may be frozen for every strategy only after CP-SAT has
+        # proved the combined coverage/role-priority objective optimal.  This
+        # remains an objective (never a hard ban), so BACKUP can still repair a
+        # real STANDARD shortage without creating avoidable vacancies.
+        if (
+            minimum_role_backup_penalty > 0
+            and common_status != cp_model.OPTIMAL
+        ):
+            raise OptimizationIncomplete(
+                "ROLE_BACKUP_PENALTY_UNPROVEN: solver nie potwierdził, że "
+                "użycie roli dodatkowej jest konieczne przy najlepszym "
+                "pokryciu obsady"
+            )
         raw_common_bound = self._solver_measure(
             common_solver, "best_objective_bound"
         )
@@ -1103,7 +1118,7 @@ class CpSatScheduleEngine:
             # stage is both much smaller and auditable: zero is a mathematical
             # optimum; a positive value may only be accepted with an OPTIMAL
             # certificate proving that hard constraints make it unavoidable.
-            zero_hour_guard_tier = -2
+            zero_hour_guard_tier = -3
             if artifacts.metric_bounds["ZERO_TARGET_EMPLOYEE_COUNT"] > 0:
                 tiers[zero_hour_guard_tier].append(
                     artifacts.metrics["ZERO_TARGET_EMPLOYEE_COUNT"]
@@ -1123,6 +1138,37 @@ class CpSatScheduleEngine:
                         "metricUpperBound": artifacts.metric_bounds[
                             "ZERO_TARGET_EMPLOYEE_COUNT"
                         ],
+                    }
+                )
+
+            # A primary/ordinary role is not cancelled by hours assigned in a
+            # different role.  In particular, a KELNER who can additionally
+            # cover HOST as BACKUP must still receive a KELNER assignment when
+            # that is feasible.  Keep this as a separate exact stage so a
+            # positive value is accepted only with a proof that hard rules make
+            # it unavoidable; BACKUP-only grants never participate.
+            primary_role_guard_tier = -2
+            primary_role_guard_metric = "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"
+            primary_role_guard_bound = artifacts.metric_bounds[
+                primary_role_guard_metric
+            ]
+            if primary_role_guard_bound > 0:
+                tiers[primary_role_guard_tier].append(
+                    artifacts.metrics[primary_role_guard_metric]
+                )
+                tier_upper_bounds[primary_role_guard_tier] = (
+                    primary_role_guard_bound
+                )
+                tier_tolerances[primary_role_guard_tier] = 0
+                tier_terms[primary_role_guard_tier].append(
+                    {
+                        "metric": primary_role_guard_metric,
+                        "direction": "MIN",
+                        "weight": 1,
+                        "tolerance": 0,
+                        "parameters": {},
+                        "normalizationCoefficient": 1,
+                        "metricUpperBound": primary_role_guard_bound,
                     }
                 )
 
@@ -1149,6 +1195,15 @@ class CpSatScheduleEngine:
                         "metricUpperBound": guard_bound,
                     }
                 )
+
+            def stage_name(tier: int) -> str:
+                if tier == zero_hour_guard_tier:
+                    return "ZERO_HOUR_GUARD"
+                if tier == primary_role_guard_tier:
+                    return "PRIMARY_ROLE_GUARD"
+                if tier == guard_tier:
+                    return "COMMON_FAIRNESS_GUARD"
+                return f"TIER_{tier}"
 
             self._emit_progress(
                 phase="SOLVING",
@@ -1241,13 +1296,7 @@ class CpSatScheduleEngine:
                         stage_results.append(
                             {
                                 "tier": 0 if tier < 0 else tier,
-                                "name": (
-                                    "ZERO_HOUR_GUARD"
-                                    if tier == zero_hour_guard_tier
-                                    else "COMMON_FAIRNESS_GUARD"
-                                    if tier == guard_tier
-                                    else f"TIER_{tier}"
-                                ),
+                                "name": stage_name(tier),
                                 "value": 0,
                                 "status": "OPTIMAL",
                                 "bestBound": 0.0,
@@ -1283,13 +1332,7 @@ class CpSatScheduleEngine:
                         stage_results.append(
                             {
                                 "tier": 0 if tier < 0 else tier,
-                                "name": (
-                                    "ZERO_HOUR_GUARD"
-                                    if tier == zero_hour_guard_tier
-                                    else "COMMON_FAIRNESS_GUARD"
-                                    if tier == guard_tier
-                                    else f"TIER_{tier}"
-                                ),
+                                "name": stage_name(tier),
                                 "value": exact_value,
                                 "status": "OPTIMAL",
                                 "bestBound": float(exact_value),
@@ -1346,7 +1389,11 @@ class CpSatScheduleEngine:
                             0.001,
                             usable_tier_budget / max(1, remaining_tier_count),
                         )
-                        if tier in (zero_hour_guard_tier, guard_tier):
+                        if tier in (
+                            zero_hour_guard_tier,
+                            primary_role_guard_tier,
+                            guard_tier,
+                        ):
                             tier_time_budget = min(
                                 tier_time_budget,
                                 MAX_RELAXED_COMMON_FAIRNESS_SECONDS,
@@ -1366,7 +1413,8 @@ class CpSatScheduleEngine:
                         disable_presolve=(
                             not snapshot.settings.require_optimal
                             and feasible_fallback_solver is not None
-                            and tier != zero_hour_guard_tier
+                            and tier
+                            not in (zero_hour_guard_tier, primary_role_guard_tier)
                         ),
                     )
                     used_fallback = False
@@ -1402,12 +1450,12 @@ class CpSatScheduleEngine:
                         else int(final_solver.value(expression))
                     )
                     if (
-                        tier == zero_hour_guard_tier
+                        tier in (zero_hour_guard_tier, primary_role_guard_tier)
                         and exact_value > 0
                         and final_status != cp_model.OPTIMAL
                     ):
                         raise OptimizationIncomplete(
-                            f"{strategy.code}:ZERO_HOUR_GUARD_UNPROVEN:"
+                            f"{strategy.code}:{stage_name(tier)}_UNPROVEN:"
                             f"{exact_value}"
                         )
                     allowed_degradation = tier_tolerances[tier]
@@ -1419,13 +1467,7 @@ class CpSatScheduleEngine:
                     stage_results.append(
                         {
                             "tier": 0 if tier < 0 else tier,
-                            "name": (
-                                "ZERO_HOUR_GUARD"
-                                if tier == zero_hour_guard_tier
-                                else "COMMON_FAIRNESS_GUARD"
-                                if tier == guard_tier
-                                else f"TIER_{tier}"
-                            ),
+                            "name": stage_name(tier),
                             "value": exact_value,
                             "status": final_solver.status_name(final_status),
                             **(
@@ -3070,10 +3112,35 @@ class CpSatScheduleEngine:
         # limit. The former "home location" marker is no longer an objective.
         home_expression = 0
 
+        role_dates: dict[str, set[date]] = defaultdict(set)
+        pool_dates: dict[tuple[str, str], set[date]] = defaultdict(set)
+        for slot in slots:
+            role_dates[slot.role_id].add(slot.date)
+            pool_dates[(slot.role_id, slot.location_id)].add(slot.date)
+
+        def standard_role_allowed_on(
+            employee: Any, role_id: str, day: date
+        ) -> bool:
+            if employee.role_grants is None:
+                return role_id in employee.role_ids
+            return any(
+                grant.role_id == role_id
+                and grant.assignment_mode == "STANDARD"
+                and grant.active_on(day)
+                for grant in employee.role_grants
+            )
+
+        def standard_role_member(employee: Any, role_id: str) -> bool:
+            return any(
+                standard_role_allowed_on(employee, role_id, day)
+                for day in role_dates[role_id]
+            )
+
         deviation_vars: list[Any] = []
         overtime_vars: list[Any] = []
         weekend_vars: list[Any] = []
         zero_target_vars: list[Any] = []
+        zero_primary_role_vars: list[Any] = []
         achievable_utilization_vars: list[Any] = []
         deviation_bound_total = 0
         overtime_bound_total = 0
@@ -3152,30 +3219,50 @@ class CpSatScheduleEngine:
 
         zero_target_count = _sum(zero_target_vars)
 
-        # Fairness must be evaluated inside each role, not once across the whole
-        # category.  A single category-wide min/max allowed a heavily loaded
-        # BARMAN to define the global maximum and an underloaded BARBACK to
-        # define the minimum; moving work between two BARBACK employees then
-        # changed neither end and had no value to the optimizer.  Build a
-        # utilization range for every role and optimize the worst range first,
-        # followed by the sum of all role ranges.  BACKUP-only grants are not
-        # regular staffing capacity and therefore do not dilute fair sharing.
-        role_dates: dict[str, set[date]] = defaultdict(set)
-        pool_dates: dict[tuple[str, str], set[date]] = defaultdict(set)
-        for slot in slots:
-            role_dates[slot.role_id].add(slot.date)
-            pool_dates[(slot.role_id, slot.location_id)].add(slot.date)
+        # Product contract: every active primary/ordinary (STANDARD) role in
+        # the generated category gets its own zero-assignment indicator.
+        # Counting the employee's global minutes here was incorrect: a HOST
+        # shift obtained through a BACKUP grant could make a primary KELNER
+        # appear non-zero even though the employee received no KELNER shift.
+        # Only eligible assignments in the exact STANDARD role and on a date
+        # where that grant is active can satisfy this indicator.
+        for employee in snapshot.employees:
+            if achievable_target_minutes[employee.id] <= 0:
+                continue
+            for role_id in sorted(role_dates):
+                if not standard_role_member(employee, role_id):
+                    continue
+                role_assignment_vars = [
+                    x[(employee.id, slot.id)]
+                    for slot in slots
+                    if slot.role_id == role_id
+                    and standard_role_allowed_on(employee, role_id, slot.date)
+                    and (employee.id, slot.id) in x
+                ]
+                if not role_assignment_vars:
+                    continue
+                has_primary_role_assignment = model.new_bool_var(
+                    f"has_primary_role_assignment|{employee.id}|{role_id}"
+                )
+                role_assignment_count = _sum(role_assignment_vars)
+                model.add(role_assignment_count >= 1).only_enforce_if(
+                    has_primary_role_assignment
+                )
+                model.add(role_assignment_count == 0).only_enforce_if(
+                    has_primary_role_assignment.Not()
+                )
+                zero_primary_role_vars.append(1 - has_primary_role_assignment)
 
-        def standard_role_member(employee: Any, role_id: str) -> bool:
-            if employee.role_grants is None:
-                return role_id in employee.role_ids
-            return any(
-                grant.role_id == role_id
-                and grant.assignment_mode == "STANDARD"
-                and any(grant.active_on(day) for day in role_dates[role_id])
-                for grant in employee.role_grants
-            )
+        zero_primary_role_count = _sum(zero_primary_role_vars)
 
+        # Comparable sets are formed per STANDARD role and location, so an
+        # unrelated role cannot define both ends of one spread.  Inside each
+        # such set, however, the accepted company rule deliberately compares a
+        # person's total monthly minutes across every role.  Do not replace the
+        # numerator with role-only minutes: hours worked through an additional
+        # role still count toward that person's overall fair share.  A
+        # BACKUP-only grant does not make somebody ordinary capacity in that
+        # role and therefore does not add them to its comparison set.
         role_utilization_spreads: list[Any] = []
         role_weekend_spreads: list[Any] = []
         utilization_participants: set[str] = set()
@@ -3356,6 +3443,8 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
+            "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT": zero_primary_role_count,
+            "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
@@ -3385,6 +3474,8 @@ class CpSatScheduleEngine:
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
+            "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT": len(zero_primary_role_vars),
+            "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,

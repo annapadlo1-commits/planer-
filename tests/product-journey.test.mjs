@@ -48,13 +48,31 @@ test("configuration journey recommends the first real data gap", () => {
   assert.equal(result.ready, false);
 });
 
-test("server readiness completes the guided setup", () => {
+test("server readiness sends a complete draft to publication before the generator", () => {
   const data = workspace();
   const result = configurationJourney(data, "2026-08", { ready: true, blockers: [], effectiveFrom: "2026-08-05", scheduleMonth: "2026-08-01", matrixVersionId: "matrix" });
   assert.equal(result.completed, 6);
+  assert.equal(result.percent, 86);
+  assert.equal(result.next?.key, "publication");
+  assert.equal(result.ready, false);
+});
+
+test("only a reloaded active configuration unlocks schedule creation", () => {
+  const data = workspace({ editable: false, matrixVersion: { id: "matrix", version: 2, name: "Test", status: "ACTIVE", schema_version: 2, settings: { timezone: "Europe/Warsaw", currency: "PLN" } } });
+  const result = configurationJourney(data, "2026-08", null);
+  assert.equal(result.completed, 7);
   assert.equal(result.percent, 100);
   assert.equal(result.next, null);
   assert.equal(result.ready, true);
+});
+
+test("read-only access to a draft is never mistaken for an active configuration", () => {
+  const data = workspace({ editable: false });
+  const result = configurationJourney(data, "2026-08", null);
+  assert.equal(result.steps.find(step => step.key === "publication")?.complete, false);
+  assert.equal(result.next?.key, "readiness");
+  assert.equal(result.ready, false);
+  assert.match(result.steps.find(step => step.key === "readiness")?.detail ?? "", /Wersja robocza/);
 });
 
 test("server blockers keep readiness as the only current step", () => {
@@ -66,8 +84,8 @@ test("server blockers keep readiness as the only current step", () => {
 });
 
 test("roles do not require optional duties to complete setup", () => {
-  const data = workspace({ duties: [], roleDuties: [] });
-  const result = configurationJourney(data, "2026-08", { ready: true, blockers: [], effectiveFrom: "2026-08-05", scheduleMonth: "2026-08-01", matrixVersionId: "matrix" });
+  const data = workspace({ editable: false, matrixVersion: { id: "matrix", version: 2, name: "Test", status: "ACTIVE", schema_version: 2, settings: { timezone: "Europe/Warsaw", currency: "PLN" } }, duties: [], roleDuties: [] });
+  const result = configurationJourney(data, "2026-08", null);
   assert.equal(result.steps.find(step => step.key === "roles")?.state, "complete");
   assert.equal(result.ready, true);
 });
