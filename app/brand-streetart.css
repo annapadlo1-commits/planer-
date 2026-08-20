@@ -3254,3 +3254,81 @@ section.live-module:has(>.real-month) .mini-people .avatar.violet{color:var(--br
   .finance-access-policy>div{grid-template-columns:1fr!important}
   .access-management{box-shadow:3px 3px 0 var(--brand-sage)!important}
 }
+
+/* Employee swaps and messages: remove the last violet notification surfaces. */
+.employee-recovery-offers{
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper)!important;
+  box-shadow:5px 5px 0 var(--brand-sage)!important;
+}
+.employee-recovery-offers>header{
+  padding:2px 0 14px!important;
+  border-bottom:1.5px solid var(--brand-ink)!important;
+}
+.employee-recovery-offers>header small{
+  color:var(--brand-ink)!important;
+  font-family:var(--brand-mono)!important;
+  letter-spacing:.08em!important;
+}
+.employee-recovery-offers>header :is(h2,p){color:var(--brand-ink)!important}
+.employee-recovery-offers>header>svg{
+  width:42px!important;
+  height:42px!important;
+  padding:9px!important;
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-peach)!important;
+  box-shadow:3px 3px 0 var(--brand-sage)!important;
+  transform:rotate(2deg);
+}
+.employee-recovery-offers>div>article{
+  color:var(--brand-ink)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+}
+.employee-recovery-offers>div>article:nth-child(even){background:var(--brand-eucalyptus)!important}
+.employee-recovery-offers .recovery-empty{
+  min-height:220px!important;
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-paper-2)!important;
+  box-shadow:4px 4px 0 var(--brand-sage)!important;
+}
+.employee-recovery-offers .recovery-empty svg{
+  width:44px!important;
+  height:44px!important;
+  padding:10px!important;
+  color:var(--brand-paper)!important;
+  border:1px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-ink)!important;
+}
+
+.message-center .conversation-list>button>i{
+  display:grid!important;
+  place-items:center!important;
+  min-width:26px!important;
+  height:26px!important;
+  padding:0 7px!important;
+  color:var(--brand-ink)!important;
+  border:1.5px solid var(--brand-ink)!important;
+  border-radius:1px!important;
+  background:var(--brand-peach)!important;
+  box-shadow:2px 2px 0 var(--brand-sage)!important;
+  font-family:var(--brand-display)!important;
+  font-style:normal!important;
+  line-height:1!important;
+  transform:rotate(-2deg);
+}
+
+@media(max-width:760px){
+  .employee-recovery-offers{padding:16px!important;box-shadow:3px 3px 0 var(--brand-sage)!important}
+  .employee-recovery-offers>header>svg{width:38px!important;height:38px!important}
+  .employee-recovery-offers .recovery-empty{min-height:180px!important;padding:24px 16px!important}
+  .message-center .conversation-list>button>i{min-width:24px!important;height:24px!important}
+}

@@ -130,6 +130,14 @@ test("deep schedule, generator and configuration views do not fall back to laven
   assert.match(css, /\.finance-access-policy\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper-2\)!important/s);
 });
 
+test("employee swaps and message counters use the street-poster notification language", () => {
+  const css = read("app/brand-streetart.css");
+  assert.match(css, /\.employee-recovery-offers\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important[^}]*background:var\(--brand-paper\)!important/s);
+  assert.match(css, /\.employee-recovery-offers>header>svg\s*\{[^}]*color:var\(--brand-ink\)!important[^}]*background:var\(--brand-peach\)!important/s);
+  assert.match(css, /\.employee-recovery-offers \.recovery-empty\s*\{[^}]*border:1\.5px solid var\(--brand-ink\)!important/s);
+  assert.match(css, /\.message-center \.conversation-list>button>i\s*\{[^}]*color:var\(--brand-ink\)!important[^}]*background:var\(--brand-peach\)!important/s);
+});
+
 test("approved small application icon is copied byte-for-byte to every small surface", () => {
   const expected = {
     "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",
