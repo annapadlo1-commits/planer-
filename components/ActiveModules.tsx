@@ -4,12 +4,17 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   CalendarDays,
+  ChevronRight,
+  Clock3,
   Download,
   Flame,
+  MapPin,
   Megaphone,
+  Play,
   Plus,
   Save,
   ShieldCheck,
+  Square,
   UserRound,
   WandSparkles,
   X,
@@ -19,6 +24,7 @@ import type { CSSProperties } from "react";
 import * as XLSX from "xlsx";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { APP_COLOR_PALETTE, uiSafeColor } from "@/lib/app-color-palette";
+import { employeeHomeSnapshot } from "@/lib/employee-home";
 
 import {
   getEmployeePublishedSchedule,
@@ -205,6 +211,7 @@ type PortalWorkspace = {
   publicationConflict?: boolean;
   masterPersona?: boolean;
 };
+export type EmployeePortalIdentity = NonNullable<PortalWorkspace["employee"]>;
 type UatMasterPortalContext = Omit<PortalWorkspace, "assignments"> & {
   assignments: CompanyCalendarAssignment[];
 };
@@ -236,6 +243,8 @@ export function ActiveModules({
   onOpenSolverV2,
   portalSection = "overview",
   allowUatMasterPersona = false,
+  employeeIdentity,
+  openEmployeeSection,
 }: {
   month: string;
   view: View;
@@ -253,6 +262,8 @@ export function ActiveModules({
   onOpenSolverV2?: (category: SolverRoleCategory) => void;
   portalSection?: EmployeePortalSection;
   allowUatMasterPersona?: boolean;
+  employeeIdentity?: EmployeePortalIdentity;
+  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
 }) {
   const selectedMonthDate = `${month}-01`;
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -411,6 +422,7 @@ export function ActiveModules({
     if (errors.length) fail(errors.join(" • "));
     setPortal({
       ...assignmentsResult.portal,
+      employee: assignmentsResult.portal?.employee ?? employeeIdentity,
       assignments: assignmentsResult.assignments,
       standby: assignmentsResult.standby,
       attendance: assignmentsResult.portal?.attendance || [],
@@ -420,7 +432,7 @@ export function ActiveModules({
       swapBoard,
       companyCalendar,
     });
-  }, [allowUatMasterPersona, fail, selectedMonthDate, solverEngine, supabase, timezone, uatMasterEmployeeId, view]);
+  }, [allowUatMasterPersona, employeeIdentity, fail, selectedMonthDate, solverEngine, supabase, timezone, uatMasterEmployeeId, view]);
 
   useEffect(() => {
     setPortal(null);
@@ -675,6 +687,7 @@ export function ActiveModules({
       locations={data.locations}
       saveAvailability={saveTimeConstraint}
       fail={fail}
+      openEmployeeSection={openEmployeeSection}
     /> : allowUatMasterPersona && uatMaster ? null : <div className="empty-state">Konto nie jest powiązane z pracownikiem.</div>}
     {availabilityOpen && portal?.timeConstraints && <AvailabilityCalendarDrawer
       workspace={portal.timeConstraints}
@@ -797,7 +810,81 @@ function OperationalCalendarPanel({ context, month, busy, save, review }: {
   </section>;
 }
 
-function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColors, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section, availabilityWorkspace, locations, saveAvailability, fail }: {
+function employeeMinutesLabel(minutes: number) {
+  return `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+}
+
+function employeeCountdownLabel(minutes: number | null, active: boolean) {
+  if (active) return "Trwa teraz";
+  if (minutes === null) return "Brak kolejnej zmiany";
+  if (minutes < 60) return `Za ${minutes} min`;
+  if (minutes < 24 * 60) return `Za ${Math.floor(minutes / 60)} h ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+  const daysUntil = Math.floor(minutes / (24 * 60));
+  return `Za ${daysUntil} ${daysUntil === 1 ? "dzień" : "dni"}`;
+}
+
+function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode, openShift, openEmployeeSection }: {
+  portal: PortalWorkspace;
+  month: string;
+  timezone: string;
+  dynamic: boolean;
+  roleNames: Record<string, string>;
+  masterMode: boolean;
+  openShift: (assignment: PortalAssignment) => void;
+  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
+}) {
+  const employee = portal.employee;
+  const employeeId = employee?.id || portal.timeConstraints?.employeeId || portal.companyCalendar?.employeeId;
+  const snapshot = employeeHomeSnapshot({
+    assignments: portal.assignments,
+    swaps: portal.swapBoard?.requests ?? [],
+    employeeId,
+    timezone,
+  });
+  const nextAssignment = snapshot.nextAssignmentId ? portal.assignments.find(assignment => assignment.id === snapshot.nextAssignmentId) ?? null : null;
+  const todayEvents = portal.calendarContext?.events.filter(event => event.date === snapshot.today) ?? [];
+  const actionCount = snapshot.targetedSwapCount + snapshot.waitingLeaderCount;
+  const nextRole = nextAssignment ? (dynamic ? roleNames[nextAssignment.roleCode ?? nextAssignment.role] ?? nextAssignment.role : rolePl[nextAssignment.role] ?? nextAssignment.role) : "";
+  const selectedMonth = labelMonth(month, timezone);
+  return <section className="employee-home" aria-label="Dziś w portalu pracownika">
+    <header className="employee-home-hero">
+      <span><small>DZIŚ • {new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(new Date())}</small><h2>Cześć{employee?.firstName ? `, ${employee.firstName}` : ""}</h2><p>Najbliższa opublikowana zmiana i sprawy, które wymagają Twojej reakcji.</p></span>
+      <button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Otwórz cały grafik <ChevronRight /></button>
+    </header>
+
+    <div className="employee-home-primary">
+      <article className={`employee-next-shift ${snapshot.nextState === "NOW" ? "active" : ""}`}>
+        <header><span><small>{snapshot.nextState === "NOW" ? "JESTEŚ TERAZ NA ZMIANIE" : "NAJBLIŻSZA ZMIANA"}</small><strong>{employeeCountdownLabel(snapshot.minutesUntilNext, snapshot.nextState === "NOW")}</strong></span><CalendarDays /></header>
+        {nextAssignment ? <>
+          <h3>{new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${nextAssignment.date}T12:00:00Z`))}</h3>
+          <div className="employee-next-shift-facts"><span><Clock3 /><b>{time(nextAssignment.startsAt, assignmentTimezone(nextAssignment, timezone))}–{time(nextAssignment.endsAt, assignmentTimezone(nextAssignment, timezone))}</b></span><span><MapPin /><b>{nextAssignment.location}</b></span><span><UserRound /><b>{nextRole}</b></span></div>
+          <p><b>Co robisz:</b> {nextAssignment.capability || "brak dodatkowego obowiązku — obowiązuje rola na zmianie"}</p>
+          <button type="button" className="primary-button" onClick={() => openShift(nextAssignment)}>Szczegóły zmiany <ChevronRight /></button>
+        </> : <div className="employee-home-empty"><h3>Masz dziś wolne</h3><p>W {selectedMonth} nie ma kolejnej opublikowanej zmiany. Sprawdź tablicę, jeśli chcesz przejąć wolną zmianę.</p>{snapshot.openShiftCount > 0 && <button type="button" className="primary-button" onClick={() => openEmployeeSection?.("swaps")}>Zobacz {snapshot.openShiftCount} pasujące {snapshot.openShiftCount === 1 ? "ogłoszenie" : "ogłoszenia"}</button>}</div>}
+      </article>
+
+      <article className="employee-timeclock-placeholder" aria-labelledby="employee-timeclock-title" aria-describedby="employee-timeclock-status">
+        <header><span><small>EWIDENCJA CZASU PRACY</small><h3 id="employee-timeclock-title">Wejście i wyjście w dwa proste kliknięcia</h3></span><span className="employee-placeholder-badge">W przygotowaniu</span></header>
+        <p id="employee-timeclock-status">To jest bezpieczny placeholder. Przyciski nie zapisują obecności. Backend i sposób potwierdzenia — QR, lokalizacja albo zwykłe potwierdzenie — wybierzemy i zbudujemy w następnym etapie.</p>
+        <div className="employee-timeclock-actions"><button type="button" disabled><Play /> Rozpocznij pracę</button><button type="button" disabled><Square /> Zakończ pracę</button></div>
+        <small><ShieldCheck /> Żadne wejście ani wyjście nie zostanie teraz przypadkowo zarejestrowane.</small>
+      </article>
+    </div>
+
+    <div className="employee-home-secondary">
+      <section className="employee-home-actions"><header><span><small>DO OGARNIĘCIA</small><h3>{actionCount ? `${actionCount} ${actionCount === 1 ? "sprawa" : "sprawy"} wymaga reakcji` : "Nic pilnego"}</h3></span><ArrowLeftRight /></header>
+        <div>{snapshot.targetedSwapCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Propozycje zamiany skierowane do Ciebie</b><small>{snapshot.targetedSwapCount} do odpowiedzi</small></span><ChevronRight /></button>}{snapshot.waitingLeaderCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Zamiany czekające na decyzję lidera</b><small>{snapshot.waitingLeaderCount} w toku</small></span><ChevronRight /></button>}{snapshot.openShiftCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Pasujące otwarte zmiany</b><small>{snapshot.openShiftCount} możesz sprawdzić</small></span><ChevronRight /></button>}{todayEvents.map(event => <article key={event.id}><Megaphone /><span><b>{event.title}</b><small>{event.description || "Wydarzenie zespołu na dziś"}</small></span></article>)}{actionCount === 0 && snapshot.openShiftCount === 0 && todayEvents.length === 0 && <p>Nie masz nowych próśb ani decyzji do wykonania.</p>}</div>
+      </section>
+
+      <section className="employee-home-week"><header><span><small>TEN TYDZIEŃ</small><h3>{snapshot.weekShiftCount} {snapshot.weekShiftCount === 1 ? "zmiana" : "zmian"} • {employeeMinutesLabel(snapshot.weekMinutes)}</h3></span><Clock3 /></header><p>{snapshot.todayShiftCount ? `Dziś masz ${snapshot.todayShiftCount} ${snapshot.todayShiftCount === 1 ? "zmianę" : "zmiany"}.` : "Dziś nie masz zaplanowanej zmiany."}</p><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("availability")}>Sprawdź dostępność <ChevronRight /></button></section>
+    </div>
+
+    <section className="employee-home-month"><header><span><small>TWÓJ MIESIĄC</small><h3>{selectedMonth}</h3></span><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Zobacz grafik</button></header><div><span><small>Zaplanowane</small><strong>{employeeMinutesLabel(snapshot.monthMinutes)}</strong></span><span><small>Zmiany</small><strong>{snapshot.monthShiftCount}</strong></span><span><small>Zmiany weekendowe</small><strong>{snapshot.weekendShiftCount}</strong></span><span><small>Rezerwa</small><strong>{portal.standby.length}</strong></span></div></section>
+    {masterMode && <small className="employee-home-master-note">Tryb UAT MASTER pokazuje dane wybranej osoby, ale nie pozwala wykonywać jej akcji.</small>}
+  </section>;
+}
+
+function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColors, openAvailability, openPreferences, requestSwap, loadSwapCandidates, decideSwapAsEmployee, decideSwapAsLeader, masterMode, busy, section, availabilityWorkspace, locations, saveAvailability, fail, openEmployeeSection }: {
   portal: PortalWorkspace;
   month: string;
   timezone: string;
@@ -817,6 +904,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   locations:MatrixItem[];
   saveAvailability:(entry:{dates:string[];kind:"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK";allDay:boolean;start?:string;end?:string;preferredLocationId?:string;note:string})=>Promise<boolean>;
   fail:(message:string)=>void;
+  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
@@ -832,12 +920,13 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   const activeSwapAnnouncements=portal.swapBoard?.requests.filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status))??[];
   const monthlyMinutes = portal.assignments.reduce((sum, assignment) => sum + Math.max(0, Math.round((new Date(assignment.endsAt).getTime() - new Date(assignment.startsAt).getTime()) / 60_000)), 0);
   const employeeCategoryLabel=portal.companyCalendar?.scopeCategories?.map(category=>category.name).join(", ")||"Twojej kategorii";
-  const showMine = section === "overview" || section === "my-schedule";
-  const showCompany = section === "overview" || section === "company-schedule";
-  const showAvailability = section === "overview" || section === "availability";
-  const showSwaps = section === "overview" || section === "swaps";
+  const showHome = section === "overview";
+  const showMine = section === "my-schedule";
+  const showCompany = section === "company-schedule";
+  const showAvailability = section === "availability";
+  const showSwaps = section === "swaps";
   const sectionCopy: Record<EmployeePortalSection, { title: string; subtitle: string }> = {
-    overview: { title: "Mój grafik i sprawy pracownicze", subtitle: "Opublikowane zmiany, dostępność, rezerwa i zamiany w jednym miejscu." },
+    overview: { title: "Dziś", subtitle: "Najbliższa zmiana, sprawy do reakcji i łatwy dostęp do ewidencji czasu pracy." },
     "my-schedule": { title: "Mój grafik", subtitle: "Moje opublikowane zmiany, wydarzenia i dyżury rezerwowe." },
     "company-schedule": { title: "Grafik firmy", subtitle: "Czytelny podgląd tego, kto pracuje w wybranym dniu." },
     availability: { title: "Moja dostępność", subtitle: "Zaznacz wyjątki oraz dokładne preferowane godziny bez szukania formularza w grafiku." },
@@ -857,7 +946,8 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title={sectionCopy[section].title} subtitle={sectionCopy[section].subtitle} actions={showMine?<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>:undefined} />
     {masterMode && <div className="uat-master-active-banner"><ShieldCheck /><span><b>Testujesz widok: {employee?.firstName} {employee?.lastName} • {employee?.employeeNo}</b><small>Zapisy dostępności i preferencji są wykonywane dla tej osoby oraz oznaczone w audycie jako UAT MASTER. Akcje zamiany pozostają zablokowane.</small></span></div>}
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
-    <section className="employee-portal-callouts"><article><CalendarDays/><span><b>Grafik i dostępność razem</b><small>Na jednym dniu widzisz zmianę, lokal, rezerwę, wydarzenie i swoją deklarację.</small></span></article><article><ArrowLeftRight/><span><b>Zamiana bez przeklikiwania</b><small>Otwórz dzień ze zmianą i od razu opublikuj propozycję do wybranej osoby albo całej tablicy.</small></span></article><article><Megaphone/><span><b>Sprawy zespołu</b><small>Aktywne propozycje zamian są oznaczone również na kalendarzu.</small></span></article></section>
+    {showHome && <EmployeeHome portal={portal} month={month} timezone={timezone} dynamic={dynamic} roleNames={roleNames} masterMode={masterMode} openShift={setSelected} openEmployeeSection={openEmployeeSection} />}
+    {!showHome && <section className="employee-portal-callouts"><article><CalendarDays/><span><b>Grafik i dostępność razem</b><small>Na jednym dniu widzisz zmianę, lokal, rezerwę, wydarzenie i swoją deklarację.</small></span></article><article><ArrowLeftRight/><span><b>Zamiana bez przeklikiwania</b><small>Otwórz dzień ze zmianą i od razu opublikuj propozycję do wybranej osoby albo całej tablicy.</small></span></article><article><Megaphone/><span><b>Sprawy zespołu</b><small>Aktywne propozycje zamian są oznaczone również na kalendarzu.</small></span></article></section>}
     {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Grafik i dostępność w jednym kalendarzu</h3><p>Zmiana, rezerwa, wydarzenie i Twoja deklaracja są nałożone na ten sam dzień. Edytor znajduje się bezpośrednio pod podsumowaniem.</p></section>}</div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
     {availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} standby={portal.standby} swapAnnouncements={activeSwapAnnouncements} onSelectDay={setSelectedDay}/>}

@@ -579,6 +579,124 @@
   .availability-calendar-content { grid-template-columns: 1fr; }
 }
 
+.employee-home {
+  display: grid;
+  gap: 16px;
+  color: #33443B;
+}
+
+.employee-home-hero,
+.employee-home-primary,
+.employee-home-secondary,
+.employee-home-month > header,
+.employee-next-shift > header,
+.employee-timeclock-placeholder > header,
+.employee-home-actions > header,
+.employee-home-week > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.employee-home-hero {
+  align-items: center;
+  padding: 20px 22px;
+  border: 1px solid #A6B3A0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #F7F3EC 0%, #E8E1D6 62%, #C4D2C4 100%);
+}
+
+.employee-home h2,
+.employee-home h3,
+.employee-home p { margin: 0; }
+.employee-home-hero h2 { margin: 3px 0 5px; font-size: clamp(24px, 3vw, 34px); }
+.employee-home-hero p,
+.employee-timeclock-placeholder p,
+.employee-home-actions p,
+.employee-home-week p { color: #55665A; }
+.employee-home small { line-height: 1.35; }
+.employee-home-hero > span > small,
+.employee-next-shift header small,
+.employee-timeclock-placeholder header small,
+.employee-home-actions header small,
+.employee-home-week header small,
+.employee-home-month header small {
+  color: #55665A;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.employee-home-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+}
+
+.employee-next-shift,
+.employee-timeclock-placeholder,
+.employee-home-actions,
+.employee-home-week,
+.employee-home-month {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #C4D2C4;
+  border-radius: 20px;
+  background: #F7F3EC;
+}
+
+.employee-next-shift { border-top: 5px solid #55665A; }
+.employee-next-shift.active { border-top-color: #C96F54; background: #fff7f0; }
+.employee-next-shift > header svg,
+.employee-home-actions > header svg,
+.employee-home-week > header svg {
+  width: 28px;
+  height: 28px;
+  color: #55665A;
+}
+.employee-next-shift > header span { display: grid; gap: 4px; }
+.employee-next-shift > header strong { font-size: 18px; }
+.employee-next-shift h3 { font-size: 24px; text-transform: capitalize; }
+.employee-next-shift > p { padding: 11px 12px; border-radius: 11px; background: #E8E1D6; }
+.employee-next-shift > button { justify-self: start; }
+.employee-next-shift-facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.employee-next-shift-facts span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: #E8E1D6; }
+.employee-next-shift-facts svg { width: 16px; height: 16px; color: #55665A; }
+.employee-home-empty { display: grid; gap: 10px; padding: 16px 0 4px; }
+.employee-home-empty button { justify-self: start; }
+
+.employee-timeclock-placeholder { border: 2px dashed #879681; background: #E8E1D6; }
+.employee-placeholder-badge { flex: none; padding: 7px 9px; border-radius: 999px; background: #D9987E; color: #1A1A1A; font-size: 10px; font-weight: 900; }
+.employee-timeclock-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.employee-timeclock-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 50px; border: 1px solid #A6B3A0; border-radius: 12px; background: #F7F3EC; color: #55665A; font-weight: 900; }
+.employee-timeclock-actions button:disabled { opacity: .58; cursor: not-allowed; }
+.employee-timeclock-actions svg { width: 17px; height: 17px; }
+.employee-timeclock-placeholder > small { display: flex; align-items: center; gap: 6px; color: #55665A; }
+.employee-timeclock-placeholder > small svg { width: 15px; height: 15px; }
+
+.employee-home-secondary { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); }
+.employee-home-actions > div { display: grid; gap: 8px; }
+.employee-home-actions > div > button,
+.employee-home-actions > div > article { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; padding: 12px; border: 1px solid #C4D2C4; border-radius: 12px; background: #fff; color: inherit; text-align: left; }
+.employee-home-actions > div > button { cursor: pointer; }
+.employee-home-actions > div > button:hover { border-color: #879681; background: #E8E1D6; }
+.employee-home-actions > div > button span,
+.employee-home-actions > div > article span { display: grid; gap: 3px; min-width: 0; }
+.employee-home-actions > div > button svg,
+.employee-home-actions > div > article > svg { width: 18px; height: 18px; flex: none; color: #55665A; }
+.employee-home-actions > div small { color: #55665A; }
+.employee-home-week > button { justify-self: start; }
+
+.employee-home-month > header { align-items: center; }
+.employee-home-month > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.employee-home-month > div > span { display: grid; gap: 5px; padding: 13px; border-radius: 12px; background: #E8E1D6; }
+.employee-home-month > div small { color: #55665A; }
+.employee-home-month > div strong { font-size: 19px; }
+.employee-home-master-note { color: #55665A; }
+
 .employee-month-summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1912,6 +2030,11 @@
 @media (max-width: 760px) {
   .swap-board-list article, .company-day-detail article { grid-template-columns: 1fr; }
   .availability-review-list article { align-items: stretch; flex-direction: column; }
+  .employee-home-hero { align-items: stretch; flex-direction: column; }
+  .employee-home-primary,
+  .employee-home-secondary { grid-template-columns: 1fr; }
+  .employee-home-month > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .employee-timeclock-actions { grid-template-columns: 1fr; }
   .matrix-v2-advanced-settings[open],
   .matrix-contract-card {
     grid-template-columns: 1fr;

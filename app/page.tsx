@@ -12,7 +12,7 @@ import { useAppAuth } from "@/components/AppAuthProvider";
 import { ConfigurationJourney } from "@/components/ConfigurationJourney";
 import { applicationEnvironmentLabel, createSupabaseBrowserClient, supabaseProjectRef } from "@/lib/supabase/client";
 import { canonicalUrl, configuredCanonicalAppOrigin } from "@/lib/canonical-app-origin";
-import {ActiveModules,type ActiveWorkspace} from "@/components/ActiveModules";
+import {ActiveModules,type ActiveWorkspace,type EmployeePortalIdentity} from "@/components/ActiveModules";
 import {SolverV2Panel} from "@/components/SolverV2Panel";
 import {SolverV2Workspace} from "@/components/SolverV2Workspace";
 import {RoleCompositePanel} from "@/components/RoleCompositePanel";
@@ -91,7 +91,8 @@ const issueLabels:Record<string,string>={SHORTAGE:"Brak obsady",CAPABILITY_MISSI
 function issueMessage(i:Issue,roleLabels:Record<string,string>){if(i.issue_type==="SHORTAGE")return `Brakuje ${Math.max((i.required_count||0)-(i.assigned_count||0),0)} os. dla roli ${roleLabels[i.role||""]||i.role||""}.`;if(i.issue_type==="CAPABILITY_MISSING")return `Brakuje wymaganej funkcji: ${i.capability||"nieokreślona"}.`;return i.message;}
 const productIcons: Record<ProductSection, LucideIcon> = {
   start: Gauge, team: Users, schedule: CalendarDays, operations: Bell, analytics: BarChart3, settings: Settings,
-  "my-schedule": CalendarDays, "company-schedule": Users, availability: Clock3, swaps: ArrowLeftRight, messages: Bell, time: Clock3,
+  today: Gauge,
+  "my-schedule": CalendarDays, "company-schedule": Users, availability: Clock3, swaps: ArrowLeftRight, messages: Bell,
 };
 const legacySection: Record<NavKey, ProductSection> = {
   centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
@@ -124,7 +125,7 @@ export default function GrafikPro() {
   const requestedPrimarySection=sectionFromPath(pathname,employeeShell);
   const primarySection=productNavigation.some(item=>item.key===requestedPrimarySection)
     ?requestedPrimarySection
-    :(productNavigation[0]?.key??(employeeShell?"my-schedule":"start"));
+    :(productNavigation[0]?.key??(employeeShell?"today":"start"));
   const scheduleWriteAllowed=canManageSchedule(access?.roles);
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [data,setData]=useState<Workspace>({
@@ -453,6 +454,18 @@ export default function GrafikPro() {
     if(!complete||solverConfiguration?.engine!=="ORTOOLS_V2"||!solverConfiguration.roles.length)return complete;
     return {...complete,roles:solverConfiguration.roles.map(item=>({id:item.id,code:item.code,name:item.name,active:true}))};
   },[complete,solverConfiguration]);
+  const employeePortalIdentity=useMemo<EmployeePortalIdentity|undefined>(()=>{
+    if(!access?.employee)return undefined;
+    const profile=complete?.employees.find(employee=>employee.employeeNo===access.employee?.employee_no);
+    return {
+      id:profile?.id??"",
+      employeeNo:access.employee.employee_no,
+      firstName:access.employee.first_name,
+      lastName:access.employee.last_name,
+      primaryRole:profile?.primaryRole??access.employee.primary_role,
+      locations:profile?.locations.map(location=>({code:location.code,name:location.name}))??[],
+    };
+  },[access?.employee,complete?.employees]);
   const shiftAssignments=selectedShift?data.assignments.filter(a=>a.shift_id===selectedShift.id):[];
   const totalMinutes=data.assignments.reduce((n,a)=>n+(new Date(a.ends_at).getTime()-new Date(a.starts_at).getTime())/60000,0);
   const cost=Number(data.plan?.total_cost||0);
@@ -464,7 +477,7 @@ export default function GrafikPro() {
     label:"Ładowanie aplikacji",
     description:"Sprawdzamy Twój zakres dostępu",
   };
-  const employeePortalSection=primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
+  const employeePortalSection=primarySection==="today"?"overview":primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
     <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
@@ -499,8 +512,7 @@ export default function GrafikPro() {
       <div className="content">
         {employeeShell?<>
           {primarySection==="messages"&&<MessageCenter notify={notify} fail={setError}/>} 
-          {primarySection==="time"&&complete&&<ActiveModules month={selectedMonth} view="czas" data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
-          {["my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>} 
+          {["today","my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} employeeIdentity={employeePortalIdentity} openEmployeeSection={openProductSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
           {primarySection==="swaps"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} employeeMode notify={notify} fail={setError} reload={load}/>} 
           {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
