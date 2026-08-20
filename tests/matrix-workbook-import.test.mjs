@@ -150,6 +150,23 @@ test("quick-start shifts without an optional order never emit an empty integer",
   assert.ok(parsed.shifts.every(shift=>shift.sortOrder!==""));
 });
 
+test("shift colors round-trip through the app palette and blanks use the neutral default",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    Zmiany:[
+      {Kod:"RANO",Nazwa:"Poranna",Od:"10:00",Do:"17:00",Dni:"1",Kolor:"Deep Moss — #55665A",Aktywna:"TAK"},
+      {Kod:"WIECZOR",Nazwa:"Wieczorna",Od:"17:00",Do:"01:00",Dni:"5","Następny dzień":"TAK",Kolor:"",Aktywna:"TAK"},
+    ],
+  }));
+  assert.deepEqual(parsed.shifts.map(shift=>shift.color),["#55665A","#879681"]);
+});
+
+test("invalid shift color fails closed at the exact Excel cell",async()=>{
+  await assert.rejects(
+    readMatrixWorkbook(workbookFile({Zmiany:[{Kod:"RANO",Nazwa:"Poranna",Od:"10:00",Do:"17:00",Dni:"1",Kolor:"zielony",Aktywna:"TAK"}]})),
+    /Zmiany • wiersz 2 • kolumna „Kolor”.*#RRGGBB/,
+  );
+});
+
 test("a freshly downloaded quick-start workbook remains self-importable after an empty UAT reset",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     Role:[{Kod:"KELNER",Nazwa:"Kelner",Aktywna:"TAK"}],

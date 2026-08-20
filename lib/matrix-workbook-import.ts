@@ -96,9 +96,10 @@ function automaticShiftPeriod(startsAt:string){
 }
 
 const DEFAULT_SCENARIOS=[{
-  code:"BASE",name:"Bazowy",description:"Standardowe zapotrzebowanie",color:"#7457E8",
+  code:"BASE",name:"Bazowy",description:"Standardowe zapotrzebowanie",color:"#C96F54",
   parentScenarioCode:"",isDefault:true,validFrom:"",validTo:"",settingsOverrides:{},sortOrder:"1",active:true,
 }];
+const DEFAULT_SHIFT_COLOR="#879681";
 
 const DEFAULT_STRATEGIES=[
   {code:"BALANCED",name:"Zrównoważony",description:"Kompromis kosztu, preferencji i równego obciążenia. Dobry wariant startowy, gdy żaden z tych celów nie ma bezwzględnego pierwszeństwa.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"1",active:true},
@@ -441,6 +442,8 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:baseCode;
     const day=importCell(row,"DZIEŃ_TYGODNIA");
     const startsAt=normalizeTime(importCell(row,"Od","startsAt","START"));
+    const color=normalizeColor(importCell(row,"Kolor","color"))||DEFAULT_SHIFT_COLOR;
+    if(!/^#[0-9A-F]{6}$/i.test(color))throw new Error(`${shiftSheetName} • wiersz ${index+2} • kolumna „Kolor”: wpisz kolor z listy albo wartość #RRGGBB.`);
     return {
       code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:normalizeLocationCode(importCell(row,"Lokal","Kod lokalu","locationCode","LOKALIZACJA_ID")),
       // Pora jest wyłącznie techniczną wartością pochodną. Użytkownik podaje
@@ -450,7 +453,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       // „Kolejność” jest polem opcjonalnym i nie występuje w prostym pliku
       // startowym. Nigdy nie wysyłamy pustego tekstu do pola liczbowego w bazie;
       // stabilna kolejność wierszy jest bezpiecznym ustawieniem domyślnym.
-      sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
+      sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),color:color.toUpperCase(),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
     };
   });
   const overnightErrors=shifts.flatMap((shift,index)=>{

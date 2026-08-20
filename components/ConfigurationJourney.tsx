@@ -91,12 +91,14 @@ export function ConfigurationJourney({
   month,
   onOpenStep,
   onCreateSchedule,
+  onConfigurationChanged,
   compact = false,
 }: {
   data: MatrixV2Workspace;
   month: string;
   onOpenStep: (section: SetupSection, step: SetupStepKey, focus?: SetupFocus) => void;
   onCreateSchedule: () => void;
+  onConfigurationChanged?: () => Promise<void>;
   compact?: boolean;
 }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -105,6 +107,7 @@ export function ConfigurationJourney({
   const [checking, setChecking] = useState(data.editable);
   const [checkRevision, setCheckRevision] = useState(0);
   const [showAllBlockers, setShowAllBlockers] = useState(false);
+  const [deactivatingShiftId, setDeactivatingShiftId] = useState<string | null>(null);
   const timezone = String(data.matrixVersion.settings?.timezone ?? "Europe/Warsaw");
   const signature = JSON.stringify({
     version: data.matrixVersion,
@@ -166,6 +169,37 @@ export function ConfigurationJourney({
     || data.shiftTemplates.every(item => !item.active);
   const visibleBlockers = showAllBlockers ? journey.blockers : journey.blockers.slice(0, 5);
 
+  async function deactivateUnstaffedShift(shiftId: string) {
+    const shift = data.shiftTemplates.find(item => item.id === shiftId);
+    if (!supabase || !shift || !data.editable) return;
+    if (!window.confirm(`Wyłączyć zmianę „${shift.name}”?\n\nNie będzie wymagała obsady ani trafiała do generatora. Historia pozostanie w wersji konfiguracji.`)) return;
+    setDeactivatingShiftId(shiftId);
+    const result = await supabase.rpc("matrix_v2_admin_save_alpha16", {
+      p_kind: "SHIFT",
+      p_id: shift.id,
+      p_data: {
+        code: shift.code,
+        name: shift.name,
+        locationId: shift.location_id,
+        shiftPeriod: shift.shift_period,
+        startsAt: shift.starts_at,
+        endsAt: shift.ends_at,
+        endsNextDay: shift.ends_next_day,
+        days: shift.day_mask,
+        sortOrder: shift.sort_order,
+        color: shift.color,
+        active: false,
+      },
+    });
+    setDeactivatingShiftId(null);
+    if (result.error) {
+      setServerError("Nie udało się wyłączyć tej zmiany. Otwórz jej kartę i spróbuj ponownie.");
+      return;
+    }
+    await onConfigurationChanged?.();
+    setCheckRevision(value => value + 1);
+  }
+
   return <section id={compact ? undefined : "configuration-step-readiness"} className={`configuration-journey ${compact ? "compact" : ""}`} aria-labelledby="configuration-journey-title">
     <header className="configuration-journey-head">
       <div>
@@ -217,6 +251,13 @@ export function ConfigurationJourney({
       <div><AlertTriangle /><span><strong>{blockerTitle}</strong><small>{serverError ? "Odśwież dane i ponów kontrolę gotowości." : blockerHelp}</small></span></div>
       {visibleBlockers.map(blocker => {
         const action = configurationBlockerAction(blocker, data, month);
+        if (blocker.code === "SHIFT_BASE_STAFFING_REQUIRED" && blocker.shiftTemplateId) return <article className="configuration-shift-blocker" key={`${blocker.code}:${blocker.shiftTemplateId}`}>
+          <span><b>{action.title}</b><small>{action.message}</small><em>Wybierz jedną akcję: uzupełnij obsadę albo wyłącz zmianę.</em></span>
+          <div>
+            <button type="button" className="primary-button" onClick={() => onOpenStep(action.section, action.step, action.focus)}>Uzupełnij obsadę <ArrowRight /></button>
+            <button type="button" className="secondary-button" disabled={!data.editable || deactivatingShiftId === blocker.shiftTemplateId} title={data.editable ? "Wyłącz tę zmianę w wersji roboczej" : "Najpierw utwórz wersję roboczą konfiguracji"} onClick={() => void deactivateUnstaffedShift(blocker.shiftTemplateId!)}>{deactivatingShiftId === blocker.shiftTemplateId ? <Loader2 className="spin" /> : null} Wyłącz zmianę</button>
+          </div>
+        </article>;
         return <button type="button" key={`${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`} onClick={() => onOpenStep(action.section, action.step, action.focus)}>
           <span><b>{action.title}</b><small>{action.message}</small><em>{action.actionLabel}</em></span><ArrowRight />
         </button>;

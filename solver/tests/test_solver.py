@@ -1553,6 +1553,7 @@ class SolverTests(unittest.TestCase):
                 self.assertEqual(
                     variant.metrics["ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"], 0
                 )
+
                 self.assertEqual(variant.metrics["ROLE_BACKUP_PENALTY"], 1)
                 primary_guard_stage = next(
                     stage
@@ -1604,6 +1605,140 @@ class SolverTests(unittest.TestCase):
                 self.assertEqual(
                     variant.metrics["ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT"], 0
                 )
+
+    def test_complete_greedy_hint_cannot_freeze_avoidable_backup_role(self) -> None:
+        """Regression for the real SALA/HOST Tejlor and Weronika failure.
+
+        The old coverage stage fixed every value from a complete greedy hint.
+        An alphabetically earlier BACKUP employee was therefore accepted as an
+        "OPTIMAL" HOST assignment even though an idle STANDARD HOST employee
+        was fully eligible.  The hint may seed the search, never define it.
+        """
+
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-01"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = False
+        raw["roles"] = [{"id": "role-host", "code": "HOST"}]
+        raw["duties"] = []
+        raw["shiftTemplates"] = [
+            {
+                "id": "shift-host-early",
+                "locationId": "location-rooftop",
+                "startTime": "16:00",
+                "endTime": "20:00",
+                "weekdays": [6],
+            },
+            {
+                "id": "shift-host-late",
+                "locationId": "location-rooftop",
+                "startTime": "17:00",
+                "endTime": "21:00",
+                "weekdays": [6],
+            }
+        ]
+        raw["demand"] = [
+            {
+                "id": "demand-host-early",
+                "shiftTemplateId": "shift-host-early",
+                "roleId": "role-host",
+                "dutyIds": [],
+                "requiredCount": 1,
+                "dates": ["2026-08-01"],
+            },
+            {
+                "id": "demand-host-late",
+                "shiftTemplateId": "shift-host-late",
+                "roleId": "role-host",
+                "dutyIds": [],
+                "requiredCount": 1,
+                "dates": ["2026-08-01"],
+            }
+        ]
+        employee_template = raw["employees"][0]
+        common_employee = {
+            **employee_template,
+            "roleIds": ["role-host"],
+            "dutyIds": [],
+            "locationIds": ["location-rooftop"],
+            "nominalMonthlyMinutes": 10_800,
+            "maximumMonthlyMinutes": 13_200,
+            "maximumWeeklyMinutes": 3_600,
+            "maximumShiftsPerDay": 1,
+            "softDayOffDates": [],
+            "blockedShiftTemplateIds": [],
+        }
+        raw["employees"] = [
+            {
+                **common_employee,
+                "id": "a-standard-both",
+                "roleGrants": [
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "STANDARD",
+                        "backupPriority": 100,
+                    }
+                ],
+            },
+            {
+                **common_employee,
+                "id": "b-backup-both",
+                "roleGrants": [
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "BACKUP",
+                        "backupPriority": 100,
+                    }
+                ],
+            },
+            {
+                **common_employee,
+                "id": "c-standard-early",
+                "blockedShiftTemplateIds": ["shift-host-late"],
+                "roleGrants": [
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "STANDARD",
+                        "backupPriority": 100,
+                    }
+                ],
+            },
+            {
+                **common_employee,
+                "id": "d-backup-late",
+                "blockedShiftTemplateIds": ["shift-host-early"],
+                "roleGrants": [
+                    {
+                        "roleId": "role-host",
+                        "assignmentMode": "BACKUP",
+                        "backupPriority": 100,
+                    }
+                ],
+            },
+        ]
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        raw["lockedAssignments"] = []
+
+        snapshot = Snapshot.from_dict(raw)
+        slots = {slot.id: slot for slot in generate_slots(snapshot)}
+        variants = CpSatScheduleEngine(
+            max_total_seconds=30, finalization_reserve_seconds=1
+        ).solve(snapshot)
+
+        for variant in variants:
+            with self.subTest(strategy=variant.strategy_code):
+                self.assertEqual(variant.metrics["ROLE_BACKUP_PENALTY"], 0)
+                self.assertEqual(len(variant.assignments), 2)
+                assigned = {
+                    slots[assignment.slot_id].shift_template_id: assignment.employee_id
+                    for assignment in variant.assignments
+                }
+                self.assertEqual(assigned["shift-host-early"], "c-standard-early")
+                self.assertEqual(assigned["shift-host-late"], "a-standard-both")
 
     def test_all_strategies_share_work_by_achievable_target_in_role_location_pool(self) -> None:
         raw = load_raw()

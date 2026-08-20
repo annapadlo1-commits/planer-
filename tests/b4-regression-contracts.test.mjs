@@ -418,14 +418,18 @@ test("employee and company calendars open a filterable day workspace", async () 
   assert.match(css,/\.employee-coworker-grid/);
 });
 
-test("publishing a leader copy selects that copy before role publication", async () => {
-  const [panel,client]=await Promise.all([
+test("publishing a leader copy selects and publishes that exact copy atomically", async () => {
+  const [panel,client,migration]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
   ]);
   const handler=panel.slice(panel.indexOf("async function publishSelectedRole"),panel.indexOf("function startAnother"));
-  assert.match(handler,/selectSolverVariant\(supabase, run\.id, leaderVariant\.id\)/);
-  assert.ok(handler.indexOf("selectSolverVariant")<handler.indexOf("publishRoleVariant"));
+  assert.doesNotMatch(handler,/selectSolverVariant/);
+  assert.match(handler,/publishRoleVariant\(supabase/);
+  assert.match(migration,/SELECT_VARIANT_FOR_ATOMIC_ROLE_PUBLICATION/);
+  assert.match(migration,/selected=true,[\s\S]*where variant\.id=p_variant_id/);
+  assert.match(migration,/optimizer_publish_role_variant_before_b4f121_uat_v2/);
   assert.match(client,/SELECTED_VALID_ROLE_VARIANT_REQUIRED/);
 });
 

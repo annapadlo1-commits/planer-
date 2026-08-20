@@ -54,7 +54,7 @@ export const QUICK_WORKBOOK_SHEETS:Record<string,WorkbookSheetDefinition>={
       "Kod":system("Stały identyfikator kategorii używany przy aktualizacji i integracjach.","BAR","Konfiguracja kategorii."),
       "Nazwa":required("Czytelna nazwa kategorii.","Tekst do 160 znaków.","Bar","Tworzy kategorię generowaną jako jeden zespół.","Ustawienia i generator grafiku."),
       "Opis":optional("Wyjaśnia, jakie role są planowane razem.","Krótki tekst.","Obsada baru i zaplecza barowego","Pomaga administratorom prawidłowo przypisywać role.","Brak nie zmienia działania generatora.","Ustawienia firmy."),
-      "Kolor":optional("Stały kolor kategorii w interfejsie.","Wybierz z listy.","Fioletowy — #7257D8","Ułatwia rozpoznawanie kategorii.","System użyje koloru domyślnego.","Grafik i ustawienia."),
+      "Kolor":optional("Stały kolor kategorii w interfejsie.","Wybierz z listy.","Deep Moss — #55665A","Ułatwia rozpoznawanie kategorii.","System użyje koloru domyślnego.","Grafik i ustawienia."),
       "Aktywna":required("Czy kategoria bierze udział w bieżącej konfiguracji.","☑ Tak albo ☐ Nie.","☑ Tak","Aktywna kategoria jest dostępna w generatorze.","Ustawienia i generator."),
     },
   },
@@ -121,7 +121,7 @@ export const QUICK_WORKBOOK_SHEETS:Record<string,WorkbookSheetDefinition>={
   "Zmiany":{
     purpose:"Definiują powtarzalne godziny pracy w konkretnym lokalu.",
     when:"Uzupełnij po lokalach, przed obsadą.",
-    headers:["Kod","Nazwa","Lokal","Od","Do","Kończy się następnego dnia","Dni tygodnia","Aktywna"],
+    headers:["Kod","Nazwa","Lokal","Od","Do","Kończy się następnego dnia","Dni tygodnia","Kolor","Aktywna"],
     fields:{
       "Kod":system("Stały identyfikator zmiany używany przy aktualizacji.","KRUCZA_WIECZOR","Konfiguracja zmian."),
       "Nazwa":required("Czytelna nazwa zmiany.","Tekst do 160 znaków.","Wieczór","Tworzy zmianę dostępną w obsadzie.","Grafik i ustawienia."),
@@ -130,6 +130,7 @@ export const QUICK_WORKBOOK_SHEETS:Record<string,WorkbookSheetDefinition>={
       "Do":required("Godzina zakończenia.","HH:MM w formacie 24-godzinnym.","03:00","Ustala koniec przydziału.","Grafik i generator."),
       "Kończy się następnego dnia":required("Czy godzina zakończenia przypada następnego dnia kalendarzowego.","☑ Tak albo ☐ Nie.","☑ Tak","Zapewnia poprawny czas nocnej zmiany.","Grafik, koszty i odpoczynek."),
       "Dni tygodnia":required("Dni, w które zmiana powtarza się co tydzień.","Numery 1–7 rozdzielone przecinkami: 1=poniedziałek, 7=niedziela.","1,2,3,4,5","Tworzy wystąpienia zmiany we wskazane dni.","Generator i ustawienia."),
+      "Kolor":optional("Stały kolor znacznika tej zmiany.","Wybierz z palety aplikacji albo wpisz #RRGGBB.","Muted Olive — #879681","Ułatwia rozpoznanie tej samej zmiany w ustawieniach i grafiku.","System użyje koloru domyślnego.","Ustawienia, grafik i eksport."),
       "Aktywna":required("Czy zmiana jest używana.","☑ Tak albo ☐ Nie.","☑ Tak","Aktywna zmiana może otrzymać obsadę.","Generator i ustawienia."),
     },
   },

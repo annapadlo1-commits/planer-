@@ -159,5 +159,8 @@ test("the Studio report is bound to the current variant and revision and every e
   assert.match(panel,/onLeaderBusyChange=\{handleLeaderWorkspaceBusyChange\}/);
   assert.match(panel,/disabled=\{studioBusy\} onClick=\{\(\)=>void checkLeaderDraft\(\)\}/);
   assert.match(panel,/disabled=\{studioBusy\|\|!leaderDraftValidationCurrent\|\|!leaderDraftValidation\?\.valid\}/);
-  assert.match(panel,/setLeaderWorkspaceBusy\(false\);setLeaderDraftValidation\(null\);setLeaderVariant\(null\)/);
+  const closeLeaderStudio=panel.slice(panel.indexOf('aria-label="Zamknij Studio lidera"'),panel.indexOf('aria-label="Zamknij Studio lidera"')+1200);
+  assert.match(closeLeaderStudio,/setLeaderWorkspaceBusy\(false\);setLeaderStudioOpen\(false\)/);
+  assert.doesNotMatch(closeLeaderStudio,/setLeaderVariant\(null\)/,
+    "zamknięcie Studia nie może zgubić dokładnej wersji lidera przeznaczonej do publikacji");
 });

@@ -92,7 +92,7 @@ function directPointerTap(event:{nativeEvent?:Event}){
 }
 
 const rolePalette=[
-  {accent:"#6848d8",background:"#f0ebff"},
+  {accent:"#879681",background:"#F2EDE4"},
   {accent:"#138b7d",background:"#e5f7f3"},
   {accent:"#d45a54",background:"#fff0ee"},
   {accent:"#d17b20",background:"#fff4e5"},
@@ -102,7 +102,7 @@ const rolePalette=[
 const dutyPalette=[
   {accent:"#756135",background:"#fff7dc"},
   {accent:"#2f6f69",background:"#e9f7f5"},
-  {accent:"#7a4e88",background:"#f8eefb"},
+  {accent:"#55665A",background:"#F2EDE4"},
   {accent:"#8a5135",background:"#fff0e8"},
   {accent:"#3f5f8a",background:"#edf3ff"},
 ];
@@ -110,7 +110,7 @@ const locationPalette=[
   {accent:"#246b9c",background:"#eaf5ff"},
   {accent:"#a65338",background:"#fff0e9"},
   {accent:"#2d7d5e",background:"#e9f8f1"},
-  {accent:"#8155a0",background:"#f5edfb"},
+  {accent:"#879681",background:"#F2EDE4"},
 ];
 
 // FNV-1a keeps colours deterministic between renders while avoiding the heavy
@@ -908,6 +908,7 @@ export function SolverV2Workspace({ workspace, baselineWorkspace=null, timezone,
             {leaderEmployeeId===candidate.employeeId&&<Check/>}
           </button>)}</div>
           {!visibleLeaderCandidates.length&&<p>Brak kandydatów spełniających wyszukiwanie i wybrany filtr. Wybierz „Wszyscy z powodami”, aby zobaczyć konkretne blokady.</p>}
+          {visibleLeaderCandidates.some(candidate=>candidate.overtimeBlocked)&&<p className="leader-overtime-policy-help"><strong>„Nadgodziny niedozwolone” to twarde ustawienie pracownika.</strong> Aby lider mógł podjąć audytowaną decyzję, przejdź do Ustawienia → Konfiguracja firmy → Pracownicy → profil tej osoby, ustaw „Zgoda na nadgodziny” na „TYLKO PO ZATWIERDZENIU”, opublikuj konfigurację i utwórz nowy grafik. Bieżący szkic zachowuje zasady swojej migawki.</p>}
           <small>Desktop: przeciągnij dostępną osobę bezpośrednio na dokładne miejsce w kalendarzu. Telefon: dotknij zmiany i osoby w dowolnej kolejności. Każda kompletna para od razu zmienia roboczy szkic — bez osobnego zapisu. Klawiaturą: wybierz wakat, przejdź do osoby i naciśnij Enter. Wyszarzone osoby mają konkretną twardą blokadę.</small>
         </div>
         {selectedLeaderCandidate&&<section className="leader-change-preview">

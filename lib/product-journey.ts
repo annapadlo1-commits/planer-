@@ -51,6 +51,30 @@ export type ConfigurationBlockerAction = {
   actionLabel: string;
 };
 
+export function missingBaseStaffingBlockers(data: MatrixV2Workspace): MatrixV2PublicationBlocker[] {
+  const defaultScenario = data.scenarios.find(item => item.active && item.is_default);
+  const coveredShiftIds = new Set(data.staffingRules.filter(rule =>
+    rule.active
+    && rule.scenario_id === defaultScenario?.id
+    && rule.operation === "SET"
+    && Number(rule.count_value) >= 1,
+  ).map(rule => rule.shift_template_id));
+  return data.shiftTemplates.filter(shift => shift.active && !coveredShiftIds.has(shift.id)).map(shift => {
+    const location = data.locations.find(item => item.id === shift.location_id);
+    return {
+      code: "SHIFT_BASE_STAFFING_REQUIRED",
+      shiftTemplateId: shift.id,
+      shiftCode: shift.code,
+      shiftName: shift.name,
+      locationId: shift.location_id,
+      startsAt: shift.starts_at,
+      endsAt: shift.ends_at,
+      endsNextDay: shift.ends_next_day,
+      message: `${location?.name ?? "Lokal bez nazwy"} • ${shift.name} • ${shift.starts_at.slice(0, 5)}–${shift.ends_at.slice(0, 5)}: uzupełnij obsadę albo wyłącz zmianę.`,
+    };
+  });
+}
+
 const MANAGEMENT_ROLES = new Set(["OWNER", "ADMIN", "HR_FINANCE", "ROLE_MANAGER", "LOCATION_MANAGER", "VERIFIER"]);
 
 export const managementNavigation: ProductNavigationItem[] = [
@@ -182,6 +206,16 @@ export function configurationBlockerAction(
       actionLabel: "Popraw tę zmianę",
     };
   }
+  if (blocker.code === "SHIFT_BASE_STAFFING_REQUIRED" && blocker.shiftTemplateId) {
+    return {
+      section: "structure",
+      step: "shifts",
+      focus: { targetId: `matrix-v2-shift-${blocker.shiftTemplateId}` },
+      title,
+      message: blocker.message,
+      actionLabel: "Uzupełnij obsadę",
+    };
+  }
   return {
     section: "structure",
     step: "shifts",
@@ -242,6 +276,10 @@ export function configurationJourney(
     defaultScenarios.length === 1 && linkedStrategies.length > 0,
   ];
   const activeConfiguration = data.matrixVersion.status === "ACTIVE";
+  const clientBlockers = missingBaseStaffingBlockers(data);
+  const serverBlockers = serverReadiness?.blockers ?? [];
+  const blockerKeys = new Set(serverBlockers.map(blocker => `${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`));
+  const blockers = [...serverBlockers, ...clientBlockers.filter(blocker => !blockerKeys.has(`${blocker.code}:${blocker.employeeId ?? blocker.shiftTemplateId ?? blocker.message}`))];
   const readinessComplete = baseComplete.every(Boolean)
     && (activeConfiguration || serverReadiness?.ready === true);
   const rawSteps: Omit<ConfigurationStep, "state">[] = [
@@ -300,6 +338,6 @@ export function configurationJourney(
     percent: Math.round(completed / steps.length * 100),
     ready: completed === steps.length,
     next: steps.find(step => !step.complete) ?? null,
-    blockers: serverReadiness?.blockers ?? [],
+    blockers,
   };
 }

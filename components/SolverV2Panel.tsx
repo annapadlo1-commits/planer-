@@ -235,6 +235,7 @@ export function SolverV2Panel({
   const [selectedWorkspace, setSelectedWorkspace] = useState<SolverWorkspace | null>(null);
   const [leaderBaselineWorkspace,setLeaderBaselineWorkspace]=useState<SolverWorkspace|null>(null);
   const [leaderVariant,setLeaderVariant]=useState<SolverLeaderVariant|null>(null);
+  const [leaderStudioOpen,setLeaderStudioOpen]=useState(false);
   const [leaderHistory,setLeaderHistory]=useState<SolverLeaderHistoryStatus|null>(null);
   const [leaderCheckpointName,setLeaderCheckpointName]=useState("");
   const [leaderCheckpointRestoreSeq,setLeaderCheckpointRestoreSeq]=useState<number|null>(null);
@@ -365,11 +366,13 @@ export function SolverV2Panel({
       setLeaderDraftValidation(null);
       setLeaderVariant(leader);
       if(leader){
+        setLeaderStudioOpen(true);
         const [workspace,baseline]=await Promise.all([getLeaderVariantWorkspace(supabase,leader.id),leader.sourceVariantId?getVariantWorkspace(supabase,leader.sourceVariantId):Promise.resolve(null)]);
         setLeaderBaselineWorkspace(baseline);
         setSelectedWorkspace(workspace);
         setPublicationName(workspace.context.name||leader.name);
       }else if(loadedVariants.some(variant => variant.selected)){
+        setLeaderStudioOpen(false);
         await loadSelectedWorkspace(runId);
       }
     }
@@ -439,6 +442,7 @@ export function SolverV2Panel({
     setSelectedWorkspace(null);
     setLeaderBaselineWorkspace(null);
     setLeaderVariant(null);
+    setLeaderStudioOpen(false);
     setLeaderDraftValidation(null);
     setInspectedWorkspace(null);
     setPublishedWorkspace(null);
@@ -580,6 +584,7 @@ export function SolverV2Panel({
       await selectSolverVariant(supabase, run.id, variant.id);
       setLeaderDraftValidation(null);
       setLeaderVariant(null);
+      setLeaderStudioOpen(false);
       setVariants(current => current.map(item => ({ ...item, selected: item.id === variant.id })));
       await loadSelectedWorkspace(run.id);
       setMessage(scopeType === "ROLE"
@@ -608,6 +613,7 @@ export function SolverV2Panel({
       setLeaderDraftValidation(null);
       setLeaderVariant({...leader,assignmentCount:summary?.assignmentCount??sourceVariant.assignmentCount,
         unfilledCount:summary?.unfilledCount??sourceVariant.unfilledCount});
+      setLeaderStudioOpen(true);
       setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||leader.name);
       setLeaderBaselineWorkspace(baseline);
       setMessage(`Otwarto osobną wersję lidera na bazie strategii „${sourceVariant.strategy.name}”. Warianty generatora pozostały bez zmian; możesz teraz dowolnie poprawiać szkic przed wspólną kontrolą.`);
@@ -633,6 +639,7 @@ export function SolverV2Panel({
       setLeaderVariant({...created.leader,
         assignmentCount:workspace.variants[0]?.assignmentCount??0,
         unfilledCount:workspace.variants[0]?.unfilledCount??created.leader.unfilledCount});
+      setLeaderStudioOpen(true);
       setSelectedWorkspace(workspace);setPublicationName(workspace.context.name||created.leader.name);
       setLeaderBaselineWorkspace(null);
       setMessage("Otwarto Studio bez generatora. Wszystkie wymagane miejsca są widoczne jako braki; obsadzaj je ręcznie, a każda zmiana przejdzie kontrolę całego miesiąca.");
@@ -1014,11 +1021,6 @@ export function SolverV2Panel({
     setBusy(true);
     setMessage("");
     try {
-      if (leaderVariant && selectedVariant.id === leaderVariant.id) {
-        await selectSolverVariant(supabase, run.id, leaderVariant.id);
-        setVariants(current => current.map(variant => ({ ...variant, selected: false })));
-        setLeaderVariant(current => current ? { ...current, status: "SELECTED" } : current);
-      }
       const publication = await publishRoleVariant(supabase, {
         runId: run.id,
         variantId: selectedVariant.id,
@@ -1030,6 +1032,7 @@ export function SolverV2Panel({
         ? { ...variant, status: "PUBLISHED" }
         : variant));
       setLeaderVariant(current=>current&&current.id===selectedVariant.id?{...current,status:"PUBLISHED"}:current);
+      if(leaderVariant?.id===selectedVariant.id)setLeaderWorkflow("PUBLISHED");
       await onVariantSelected?.({ ...selectedVariant, status: "PUBLISHED" });
       setMessage(publication.reused
         ? "Ten grafik zespołu był już opublikowany. Nie wysłano podwójnych powiadomień."
@@ -1052,6 +1055,7 @@ export function SolverV2Panel({
     setLeaderWorkspaceBusy(false);
     setLeaderDraftValidation(null);
     setLeaderVariant(null);
+    setLeaderStudioOpen(false);
     setPendingLeaderWorkflow(null);
     setLeaderWorkflowReason("");
     setInspectedWorkspace(null);
@@ -1188,7 +1192,7 @@ export function SolverV2Panel({
         <article className="manual"><span><CalendarDays/></span><div><small>BEZ GENERATORA</small><strong>Utwórz pusty grafik ręcznie</strong><p>System przygotuje wymagane zmiany i wakaty; ludzi przypisujesz samodzielnie w Studio.</p></div><button type="button" className="secondary-button" disabled={busy||!selectedScenario?.id||!expectedSolverVersion||!name.trim()} onClick={()=>void createManualStudio()}>{busy?<RefreshCw className="spin"/>:<Edit3/>} Otwórz pusty szkic</button></article>
       </div>
     </section>}
-    {leaderVariant&&selectedWorkspace&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
+    {leaderVariant&&selectedWorkspace&&leaderStudioOpen&&<section className="leader-studio-fullscreen" role="dialog" aria-modal="true" aria-label="Studio lidera">
       <header className="leader-studio-fullscreen-head">
         <span><Edit3/><div><small>STUDIO LIDERA • REWIZJA {leaderVariant.revision}</small><h2>{leaderVariant.name}</h2><p>{leaderVariant.sourceVariantId?"Osobna wersja robocza na bazie wariantu generatora. Pracownicy nie widzą zmian przed publikacją.":"Pusty grafik ręczny z gotowym zapotrzebowaniem. Pracownicy nie widzą zmian przed publikacją."}</p></div></span>
         <div className="leader-studio-history-actions">
@@ -1208,7 +1212,7 @@ export function SolverV2Panel({
             </div>
           </details>
           <em>{leaderVariant.status==="PUBLISHED"?"OPUBLIKOWANA":"WERSJA ROBOCZA"}</em>
-          <button type="button" className="icon-button" aria-label="Zamknij Studio lidera" disabled={studioBusy} onClick={()=>{setLeaderWorkspaceBusy(false);setLeaderDraftValidation(null);setLeaderVariant(null);setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");setLeaderRefillStatus(null);setLeaderOptimizationRun(null);setLeaderOptimizationStatus(null);setLeaderOptimizationProposal(null);}}><X/></button>
+          <button type="button" className="icon-button" aria-label="Zamknij Studio lidera" disabled={studioBusy} onClick={()=>{setLeaderWorkspaceBusy(false);setLeaderStudioOpen(false);setPendingLeaderWorkflow(null);setLeaderWorkflowReason("");setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");setLeaderRefillStatus(null);setLeaderOptimizationRun(null);setLeaderOptimizationStatus(null);setLeaderOptimizationProposal(null);}}><X/></button>
         </div>
       </header>
       {leaderCheckpointRestoreSeq!==null&&<section className="leader-workflow-confirm leader-checkpoint-restore"><div><strong>Przywrócić punkt kontrolny?</strong><small>Bieżący szkic zostanie zapisany w historii, a wybrany układ stanie się nową rewizją roboczą. Nic nie trafi do pracowników.</small></div><label>Powód przywrócenia<textarea autoFocus minLength={3} value={leaderCheckpointRestoreReason} onChange={event=>setLeaderCheckpointRestoreReason(event.target.value)} placeholder="np. powrót do układu po obsadzeniu SALI"/></label><span><button type="button" className="secondary-button" disabled={studioBusy} onClick={()=>{setLeaderCheckpointRestoreSeq(null);setLeaderCheckpointRestoreReason("");}}>Anuluj</button><button type="button" className="primary-button" disabled={studioBusy||leaderCheckpointRestoreReason.trim().length<3} onClick={()=>void restoreSelectedLeaderCheckpoint()}>{busy?<RefreshCw className="spin"/>:<History/>} Przywróć punkt</button></span></section>}
@@ -1283,6 +1287,7 @@ export function SolverV2Panel({
           <input value={publicationName} maxLength={200} onChange={event => setPublicationName(event.target.value)}/>
         </label>
         {publicationChangePanel}
+        {leaderVariant&&!leaderStudioOpen&&<button type="button" className="secondary-button" disabled={busy} onClick={()=>setLeaderStudioOpen(true)}><Edit3/> Otwórz ponownie Studio lidera</button>}
         {!leaderPublicationReady&&<small className="publication-workflow-blocker">Najpierw zakończ kontrolę wersji lidera i oznacz ją jako „Gotowa do scalenia”.</small>}
         <button className="primary-button" disabled={busy || publicationChangesBusy || !publicationChanges || !publicationName.trim() || selectedVariant.status === "PUBLISHED" || !leaderPublicationReady} title={!leaderPublicationReady?"Publikacja wymaga etapu: Gotowy do scalenia":!publicationChanges?"Najpierw wylicz różnice i zakres powiadomień":"Opublikuj grafik zespołu"} onClick={() => void publishSelectedRole()}>
           {selectedVariant.status === "PUBLISHED"

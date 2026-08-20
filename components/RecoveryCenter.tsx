@@ -84,7 +84,7 @@ function time(value?: string | null) {
 }
 
 function roleStyle(color?: string | null): CSSProperties {
-  const accent = color || "#6D4BEF";
+  const accent = color || "#879681";
   return { "--recovery-role": accent } as CSSProperties;
 }
 

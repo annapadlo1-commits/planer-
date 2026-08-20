@@ -555,18 +555,17 @@ class CpSatScheduleEngine:
             strategy=None,
             stage_name="UNFILLED",
             time_limit_seconds=common_time_limit,
-            fix_hints=common.complete_coverage_hint,
+            # A complete greedy hint proves that zero vacancies are feasible,
+            # but it does not prove that the hinted BACKUP assignments are
+            # necessary.  Fixing every hinted variable here used to turn the
+            # warm start into the whole search space, so CP-SAT reported the
+            # first complete (and sometimes role-wrong) roster as OPTIMAL.
+            # Keep the hint as an incumbent and search the real model.  With a
+            # zero-backup incumbent the mathematical lower bound closes the
+            # stage immediately; a positive value still needs a real proof.
+            fix_hints=False,
+            disable_presolve=common.complete_coverage_hint,
         )
-        if common.complete_coverage_hint and common_status == cp_model.INFEASIBLE:
-            common_solver, common_status = self._solve_model(
-                common.model,
-                snapshot,
-                strategy=None,
-                stage_name="UNFILLED_FALLBACK",
-                time_limit_seconds=self._remaining_seconds(
-                    global_deadline, "GLOBAL:UNFILLED_FALLBACK"
-                ),
-            )
         all_common_stages_optimal = self._require_optimal(
             common_solver, common_status, snapshot, "UNFILLED"
         )
@@ -2374,6 +2373,13 @@ class CpSatScheduleEngine:
                 selected = min(
                     candidates,
                     key=lambda employee: (
+                        # A role grant marked BACKUP is an emergency fallback,
+                        # not a fairness tool.  Prefer the employee whose role
+                        # is STANDARD before considering workload balancing in
+                        # the warm start.  The CP-SAT stage above still proves
+                        # the global minimum and can use BACKUP when hard rules
+                        # make it necessary.
+                        employee.role_assignment_penalty(slot.role_id, slot.date),
                         longest_run(worked_days[employee.id] | {slot.date}),
                         monthly_minutes[employee.id],
                         weekly_minutes[(employee.id, week_key(slot))],

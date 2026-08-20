@@ -15,6 +15,14 @@ import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
+import {
+  APP_COLOR_PALETTE,
+  DEFAULT_DUTY_COLOR,
+  DEFAULT_ROLE_COLOR,
+  DEFAULT_SCENARIO_COLOR,
+  DEFAULT_SHIFT_MARKER_COLOR,
+  uiSafeColor,
+} from "@/lib/app-color-palette";
 import { QUICK_WORKBOOK_SHEETS, referenceLabel } from "@/lib/workbook-contract";
 import {
   authorizeGoogleDriveFile,
@@ -1126,9 +1134,9 @@ function StructureTab({data, editable, busy, settings, edit, saveSettings, norma
             <header className="guided-location-head"><span><MapPin/><div><h4>{location.name}</h4><small>{localShifts.length} widocznych • {data.shiftTemplates.filter(shift=>shift.location_id===location.id).length} wszystkich zmian</small></div></span>{editable&&<button className="secondary-button" onClick={()=>edit({kind:"SHIFT",item:{location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj zmianę</button>}</header>
             {localShifts.map(shift=>{
               const shiftRules=data.staffingRules.filter(rule=>rule.active&&rule.shift_template_id===shift.id&&rule.scenario_id===baseScenario?.id);
-              return <article className="guided-shift-card" key={shift.id}>
+              return <article id={`matrix-v2-shift-${shift.id}`} className="guided-shift-card" key={shift.id}>
                 <header>
-                  <button type="button" onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><i style={{background:shift.color??"#7257d8"}}/><span><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span>{editable&&<Edit3/>}</button>
+                  <button type="button" onClick={()=>editable&&edit({kind:"SHIFT",item:shift})}><i style={{background:uiSafeColor(shift.color,DEFAULT_SHIFT_MARKER_COLOR)}}/><span><b>{shift.name}</b><small>{time(shift.starts_at)}–{time(shift.ends_at)}{shift.ends_next_day?" • następny dzień":""}</small></span>{editable&&<Edit3/>}</button>
                   <span className="guided-shift-card-days"><b>{WEEKDAYS.filter(day=>shift.day_mask.includes(day.value)).map(day=>day.label).join(", ")}</b><small>{shiftRules.length?plural(shiftRules.length,"wymagana rola","wymagane role","wymaganych ról"):"Brak ustawionej obsady"}</small></span>
                   <div className="guided-shift-card-actions">{editable&&<button className="primary-button" onClick={()=>edit({kind:"STAFFING_RULE",item:{scenario_id:baseScenario?.id,shift_template_id:shift.id,location_id:location.id} as Record<string,unknown>})}><Plus/> Dodaj rolę i liczbę osób</button>}</div>
                 </header>
@@ -1159,7 +1167,7 @@ function RoleDutyOverview({data,editable,edit}:{data:MatrixV2Workspace;editable:
   return <section id="configuration-step-roles" className="matrix-v2-card matrix-v2-role-duty-overview"><SectionHead title="Role i opcjonalne obowiązki" description="Najpierw zdefiniuj role. Obowiązek przypisz tylko wtedy, gdy dana rola ma dodatkową kompetencję potrzebną w obsadzie." editable={editable} add={()=>edit({kind:"ROLE"})}/><div className="matrix-v2-role-duty-grid">{data.roles.map(role=>{
     const links=data.roleDuties.filter(link=>link.role_id===role.id);
     const activeLinks=links.filter(link=>link.active);
-    return <article key={role.id}><header><span><i style={{background:role.color??"#7257d8"}}/><div><h4>{role.name}</h4><small>{activeLinks.length?`${activeLinks.length} ${activeLinks.length===1?"powiązana kompetencja":"powiązane kompetencje"}`:"Bez dodatkowych kompetencji — poprawna konfiguracja"}</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>Kompetencja roli • bez zapotrzebowania</small></button>)}{!links.length&&<small>Ta rola nie ma dodatkowej kompetencji.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Powiąż kompetencję z rolą</button>}</article>;
+    return <article key={role.id}><header><span><i style={{background:uiSafeColor(role.color,DEFAULT_ROLE_COLOR)}}/><div><h4>{role.name}</h4><small>{activeLinks.length?`${activeLinks.length} ${activeLinks.length===1?"powiązana kompetencja":"powiązane kompetencje"}`:"Bez dodatkowych kompetencji — poprawna konfiguracja"}</small></div></span>{editable&&<button className="icon-button" title="Edytuj rolę" onClick={()=>edit({kind:"ROLE",item:role})}><Edit3/></button>}</header><div className="matrix-v2-role-duty-chips">{links.map(link=><button key={link.id} disabled={!editable} onClick={()=>editable&&edit({kind:"ROLE_DUTY",item:link})}><b>{itemName(data.duties,link.duty_id)}</b><small>Kompetencja roli • bez zapotrzebowania</small></button>)}{!links.length&&<small>Ta rola nie ma dodatkowej kompetencji.</small>}</div>{editable&&<button className="matrix-v2-add-inline" onClick={()=>edit({kind:"ROLE_DUTY",item:{role_id:role.id} as Record<string,unknown>})}><Plus/> Powiąż kompetencję z rolą</button>}</article>;
   })}</div><div className="matrix-v2-duty-dictionary"><span><strong>Słownik obowiązków</strong><small>Edytuj nazwę lub dodaj kompetencję, a potem przypisz ją do właściwych ról.</small></span><div>{data.duties.map(duty=><button key={duty.id} disabled={!editable} onClick={()=>editable&&edit({kind:"DUTY",item:duty})}>{duty.name}</button>)}{editable&&<button onClick={()=>edit({kind:"DUTY"})}><Plus/> Nowy obowiązek</button>}</div></div></section>;
 }
 
@@ -1167,7 +1175,7 @@ function EntityPanel({title, description, items, editable, add, edit}: {title: s
   return <section className="matrix-v2-card">
     <SectionHead title={title} description={description} editable={editable} add={add}/>
     <div className="matrix-v2-entities">
-      {items.map(item => <button key={item.id} onClick={() => editable && edit(item)}><i style={{background: item.color ?? "#7257d8"}}/><span><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</span><em className={item.active ? "on" : "off"}>{item.active ? "Aktywna" : "Wyłączona"}</em>{editable && <Edit3/>}</button>)}
+      {items.map(item => <button key={item.id} onClick={() => editable && edit(item)}><i style={{background: uiSafeColor(item.color,DEFAULT_ROLE_COLOR)}}/><span><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</span><em className={item.active ? "on" : "off"}>{item.active ? "Aktywna" : "Wyłączona"}</em>{editable && <Edit3/>}</button>)}
       {!items.length && <p className="matrix-v2-empty">Brak elementów.</p>}
     </div>
   </section>;
@@ -1470,7 +1478,7 @@ function StaffingTab({data, editable, busy, edit, bulkAdjust, defaultScenarioCou
       <SectionHead title="Profile zapotrzebowania" description="Jeden profil bazowy obowiązuje zawsze. Dodatkowy profil musi mieć zakres dat, np. sezon letni; wyjątki pojedynczych dni dodajesz w kalendarzu operacyjnym." editable={editable} add={() => edit({kind: "SCENARIO"})}/>
       <div className="matrix-v2-scenario-grid">
         {data.scenarios.map(scenario => <article key={scenario.id} className={!scenario.active ? "inactive" : ""}>
-          <i style={{background: scenario.color ?? "#7457e8"}}/>
+          <i style={{background: uiSafeColor(scenario.color,DEFAULT_SCENARIO_COLOR)}}/>
           <span><small>{scenario.is_default ? "BAZA — OBOWIĄZUJE ZAWSZE" : scenario.valid_from||scenario.valid_to ? `OKRES: ${scenario.valid_from??"początek"} – ${scenario.valid_to??"bez końca"}` : "BRAK OKRESU — NIEWIDOCZNY W GENERATORZE"}</small><h4>{scenario.name}</h4><p>{scenario.description || "Bez dodatkowego opisu"}{scenario.parent_scenario_id?` • dziedziczy po ${itemName(data.scenarios,scenario.parent_scenario_id)}`:""}{Object.keys(scenario.settings_overrides ?? {}).length ? ` • ${Object.keys(scenario.settings_overrides ?? {}).length} zmienione reguły` : ""}</p></span>
           {editable && <button onClick={() => edit({kind: "SCENARIO", item: scenario})}><Edit3/> Edytuj</button>}
         </article>)}
@@ -1863,7 +1871,7 @@ async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
   add("Pracownicy",employees);
   add("Zmiany",data.shiftTemplates.map(shift=>{
     const location=data.locations.find(item=>item.id===shift.location_id);
-    return [shift.code,shift.name,referenceLabel(location?.name,location?.code),time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.active?"TAK":"NIE"];
+    return [shift.code,shift.name,referenceLabel(location?.name,location?.code),time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),uiSafeColor(shift.color,DEFAULT_SHIFT_MARKER_COLOR),shift.active?"TAK":"NIE"];
   }));
   const defaultScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)??data.scenarios.find(scenario=>scenario.active);
   add("Obsada",data.staffingRules.filter(rule=>!defaultScenario||rule.scenario_id===defaultScenario.id).map(rule=>{
@@ -1978,7 +1986,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
   });
   const locationGrantHeaders=activeLocations.flatMap(location=>[`${location.code}_STANDARD`,`${location.code}_NADGODZINY`]);
   add("Pracownicy",["Numer pracownika","Aktywny","Imię","Nazwisko","E-mail","Kod roli","Role rezerwowe (kolejność)","Etap zatrudnienia","Koniec okresu próbnego","Kody lokali","Lokal bazowy",...locationGrantHeaders,"Zatrudniony od","Zatrudniony do","Nominał godzin","Limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Minimalny odpoczynek godzin","Bez weekendów","Stawka godzinowa","Rodzaj umowy","Polityka czasu pracy","Zgoda na nadgodziny",...activeDutyCodes],employeeRows);
-  add("Zmiany",["Kod","Nazwa","Kod lokalu","Od","Do","Następny dzień","Dni","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),shift.sort_order,shift.active?"TAK":"NIE"]));
+  add("Zmiany",["Kod","Nazwa","Kod lokalu","Od","Do","Następny dzień","Dni","Kolor","Kolejność","Aktywna"],data.shiftTemplates.map(shift=>[shift.code,shift.name,data.locations.find(location=>location.id===shift.location_id)?.code??"",time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),uiSafeColor(shift.color,DEFAULT_SHIFT_MARKER_COLOR),shift.sort_order,shift.active?"TAK":"NIE"]));
   add("Obsada",["Kod scenariusza","Kod zmiany","Kod lokalu","Kod roli","Kod obowiązku","Operacja","Liczba osób","Aktywna"],data.staffingRules.map(rule=>{
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
     return [data.scenarios.find(item=>item.id===rule.scenario_id)?.code??"",shift?.code??"",data.locations.find(item=>item.id===shift?.location_id)?.code??"",data.roles.find(item=>item.id===rule.role_id)?.code??"",data.duties.find(item=>item.id===rule.duty_id)?.code??"",rule.operation,rule.count_value??"",rule.active?"TAK":"NIE"];
@@ -2028,10 +2036,7 @@ async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"
     ...data.locations.filter(item=>item.active).map(item=>["LOKAL",item.code,item.name]),
     ...data.duties.filter(item=>item.active).map(item=>["OBOWIĄZEK",item.code,item.name]),
     ...data.scenarios.filter(item=>item.active).map(item=>["SCENARIUSZ",item.code,item.name]),
-    ["KOLOR","#7257D8","Fioletowy"],["KOLOR","#0F8F7A","Turkusowy"],
-    ["KOLOR","#2F75B5","Niebieski"],["KOLOR","#C9A51D","Złoty"],
-    ["KOLOR","#C62BBE","Różowy"],["KOLOR","#D4574F","Koralowy"],
-    ["KOLOR","#4A8D78","Zielony"],["KOLOR","#7A6F85","Szary"],
+    ...APP_COLOR_PALETTE.map(color=>["KOLOR",color.hex,color.name]),
     ["OPERACJA OBSADY","SET","Ustaw liczbę"],["OPERACJA OBSADY","ADD","Dodaj liczbę"],["OPERACJA OBSADY","REMOVE","Usuń regułę"],
   ];
   const dictionarySheet=XLSX.utils.aoa_to_sheet(dictionaries);
@@ -2384,7 +2389,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     {kind === "LOCATION" && <label>Strefa czasowa<input name="timezone" required list="matrix-location-timezones" defaultValue={String(item?.timezone ?? "")}/><datalist id="matrix-location-timezones"><option value="Europe/Warsaw"/><option value="Europe/London"/><option value="Europe/Berlin"/><option value="UTC"/></datalist><small>Wybierz lub wpisz strefę IANA; wartość nie jest ustawiana automatycznie.</small></label>}
     {kind === "DUTY" && <label>Opis<textarea name="description" defaultValue={String(item?.description ?? "")}/></label>}
     {kind === "STRATEGY" && <><label>Opis wariantu<textarea name="description" defaultValue={String(item?.description ?? "")}/></label><input type="hidden" name="solverCode" value="CP_SAT"/></>}
-    {(kind === "ROLE" || kind === "DUTY") && <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? (kind === "ROLE" ? "#7257d8" : "#4a8d78"))}/></label>}
+    {(kind === "ROLE" || kind === "DUTY") && <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? (kind === "ROLE" ? DEFAULT_ROLE_COLOR : DEFAULT_DUTY_COLOR))}/></label>}
     {kind==="DUTY"?<DutyState item={item}/>:<CommonState item={item}/>}
   </>;
   if (kind === "SHIFT") return <>
@@ -2394,6 +2399,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
     <div className="form-row"><label>Od (24 h)<input name="startsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="10:00" defaultValue={time(String(item?.starts_at ?? "10:00"))}/><small>Wpisz godzinę i minuty, np. 10:30.</small></label><label>Do (24 h)<input name="endsAt" type="text" inputMode="numeric" required pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="18:00" defaultValue={time(String(item?.ends_at ?? "18:00"))}/><small>Wpisz godzinę i minuty, np. 18:45.</small></label></div>
     <label className="check-label"><input name="endsNextDay" type="checkbox" defaultChecked={Boolean(item?.ends_next_day)}/> Kończy się następnego dnia</label>
     <DaySelector selected={(item?.day_mask as number[] | undefined) ?? WEEKDAYS.map(day=>day.value)}/>
+    <label>Kolor znacznika zmiany<input name="color" type="color" list="matrix-shift-colors" defaultValue={uiSafeColor(String(item?.color ?? ""),DEFAULT_SHIFT_MARKER_COLOR)}/><datalist id="matrix-shift-colors">{APP_COLOR_PALETTE.map(color=><option value={color.hex} key={color.hex}>{color.name}</option>)}</datalist><small>Ten sam wersjonowany kolor zobaczysz w ustawieniach, eksporcie i grafiku.</small></label>
     <CommonState item={item}/>
   </>;
   if (kind === "ROLE_DUTY") return <>
@@ -2433,7 +2439,7 @@ function DrawerFields({kind,item,data,month,operation,setOperation,payMethod,set
   if (kind === "SCENARIO") return <>
     <NameAndCode item={item}/><label>Opis<textarea name="description" defaultValue={String(item?.description ?? "")}/></label>
     <label>Dziedziczy po<select name="parentScenarioId" defaultValue={String(item?.parent_scenario_id ?? "")}><option value="">Nie dziedziczy</option>{data.scenarios.filter(x=>x.active&&x.id!==item?.id).map(x=><option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-    <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? "#7457e8")}/></label>
+    <label>Kolor<input name="color" type="color" defaultValue={String(item?.color ?? DEFAULT_SCENARIO_COLOR)}/></label>
     <div className="form-row"><label>Obowiązuje od<input name="validFrom" type="date" defaultValue={String(item?.valid_from ?? "")}/></label><label>Obowiązuje do<input name="validTo" type="date" defaultValue={String(item?.valid_to ?? "")}/></label></div><small>Profil inny niż bazowy wymaga obu dat. Jednodniowe wydarzenia i weekendy ustawiaj w Kalendarzu operacyjnym, nie jako osobny profil miesiąca.</small>
     <ScenarioSettingsOverrideFields item={item}/>
     <label className="check-label"><input name="isDefault" type="checkbox" defaultChecked={Boolean(item?.is_default)}/> Scenariusz domyślny</label><CommonState item={item}/>
@@ -2693,7 +2699,7 @@ function scenarioStrategySummary(link:MatrixV2ScenarioStrategy){
 function payloadFromForm(kind:MatrixV2SaveKind,form:HTMLFormElement,item:Record<string,unknown>|undefined,operation:string,payMethod:string,currency:string,workspace:MatrixV2Workspace):Record<string,unknown>{
   const data=new FormData(form);const name=formText(form,"name");const code=formText(form,"code")||codeFrom(name);const common=()=>({code,name,sortOrder:requiredNumber(formText(form,"sortOrder")||"0"),active:checked(form,"active")});
   if(["ROLE","LOCATION","DUTY","STRATEGY"].includes(kind)){if(!name||!code)throw new Error("Podaj nazwę elementu.");if(kind==="ROLE"){const categoryId=formText(form,"categoryId");if(!categoryId)throw new Error("Wybierz kategorię grafiku dla tej roli.");return{...common(),color:formText(form,"color"),categoryId};}if(kind==="LOCATION"){const timezone=formText(form,"timezone");if(!timezone)throw new Error("Wybierz strefę czasową lokalu.");try{new Intl.DateTimeFormat("en",{timeZone:timezone}).format(new Date(0));}catch{throw new Error("Podaj prawidłową strefę czasową IANA, np. Europe/Warsaw.");}return{...common(),timezone};}if(kind==="DUTY")return{...common(),description:formText(form,"description"),color:formText(form,"color")};return{...common(),description:formText(form,"description"),solverCode:"CP_SAT"};}
-  if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const startsAt=parseTime24(formText(form,"startsAt"),"Godzina rozpoczęcia") as string;const endsAt=parseTime24(formText(form,"endsAt"),"Godzina zakończenia") as string;return{...common(),locationId:formText(form,"locationId"),shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt,endsNextDay:checked(form,"endsNextDay"),days};}
+  if(kind==="SHIFT"){const days=data.getAll("days").map(Number);if(!days.length)throw new Error("Wybierz co najmniej jeden dzień tygodnia.");const startsAt=parseTime24(formText(form,"startsAt"),"Godzina rozpoczęcia") as string;const endsAt=parseTime24(formText(form,"endsAt"),"Godzina zakończenia") as string;const color=formText(form,"color")||DEFAULT_SHIFT_MARKER_COLOR;if(!/^#[0-9A-Fa-f]{6}$/.test(color))throw new Error("Kolor zmiany musi mieć format #RRGGBB.");return{...common(),locationId:formText(form,"locationId"),shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt,endsNextDay:checked(form,"endsNextDay"),days,color};}
   if(kind==="ROLE_DUTY")return{roleId:formText(form,"roleId"),dutyId:formText(form,"dutyId"),assignmentMode:item?.assignment_mode==="EXTRA"?"EXTRA":"OPTIONAL",minimumCount:0,shiftObligation:false,shiftPeriod:null,active:checked(form,"active")};
   if(kind==="EMPLOYEE_ROLE"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo"),isPrimary=checked(form,"isPrimary");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początku.");return{employeeId:formText(form,"employeeId"),roleId:formText(form,"roleId"),isPrimary,assignmentMode:isPrimary?"STANDARD":"BACKUP",backupPriority:isPrimary?100:Number(item?.backup_priority??100),canLead:checked(form,"canLead"),active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}
   if(kind==="EMPLOYEE_LOCATION"){const validFrom=formText(form,"validFrom"),validTo=formText(form,"validTo");if(validFrom&&validTo&&validTo<validFrom)throw new Error("Data końcowa nie może być wcześniejsza od początkowej.");return{employeeId:formText(form,"employeeId"),locationId:formText(form,"locationId"),standardAllowed:true,overtimeAllowed:false,homeLocation:false,active:checked(form,"active"),validFrom:validFrom||null,validTo:validTo||null};}

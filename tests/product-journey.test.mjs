@@ -46,6 +46,9 @@ test("configuration journey recommends the first real data gap", () => {
   assert.equal(result.steps.find(step => step.key === "employees")?.state, "complete");
   assert.equal(result.steps.find(step => step.key === "readiness")?.state, "blocked");
   assert.equal(result.ready, false);
+  assert.deepEqual(result.blockers.map(blocker => [blocker.code, blocker.shiftTemplateId]), [
+    ["SHIFT_BASE_STAFFING_REQUIRED", "shift"],
+  ]);
 });
 
 test("server readiness sends a complete draft to publication before the generator", () => {
@@ -55,6 +58,15 @@ test("server readiness sends a complete draft to publication before the generato
   assert.equal(result.percent, 86);
   assert.equal(result.next?.key, "publication");
   assert.equal(result.ready, false);
+});
+
+test("missing base staffing points to the exact shift card and offers a concrete repair", () => {
+  const data = workspace({ staffingRules: [] });
+  const blocker = configurationJourney(data, "2026-08", null).blockers[0];
+  const action = configurationBlockerAction(blocker, data, "2026-08");
+  assert.equal(action.focus?.targetId, "matrix-v2-shift-shift");
+  assert.equal(action.actionLabel, "Uzupełnij obsadę");
+  assert.match(action.message, /uzupełnij obsadę albo wyłącz zmianę/i);
 });
 
 test("only a reloaded active configuration unlocks schedule creation", () => {

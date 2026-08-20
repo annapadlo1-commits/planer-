@@ -1,12 +1,13 @@
 import ExcelJS from "exceljs";
+import { APP_COLOR_LABELS } from "./app-color-palette.ts";
 import { QUICK_WORKBOOK_SHEETS, referenceLabel, type WorkbookFieldDefinition } from "./workbook-contract.ts";
 
 type Worksheet=ExcelJS.Worksheet;
 const {Workbook}=ExcelJS;
 
-const BRAND={purple:"7257D8",purpleDark:"4F35B5",purpleLight:"EEE9FF",ink:"24212B",muted:"6F6878",line:"DDD7E7",required:"FFF0E6",conditional:"FFF8D9",optional:"F6F3FA",system:"ECEFF3",success:"EAF8F3"};
+const BRAND={primary:"33443B",primaryDark:"1A1A1A",primaryLight:"C4D2C4",ink:"1A1A1A",muted:"756D65",line:"CBBFAE",required:"F2EDE4",conditional:"E8E1D6",optional:"F7F3EC",system:"D7D0C7",success:"C4D2C4"};
 const BOOL_VALUES=["☐ Nie","☑ Tak"];
-const COLOR_VALUES=["Fioletowy — #7257D8","Turkusowy — #0F8F7A","Niebieski — #2F75B5","Złoty — #C9A51D","Różowy — #C62BBE","Koralowy — #D4574F","Zielony — #4A8D78","Szary — #7A6F85"];
+const COLOR_VALUES=APP_COLOR_LABELS;
 const EMPLOYMENT_STAGE_VALUES=["Stała współpraca","Okres próbny","Okres wypowiedzenia"];
 const CONTRACT_VALUES=["Umowa o pracę","Umowa o pracę — część etatu","Umowa zlecenie","B2B","Inna"];
 const OVERTIME_VALUES=["NIE","TYLKO PO ZATWIERDZENIU","TAK"];
@@ -98,7 +99,7 @@ function styleSheet(sheet:Worksheet,kind:WorkbookKind){
     cell.font={name:"Aptos",size:10,bold:true,color:{argb:argb(BRAND.ink)}};
     cell.alignment={vertical:"middle",horizontal:"left",wrapText:true};
     cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(fieldKind==="required"?BRAND.required:fieldKind==="conditional"?BRAND.conditional:fieldKind==="system"?BRAND.system:BRAND.optional)}};
-    cell.border={bottom:{style:"medium",color:{argb:argb(BRAND.purple)}}};
+    cell.border={bottom:{style:"medium",color:{argb:argb(BRAND.primary)}}};
     // Guidance stays visible in the header. Do not add ExcelJS comments here:
     // their VML parts may be rejected by desktop Excel after SheetJS output is
     // loaded and rewritten.
@@ -208,11 +209,11 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
   ];
   sheet.spliceRows(1,Math.max(sheet.rowCount,content.length),...content);
   sheet.mergeCells("A1:C1");sheet.getCell("A1").value=title;
-  sheet.getCell("A1").font={name:"Aptos Display",size:20,bold:true,color:{argb:"FFFFFFFF"}};sheet.getCell("A1").fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.purple)}};sheet.getCell("A1").alignment={vertical:"middle"};sheet.getRow(1).height=38;
+  sheet.getCell("A1").font={name:"Aptos Display",size:20,bold:true,color:{argb:"FFFFFFFF"}};sheet.getCell("A1").fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.primary)}};sheet.getCell("A1").alignment={vertical:"middle"};sheet.getRow(1).height=38;
   sheet.getColumn(1).width=14;sheet.getColumn(2).width=36;sheet.getColumn(3).width=100;
   sheet.views=[{state:"frozen",ySplit:2,showGridLines:false}];
-  const header=sheet.getRow(2);header.height=28;header.eachCell(cell=>{cell.font={name:"Aptos",size:10,bold:true,color:{argb:"FFFFFFFF"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.purpleDark)}};cell.alignment={vertical:"middle"};});
-  for(let row=3;row<=sheet.rowCount;row++){const current=sheet.getRow(row);current.height=34;current.eachCell(cell=>{cell.font={name:"Aptos",size:10,color:{argb:argb(BRAND.ink)}};cell.alignment={vertical:"middle",wrapText:true};cell.border={bottom:{style:"thin",color:{argb:argb(BRAND.line)}}};});current.getCell(1).font={name:"Aptos",size:11,bold:true,color:{argb:argb(BRAND.purpleDark)}};}
+  const header=sheet.getRow(2);header.height=28;header.eachCell(cell=>{cell.font={name:"Aptos",size:10,bold:true,color:{argb:"FFFFFFFF"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.primaryDark)}};cell.alignment={vertical:"middle"};});
+  for(let row=3;row<=sheet.rowCount;row++){const current=sheet.getRow(row);current.height=34;current.eachCell(cell=>{cell.font={name:"Aptos",size:10,color:{argb:argb(BRAND.ink)}};cell.alignment={vertical:"middle",wrapText:true};cell.border={bottom:{style:"thin",color:{argb:argb(BRAND.line)}}};});current.getCell(1).font={name:"Aptos",size:11,bold:true,color:{argb:argb(BRAND.primaryDark)}};}
 }
 
 const TECHNICAL_SHEET_PURPOSE:Record<string,string>={

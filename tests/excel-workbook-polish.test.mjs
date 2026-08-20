@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
+import { APP_COLOR_PALETTE } from "../lib/app-color-palette.ts";
 import { polishAccessWorkbook, polishFinanceWorkbook, polishMatrixWorkbook } from "../lib/excel-workbook-polish.ts";
 import { readMatrixWorkbook } from "../lib/matrix-workbook-import.ts";
 
@@ -29,9 +30,18 @@ test("configuration workbook gets guided instructions, portable lists and separa
   }),"QUICK");
   const workbook=await load(polished);
   assert.match(String(workbook.getWorksheet("Instrukcja").getCell("A1").value),/konfiguracja firmy krok po kroku/i);
+  assert.equal(workbook.getWorksheet("Instrukcja").getCell("A1").fill.fgColor.argb,"FF33443B");
   assert.equal(workbook.getWorksheet("Instrukcja").getCell("A2").value,"KROK");
+  assert.equal(workbook.getWorksheet("Instrukcja").getCell("A2").fill.fgColor.argb,"FF1A1A1A");
   assert.doesNotMatch(workbook.getWorksheet("Instrukcja").getColumn(1).values.join("\n"),/Co uzupełnić/);
   assert.equal(workbook.getWorksheet("_LISTY").state,"hidden");
+  const colorValues=workbook.getWorksheet("_LISTY").getColumn(4).values
+    .slice(2)
+    .filter(Boolean)
+    .map(String);
+  assert.equal(colorValues.length,24);
+  assert.deepEqual(colorValues,APP_COLOR_PALETTE.map(({name,hex})=>`${name} — ${hex}`));
+  assert.equal(workbook.getWorksheet("Kategorie grafików").getCell("C2").dataValidation.type,"list");
   assert.equal(workbook.getWorksheet("Pracownicy").getCell("E2").value,"Okres próbny");
   assert.match(String(workbook.getWorksheet("Pracownicy").getCell("B1").value),/WYMAGANE/);
   assert.equal(workbook.getWorksheet("Pracownicy").getCell("E2").dataValidation.type,"list");

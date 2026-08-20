@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import * as XLSX from "xlsx";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
+import { APP_COLOR_PALETTE, uiSafeColor } from "@/lib/app-color-palette";
 
 import {
   getEmployeePublishedSchedule,
@@ -31,12 +32,13 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function roleCardStyle(value:string,color?:string|null):CSSProperties{
   if(color && /^#[0-9a-f]{6}$/i.test(color)){
-    return {"--role-color":color,"--role-soft":`${color}18`} as CSSProperties;
+    const safe=uiSafeColor(color);
+    return {"--role-color":safe,"--role-soft":`${safe}18`} as CSSProperties;
   }
   let hash=0x811c9dc5;
   for(const character of value){hash^=character.charCodeAt(0);hash=Math.imul(hash,0x01000193)>>>0;}
-  const hue=hash%360;
-  return {"--role-color":`hsl(${hue} 62% 47%)`,"--role-soft":`hsl(${hue} 72% 95%)`} as CSSProperties;
+  const safe=APP_COLOR_PALETTE[hash%APP_COLOR_PALETTE.length].hex;
+  return {"--role-color":safe,"--role-soft":`${safe}18`} as CSSProperties;
 }
 
 export type AdminEmployee = {

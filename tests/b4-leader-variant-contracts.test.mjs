@@ -637,7 +637,43 @@ test("Studio keeps the employee side panel available while scrolling through lat
   const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
   assert.match(styles,/leader-studio>\.leader-studio-candidate-panel\{[^}]*position:sticky/);
   assert.match(styles,/leader-studio-candidate-panel>\.drawer-content\{[^}]*overflow-y:auto/);
+  assert.match(styles,/leader-studio>\.solver-global-filters,.leader-studio>\.leader-studio-candidate-panel\{[^}]*height:calc\(100dvh - 230px\)[^}]*overflow:hidden/,
+    "desktopowy panel ma mieć jedną kontrolowaną wysokość zamiast ucinać wewnętrzną listę");
+  assert.match(styles,/leader-employee-pool\{[^}]*grid-template-rows:auto minmax\(0,1fr\) auto[^}]*overflow:hidden/);
+  assert.match(styles,/leader-employee-pool>div\{[^}]*height:100%[^}]*overflow-y:scroll[^}]*scrollbar-gutter:stable/,
+    "lista pracowników ma zachować widoczny, stabilny pionowy pasek przewijania");
   assert.doesNotMatch(styles,/leader-studio>\.solver-global-filters,.leader-studio>\.leader-studio-candidate-panel,.leader-studio>\.leader-studio-impact\{position:static/);
+});
+
+test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
+  const [panel,migration,contract]=await Promise.all([
+    readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/tests/b4f121_atomic_leader_publication_contract.sql",import.meta.url),"utf8"),
+  ]);
+  assert.match(panel,/const \[leaderStudioOpen,setLeaderStudioOpen\]=useState\(false\)/);
+  assert.match(panel,/leaderVariant&&selectedWorkspace&&leaderStudioOpen&&<section className="leader-studio-fullscreen"/);
+  const closeLeaderStudio=panel.slice(panel.indexOf('aria-label="Zamknij Studio lidera"'),panel.indexOf('aria-label="Zamknij Studio lidera"')+1200);
+  assert.match(closeLeaderStudio,/setLeaderStudioOpen\(false\)/);
+  assert.doesNotMatch(closeLeaderStudio,/setLeaderVariant\(null\)/,
+    "zamknięcie okna nie może porzucać tożsamości wersji lidera");
+  const publishBody=panel.slice(panel.indexOf("async function publishSelectedRole"),panel.indexOf("function startAnother"));
+  assert.doesNotMatch(publishBody,/selectSolverVariant/,
+    "frontend ma wykonać jedną atomową publikację, bez częściowego wyboru w osobnym RPC");
+  assert.match(migration,/SELECT_VARIANT_FOR_ATOMIC_ROLE_PUBLICATION/);
+  assert.match(migration,/leader_workflow_status not in \('READY_TO_MERGE','PUBLISHED'\)/);
+  assert.match(migration,/optimizer_publish_role_variant_before_b4f121_uat_v2/);
+  assert.match(contract,/B4F121_WRONG_VARIANT_PUBLISHED/);
+  assert.match(contract,/rollback;/);
+});
+
+test("Studio distinguishes a hard overtime refusal from leader-approved overtime",async()=>{
+  const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  assert.match(workspace,/candidate\.overtimeBlocked\?"Nadgodziny niedozwolone"/);
+  assert.match(workspace,/candidate\.overtimeApprovalRequired\?"Nadgodziny wymagają decyzji lidera"/);
+  assert.match(workspace,/Zatwierdź nadgodziny i przypisz/);
+  assert.match(workspace,/Ustawienia → Konfiguracja firmy → Pracownicy → profil tej osoby/,
+    "twarda blokada ma prowadzić do konkretnego miejsca zmiany polityki, bez omijania zgody pracownika");
 });
 
 test("current standby preview remains callable while the broken v3 employee wrapper is retired",async()=>{
