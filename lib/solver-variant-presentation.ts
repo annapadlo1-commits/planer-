@@ -32,6 +32,19 @@ const METRICS: Record<string, { label: string; explanation: string; unit?: "MINU
     explanation: "Łączna różnica między przydzielonym czasem a miesięcznym wymiarem osób, które mają ustawiony wymiar. Mniej oznacza lepsze dopasowanie.",
     unit: "MINUTES",
   },
+  UNDER_TARGET_MINUTES: {
+    label: "Godziny brakujące do indywidualnych celów",
+    explanation: "Łączny czas brakujący do miesięcznych celów godzinowych po rozdzieleniu całej wymaganej obsady. W niedoborze strukturalnym wartość może pozostać dodatnia mimo sprawiedliwego podziału.",
+    unit: "MINUTES",
+  },
+  MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS: {
+    label: "Najniższa realizacja osiągalnego celu",
+    explanation: "Najmniejszy procent realizacji celu możliwego dla danej osoby po uwzględnieniu jej dostępności, ról i twardych limitów. Wariant równy najpierw maksymalizuje właśnie tę wartość.",
+  },
+  ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: {
+    label: "Rozstęp realizacji osiągalnych celów",
+    explanation: "Różnica między najwyższą i najniższą procentową realizacją indywidualnego osiągalnego celu w całym planowanym zespole. Mniej oznacza równiejszy podział pozostałych godzin po ochronie najsłabiej obsłużonej osoby.",
+  },
   OVERTIME_MINUTES: {
     label: "Planowane nadgodziny",
     explanation: "Łączny czas ponad miesięczny wymiar pracy. Mniej oznacza mniejsze ryzyko nadgodzin.",
@@ -85,7 +98,9 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
       ? "Brak wymiarów"
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
         ? "Brak danych"
-        : code === "LOAD_UTILIZATION_SPREAD_BPS"
+        : code === "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+          ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`
+          : code === "LOAD_UTILIZATION_SPREAD_BPS" || code === "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
           ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} p.p.`
           : definition.unit === "MINUTES"
       ? formatDurationMinutes(rawValue)

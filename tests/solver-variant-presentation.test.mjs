@@ -24,11 +24,17 @@ test("hides obsolete and raw engine-only metrics", () => {
 test("explains normalized workload and missing contractual targets", () => {
   const normalized = presentSolverVariantMetrics({
     LOAD_UTILIZATION_SPREAD_BPS: 125,
+    MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS: 411,
+    ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: 261,
+    UNDER_TARGET_MINUTES: 120,
     LOAD_UTILIZATION_TARGET_COUNT: 4,
     NOMINAL_DEVIATION_MINUTES: 0,
     NOMINAL_TARGET_EMPLOYEE_COUNT: 0,
   });
   assert.equal(normalized.find(item => item.code === "LOAD_UTILIZATION_SPREAD_BPS")?.value, "12,5 p.p.");
+  assert.equal(normalized.find(item => item.code === "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS")?.value, "41,1%");
+  assert.equal(normalized.find(item => item.code === "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS")?.value, "26,1 p.p.");
+  assert.equal(normalized.find(item => item.code === "UNDER_TARGET_MINUTES")?.value, "2 godz.");
   assert.equal(normalized.find(item => item.code === "NOMINAL_DEVIATION_MINUTES")?.value, "Brak wymiarów");
   assert.match(normalized.find(item => item.code === "NOMINAL_DEVIATION_MINUTES")?.explanation ?? "", /zero nie oznacza/);
 

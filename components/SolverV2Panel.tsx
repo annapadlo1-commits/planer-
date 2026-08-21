@@ -73,6 +73,7 @@ const LazyGeneratorMemoryExperience=dynamic(()=>import("@/components/games/Gener
   loading:()=> <div className="cat-game-loading" role="status"><Cat/><strong>Ładuję Memory…</strong></div>,
 });
 const GENERATOR_MEMORY_PROMPT_KEY="szafunek_memory_generator_prompt_seen";
+const PREFERENCES_FAIRNESS_DESCRIPTION="Po uzupełnieniu wymaganej obsady najpierw maksymalizuje realizację celu najsłabiej obsłużonej osoby, następnie zmniejsza rozstęp procentowej realizacji indywidualnych celów i wyrównuje osoby porównywalne w rolach. Preferencje rozstrzygają dopiero między podobnie sprawiedliwymi rozwiązaniami, a koszt później.";
 
 type Props = {
   engine: SolverEngine;
@@ -127,6 +128,18 @@ function elapsedLabel(seconds: number | null | undefined) {
   const minutes = Math.floor(safeSeconds / 60);
   const remainder = safeSeconds % 60;
   return remainder ? `${minutes} min ${remainder} s` : `${minutes} min`;
+}
+
+function strategyDescription(strategy: SolverVariant["strategy"]) {
+  const name = strategy.name.trim().toLocaleLowerCase("pl-PL");
+  if (name.includes("preferenc") && name.includes("równ")) {
+    // Published Matrix versions are immutable and may retain the pre-B4F-119
+    // description.  The runtime strategy code is deliberately enforced by the
+    // solver, so the card must explain the active product contract instead of
+    // repeating stale configuration copy.
+    return PREFERENCES_FAIRNESS_DESCRIPTION;
+  }
+  return strategy.description?.trim() ?? "";
 }
 
 function workloadMinutesLabel(value:number){
@@ -1179,13 +1192,13 @@ export function SolverV2Panel({
       {variants.some(variant=>Number(variant.metrics.LOAD_UTILIZATION_TARGET_COUNT??0)<2)&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Ten zapisany przebieg nie porównywał obciążenia pracowników</strong><small>Wynik powstał w starszej wersji silnika, w której osoby z umowami elastycznymi mogły wypaść z celu równego podziału. Wygeneruj nowe warianty — obecna wersja uwzględnia je przez wspólną bazę sprawiedliwości.</small></span></div>}
       {allVariantsEquivalent && <div className="solver-v2-notice"><Check/><span><strong>Strategie zwróciły ten sam skład grafiku</strong><small>Przy obecnej obsadzie i twardych regułach silnik nie znalazł alternatywnego składu, który zmieniałby koszt, preferencje lub równy podział. Różne strategie nie tworzą sztucznie innych przydziałów.</small></span></div>}
       <div className="solver-v2-grid">
-        {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
+        {variants.map(variant => {const chosenAsSource=variant.selected||leaderVariant?.sourceVariantId===variant.id;const description=strategyDescription(variant.strategy);return <article className={`${variant.recommended ? "recommended" : ""} ${chosenAsSource ? "selected" : ""}`} key={variant.id}>
           <div className="solver-v2-card-head">
             <span><small>STRATEGIA</small><h3>{variant.strategy.name}</h3></span>
             {variant.recommended && <em>{variant.solverStatus==="OPTIMAL"?"REKOMENDOWANY":"NAJLEPSZY ZNALEZIONY"}</em>}
             {chosenAsSource && <em className="chosen"><Check/> {leaderVariant?"BAZA WERSJI LIDERA":"WYBRANY"}</em>}
           </div>
-          {variant.strategy.description && <p>{variant.strategy.description}</p>}
+          {description && <p>{description}</p>}
           <div className="solver-v2-metrics">
             <span><Users/><small>Przydziały</small><strong>{variant.assignmentCount}</strong></span>
             <span><AlertTriangle/><small>Braki</small><strong>{variant.unfilledCount}</strong></span>
