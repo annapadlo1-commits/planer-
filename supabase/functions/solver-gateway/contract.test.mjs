@@ -264,6 +264,9 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
     NOMINAL_DEVIATION_MINUTES: 56_520,
   };
   variant.stageObjectives[0].verifiedZeroIncumbent = true;
+  variant.stageObjectives[0].certifiedCoverageSeed = true;
+  variant.metrics.MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS = 411;
+  variant.metrics.ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS = 261;
   const args = {
     p_run_id: RUN_ID,
     p_attempt_id: ATTEMPT_ID,
