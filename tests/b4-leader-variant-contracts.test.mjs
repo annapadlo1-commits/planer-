@@ -645,6 +645,16 @@ test("Studio keeps the employee side panel available while scrolling through lat
   assert.doesNotMatch(styles,/leader-studio>\.solver-global-filters,.leader-studio>\.leader-studio-candidate-panel,.leader-studio>\.leader-studio-impact\{position:static/);
 });
 
+test("Studio role filter and employee pool never occupy the same side-panel space",async()=>{
+  const styles=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
+  assert.match(styles,/leader-studio>\.solver-global-filters\{[^}]*display:flex[^}]*flex-direction:column[^}]*min-height:0/,
+    "filtry i pula pracowników muszą dzielić jedną kolumnę w zwykłym przepływie");
+  assert.match(styles,/leader-studio>\.solver-global-filters>\.checkbox-dropdown>fieldset\{[^}]*max-height:min\(30dvh,260px\)[^}]*overflow-y:auto/,
+    "rozwinięta lista ról musi mieć własny ograniczony scroll zamiast przykrywać pracowników");
+  assert.match(styles,/leader-employee-pool\{[^}]*flex:1 1 0[^}]*min-height:0[^}]*overflow:hidden/,
+    "pula ma przejmować wyłącznie pozostałą wysokość panelu");
+});
+
 test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
   const [panel,migration,contract]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
