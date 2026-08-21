@@ -467,9 +467,12 @@ export function ActiveModules({
       // this fallback the post-publication conflict check was silently skipped.
       const employeeId = uatMasterEmployeeId || portal?.employee?.id || portal?.timeConstraints?.employeeId;
       if (employeeId) {
-        const conflictResult = await supabase.rpc("employee_availability_publication_conflicts_uat_v1", {
+        const conflictResult = await supabase.rpc("employee_availability_publication_conflicts_uat_v2", {
           p_employee_id: employeeId,
           p_dates: entry.dates,
+          p_all_day: entry.allDay,
+          p_local_start: entry.allDay ? null : entry.start,
+          p_local_end: entry.allDay ? null : entry.end,
         });
         if (conflictResult.error) {
           fail(`Nie udało się sprawdzić opublikowanego grafiku: ${translateError(conflictResult.error.message)}`);
@@ -491,7 +494,7 @@ export function ActiveModules({
     const requestType=entry.kind==="CANNOT_WORK"?"HARD_UNAVAILABLE":entry.kind;
     const requestMode=!uatMasterEmployeeId&&["HARD_UNAVAILABLE","LEAVE","SICKNESS"].includes(requestType);
     const result = await rpc(requestMode
-      ? "employee_request_submit_uat_v1"
+      ? "employee_request_submit_uat_v2"
       : uatMasterEmployeeId ? "uat_master_employee_availability_days_save_v2" : "employee_availability_days_save_uat_v3", {
       ...(uatMasterEmployeeId ? { p_employee_id: uatMasterEmployeeId } : {}),
       p_dates: entry.dates,
@@ -852,16 +855,17 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
     timezone,
   });
   const nextAssignment = snapshot.nextAssignmentId ? portal.assignments.find(assignment => assignment.id === snapshot.nextAssignmentId) ?? null : null;
-  const todayEvents = portal.calendarContext?.events.filter(event => event.date === snapshot.today) ?? [];
-  const actionCount = snapshot.targetedSwapCount + snapshot.waitingLeaderCount;
   const nextRole = nextAssignment ? (dynamic ? roleNames[nextAssignment.roleCode ?? nextAssignment.role] ?? nextAssignment.role : rolePl[nextAssignment.role] ?? nextAssignment.role) : "";
+  const sameRoleCoworkers = nextAssignment?.coworkers?.filter(coworker => coworker.role === nextAssignment.role) ?? [];
   const selectedMonth = labelMonth(month, timezone);
   return <section className="employee-home" aria-label="Dziś w portalu pracownika">
-    <header className="employee-home-hero">
-      <span><small>DZIŚ • {new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(new Date())}</small><PersonalHomeGreeting fallbackName={employee?.firstName}/></span>
-      <button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Otwórz cały grafik <ChevronRight /></button>
-    </header>
-    <PersonalActionNote compact/>
+    <div className="employee-home-top">
+      <header className="employee-home-hero">
+        <span><small>DZIŚ • {new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(new Date())}</small><PersonalHomeGreeting fallbackName={employee?.firstName}/></span>
+        <button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Otwórz cały grafik <ChevronRight /></button>
+      </header>
+      <PersonalActionNote compact/>
+    </div>
 
     <div className="employee-home-primary">
       <article className={`employee-next-shift ${snapshot.nextState === "NOW" ? "active" : ""}`}>
@@ -870,6 +874,7 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
           <h3>{new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${nextAssignment.date}T12:00:00Z`))}</h3>
           <div className="employee-next-shift-facts"><span><Clock3 /><b>{time(nextAssignment.startsAt, assignmentTimezone(nextAssignment, timezone))}–{time(nextAssignment.endsAt, assignmentTimezone(nextAssignment, timezone))}</b></span><span><MapPin /><b>{nextAssignment.location}</b></span><span><UserRound /><b>{nextRole}</b></span></div>
           <p><b>Co robisz:</b> {nextAssignment.capability || "brak dodatkowego obowiązku — obowiązuje rola na zmianie"}</p>
+          <p className="employee-next-shift-coworkers"><b>Z Twojej roli pracują z Tobą:</b> {sameRoleCoworkers.length ? sameRoleCoworkers.map(coworker => coworker.name).join(", ") : "na tej zmianie nie ma innej osoby w tej samej roli"}.</p>
           <button type="button" className="primary-button" onClick={() => openShift(nextAssignment)}>Szczegóły zmiany <ChevronRight /></button>
         </> : <div className="employee-home-empty"><h3>Masz dziś wolne</h3><p>W {selectedMonth} nie ma kolejnej opublikowanej zmiany. Sprawdź tablicę, jeśli chcesz przejąć wolną zmianę.</p>{snapshot.openShiftCount > 0 && <button type="button" className="primary-button" onClick={() => openEmployeeSection?.("swaps")}>Zobacz {snapshot.openShiftCount} pasujące {snapshot.openShiftCount === 1 ? "ogłoszenie" : "ogłoszenia"}</button>}</div>}
       </article>
@@ -882,13 +887,7 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
       </article>
     </div>
 
-    <div className="employee-home-secondary">
-      <section className="employee-home-actions"><header><span><small>DO OGARNIĘCIA</small><h3>{actionCount ? `${actionCount} ${actionCount === 1 ? "sprawa" : "sprawy"} wymaga reakcji` : "Nic pilnego"}</h3></span><ArrowLeftRight /></header>
-        <div>{snapshot.targetedSwapCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Propozycje zamiany skierowane do Ciebie</b><small>{snapshot.targetedSwapCount} do odpowiedzi</small></span><ChevronRight /></button>}{snapshot.waitingLeaderCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Zamiany czekające na decyzję lidera</b><small>{snapshot.waitingLeaderCount} w toku</small></span><ChevronRight /></button>}{snapshot.openShiftCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Pasujące otwarte zmiany</b><small>{snapshot.openShiftCount} możesz sprawdzić</small></span><ChevronRight /></button>}{todayEvents.map(event => <article key={event.id}><Megaphone /><span><b>{event.title}</b><small>{event.description || "Wydarzenie zespołu na dziś"}</small></span></article>)}{actionCount === 0 && snapshot.openShiftCount === 0 && todayEvents.length === 0 && <p>Nie masz nowych próśb ani decyzji do wykonania.</p>}</div>
-      </section>
-
-      <section className="employee-home-week"><header><span><small>TEN TYDZIEŃ</small><h3>{snapshot.weekShiftCount} {snapshot.weekShiftCount === 1 ? "zmiana" : "zmian"} • {employeeMinutesLabel(snapshot.weekMinutes)}</h3></span><Clock3 /></header><p>{snapshot.todayShiftCount ? `Dziś masz ${snapshot.todayShiftCount} ${snapshot.todayShiftCount === 1 ? "zmianę" : "zmiany"}.` : "Dziś nie masz zaplanowanej zmiany."}</p><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Grafik, dostępność i nieobecności <ChevronRight /></button></section>
-    </div>
+    <section className="employee-home-week employee-home-week-wide"><header><span><small>TEN TYDZIEŃ</small><h3>{snapshot.weekShiftCount} {snapshot.weekShiftCount === 1 ? "zmiana" : "zmian"} • {employeeMinutesLabel(snapshot.weekMinutes)}</h3></span><Clock3 /></header><p>{snapshot.todayShiftCount ? `Dziś masz ${snapshot.todayShiftCount} ${snapshot.todayShiftCount === 1 ? "zmianę" : "zmiany"}.` : "Dziś nie masz zaplanowanej zmiany."}</p><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Grafik, dostępność i nieobecności <ChevronRight /></button></section>
 
     <section className="employee-home-month"><header><span><small>TWÓJ MIESIĄC</small><h3>{selectedMonth}</h3></span><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Zobacz grafik</button></header><div><span><small>Zaplanowane</small><strong>{employeeMinutesLabel(snapshot.monthMinutes)}</strong></span><span><small>Zmiany</small><strong>{snapshot.monthShiftCount}</strong></span><span><small>Zmiany weekendowe</small><strong>{snapshot.weekendShiftCount}</strong></span><span><small>Rezerwa</small><strong>{portal.standby.length}</strong></span></div></section>
     {masterMode && <small className="employee-home-master-note">Tryb UAT MASTER pokazuje dane wybranej osoby, ale nie pozwala wykonywać jej akcji.</small>}
@@ -1030,7 +1029,7 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events, roleColors
     const date=day?`${month}-${String(day).padStart(2,"0")}`:"";
     const assignments=byDate.get(date)||[];
     const shiftGroups=[...assignments.reduce((map,item)=>{const key=`${item.startsAt}:${item.endsAt}:${item.locationName}:${item.shiftName}`;map.set(key,[...(map.get(key)||[]),item]);return map;},new Map<string,CompanyCalendarAssignment[]>()).values()];
-    return <button type="button" key={`${weekIndex}:${dayIndex}`} className={`company-week-day ${!day?"blank":""} ${eventDates.has(date)?"has-event":""} ${selectedDate===date?"selected":""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day&&<><span className="company-week-day-head"><small>{days[dayIndex]}</small><b>{day}</b><em>{assignments.length} os.</em></span><div className="company-week-shifts">{shiftGroups.slice(0,3).map(group=>{const first=group[0];return <span key={`${first.startsAt}:${first.locationId}:${first.shiftName}`} style={roleCardStyle(first.roleId,roleColors[first.roleId])}><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.locationName} • {first.shiftName}</small><em>{group.slice(0,3).map(item=>item.employeeName.split(" ")[0]).join(", ")}{group.length>3?` +${group.length-3}`:""}</em></span>})}{shiftGroups.length>3&&<small>+ {shiftGroups.length-3} kolejne zmiany</small>}</div>{assignments.some(assignment=>assignment.isSwap)&&<i>ZAMIANA</i>}{eventDates.has(date)&&<Megaphone/>}</>}</button>;
+    return <button type="button" key={`${weekIndex}:${dayIndex}`} className={`company-week-day ${!day?"blank":""} ${eventDates.has(date)?"has-event":""} ${selectedDate===date?"selected":""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day&&<><span className="company-week-day-head"><small>{days[dayIndex]}</small><b>{day}</b><em>{assignments.length} os.</em></span><div className="company-week-shifts">{shiftGroups.slice(0,3).map(group=>{const first=group[0];return <span key={`${first.startsAt}:${first.locationId}:${first.shiftName}`} style={roleCardStyle(first.roleId,roleColors[first.roleId])}><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.locationName} • {first.shiftName}</small><em>{group.slice(0,3).map(item=>`${item.employeeName.split(" ")[0]} • ${item.roleName}`).join(", ")}{group.length>3?` +${group.length-3}`:""}</em></span>})}{shiftGroups.length>3&&<small>+ {shiftGroups.length-3} kolejne zmiany</small>}</div>{assignments.some(assignment=>assignment.isSwap)&&<i>ZAMIANA</i>}{eventDates.has(date)&&<Megaphone/>}</>}</button>;
   })}</div></section>)}</div>{selectedDate && <section className="company-day-workspace"><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId,roleColors[assignment.roleId])} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
 }
 
@@ -1114,7 +1113,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
     else if(state.tone==="soft")setKind("PREFER_NOT_TO_WORK");
     else setKind("AVAILABLE");
     const entry=state.entry;
-    if(entry&&["AVAILABLE_WINDOW","UNAVAILABLE"].includes(entry.kind)){
+    if(entry&&entry.kind!=="PREFERRED_LOCATION"){
       const begins=time(entry.startsAt,timezone),finishes=time(entry.endsAt,timezone);
       const fullDay=begins==="00:00"&&finishes==="00:00";
       setAllDay(fullDay);
@@ -1172,7 +1171,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           const publishedAssignments=assignments.filter(assignment=>assignment.date===date);
           const dayStandby=standby.filter(entry=>entry.date===date);
           const daySwaps=swapAnnouncements.filter(request=>request.date===date);
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry||requestEntries.length?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry||requestEntries.length>0} title={protectedEntry||requestEntries.length?`${state.label} • wpis chroniony lub zgłoszenie w toku`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{requestEntries.map(request=><em className="calendar-request-marker" key={request.id}>{request.requestType==="LEAVE"?"Urlop — czeka na lidera":request.requestType==="SICKNESS"?"L4 — zapisane":"Nieobecność — czeka na lidera"}</em>)}{pending&&!requestEntries.length&&<em>Oczekuje na lidera</em>}{(protectedEntry||requestEntries.length>0)&&<ShieldCheck/>}</button>;
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry||requestEntries.length?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry||requestEntries.length>0} title={protectedEntry||requestEntries.length?`${state.label} • wpis chroniony lub zgłoszenie w toku`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{publishedAssignments.map(assignment=>assignment.coworkers?.length?<em className="calendar-coworkers" key={`coworkers:${assignment.id}`}><UserRound/> Z Tobą: {assignment.coworkers.slice(0,3).map(coworker=>coworker.name).join(", ")}{assignment.coworkers.length>3?` +${assignment.coworkers.length-3}`:""}</em>:null)}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{requestEntries.map(request=><em className="calendar-request-marker" key={request.id}>{request.requestType==="LEAVE"?"Urlop — czeka na lidera":request.requestType==="SICKNESS"?"L4 — zapisane":"Nieobecność — czeka na lidera"}</em>)}{pending&&!requestEntries.length&&<em>Oczekuje na lidera</em>}{(protectedEntry||requestEntries.length>0)&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>
@@ -1182,10 +1181,10 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           <button type="button" className={`available ${kind==="AVAILABLE"?"active":""}`} onClick={()=>setKind("AVAILABLE")}><span/>Mogę pracować</button>
           <button type="button" className={`soft ${kind==="PREFER_NOT_TO_WORK"?"active":""}`} onClick={()=>setKind("PREFER_NOT_TO_WORK")}><span/>Wolę nie pracować</button>
           <button type="button" className={`hard ${kind==="CANNOT_WORK"?"active":""}`} onClick={()=>setKind("CANNOT_WORK")}><span/>Twarda nieobecność</button>
-          <button type="button" className={`leave ${kind==="LEAVE"?"active":""}`} onClick={()=>{setKind("LEAVE");setAllDay(true);}}><span/>Wnioskuję o urlop</button>
-          <button type="button" className={`sickness ${kind==="SICKNESS"?"active":""}`} onClick={()=>{setKind("SICKNESS");setAllDay(true);}}><span/>Zgłaszam L4</button>
+          <button type="button" className={`leave ${kind==="LEAVE"?"active":""}`} onClick={()=>setKind("LEAVE")}><span/>Wnioskuję o urlop</button>
+          <button type="button" className={`sickness ${kind==="SICKNESS"?"active":""}`} onClick={()=>setKind("SICKNESS")}><span/>Zgłaszam L4</button>
         </div>
-        {!["PREFER_NOT_TO_WORK","LEAVE","SICKNESS"].includes(kind)&&<><label className="availability-all-day"><input type="checkbox" checked={!allDay} onChange={event=>setAllDay(!event.target.checked)}/> Podaj konkretne godziny</label>{!allDay&&<div className="form-row"><label>Od (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="08:00" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Do (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="16:30" value={end} onChange={event=>setEnd(event.target.value)}/></label></div>}</>}
+        <><label className="availability-all-day"><input type="checkbox" checked={!allDay} onChange={event=>setAllDay(!event.target.checked)}/> Podaj konkretne godziny</label>{!allDay&&<div className="form-row"><label>Od (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="08:00" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Do (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="16:30" value={end} onChange={event=>setEnd(event.target.value)}/></label></div>}</>
         {["AVAILABLE","PREFER_NOT_TO_WORK"].includes(kind)&&<fieldset className="availability-location-options"><legend>Preferowany lokal (opcjonalnie)</legend><button type="button" className={!preferredLocationId?"active":""} onClick={()=>setPreferredLocationId("")}>Bez preferencji</button>{locations.filter(location=>location.active).map(location=><button type="button" className={preferredLocationId===location.id?"active":""} onClick={()=>setPreferredLocationId(location.id)} key={location.id}>{location.name}</button>)}</fieldset>}
         <div className={`absence-flow-explainer ${kind.toLowerCase()}`}>{kind==="LEAVE"?"Urlop zostanie wysłany do lidera i zacznie obowiązywać dopiero po akceptacji.":kind==="SICKNESS"?"L4 zapisze się od razu. Lider nie może go odrzucić — dostanie zadanie potwierdzenia odbioru i organizacji zastępstwa.":kind==="CANNOT_WORK"?"Jeśli limit nieobecności nie jest przekroczony, wpis zapisze się od razu. Po przekroczeniu limitu trafi do lidera do decyzji.":"Dostępność i preferencje zapisują się od razu i pozostają edytowalne."}</div>
         <label>Notatka (opcjonalnie)<textarea maxLength={500} value={note} onChange={event=>setNote(event.target.value)}/></label>

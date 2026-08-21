@@ -62,10 +62,11 @@ function catSprite(key?:string|null):CSSProperties{
   const local=first?number-1:second?number-19:number-35;
   const columns=first?6:4,rows=first?3:4;
   const column=local%columns,row=Math.floor(local/columns);
+  const rowPosition=first?[5.556,50,94.444][row]:row/(rows-1)*100;
   return {
-    backgroundImage:`url(${first?"/profile-cats/cats-01-18.png":second?"/profile-cats/cats-19-34.png":"/profile-cats/cats-35-50.png"})`,
-    backgroundSize:`${columns*100}% ${rows*100}%`,
-    backgroundPosition:`${column/(columns-1)*100}% ${row/(rows-1)*100}%`,
+    backgroundImage:`url(${first?"/profile-cats/cats-01-18-v2.png":second?"/profile-cats/cats-19-34-v2.png":"/profile-cats/cats-35-50-v2.png"})`,
+    backgroundSize:first?`${columns*100}% auto`:`${columns*100}% ${rows*100}%`,
+    backgroundPosition:`${column/(columns-1)*100}% ${rowPosition}%`,
   };
 }
 
@@ -124,13 +125,13 @@ export function PersonalActionNote({compact=false}:{compact?:boolean}){
   const {workspace:profileWorkspace,photoUrl}=usePersonalProfile();
   const {supabase,workspace,error,load}=usePersonalActions();
   const profile=profileWorkspace?.profile;
-  const active=workspace.notifications.filter(item=>!item.resolvedAt).slice(0,compact?2:4);
+  const active=workspace.notifications.filter(item=>!item.resolvedAt&&(!item.readAt||item.actionRequired)).slice(0,compact?2:5);
   const open=async(item?:PersonalNotification)=>{
     if(item&&!item.readAt&&supabase){await supabase.rpc("personal_notification_mark_read_uat_v1",{p_notification_id:item.id});await load();}
     router.push(item?.actionRoute||"/profile");
   };
-  return <section className={`personal-action-note ${compact?"compact":""}`} style={{"--note-color":profile?.noteColor||"#E8E1D6"} as CSSProperties} aria-label="Twoje powiadomienia i akcje">
-    <header>{profile&&<PersonalAvatar profile={profile} photoUrl={photoUrl} size="small"/>}<span><small>TWOJA KARTECZKA</small><h3>{workspace.actionCount?`${workspace.actionCount} ${workspace.actionCount===1?"sprawa wymaga":"sprawy wymagają"} działania`:workspace.unreadCount?`${workspace.unreadCount} nowych wiadomości`:"Wszystko ogarnięte"}</h3></span><Bell/></header>
+  return <section className={`personal-action-note ${compact?"compact":""}`} style={{"--note-color":profile?.noteColor||"#E8E1D6"} as CSSProperties} aria-label="Do ogarnięcia — powiadomienia i akcje">
+    <header>{profile&&<PersonalAvatar profile={profile} photoUrl={photoUrl} size="small"/>}<span><small>DO OGARNIĘCIA</small><h3>{workspace.actionCount?`${workspace.actionCount} ${workspace.actionCount===1?"sprawa wymaga":"sprawy wymagają"} działania`:workspace.unreadCount===1?"1 nowa wiadomość":workspace.unreadCount?`${workspace.unreadCount} nowych wiadomości`:"Wszystko ogarnięte"}</h3></span><Bell/></header>
     {error?<p className="personal-inline-error">{error}</p>:<div className="personal-note-items">{active.map(item=><button type="button" key={item.id} onClick={()=>void open(item)}><span>{item.actionRequired?<ShieldCheck/>:<Bell/>}<b>{item.title}</b><small>{item.body}</small></span><ChevronRight/></button>)}{!active.length&&<p>Nie masz nowych spraw wymagających reakcji.</p>}</div>}
     <button type="button" className="personal-note-open" onClick={()=>void open()}>Otwórz centrum i mój profil <ChevronRight/></button>
   </section>;

@@ -593,6 +593,45 @@ class SnapshotTests(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("AVAILABILITY_WINDOW", result.reasons)
 
+    def test_partial_day_hard_absence_blocks_only_overlapping_shift(self) -> None:
+        raw = load_raw()
+        raw["hardBlocks"] = [
+            {
+                "employeeId": "employee-alice",
+                "start": "2026-08-01T12:00:00+02:00",
+                "end": "2026-08-01T14:00:00+02:00",
+            }
+        ]
+        snapshot = Snapshot.from_dict(raw)
+        employee = next(item for item in snapshot.employees if item.id == "employee-alice")
+        morning = next(
+            item
+            for item in generate_slots(snapshot)
+            if item.shift_template_id == "shift-morning"
+            and item.date.isoformat() == "2026-08-01"
+        )
+        self.assertTrue(EligibilityIndex(snapshot).evaluate(employee, morning).allowed)
+
+        raw["hardBlocks"][0].update(
+            start="2026-08-01T10:00:00+02:00",
+            end="2026-08-01T11:00:00+02:00",
+        )
+        blocked_snapshot = Snapshot.from_dict(raw)
+        blocked_employee = next(
+            item for item in blocked_snapshot.employees if item.id == "employee-alice"
+        )
+        blocked_morning = next(
+            item
+            for item in generate_slots(blocked_snapshot)
+            if item.shift_template_id == "shift-morning"
+            and item.date.isoformat() == "2026-08-01"
+        )
+        result = EligibilityIndex(blocked_snapshot).evaluate(
+            blocked_employee, blocked_morning
+        )
+        self.assertFalse(result.allowed)
+        self.assertIn("HARD_BLOCK", result.reasons)
+
     def test_shift_period_and_employee_period_rules_are_parsed(self) -> None:
         raw = load_raw()
         raw["shiftTemplates"][0]["shiftPeriod"] = "MORNING"

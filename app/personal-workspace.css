@@ -15,4 +15,22 @@
 @media(max-width:980px){.personal-workspace-grid{grid-template-columns:1fr}.personal-manager-inbox article{grid-template-columns:1fr}.personal-review-actions{grid-template-columns:1fr}.availability-state-options{grid-template-columns:1fr 1fr!important}}
 @media(max-width:640px){.personal-workspace-hero{align-items:flex-start;padding:16px}.personal-avatar.large{width:74px;height:74px}.personal-avatar-modes{grid-template-columns:1fr}.cat-selector{grid-template-columns:repeat(3,minmax(0,1fr));max-height:420px}.personal-action-note{padding:16px 14px;box-shadow:4px 4px 0 #33443b}.personal-action-note:before{left:34%;width:66px}.personal-note-items>button small{white-space:normal}.availability-state-options{grid-template-columns:1fr!important}}
 
+/* B4F-139–145: spójny HOME, czytelny edytor i pełny tygodniowy grafik pracownika. */
+.employee-home-top{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(360px,.8fr);gap:18px;align-items:stretch}
+.employee-home-top>.employee-home-hero{min-width:0}
+.employee-home-top>.personal-action-note.compact{max-width:none;margin:0;transform:none;align-self:stretch}
+.employee-home-week-wide{margin:0}
+.employee-next-shift-coworkers{font-size:.78rem!important;line-height:1.45;background:#f2ede4!important;color:#55665a}
+.availability-state-options{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))!important;align-items:stretch}
+.availability-state-options button{min-width:0;min-height:64px;padding:10px 8px!important;white-space:normal;overflow-wrap:anywhere}
+.availability-state-options button span{flex:0 0 auto}
+.company-calendar-card{min-width:0;overflow:hidden}
+.company-week-board{width:100%;max-width:100%}
+.company-week-row{width:100%;min-width:0}
+.company-week-day{min-width:0}
+.company-week-shifts>span em{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.calendar-coworkers{background:#e8e1d6!important;border-left:3px solid #55665a!important;color:#33443b!important;font-size:.66rem!important}
+@media(max-width:1100px){.employee-home-top{grid-template-columns:1fr}.company-week-row{min-width:980px}}
+@media(max-width:640px){.availability-state-options{grid-template-columns:1fr 1fr!important}.company-week-row{min-width:900px}.employee-next-shift-coworkers{font-size:.74rem!important}}
+
 .message-stream article:has(>.personal-avatar){grid-template-columns:38px minmax(0,1fr);column-gap:9px}.message-stream article>.personal-avatar{grid-row:1/4}.message-stream article>b,.message-stream article>p,.message-stream article>time{grid-column:2}.message-contacts button>.personal-avatar{display:inline-grid;flex:0 0 38px}.message-contacts button>span:not(.personal-avatar){display:grid;gap:2px;min-width:0}.conversation-list>button>.personal-avatar{align-self:start}

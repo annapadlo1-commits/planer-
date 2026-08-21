@@ -50,9 +50,9 @@ test("B4F-136 and B4F-137 provide a private universal profile with exactly 50 ca
     read("components/PersonalWorkspace.tsx"),
     read("components/MessageCenter.tsx"),
     read("supabase/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
-    stat(new URL("../public/profile-cats/cats-01-18.png",import.meta.url)),
-    stat(new URL("../public/profile-cats/cats-19-34.png",import.meta.url)),
-    stat(new URL("../public/profile-cats/cats-35-50.png",import.meta.url)),
+    stat(new URL("../public/profile-cats/cats-01-18-v2.png",import.meta.url)),
+    stat(new URL("../public/profile-cats/cats-19-34-v2.png",import.meta.url)),
+    stat(new URL("../public/profile-cats/cats-35-50-v2.png",import.meta.url)),
   ]);
   assert.match(component,/Array\.from\(\{length:50\}/);
   assert.match(component,/CAT_\$\{String\(index\+1\)\.padStart\(2,"0"\)\}/);
@@ -74,4 +74,50 @@ test("B4F-131 renders company schedule as complete Monday-to-Sunday weeks", asyn
   assert.match(modules,/Pełne tygodnie od poniedziałku do niedzieli/);
   assert.match(css,/\.company-week-row>div\{display:grid;grid-template-columns:repeat\(7/);
   assert.match(css,/scrollbar-width:auto/);
+});
+
+test("B4F-139 and B4F-141 keep one compact Do ogarnięcia note beside Today", async () => {
+  const [component,modules,css,migration]=await Promise.all([
+    read("components/PersonalWorkspace.tsx"),read("components/ActiveModules.tsx"),
+    read("app/personal-workspace.css"),
+    read("supabase/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
+  ]);
+  const home=modules.slice(modules.indexOf("function EmployeeHome"),modules.indexOf("function EmployeePortal"));
+  assert.match(component,/DO OGARNIĘCIA/);
+  assert.match(component,/!item\.resolvedAt&&\(!item\.readAt\|\|item\.actionRequired\)/);
+  assert.match(home,/employee-home-top[\s\S]*<PersonalActionNote compact\/>/);
+  assert.doesNotMatch(home,/employee-home-actions/);
+  assert.match(css,/\.employee-home-top\{display:grid;grid-template-columns:/);
+  assert.match(migration,/Nowa oferta na tablicy zmian/);
+  assert.match(migration,/Ktoś przyjął Twoją propozycję zmiany/);
+  assert.match(migration,/Zmieniono Twój grafik/);
+  assert.match(migration,/Propozycja zamiany zmiany/);
+});
+
+test("B4F-142 and B4F-143 expose exact hours for every availability or absence kind", async () => {
+  const [modules,css,migration]=await Promise.all([
+    read("components/ActiveModules.tsx"),read("app/personal-workspace.css"),
+    read("supabase/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
+  ]);
+  assert.match(modules,/className="availability-all-day"/);
+  assert.doesNotMatch(modules,/!\["PREFER_NOT_TO_WORK","LEAVE","SICKNESS"\]\.includes\(kind\)/);
+  assert.match(modules,/className=\{`leave[\s\S]*onClick=\{\(\)=>setKind\("LEAVE"\)\}/);
+  assert.match(modules,/className=\{`sickness[\s\S]*onClick=\{\(\)=>setKind\("SICKNESS"\)\}/);
+  assert.match(modules,/employee_availability_publication_conflicts_uat_v2/);
+  assert.match(modules,/employee_request_submit_uat_v2/);
+  assert.match(migration,/tstzrange\(shift\.starts_at,shift\.ends_at,'\[\)'\) &&/);
+  assert.match(migration,/foreach v_day in array p_dates loop/);
+  assert.match(css,/\.availability-state-options\{grid-template-columns:repeat\(auto-fit,minmax\(145px,1fr\)\)!important/);
+});
+
+test("B4F-144 and B4F-145 keep seven days visible and identify coworkers with roles", async () => {
+  const [modules,css]=await Promise.all([
+    read("components/ActiveModules.tsx"),read("app/personal-workspace.css"),
+  ]);
+  assert.match(css,/\.company-week-row\{width:100%;min-width:0\}/);
+  assert.match(modules,/employee-next-shift-coworkers/);
+  assert.match(modules,/Z Twojej roli pracują z Tobą/);
+  assert.match(modules,/calendar-coworkers/);
+  assert.match(modules,/Z Tobą:/);
+  assert.match(modules,/employeeName\.split\(" "\)\[0\][\s\S]*item\.roleName/);
 });
