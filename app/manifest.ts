@@ -6,13 +6,14 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "SZAFUNEK",
     short_name: "SZAFUNEK",
     description: "Planowanie zespołu, budżetu i operacji",
-    start_url: "/?source=pwa",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     orientation: "any",
     background_color: "#F6F4EF",
     theme_color: "#1F2A27",
     lang: "pl",
+    prefer_related_applications: false,
     categories: ["business", "productivity"],
     icons: [
       {

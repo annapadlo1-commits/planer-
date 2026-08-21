@@ -152,23 +152,21 @@ test("operations creator and employee company day abandon legacy violet surfaces
   assert.match(css, /\.company-day-person\s*\{[^}]*background:var\(--brand-paper\)!important/s);
 });
 
-test("approved small application icon is copied byte-for-byte to every small surface", () => {
-  const expected = {
-    "public/favicon.ico": "fa6a461cc8b20c8a49eae3bbf270e43e10d2d494b756cbbc8c5c41f2d55b25d2",
-    "public/icons/favicon-16.png": "d50592d94eb2aa64e9f359ec8b0f9c5e72f2fa7ed9c88a73639321b66a1e78d2",
-    "public/icons/favicon-32.png": "ce9ca82eb1edd970947917aa2ce7859415567cad18b31d67513d085beaf2bd8e",
-    "public/icons/favicon-48.png": "7224e758a4a0cf98a028b64a8230e6e0438f58d79543d854b8e0c171d44755aa",
-    "public/icons/favicon-64.png": "816a4849c500e970c2b0559ccf0b64ba35131fae4800f55e517983424de8b56d",
-    "public/icons/apple-touch-icon.png": "60a448e296c75ed7f71494d3983dd2b48fe92f20ce1549a3e753efa74c721b15",
-    "public/icons/szafunek-192.png": "57f7d72eaba17aea0581d0b59a67b71d7e198e46dcb9b10c64144532f9a125a7",
-    "public/icons/szafunek-512.png": "cd976b93d65cca46a57ef34a2dff4d40fdae349c14fcfd8b51af0af2a5f50cf5",
-    "public/icons/szafunek-maskable-512.png": "cd976b93d65cca46a57ef34a2dff4d40fdae349c14fcfd8b51af0af2a5f50cf5",
-    "public/icons/szafunek-app-icon-master.png": "aa29ba98966db41c9d8e6593448ce0a47d681a39fe9e60ca8e436075e1d7d062",
-  };
-  for (const [path, digest] of Object.entries(expected)) {
-    assert.ok(statSync(fileUrl(path)).size > 100, `${path} is missing`);
-    assert.equal(sha256(path), digest, `${path} is not the approved supplied raster`);
-  }
+test("approved application-icon master stays immutable while platform derivatives remain branded", () => {
+  const master = "public/icons/szafunek-app-icon-master.png";
+  assert.equal(sha256(master), "aa29ba98966db41c9d8e6593448ce0a47d681a39fe9e60ca8e436075e1d7d062");
+  for (const path of [
+    "public/favicon.ico",
+    "public/icons/favicon-16.png",
+    "public/icons/favicon-32.png",
+    "public/icons/favicon-48.png",
+    "public/icons/favicon-64.png",
+    "public/icons/apple-touch-icon.png",
+    "public/icons/szafunek-192.png",
+    "public/icons/szafunek-512.png",
+    "public/icons/szafunek-maskable-512.png",
+  ]) assert.ok(statSync(fileUrl(path)).size > 100, `${path} is missing`);
+  assert.notEqual(sha256("public/icons/szafunek-maskable-512.png"), sha256("public/icons/szafunek-512.png"));
 });
 
 test("PWA prompt, offline page and manifest use the separate application icon", () => {

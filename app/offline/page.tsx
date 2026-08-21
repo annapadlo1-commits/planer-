@@ -6,8 +6,8 @@ export default function OfflinePage() {
         <p className="eyebrow">SZAFUNEK • TRYB OFFLINE</p>
         <h1>Brak połączenia z internetem</h1>
         <p>
-          Ze względów bezpieczeństwa grafiki, dane pracowników i ustawienia firmy nie są zapisywane offline.
-          Połącz się z internetem, aby pobrać aktualne dane.
+          Sprawdź sieć i spróbuj ponownie. Ze względów bezpieczeństwa grafiki, dane pracowników
+          i ustawienia firmy nie są zapisywane offline.
         </p>
         <a href="/">Spróbuj ponownie</a>
       </section>

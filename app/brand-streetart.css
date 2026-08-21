@@ -840,6 +840,7 @@ body{
 }
 .pwa-install-copy small,.pwa-install-close{color:#cfd7d1!important}
 .pwa-install-mark{border:2px solid var(--brand-paper)!important;border-radius:16%!important}
+.pwa-update .pwa-install-action:disabled{transform:none!important;box-shadow:none!important}
 
 /* Login/marketing area carries the dark xerox character. */
 .login-page{background:var(--brand-eucalyptus)!important}
