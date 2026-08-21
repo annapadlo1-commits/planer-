@@ -2,7 +2,14 @@
 
 import type { User } from "@supabase/supabase-js";
 import { Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  authEventAction,
+  classifySessionFailure,
+  clearProtectedBrowserState,
+  SESSION_CHECK_FAILED_MESSAGE,
+  SESSION_EXPIRED_MESSAGE,
+} from "@/lib/auth-session";
 import {
   applicationEnvironmentLabel,
   createSupabaseBrowserClient,
@@ -65,9 +72,22 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<AppAccess | null>(null);
   const [summary, setSummary] = useState<LiveSummary | null>(null);
   const [error, setError] = useState("");
+  const [sessionCheckError, setSessionCheckError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
+  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+  const recoveryRef = useRef<Promise<void> | null>(null);
+  const manualSignOutRef = useRef(false);
 
-  async function loadLiveData(activeUser?: User | null) {
-    if (!supabase || !activeUser) return;
+  const clearAuthenticatedState = useCallback((notice = "") => {
+    setUser(null);
+    setAccess(null);
+    setSummary(null);
+    setError("");
+    setAuthNotice(notice);
+  }, []);
+
+  const loadLiveData = useCallback(async (activeUser?: User | null) => {
+    if (!supabase || !activeUser) return false;
     setError("");
     try {
       const [
@@ -92,51 +112,132 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
         shifts: matrix.shiftTemplates?.length || 0,
         events: 0,
       });
+      return true;
     } catch (cause) {
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : cause && typeof cause === "object" && "message" in cause
-            ? String((cause as { message: unknown }).message)
-            : "Nie udało się pobrać danych Supabase.";
-      setError(message);
+      setAccess(null);
+      setSummary(null);
+      setError("Nie udało się potwierdzić Twoich uprawnień i pobrać aktualnych danych. Spróbuj ponownie.");
+      return false;
     }
-  }
+  }, [supabase]);
+
+  const recoverSession = useCallback(async (showLoading = true) => {
+    if (!supabase) return;
+    if (recoveryRef.current) {
+      await recoveryRef.current;
+      return;
+    }
+
+    const recovery = (async () => {
+      if (showLoading) setLoading(true);
+      setSessionCheckError("");
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setOffline(true);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error: userError } = await supabase.auth.getUser();
+        if (userError || !data.user) {
+          const failure = classifySessionFailure(userError);
+          if (failure === "NETWORK") {
+            setSessionCheckError(SESSION_CHECK_FAILED_MESSAGE);
+          } else {
+            if (failure === "INVALID") await supabase.auth.signOut({ scope: "local" });
+            clearAuthenticatedState(failure === "INVALID" ? SESSION_EXPIRED_MESSAGE : "");
+          }
+          setLoading(false);
+          return;
+        }
+
+        setUser(data.user);
+        setAuthNotice("");
+        await loadLiveData(data.user);
+        setLoading(false);
+      } catch {
+        setSessionCheckError(SESSION_CHECK_FAILED_MESSAGE);
+        setLoading(false);
+      }
+    })();
+
+    recoveryRef.current = recovery;
+    try {
+      await recovery;
+    } finally {
+      if (recoveryRef.current === recovery) recoveryRef.current = null;
+    }
+  }, [clearAuthenticatedState, loadLiveData, supabase]);
 
   async function refresh() {
-    if (!supabase) return;
-    setLoading(true);
-    const { data } = await supabase.auth.getUser();
-    setUser(data.user);
-    await loadLiveData(data.user);
-    setLoading(false);
+    await recoverSession(true);
   }
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(async ({ data }) => {
-      setUser(data.session?.user || null);
-      await loadLiveData(data.session?.user || null);
-      setLoading(false);
-    });
+    let disposed = false;
+    const scheduleVerification = () => {
+      window.setTimeout(() => {
+        if (!disposed) void recoverSession(false);
+      }, 0);
+    };
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user || null);
-      if (session?.user && (event === "SIGNED_IN" || event === "USER_UPDATED")) void loadLiveData(session.user);
-      else if (!session?.user) {
-        setAccess(null);
-        setSummary(null);
+      const action = authEventAction(event);
+      if (action === "CLEAR") {
+        clearAuthenticatedState(manualSignOutRef.current ? "" : SESSION_EXPIRED_MESSAGE);
+        setLoading(false);
+      } else if (action === "REFRESH_USER") {
+        setUser(session?.user || null);
+      } else if (action === "VERIFY") {
+        scheduleVerification();
       }
     });
-    return () => listener.subscription.unsubscribe();
-  }, [supabase]);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") scheduleVerification();
+    };
+    const handlePageShow = () => scheduleVerification();
+    const handleOffline = () => setOffline(true);
+    const handleOnline = () => {
+      setOffline(false);
+      void recoverSession(true);
+    };
+
+    void recoverSession(true);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      disposed = true;
+      listener.subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [clearAuthenticatedState, recoverSession, supabase]);
 
   async function signOut() {
-    await supabase?.auth.signOut();
+    if (!supabase) return;
+    manualSignOutRef.current = true;
+    setLoading(true);
+    setSessionCheckError("");
+    const result = await supabase.auth.signOut({ scope: "local" });
+    if (result.error && classifySessionFailure(result.error) !== "MISSING") {
+      manualSignOutRef.current = false;
+      setLoading(false);
+      setSessionCheckError("Nie udało się bezpiecznie wylogować. Sprawdź połączenie z internetem i spróbuj ponownie.");
+      return;
+    }
+    clearProtectedBrowserState(window.localStorage, window.sessionStorage);
+    clearAuthenticatedState();
+    setLoading(false);
+    window.location.replace("/");
   }
 
   const value = {
     configured,
-    connected: Boolean(user && summary && !error),
+    connected: Boolean(user && access && summary && !error && !sessionCheckError && !offline),
     loading,
     user,
     access,
@@ -169,12 +270,54 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (offline) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><ShieldCheck size={24} /></span>
+          <p className="eyebrow">BRAK POŁĄCZENIA</p>
+          <h1>Dane firmowe są bezpiecznie ukryte</h1>
+          <p>Brak połączenia z internetem. Sprawdź sieć i spróbuj ponownie. Po powrocie połączenia ponownie sprawdzimy sesję i uprawnienia.</p>
+        </section>
+      </main>
+    );
+  }
+
   if (loading) {
     return <div className="auth-loading"><Loader2 className="spin" size={28} /><strong>Łączenie z SZAFUNEK…</strong><span>Sprawdzamy sesję i uprawnienia.</span></div>;
   }
 
+  if (sessionCheckError) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><ShieldCheck size={24} /></span>
+          <p className="eyebrow">WERYFIKACJA SESJI</p>
+          <h1>Nie pokazujemy panelu bez potwierdzenia dostępu</h1>
+          <p>{sessionCheckError}</p>
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+        </section>
+      </main>
+    );
+  }
+
   if (!user) {
-    return <LoginScreen />;
+    return <LoginScreen notice={authNotice} />;
+  }
+
+  if (error || !access) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><ShieldCheck size={24} /></span>
+          <p className="eyebrow">KONTROLA UPRAWNIEŃ</p>
+          <h1>Nie pokazujemy panelu bez aktualnych uprawnień</h1>
+          <p>{error || "Nie udało się odczytać aktualnego zakresu dostępu."}</p>
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+          <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
+        </section>
+      </main>
+    );
   }
 
   if (!error && access && (!access.roles || access.roles.length === 0)) {
@@ -200,7 +343,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function LoginScreen() {
+function LoginScreen({ notice = "" }: { notice?: string }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -208,6 +351,15 @@ function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+
+  useEffect(() => {
+    const callbackError = new URLSearchParams(window.location.search).get("auth_error");
+    const nextMessage = notice || callbackError || "";
+    if (nextMessage) {
+      setMessage(nextMessage);
+      setIsError(true);
+    }
+  }, [notice]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

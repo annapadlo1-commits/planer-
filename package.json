@@ -12,7 +12,7 @@
     "test:full-uat-evidence": "node scripts/validate-full-uat-evidence.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.7.0",
+    "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "^2.57.4",
     "exceljs": "^4.4.0",
     "lucide-react": "^0.544.0",
