@@ -88,6 +88,7 @@ test("B4F-139 and B4F-141 keep one compact Do ogarnięcia note beside Today", as
   assert.match(home,/employee-home-top[\s\S]*<PersonalActionNote compact\/>/);
   assert.doesNotMatch(home,/employee-home-actions/);
   assert.match(css,/\.employee-home-top\{display:grid;grid-template-columns:/);
+  assert.match(css,/\.personal-action-note>header>span:not\(\.personal-avatar\)\{flex:1\}/);
   assert.match(migration,/Nowa oferta na tablicy zmian/);
   assert.match(migration,/Ktoś przyjął Twoją propozycję zmiany/);
   assert.match(migration,/Zmieniono Twój grafik/);
