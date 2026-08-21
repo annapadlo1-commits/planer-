@@ -55,6 +55,27 @@ test("employee home distinguishes direct swap actions, open shifts and leader re
   assert.equal(snapshot.waitingLeaderCount, 1);
 });
 
+test("employee home previews at most three unique coworkers from the exact category and day", async () => {
+  const { employeeCategoryCoworkerPreview } = await loadModule();
+  const preview = employeeCategoryCoworkerPreview({
+    employeeId: "employee-self",
+    assignment: { id: "own", date: "2026-08-22", startsAt: "2026-08-22T16:00:00Z", endsAt: "2026-08-23T02:00:00Z" },
+    assignments: [
+      { id: "own", employeeId: "employee-self", employeeName: "Zofia", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T16:00:00Z", endsAt: "2026-08-23T02:00:00Z" },
+      { id: "a", employeeId: "a", employeeName: "Aleksandra", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T08:00:00Z", endsAt: "2026-08-22T16:00:00Z" },
+      { id: "b", employeeId: "b", employeeName: "Beata", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T10:00:00Z", endsAt: "2026-08-22T18:00:00Z" },
+      { id: "b-2", employeeId: "b", employeeName: "Beata", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T18:00:00Z", endsAt: "2026-08-22T20:00:00Z" },
+      { id: "c", employeeId: "c", employeeName: "Celina", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T12:00:00Z", endsAt: "2026-08-22T20:00:00Z" },
+      { id: "d", employeeId: "d", employeeName: "Dorota", categoryId: "bar", categoryName: "Bar", date: "2026-08-22", startsAt: "2026-08-22T14:00:00Z", endsAt: "2026-08-22T22:00:00Z" },
+      { id: "host", employeeId: "host", employeeName: "Helena", categoryId: "sala", categoryName: "Sala", date: "2026-08-22", startsAt: "2026-08-22T09:00:00Z", endsAt: "2026-08-22T17:00:00Z" },
+      { id: "tomorrow", employeeId: "tomorrow", employeeName: "Iga", categoryId: "bar", categoryName: "Bar", date: "2026-08-23", startsAt: "2026-08-23T09:00:00Z", endsAt: "2026-08-23T17:00:00Z" },
+    ],
+  });
+  assert.equal(preview.categoryName, "Bar");
+  assert.equal(preview.total, 4);
+  assert.deepEqual(preview.people.map(person => person.name), ["Aleksandra", "Beata", "Celina"]);
+});
+
 test("timekeeping on Home is an inert placeholder and never calls the retired writer", async () => {
   const source = await readFile(new URL("../components/ActiveModules.tsx", import.meta.url), "utf8");
   assert.match(source, /className="employee-timeclock-placeholder"/);

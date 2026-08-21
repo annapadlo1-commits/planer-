@@ -187,11 +187,13 @@ export default function GrafikPro() {
     setActiveState(next);
     if(navigatesToAnotherSection)router.push(`${pathForSection(section)}?month=${selectedMonth}&view=${next}`);
   },[employeeShell,pathname,router,selectedMonth]);
-  const openProductSection=useCallback((section:ProductSection)=>{
+  const openProductSection=useCallback((section:ProductSection,options?:{day?:string})=>{
     setRecoveryFocus(null);
     const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix",profile:"profil"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
-    router.push(`${pathForSection(section)}?month=${selectedMonth}`);
+    const params=new URLSearchParams({month:selectedMonth});
+    if(options?.day)params.set("day",options.day);
+    router.push(`${pathForSection(section)}?${params.toString()}`);
   },[employeeShell,router,selectedMonth]);
   const openSetupStep=useCallback((section:SetupSection,step:SetupStepKey,focus?:SetupFocus)=>{
     setConfigurationTab(section);setConfigurationStep(step);setMatrixFocusEmployeeId(focus?.employeeId??null);setActive("matrix");

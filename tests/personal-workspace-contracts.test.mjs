@@ -121,8 +121,21 @@ test("B4F-144 and B4F-145 keep seven days visible and identify coworkers with ro
   ]);
   assert.match(css,/\.company-week-row\{width:100%;min-width:0\}/);
   assert.match(modules,/employee-next-shift-coworkers/);
-  assert.match(modules,/Z Twojej roli pracują z Tobą/);
-  assert.match(modules,/calendar-coworkers/);
-  assert.match(modules,/Z Tobą:/);
+  assert.match(modules,/employee-day-team/);
+  assert.match(modules,/Zespół kategorii/);
   assert.match(modules,/employeeName\.split\(" "\)\[0\][\s\S]*item\.roleName/);
+});
+
+test("B4F-147 keeps calendar cells compact and links a three-person category preview to the exact day", async () => {
+  const [modules,home,page]=await Promise.all([
+    read("components/ActiveModules.tsx"),read("lib/employee-home.ts"),read("app/page.tsx"),
+  ]);
+  assert.match(home,/people: people\.slice\(0, Math\.max\(0, limit\)\)/);
+  assert.match(home,/item\.date === assignment\.date && item\.categoryId === categoryId/);
+  assert.match(modules,/Z kategorii \{categoryLabel\} tego dnia/);
+  assert.match(modules,/Otwórz \{nextAssignment\.date\} w Mój grafik/);
+  assert.match(modules,/openEmployeeSection\?\.\("my-schedule",\{day:date\}\)/);
+  assert.doesNotMatch(modules,/className="calendar-coworkers"/);
+  assert.doesNotMatch(modules,/Z Tobą:/);
+  assert.match(page,/params\.set\("day",options\.day\)/);
 });

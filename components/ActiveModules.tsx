@@ -25,7 +25,7 @@ import * as XLSX from "xlsx";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { PersonalActionNote, PersonalHomeGreeting } from "@/components/PersonalWorkspace";
 import { APP_COLOR_PALETTE, uiSafeColor } from "@/lib/app-color-palette";
-import { employeeHomeSnapshot } from "@/lib/employee-home";
+import { employeeCategoryCoworkerPreview, employeeHomeSnapshot } from "@/lib/employee-home";
 
 import {
   getEmployeePublishedSchedule,
@@ -264,7 +264,7 @@ export function ActiveModules({
   portalSection?: EmployeePortalSection;
   allowUatMasterPersona?: boolean;
   employeeIdentity?: EmployeePortalIdentity;
-  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile",options?:{day?:string}) => void;
 }) {
   const selectedMonthDate = `${month}-01`;
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -836,7 +836,7 @@ function employeeCountdownLabel(minutes: number | null, active: boolean) {
   return `Za ${daysUntil} ${daysUntil === 1 ? "dzień" : "dni"}`;
 }
 
-function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode, openShift, openEmployeeSection }: {
+function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode, openShift, openEmployeeSection, openScheduleDay }: {
   portal: PortalWorkspace;
   month: string;
   timezone: string;
@@ -844,7 +844,8 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
   roleNames: Record<string, string>;
   masterMode: boolean;
   openShift: (assignment: PortalAssignment) => void;
-  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile",options?:{day?:string}) => void;
+  openScheduleDay: (date:string) => void;
 }) {
   const employee = portal.employee;
   const employeeId = employee?.id || portal.timeConstraints?.employeeId || portal.companyCalendar?.employeeId;
@@ -856,7 +857,8 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
   });
   const nextAssignment = snapshot.nextAssignmentId ? portal.assignments.find(assignment => assignment.id === snapshot.nextAssignmentId) ?? null : null;
   const nextRole = nextAssignment ? (dynamic ? roleNames[nextAssignment.roleCode ?? nextAssignment.role] ?? nextAssignment.role : rolePl[nextAssignment.role] ?? nextAssignment.role) : "";
-  const sameRoleCoworkers = nextAssignment?.coworkers?.filter(coworker => coworker.role === nextAssignment.role) ?? [];
+  const categoryCoworkers=employeeCategoryCoworkerPreview({assignments:portal.companyCalendar?.assignments??[],employeeId,assignment:nextAssignment});
+  const categoryLabel=categoryCoworkers.categoryName||portal.companyCalendar?.scopeCategories?.map(category=>category.name).join(", ")||"Twojej kategorii";
   const selectedMonth = labelMonth(month, timezone);
   return <section className="employee-home" aria-label="Dziś w portalu pracownika">
     <div className="employee-home-top">
@@ -874,8 +876,8 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
           <h3>{new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${nextAssignment.date}T12:00:00Z`))}</h3>
           <div className="employee-next-shift-facts"><span><Clock3 /><b>{time(nextAssignment.startsAt, assignmentTimezone(nextAssignment, timezone))}–{time(nextAssignment.endsAt, assignmentTimezone(nextAssignment, timezone))}</b></span><span><MapPin /><b>{nextAssignment.location}</b></span><span><UserRound /><b>{nextRole}</b></span></div>
           <p><b>Co robisz:</b> {nextAssignment.capability || "brak dodatkowego obowiązku — obowiązuje rola na zmianie"}</p>
-          <p className="employee-next-shift-coworkers"><b>Z Twojej roli pracują z Tobą:</b> {sameRoleCoworkers.length ? sameRoleCoworkers.map(coworker => coworker.name).join(", ") : "na tej zmianie nie ma innej osoby w tej samej roli"}.</p>
-          <button type="button" className="primary-button" onClick={() => openShift(nextAssignment)}>Szczegóły zmiany <ChevronRight /></button>
+          <p className="employee-next-shift-coworkers"><b>Z kategorii {categoryLabel} tego dnia:</b> {categoryCoworkers.people.length?categoryCoworkers.people.map(person=>person.name).join(", "):"nie ma innej zaplanowanej osoby"}{categoryCoworkers.total>categoryCoworkers.people.length?` +${categoryCoworkers.total-categoryCoworkers.people.length}`:""}.</p>
+          <div className="employee-next-shift-actions"><button type="button" className="primary-button" onClick={() => openShift(nextAssignment)}>Szczegóły zmiany <ChevronRight /></button><button type="button" className="secondary-button" onClick={()=>openScheduleDay(nextAssignment.date)}>Otwórz {nextAssignment.date} w Mój grafik <CalendarDays/></button></div>
         </> : <div className="employee-home-empty"><h3>Masz dziś wolne</h3><p>W {selectedMonth} nie ma kolejnej opublikowanej zmiany. Sprawdź tablicę, jeśli chcesz przejąć wolną zmianę.</p>{snapshot.openShiftCount > 0 && <button type="button" className="primary-button" onClick={() => openEmployeeSection?.("swaps")}>Zobacz {snapshot.openShiftCount} pasujące {snapshot.openShiftCount === 1 ? "ogłoszenie" : "ogłoszenia"}</button>}</div>}
       </article>
 
@@ -914,7 +916,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   locations:MatrixItem[];
   saveAvailability:(entry:{dates:string[];kind:"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK"|"LEAVE"|"SICKNESS";allDay:boolean;start?:string;end?:string;preferredLocationId?:string;note:string})=>Promise<boolean>;
   fail:(message:string)=>void;
-  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile",options?:{day?:string}) => void;
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
@@ -922,6 +924,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   const [daySearch,setDaySearch]=useState("");
   const [swapTargetEmployeeId,setSwapTargetEmployeeId]=useState("");
   useEffect(() => { setSelected(null);setSelectedDay(null);setDaySearch(""); }, [employee?.id]);
+  useEffect(()=>{if(section!=="my-schedule"||typeof window==="undefined")return;const requestedDay=new URLSearchParams(window.location.search).get("day");if(requestedDay&&/^\d{4}-\d{2}-\d{2}$/.test(requestedDay))setSelectedDay(requestedDay);},[section]);
   const grouped = new Map<string, PortalAssignment[]>();
   portal.assignments.forEach((assignment) => grouped.set(assignment.date, [...(grouped.get(assignment.date) || []), assignment]));
   const selectedDayAssignments=selectedDay?grouped.get(selectedDay)||[]:[];
@@ -954,7 +957,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   return <><PageHead eyebrow={masterMode ? "UAT MASTER • WIDOK PRACOWNIKA" : "WIDOK PRACOWNIKA"} title={sectionCopy[section].title} subtitle={sectionCopy[section].subtitle} actions={showMine?<button className="secondary-button" onClick={exportSchedule}><Download /> Excel</button>:undefined} />
     {masterMode && <div className="uat-master-active-banner"><ShieldCheck /><span><b>Testujesz widok: {employee?.firstName} {employee?.lastName} • {employee?.employeeNo}</b><small>Zapisy dostępności i preferencji są wykonywane dla tej osoby oraz oznaczone w audycie jako UAT MASTER. Akcje zamiany pozostają zablokowane.</small></span></div>}
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
-    {showHome && <EmployeeHome portal={portal} month={month} timezone={timezone} dynamic={dynamic} roleNames={roleNames} masterMode={masterMode} openShift={setSelected} openEmployeeSection={openEmployeeSection} />}
+    {showHome && <EmployeeHome portal={portal} month={month} timezone={timezone} dynamic={dynamic} roleNames={roleNames} masterMode={masterMode} openShift={setSelected} openEmployeeSection={openEmployeeSection} openScheduleDay={date=>{setSelectedDay(date);setDaySearch("");openEmployeeSection?.("my-schedule",{day:date});}} />}
     {!showHome && <section className="employee-portal-callouts"><article><CalendarDays/><span><b>Grafik i dostępność razem</b><small>Na jednym dniu widzisz zmianę, lokal, rezerwę, wydarzenie i swoją deklarację.</small></span></article><article><ArrowLeftRight/><span><b>Zamiana bez przeklikiwania</b><small>Otwórz dzień ze zmianą i od razu opublikuj propozycję do wybranej osoby albo całej tablicy.</small></span></article><article><Megaphone/><span><b>Sprawy zespołu</b><small>Aktywne propozycje zamian są oznaczone również na kalendarzu.</small></span></article></section>}
     {showMine && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section><section><h3>Wszystko w jednym kalendarzu</h3><p>Zmiany, rezerwa, dostępność, preferencje, urlop, L4 i twarda nieobecność są nałożone na te same dni.</p></section></div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
@@ -1171,7 +1174,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           const publishedAssignments=assignments.filter(assignment=>assignment.date===date);
           const dayStandby=standby.filter(entry=>entry.date===date);
           const daySwaps=swapAnnouncements.filter(request=>request.date===date);
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry||requestEntries.length?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry||requestEntries.length>0} title={protectedEntry||requestEntries.length?`${state.label} • wpis chroniony lub zgłoszenie w toku`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{publishedAssignments.map(assignment=>assignment.coworkers?.length?<em className="calendar-coworkers" key={`coworkers:${assignment.id}`}><UserRound/> Z Tobą: {assignment.coworkers.slice(0,3).map(coworker=>coworker.name).join(", ")}{assignment.coworkers.length>3?` +${assignment.coworkers.length-3}`:""}</em>:null)}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{requestEntries.map(request=><em className="calendar-request-marker" key={request.id}>{request.requestType==="LEAVE"?"Urlop — czeka na lidera":request.requestType==="SICKNESS"?"L4 — zapisane":"Nieobecność — czeka na lidera"}</em>)}{pending&&!requestEntries.length&&<em>Oczekuje na lidera</em>}{(protectedEntry||requestEntries.length>0)&&<ShieldCheck/>}</button>;
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry||requestEntries.length?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry||requestEntries.length>0} title={protectedEntry||requestEntries.length?`${state.label} • wpis chroniony lub zgłoszenie w toku`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{requestEntries.map(request=><em className="calendar-request-marker" key={request.id}>{request.requestType==="LEAVE"?"Urlop — czeka na lidera":request.requestType==="SICKNESS"?"L4 — zapisane":"Nieobecność — czeka na lidera"}</em>)}{pending&&!requestEntries.length&&<em>Oczekuje na lidera</em>}{(protectedEntry||requestEntries.length>0)&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>

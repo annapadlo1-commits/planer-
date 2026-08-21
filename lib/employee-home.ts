@@ -5,6 +5,20 @@ export type EmployeeHomeAssignment = {
   endsAt: string;
 };
 
+export type EmployeeCategoryDayAssignment = EmployeeHomeAssignment & {
+  employeeId: string;
+  employeeName: string;
+  categoryId?: string | null;
+  categoryName?: string | null;
+};
+
+export type EmployeeCategoryCoworkerPreview = {
+  categoryId: string | null;
+  categoryName: string | null;
+  people: { employeeId: string; name: string }[];
+  total: number;
+};
+
 export type EmployeeHomeSwap = {
   status: string;
   targetEmployeeId?: string | null;
@@ -57,6 +71,37 @@ function weekBounds(today: string) {
 
 function assignmentMinutes(assignment: EmployeeHomeAssignment) {
   return Math.max(0, Math.round((new Date(assignment.endsAt).getTime() - new Date(assignment.startsAt).getTime()) / 60_000));
+}
+
+export function employeeCategoryCoworkerPreview({
+  assignments,
+  employeeId,
+  assignment,
+  limit = 3,
+}: {
+  assignments: EmployeeCategoryDayAssignment[];
+  employeeId?: string | null;
+  assignment?: EmployeeHomeAssignment | null;
+  limit?: number;
+}): EmployeeCategoryCoworkerPreview {
+  if (!employeeId || !assignment) return { categoryId: null, categoryName: null, people: [], total: 0 };
+  const own = assignments.find(item => item.employeeId === employeeId
+    && item.date === assignment.date
+    && item.startsAt === assignment.startsAt
+    && item.endsAt === assignment.endsAt)
+    ?? assignments.find(item => item.employeeId === employeeId && item.date === assignment.date);
+  const categoryId = own?.categoryId ?? null;
+  const categoryName = own?.categoryName ?? null;
+  if (!categoryId) return { categoryId, categoryName, people: [], total: 0 };
+  const unique = new Map<string, { employeeId: string; name: string; startsAt: string }>();
+  assignments
+    .filter(item => item.date === assignment.date && item.categoryId === categoryId && item.employeeId !== employeeId)
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.employeeName.localeCompare(right.employeeName, "pl-PL"))
+    .forEach(item => {
+      if (!unique.has(item.employeeId)) unique.set(item.employeeId, { employeeId: item.employeeId, name: item.employeeName, startsAt: item.startsAt });
+    });
+  const people = [...unique.values()].map(({ employeeId: id, name }) => ({ employeeId: id, name }));
+  return { categoryId, categoryName, people: people.slice(0, Math.max(0, limit)), total: people.length };
 }
 
 export function employeeHomeSnapshot({
