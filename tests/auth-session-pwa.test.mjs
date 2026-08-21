@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   authEventAction,
+  browserIsOffline,
   classifySessionFailure,
   clearProtectedBrowserState,
   SESSION_CHECK_FAILED_MESSAGE,
@@ -37,6 +38,14 @@ test("auth event state machine verifies identity without reloading access on tok
   assert.equal(authEventAction("PASSWORD_RECOVERY"), "VERIFY");
   assert.equal(authEventAction("TOKEN_REFRESHED"), "REFRESH_USER");
   assert.equal(authEventAction("SIGNED_OUT"), "CLEAR");
+});
+
+test("SSR never mistakes the Node navigator shim for an offline browser", () => {
+  assert.equal(browserIsOffline(undefined), false);
+  assert.equal(browserIsOffline(null), false);
+  assert.equal(browserIsOffline({ navigator: {} }), false);
+  assert.equal(browserIsOffline({ navigator: { onLine: true } }), false);
+  assert.equal(browserIsOffline({ navigator: { onLine: false } }), true);
 });
 
 test("logout cleanup removes protected work state but preserves PWA and game preferences", () => {
@@ -84,6 +93,9 @@ test("AppAuthProvider uses verified startup, resume checks, offline shield and l
   assert.match(provider, /pageshow/);
   assert.match(provider, /window\.addEventListener\("offline"/);
   assert.match(provider, /window\.addEventListener\("online"/);
+  assert.match(provider, /const \[offline, setOffline\] = useState\(false\)/);
+  assert.match(provider, /browserIsOffline\(window\)/);
+  assert.doesNotMatch(provider, /useState\(\(\) => typeof navigator/);
   assert.match(provider, /signOut\(\{ scope: "local" \}\)/);
   assert.match(provider, /clearProtectedBrowserState/);
   assert.match(provider, /window\.location\.replace\("\/"\)/);

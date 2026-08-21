@@ -5,6 +5,7 @@ import { Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react"
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   authEventAction,
+  browserIsOffline,
   classifySessionFailure,
   clearProtectedBrowserState,
   SESSION_CHECK_FAILED_MESSAGE,
@@ -74,7 +75,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState("");
   const [sessionCheckError, setSessionCheckError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
-  const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
+  // The server and the first browser render must be identical. Modern Node.js
+  // exposes a global navigator without navigator.onLine; reading it during SSR
+  // incorrectly rendered the offline screen and caused a hydration mismatch.
+  const [offline, setOffline] = useState(false);
   const recoveryRef = useRef<Promise<void> | null>(null);
   const manualSignOutRef = useRef(false);
 
@@ -202,7 +206,12 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       void recoverSession(true);
     };
 
-    void recoverSession(true);
+    if (browserIsOffline(window)) {
+      setOffline(true);
+      setLoading(false);
+    } else {
+      void recoverSession(true);
+    }
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("pageshow", handlePageShow);
     window.addEventListener("offline", handleOffline);

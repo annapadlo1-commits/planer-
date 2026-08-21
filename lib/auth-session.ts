@@ -15,6 +15,14 @@ type AuthErrorLike = {
 
 export type SessionFailureKind = "MISSING" | "INVALID" | "NETWORK";
 
+type BrowserWindowLike = {
+  navigator?: { onLine?: boolean };
+};
+
+export function browserIsOffline(windowLike: BrowserWindowLike | null | undefined) {
+  return windowLike?.navigator?.onLine === false;
+}
+
 export function classifySessionFailure(error: AuthErrorLike | null | undefined): SessionFailureKind {
   if (!error) return "MISSING";
   const code = (error.code || "").toLowerCase();
