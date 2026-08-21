@@ -46,23 +46,23 @@ test("B4F-134 and B4F-135 expose one universal action centre", async () => {
 });
 
 test("B4F-136 and B4F-137 provide a private universal profile with exactly 50 cats", async () => {
-  const [component,messages,migration,first,second,third]=await Promise.all([
+  const [component,messages,migration,first,second]=await Promise.all([
     read("components/PersonalWorkspace.tsx"),
     read("components/MessageCenter.tsx"),
     read("supabase/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
-    stat(new URL("../public/profile-cats/cats-01-18-v2.png",import.meta.url)),
-    stat(new URL("../public/profile-cats/cats-19-34-v2.png",import.meta.url)),
-    stat(new URL("../public/profile-cats/cats-35-50-v2.png",import.meta.url)),
+    stat(new URL("../public/profile-cats/cats-01-25-v3.png",import.meta.url)),
+    stat(new URL("../public/profile-cats/cats-26-50-v3.png",import.meta.url)),
   ]);
   assert.match(component,/Array\.from\(\{length:50\}/);
   assert.match(component,/CAT_\$\{String\(index\+1\)\.padStart\(2,"0"\)\}/);
+  assert.match(component,/const columns=5,rows=5/);
   assert.match(migration,/CAT_\(0\[1-9\]\|\[1-4\]\[0-9\]\|50\)/);
   assert.match(migration,/bucket_id='profile-avatars'[\s\S]*auth\.uid\(\)/);
   assert.match(migration,/'senderCatAvatarKey',profile\.cat_avatar_key/);
   assert.match(migration,/'MESSAGE','TEAM_CONVERSATION'/);
   assert.match(messages,/PersonalAvatar profile=\{messageAvatar/);
   assert.match(messages,/requestedConversationId/);
-  assert.ok(first.size>10_000&&second.size>10_000&&third.size>10_000);
+  assert.ok(first.size>10_000&&second.size>10_000);
 });
 
 test("B4F-131 renders company schedule as complete Monday-to-Sunday weeks", async () => {

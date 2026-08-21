@@ -57,16 +57,14 @@ function personalError(message:string){
 
 function catSprite(key?:string|null):CSSProperties{
   const number=Math.min(50,Math.max(1,Number(key?.replace("CAT_","")||1)));
-  const first=number<=18;
-  const second=number>=19&&number<=34;
-  const local=first?number-1:second?number-19:number-35;
-  const columns=first?6:4,rows=first?3:4;
+  const first=number<=25;
+  const local=first?number-1:number-26;
+  const columns=5,rows=5;
   const column=local%columns,row=Math.floor(local/columns);
-  const rowPosition=first?[5.556,50,94.444][row]:row/(rows-1)*100;
   return {
-    backgroundImage:`url(${first?"/profile-cats/cats-01-18-v2.png":second?"/profile-cats/cats-19-34-v2.png":"/profile-cats/cats-35-50-v2.png"})`,
-    backgroundSize:first?`${columns*100}% auto`:`${columns*100}% ${rows*100}%`,
-    backgroundPosition:`${column/(columns-1)*100}% ${rowPosition}%`,
+    backgroundImage:`url(${first?"/profile-cats/cats-01-25-v3.png":"/profile-cats/cats-26-50-v3.png"})`,
+    backgroundSize:`${columns*100}% ${rows*100}%`,
+    backgroundPosition:`${column/(columns-1)*100}% ${row/(rows-1)*100}%`,
   };
 }
 
