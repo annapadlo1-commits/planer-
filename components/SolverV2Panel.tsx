@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, Check, CircleDollarSign, Edit3, History, Redo2, RefreshCw, Search, Sparkles, Square, Undo2, Upload, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Cat, Check, CircleDollarSign, Edit3, History, Redo2, RefreshCw, Search, Sparkles, Square, Undo2, Upload, Users, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SolverV2Workspace } from "@/components/SolverV2Workspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -66,6 +67,12 @@ import {
   type SolverVariant,
   type SolverWorkspace,
 } from "@/lib/solver-v2";
+
+const LazyGeneratorMemoryExperience=dynamic(()=>import("@/components/games/GeneratorMemoryExperience"),{
+  ssr:false,
+  loading:()=> <div className="cat-game-loading" role="status"><Cat/><strong>Ładuję Memory…</strong></div>,
+});
+const GENERATOR_MEMORY_PROMPT_KEY="szafunek_memory_generator_prompt_seen";
 
 type Props = {
   engine: SolverEngine;
@@ -226,6 +233,8 @@ export function SolverV2Panel({
   }), [userId, engine, expectedSolverVersion, month, selectedScenario?.id, scopeType, scopeRoleId]);
   const [run, setRun] = useState<SolverRun | null>(null);
   const [pollingRunId, setPollingRunId] = useState<string | null>(null);
+  const [memoryPromptOpen,setMemoryPromptOpen]=useState(false);
+  const [memoryGameOpen,setMemoryGameOpen]=useState(false);
   const [strategies, setStrategies] = useState<SolverStrategyProgress[]>([]);
   const [variants, setVariants] = useState<SolverVariant[]>([]);
   const [busy, setBusy] = useState(false);
@@ -437,6 +446,8 @@ export function SolverV2Panel({
     let disposed = false;
     setRun(null);
     setPollingRunId(null);
+    setMemoryPromptOpen(false);
+    setMemoryGameOpen(false);
     setStrategies([]);
     setVariants([]);
     setSelectedWorkspace(null);
@@ -551,6 +562,16 @@ export function SolverV2Panel({
       setVariants([]);
       setSelectedWorkspace(null);
       setPublicationName(name.trim());
+      if(!isSolverRunTerminal(result.run.status)){
+        try{
+          if(window.localStorage.getItem(GENERATOR_MEMORY_PROMPT_KEY)!=="true"){
+            window.localStorage.setItem(GENERATOR_MEMORY_PROMPT_KEY,"true");
+            setMemoryPromptOpen(true);
+          }
+        }catch{
+          // Brak localStorage nie może wpływać na generator ani wymuszać ponownego pokazywania sugestii.
+        }
+      }
       setMessage(result.reused
         ? "Odzyskano rozpoczęte wcześniej generowanie."
         : "Zlecenie zapisano w kolejce. Gdy worker rozpocznie obliczenia, status zmieni się automatycznie.");
@@ -1047,6 +1068,8 @@ export function SolverV2Panel({
   function startAnother() {
     forgetSolverRun(context);
     setPollingRunId(null);
+    setMemoryPromptOpen(false);
+    setMemoryGameOpen(false);
     setRun(null);
     setStrategies([]);
     setVariants([]);
@@ -1062,6 +1085,11 @@ export function SolverV2Panel({
     setPublicationReadiness(null);
     setMessage("");
   }
+
+  const viewGeneratedSchedule=()=>{
+    setMemoryGameOpen(false);
+    window.requestAnimationFrame(()=>document.getElementById("solver-v2-results")?.scrollIntoView({behavior:"smooth",block:"start"}));
+  };
 
   const publicationChangePanel=selectedVariant&&selectedVariant.status!=="PUBLISHED"&&leaderPublicationReady
     ?<section className="solver-publication-changes" aria-label="Różnice i powiadomienia przed publikacją">
@@ -1118,6 +1146,7 @@ export function SolverV2Panel({
         <b>{run.progress}%</b>
       </div>
       <div className="solver-v2-progress"><i style={{ width: `${run.progress}%` }}/></div>
+      {memoryPromptOpen&&!isSolverRunTerminal(run.status)&&<aside className="generator-memory-prompt" aria-label="Jednorazowa propozycja Memory"><span><Cat/></span><span><h4>pss, zagramy?</h4><p>Jeszcze chwilę mielę grafik. Memory?</p></span><div className="generator-memory-prompt-actions"><button type="button" className="primary-button" onClick={()=>{setMemoryPromptOpen(false);setMemoryGameOpen(true);}}>GRAJ</button><button type="button" className="secondary-button" onClick={()=>setMemoryPromptOpen(false)}>NIE, PATRZĘ JAK MIELISZ</button></div></aside>}
       {strategies.length > 0 && <div className="solver-v2-strategies">
         {strategies.map(strategy => <div key={strategy.id}>
           <span><strong>{strategy.name}</strong><small>{solverStatusLabel(strategy.status)}</small></span>
@@ -1140,7 +1169,9 @@ export function SolverV2Panel({
       </div>
     </div>}
 
-    {variants.length > 0 && <div className="solver-v2-results">
+    {run&&memoryGameOpen&&<LazyGeneratorMemoryExperience status={run.status} onClose={()=>setMemoryGameOpen(false)} onViewSchedule={viewGeneratedSchedule}/>}
+
+    {variants.length > 0 && <div className="solver-v2-results" id="solver-v2-results">
       <div className="solver-v2-results-head">
         <span><strong>{run?.status==="READY"?"Porównaj gotowe warianty":"Zapisane warianty diagnostyczne"}</strong><small>{run?.status==="READY"?"Każdy wariant stosuje inny zestaw priorytetów: koszt, preferencje i równy podział pracy.":"Nie można ich wybrać ani opublikować, ale pozostają widoczne, aby wskazać dokładnie, na którym wariancie zakończyła się finalizacja."}</small></span>
       </div>

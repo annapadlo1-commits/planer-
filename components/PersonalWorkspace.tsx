@@ -4,12 +4,18 @@ import {
   Bell, Camera, Check, ChevronRight, CircleUserRound, Clock3, Inbox,
   Palette, ShieldCheck, UserRound, X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useAppAuth } from "@/components/AppAuthProvider";
 import { APP_COLOR_PALETTE } from "@/lib/app-color-palette";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
+const LazyCatGameHub=dynamic(()=>import("@/components/games/CatGameHub"),{
+  ssr:false,
+  loading:()=> <section className="cat-game-hub"><div className="cat-game-loading" role="status"><CircleUserRound/><strong>Ładuję Kącik Kota…</strong></div></section>,
+});
 
 type PersonalProfile = {
   authUserId:string; displayName:string; avatarMode:"INITIALS"|"CAT"|"PHOTO";
@@ -206,6 +212,7 @@ export function UniversalPersonalWorkspace({management}:{management:boolean}){
       </section>
     </div>
     {management&&<section className="personal-manager-inbox"><header><Inbox/><span><small>SKRZYNKA LIDERA</small><h3>Nieobecności wymagające reakcji</h3><p>Urlop i przekroczenie limitu wymagają decyzji. L4 można wyłącznie przyjąć do wiadomości.</p></span><b>{actionState.workspace.managerInbox.length}</b></header><div>{actionState.workspace.managerInbox.map(request=><article key={request.id}><span><small>{REQUEST_LABELS[request.requestType]}</small><b>{request.employeeName} • {request.employeeNo}</b><p>{request.dateFrom}{request.dateTo!==request.dateFrom?` – ${request.dateTo}`:""}{request.note?` • ${request.note}`:""}</p></span>{request.requestType==="SICKNESS"?<button disabled={busy} className="primary-button" onClick={()=>void review(request,"ACKNOWLEDGE")}><Check/> Przyjmij do wiadomości</button>:<div className="personal-review-actions"><input value={reasons[request.id]||""} onChange={event=>setReasons(current=>({...current,[request.id]:event.target.value}))} placeholder="Uzasadnienie przy odrzuceniu"/><button disabled={busy} className="secondary-button" onClick={()=>void review(request,"REJECT")}><X/> Odrzuć</button><button disabled={busy} className="primary-button" onClick={()=>void review(request,"APPROVE")}><Check/> Akceptuj</button></div>}</article>)}{!actionState.workspace.managerInbox.length&&<p className="personal-empty"><Check/> Nie ma spraw oczekujących na Twoją decyzję.</p>}</div></section>}
+    {!management&&<LazyCatGameHub/>}
     <section className="personal-my-requests"><header><Clock3/><span><h3>Moje zgłoszenia</h3><p>Status urlopu, L4 i twardych nieobecności.</p></span></header><div>{actionState.workspace.myRequests.map(request=><article key={request.id}><span><b>{REQUEST_LABELS[request.requestType]||request.requestType}</b><small>{request.dateFrom}{request.dateTo!==request.dateFrom?` – ${request.dateTo}`:""}</small></span><strong>{STATUS_LABELS[request.status]||request.status}</strong>{request.reviewReason&&<p>{request.reviewReason}</p>}</article>)}{!actionState.workspace.myRequests.length&&<p>Nie masz jeszcze zgłoszeń nieobecności.</p>}</div></section>
   </section>;
 }

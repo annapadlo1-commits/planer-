@@ -17,6 +17,7 @@ import "./next-batch.css";
 import "./desktop-compact.css";
 import "./brand-streetart.css";
 import "./personal-workspace.css";
+import "./cat-games.css";
 
 export const metadata: Metadata = {
   title: {
