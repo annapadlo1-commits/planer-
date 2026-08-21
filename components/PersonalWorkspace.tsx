@@ -56,13 +56,13 @@ function personalError(message:string){
 }
 
 function catSprite(key?:string|null):CSSProperties{
-  const number=Math.min(50,Math.max(1,Number(key?.replace("CAT_","")||1)));
-  const first=number<=25;
-  const local=first?number-1:number-26;
-  const columns=5,rows=5;
+  const number=Math.min(55,Math.max(1,Number(key?.replace("CAT_","")||1)));
+  const first=number<=25,second=number<=50;
+  const local=first?number-1:second?number-26:number-51;
+  const columns=second?5:3,rows=second?5:3;
   const column=local%columns,row=Math.floor(local/columns);
   return {
-    backgroundImage:`url(${first?"/profile-cats/cats-01-25-v3.png":"/profile-cats/cats-26-50-v3.png"})`,
+    backgroundImage:`url(${first?"/profile-cats/cats-01-25-v3.png":second?"/profile-cats/cats-26-50-v3.png":"/profile-cats/cats-51-55-v1.png"})`,
     backgroundSize:`${columns*100}% ${rows*100}%`,
     backgroundPosition:`${column/(columns-1)*100}% ${row/(rows-1)*100}%`,
   };
@@ -197,7 +197,7 @@ export function UniversalPersonalWorkspace({management}:{management:boolean}){
       <section className="personal-profile-editor"><header><UserRound/><span><h3>Jak widzą Cię inni</h3><p>Zdjęcie lub wybrany kot pojawi się przy Twoim imieniu i na karteczce Home.</p></span></header>
         <label>Nazwa wyświetlana<input maxLength={80} value={displayName} onChange={event=>setDisplayName(event.target.value)}/></label>
         <div className="personal-avatar-modes"><button className={avatarMode==="INITIALS"?"active":""} onClick={()=>setAvatarMode("INITIALS")}><CircleUserRound/> Inicjały</button><button className={avatarMode==="CAT"?"active":""} onClick={()=>setAvatarMode("CAT")}><span className="mini-cat" style={catSprite(catKey)}/> Kot</button><button className={avatarMode==="PHOTO"?"active":""} onClick={()=>fileRef.current?.click()}><Camera/> Zdjęcie</button><input ref={fileRef} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={event=>void upload(event.target.files?.[0])}/></div>
-        {avatarMode==="CAT"&&<div className="cat-selector" aria-label="Wybierz kota">{Array.from({length:50},(_,index)=>{const key=`CAT_${String(index+1).padStart(2,"0")}`;return <button type="button" aria-label={`Kot ${index+1}`} aria-pressed={catKey===key} className={catKey===key?"active":""} onClick={()=>setCatKey(key)} key={key}><span style={catSprite(key)}/><small>{index+1}</small></button>;})}</div>}
+        {avatarMode==="CAT"&&<div className="cat-selector" aria-label="Wybierz kota">{Array.from({length:55},(_,index)=>{const key=`CAT_${String(index+1).padStart(2,"0")}`;return <button type="button" aria-label={`Kot ${index+1}`} aria-pressed={catKey===key} className={catKey===key?"active":""} onClick={()=>setCatKey(key)} key={key}><span style={catSprite(key)}/><small>{index+1}</small></button>;})}</div>}
         <fieldset className="personal-note-colors"><legend><Palette/> Kolor Twojej karteczki</legend>{APP_COLOR_PALETTE.map(color=><button type="button" title={`${color.name} ${color.hex}`} aria-label={`${color.name} ${color.hex}`} aria-pressed={noteColor===color.hex} className={noteColor===color.hex?"active":""} style={{background:color.hex}} onClick={()=>setNoteColor(color.hex)} key={color.hex}/>)}</fieldset>
         <button className="primary-button personal-save" disabled={busy||!displayName.trim()||avatarMode==="PHOTO"&&!photoPath} onClick={()=>void save()}>{busy?"Zapisuję…":"Zapisz profil"}</button>
       </section>
