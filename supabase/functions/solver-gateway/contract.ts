@@ -336,7 +336,7 @@ function validateObjectiveTerm(value: unknown): void {
   assertExactKeys(
     value,
     ["metric", "direction", "weight", "tolerance", "parameters"],
-    ["normalizationCoefficient", "metricUpperBound"],
+    ["normalizationCoefficient", "metricUpperBound", "configuredTier"],
   );
   if (typeof value.metric !== "string" || !METRIC_PATTERN.test(value.metric)) {
     fail(400, "INVALID_OBJECTIVE_METRIC");
@@ -376,6 +376,9 @@ function validateObjectiveTerm(value: unknown): void {
       0,
       Number.MAX_SAFE_INTEGER,
     );
+  }
+  if (Object.hasOwn(value, "configuredTier")) {
+    assertInteger(value.configuredTier, "OBJECTIVE_CONFIGURED_TIER", 0, 100_000);
   }
 }
 
@@ -421,6 +424,12 @@ function validateStageObjective(value: unknown): void {
       "terms",
       "fairnessIncumbentGuard",
       "certifiedCoverageSeed",
+      "fairCoverageSeedMinimumAchievableUtilizationBps",
+      "fairCoverageSeedAchievableUtilizationSpreadBps",
+      "fairCoverageSeedStatus",
+      "fairCoverageSeedTimeBudgetSeconds",
+      "fairCoverageSpreadStatus",
+      "fairCoverageSpreadTimeBudgetSeconds",
       "costIncumbentGuard",
       "verifiedZeroIncumbent",
       "certificate",
@@ -521,6 +530,39 @@ function validateStageObjective(value: unknown): void {
   }
   if (Object.hasOwn(value, "certifiedCoverageSeed")) {
     assertBoolean(value.certifiedCoverageSeed, "CERTIFIED_COVERAGE_SEED");
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedMinimumAchievableUtilizationBps")) {
+    assertInteger(
+      value.fairCoverageSeedMinimumAchievableUtilizationBps,
+      "FAIR_COVERAGE_SEED_MINIMUM_ACHIEVABLE_UTILIZATION_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedAchievableUtilizationSpreadBps")) {
+    assertInteger(
+      value.fairCoverageSeedAchievableUtilizationSpreadBps,
+      "FAIR_COVERAGE_SEED_ACHIEVABLE_UTILIZATION_SPREAD_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedStatus")) {
+    assertString(value.fairCoverageSeedStatus, "FAIR_COVERAGE_SEED_STATUS", 1, 40);
+  }
+  if (Object.hasOwn(value, "fairCoverageSpreadStatus")) {
+    assertString(value.fairCoverageSpreadStatus, "FAIR_COVERAGE_SPREAD_STATUS", 1, 40);
+  }
+  for (const [key, name] of [
+    ["fairCoverageSeedTimeBudgetSeconds", "FAIR_COVERAGE_SEED_TIME_BUDGET_SECONDS"],
+    ["fairCoverageSpreadTimeBudgetSeconds", "FAIR_COVERAGE_SPREAD_TIME_BUDGET_SECONDS"],
+  ] as const) {
+    if (Object.hasOwn(value, key)) {
+      assertFiniteNumber(value[key], name);
+      if (value[key] < 0 || value[key] > 86_400) {
+        fail(400, `INVALID_${name}`);
+      }
+    }
   }
   if (Object.hasOwn(value, "costIncumbentGuard")) {
     assertInteger(

@@ -265,6 +265,15 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
   };
   variant.stageObjectives[0].verifiedZeroIncumbent = true;
   variant.stageObjectives[0].certifiedCoverageSeed = true;
+  Object.assign(variant.stageObjectives[0], {
+    fairCoverageSeedMinimumAchievableUtilizationBps: 411,
+    fairCoverageSeedAchievableUtilizationSpreadBps: 261,
+    fairCoverageSeedStatus: "OPTIMAL",
+    fairCoverageSeedTimeBudgetSeconds: 90,
+    fairCoverageSpreadStatus: "FEASIBLE",
+    fairCoverageSpreadTimeBudgetSeconds: 54,
+  });
+  variant.stageObjectives[0].terms[0].configuredTier = 4;
   variant.metrics.MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS = 411;
   variant.metrics.ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS = 261;
   const args = {
