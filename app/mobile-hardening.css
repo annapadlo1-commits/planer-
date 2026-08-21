@@ -1,0 +1,528 @@
+/*
+ * B4F-157–163: final mobile/PWA guardrail layer.
+ * It is intentionally imported last. Wide data grids may scroll inside their
+ * own container, but no product surface may widen the whole document.
+ */
+@media (max-width: 760px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  .app-shell,
+  .product-shell,
+  .workspace,
+  .content,
+  .product-shell .content,
+  .matrix-v2-shell,
+  .analytics-dashboard,
+  .recovery-center,
+  .message-center,
+  .solver-v2-panel,
+  .solver-workspace,
+  .operational-calendar-panel,
+  .access-management,
+  .personal-workspace,
+  .personal-workspace > *,
+  .personal-workspace-grid,
+  .personal-workspace-grid > *,
+  .employee-combined-calendar,
+  .company-calendar-card {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .product-shell .content {
+    padding-right: max(10px, env(safe-area-inset-right)) !important;
+    padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
+    padding-left: max(10px, env(safe-area-inset-left)) !important;
+  }
+
+  .product-shell .topbar {
+    top: 0;
+    min-height: calc(64px + env(safe-area-inset-top)) !important;
+    padding: calc(8px + env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left)) !important;
+    gap: 8px !important;
+    box-sizing: border-box;
+  }
+
+  .product-topbar-copy,
+  .product-topbar-copy > *,
+  .product-shell .topbar-actions {
+    min-width: 0;
+  }
+
+  .product-shell .topbar h1 {
+    overflow: hidden;
+    font-size: clamp(17px, 5.8vw, 21px) !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .product-shell .topbar-actions {
+    gap: 4px !important;
+  }
+
+  .product-shell .month-selector,
+  .product-shell .month-selector .date-selector {
+    min-width: 0 !important;
+    max-width: min(132px, 38vw) !important;
+  }
+
+  .product-shell .month-selector .date-selector select {
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .product-shell .menu-button,
+  .product-shell .mobile-close,
+  .product-shell .icon-button {
+    flex: 0 0 44px;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    touch-action: manipulation;
+  }
+
+  .product-shell .product-sidebar {
+    width: min(320px, 100vw) !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding-top: calc(12px + env(safe-area-inset-top)) !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    box-sizing: border-box;
+  }
+
+  .product-shell .product-sidebar nav button,
+  .product-shell .sidebar-signout {
+    min-height: 46px !important;
+    touch-action: manipulation;
+  }
+
+  .product-shell .product-sidebar .sidebar-footer {
+    padding-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .login-page {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh !important;
+    padding-top: env(safe-area-inset-top) !important;
+    padding-right: env(safe-area-inset-right) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+    padding-left: env(safe-area-inset-left) !important;
+    overflow-x: clip;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  .login-brand,
+  .login-panel,
+  .login-card,
+  .login-brand-signature {
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .login-brand {
+    padding: 18px 16px 8px !important;
+  }
+
+  .login-brand-signature {
+    width: min(330px, 88vw) !important;
+  }
+
+  .login-panel {
+    padding: 4px 14px calc(104px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .login-card {
+    padding: 20px 16px 22px !important;
+  }
+
+  .login-card input,
+  .login-card select,
+  .login-card textarea,
+  .product-shell input,
+  .product-shell select,
+  .product-shell textarea {
+    max-width: 100%;
+    font-size: 16px !important;
+  }
+
+  .login-card button,
+  .drawer button,
+  .complete-drawer button,
+  .matrix-v2-drawer button {
+    touch-action: manipulation;
+  }
+
+  .drawer,
+  .complete-drawer,
+  .role-drawer,
+  .matrix-v2-drawer,
+  .matrix-history-drawer,
+  .availability-calendar-drawer,
+  .candidate-diagnostics-drawer,
+  .solver-variant-preview-drawer {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    box-sizing: border-box;
+  }
+
+  .drawer > .drawer-head,
+  .complete-drawer > .drawer-head,
+  .role-drawer > .drawer-head,
+  .matrix-v2-drawer > .drawer-head,
+  .matrix-history-drawer > .drawer-head,
+  .availability-calendar-drawer > .drawer-head,
+  .candidate-diagnostics-drawer > .drawer-head,
+  .solver-variant-preview-drawer > .drawer-head {
+    min-height: calc(64px + env(safe-area-inset-top)) !important;
+    padding: calc(10px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)) !important;
+    box-sizing: border-box;
+  }
+
+  .drawer > .drawer-content,
+  .complete-drawer > .drawer-content,
+  .role-drawer > .drawer-content,
+  .matrix-v2-drawer > .drawer-content,
+  .matrix-history-drawer > .drawer-content,
+  .availability-calendar-drawer > .drawer-content,
+  .candidate-diagnostics-drawer > .drawer-content,
+  .solver-variant-preview-drawer > .drawer-content {
+    height: calc(100dvh - 64px - env(safe-area-inset-top)) !important;
+    max-width: 100% !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    overflow: auto !important;
+    box-sizing: border-box;
+  }
+
+  .personal-workspace-hero,
+  .personal-profile-editor,
+  .personal-notification-centre,
+  .personal-manager-inbox,
+  .personal-my-requests,
+  .personal-action-note {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .personal-workspace-hero > span:not(.personal-avatar),
+  .personal-profile-editor header > span,
+  .personal-notification-centre header > span,
+  .personal-manager-inbox header > span,
+  .personal-my-requests header > span,
+  .personal-workspace :is(h2, h3, p, strong, small) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .personal-profile-editor,
+  .personal-notification-centre,
+  .personal-manager-inbox,
+  .personal-my-requests {
+    padding: 14px !important;
+  }
+
+  .personal-profile-editor > header,
+  .personal-notification-centre > header,
+  .personal-manager-inbox > header,
+  .personal-my-requests > header {
+    min-width: 0;
+    gap: 9px;
+  }
+
+  .personal-avatar-modes,
+  .personal-review-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cat-selector {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .company-week-board {
+    width: 100%;
+    max-width: 100%;
+    padding: 2px 0 12px;
+    overflow: visible;
+  }
+
+  .company-week-row {
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .company-week-row > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .company-week-row > div {
+    grid-template-columns: 1fr !important;
+  }
+
+  .company-week-day {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid #cbbfae;
+  }
+
+  .company-week-day:last-child {
+    border-bottom: 0;
+  }
+
+  .company-week-day.blank {
+    display: none;
+  }
+
+  .company-week-shifts > span small,
+  .company-week-shifts > span em {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .module-page-head,
+  .section-head,
+  .page-head,
+  .matrix-v2-header,
+  .analytics-head,
+  .recovery-hero,
+  .message-center > header,
+  .operational-program-head {
+    min-width: 0;
+    max-width: 100%;
+    align-items: stretch !important;
+    flex-direction: column !important;
+    box-sizing: border-box;
+  }
+
+  .module-page-head > *,
+  .section-head > *,
+  .page-head > *,
+  .matrix-v2-header > *,
+  .analytics-head > *,
+  .recovery-hero > *,
+  .message-center > header > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .module-tabs,
+  .product-section-tabs,
+  .matrix-v2-tabs,
+  .recovery-tabs,
+  .solver-workspace-tabs,
+  .leader-studio-workflow,
+  .solver-schedule-perspectives,
+  .calendar-actions {
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .matrix-v2-table,
+  .admin-table,
+  .employee-table,
+  .month-card,
+  .real-month,
+  .employee-compare-weeks > section,
+  .solver-weekly-workspace,
+  .solver-workload-content,
+  .solver-issues-view {
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .recovery-overlay {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
+  }
+
+  .recovery-dialog,
+  .recovery-detail {
+    width: 100% !important;
+    min-width: 0;
+    min-height: 100dvh !important;
+    max-width: 100% !important;
+    padding: calc(14px + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)) !important;
+    border-radius: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .leader-studio-fullscreen {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    box-sizing: border-box;
+  }
+
+  .leader-studio-fullscreen-head {
+    min-height: 64px !important;
+    padding: 8px 10px !important;
+    flex-wrap: wrap;
+  }
+
+  .leader-studio-fullscreen-head > span,
+  .leader-studio-fullscreen-head > span > div,
+  .leader-studio-fullscreen-head > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .leader-studio-fullscreen-head h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .leader-studio-fullscreen-body {
+    min-width: 0;
+    max-width: 100%;
+    padding: 6px !important;
+  }
+
+  .leader-studio-fullscreen-body > .solver-workspace.leader-studio {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding: 7px !important;
+    box-sizing: border-box;
+  }
+
+  .leader-studio > .solver-global-filters,
+  .leader-studio > .leader-studio-candidate-panel,
+  .leader-studio > .leader-studio-impact {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .leader-employee-pool > header {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .leader-employee-pool > header > span {
+    min-width: 0;
+  }
+
+  .leader-employee-pool > div {
+    max-height: min(40dvh, 320px) !important;
+    overflow-y: auto !important;
+    scroll-padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .leader-studio > .leader-studio-candidate-panel {
+    inset: calc(64px + env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)) !important;
+  }
+
+  .leader-bulk-toolbar,
+  .leader-workflow-confirm,
+  .leader-assistant-tools,
+  .leader-assistant-tool-body,
+  .leader-bulk-confirm {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .personal-workspace-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 13px !important;
+    box-shadow: 4px 4px 0 #55665a;
+  }
+
+  .personal-avatar.large {
+    width: 64px;
+    height: 64px;
+  }
+
+  .cat-selector {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .availability-state-options {
+    grid-template-columns: 1fr !important;
+  }
+
+  .leader-employee-pool > div {
+    grid-template-columns: 1fr !important;
+  }
+
+  .product-shell .month-selector,
+  .product-shell .month-selector .date-selector {
+    max-width: 112px !important;
+  }
+}
+
+@media (display-mode: standalone) and (max-width: 760px) {
+  .product-shell .topbar {
+    min-height: calc(64px + env(safe-area-inset-top)) !important;
+    padding-top: calc(8px + env(safe-area-inset-top)) !important;
+  }
+
+  .product-shell .product-sidebar {
+    padding-top: calc(12px + env(safe-area-inset-top)) !important;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .product-shell .menu-button,
+  .product-shell .mobile-close {
+    position: relative;
+    z-index: 2;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 980px) {
+  .product-shell .topbar {
+    min-height: calc(54px + env(safe-area-inset-top)) !important;
+    padding-top: calc(5px + env(safe-area-inset-top)) !important;
+    padding-bottom: 5px !important;
+  }
+
+  .login-brand {
+    display: none !important;
+  }
+
+  .login-panel {
+    padding-top: 12px !important;
+  }
+
+  .leader-studio-fullscreen-head {
+    min-height: 54px !important;
+  }
+}

@@ -18,6 +18,7 @@ import "./desktop-compact.css";
 import "./brand-streetart.css";
 import "./personal-workspace.css";
 import "./cat-games.css";
+import "./mobile-hardening.css";
 
 export const metadata: Metadata = {
   title: {
