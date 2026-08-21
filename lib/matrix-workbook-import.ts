@@ -104,7 +104,7 @@ const DEFAULT_SHIFT_COLOR="#879681";
 const DEFAULT_STRATEGIES=[
   {code:"BALANCED",name:"Zrównoważony",description:"Kompromis kosztu, preferencji i równego obciążenia. Dobry wariant startowy, gdy żaden z tych celów nie ma bezwzględnego pierwszeństwa.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"1",active:true},
   {code:"MIN_COST",name:"Minimalny koszt",description:"Po zapewnieniu najlepszej możliwej obsady wybiera najniższy łączny koszt. Nadgodziny i pozostałe kryteria rozstrzygają dopiero przy takim samym koszcie.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"2",active:true},
-  {code:"PREFERENCES",name:"Preferencje i równy podział",description:"Po uzupełnieniu wymaganej obsady najpierw respektuje prośby pracowników, następnie minimalizuje różnicę obciążenia i odchylenia od celu godzinowego. Koszt rozstrzyga dopiero później.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"3",active:true},
+  {code:"PREFERENCES",name:"Preferencje i równy podział",description:"Po uzupełnieniu wymaganej obsady najpierw maksymalizuje realizację celu najsłabiej obsłużonej osoby, następnie wyrównuje procent realizacji indywidualnych celów i odchylenia godzinowe. Preferencje rozstrzygają dopiero między podobnie sprawiedliwymi rozwiązaniami, a koszt później.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"3",active:true},
 ];
 
 const DEFAULT_OBJECTIVE_WEIGHTS:Record<string,Record<string,number>>={
@@ -123,9 +123,9 @@ function defaultObjectiveTier(strategyCode:string,metricCode:string){
     return 6;
   }
   if(strategyCode==="PREFERENCES"){
-    if(metricCode==="PREFERENCE_VIOLATIONS")return 2;
-    if(metricCode==="LOAD_SPREAD_MINUTES")return 3;
-    if(metricCode==="NOMINAL_DEVIATION_MINUTES")return 4;
+    if(metricCode==="LOAD_SPREAD_MINUTES")return 2;
+    if(metricCode==="NOMINAL_DEVIATION_MINUTES")return 3;
+    if(metricCode==="PREFERENCE_VIOLATIONS")return 4;
     if(metricCode==="WEEKEND_SPREAD")return 5;
     if(["TOTAL_COST","HOME_LOCATION_VIOLATIONS"].includes(metricCode))return 6;
     return 7;

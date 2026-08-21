@@ -4,6 +4,7 @@ import copy
 import json
 import sys
 import unittest
+from collections import Counter
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -1837,6 +1838,203 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(
                 variant.metrics["ACHIEVABLE_TARGET_MINUTES_TOTAL"], 4_800
             )
+
+    def test_preferences_strategy_fairness_precedes_extreme_preferences(self) -> None:
+        """B4F-119: preferences choose shifts, never who gets the whole month."""
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-19"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        shift = next(item for item in raw["shiftTemplates"] if item["id"] == "shift-morning")
+        shift["weekdays"] = [1, 2, 3, 4, 5, 6, 7]
+        raw["shiftTemplates"] = [shift]
+        raw["demand"] = [{
+            **raw["demand"][0],
+            "dates": [f"2026-08-{day:02d}" for day in range(1, 20)],
+            "requiredCount": 1,
+        }]
+        employees = [
+            employee
+            for employee in raw["employees"]
+            if employee["id"] in {"employee-bob", "employee-charlie"}
+        ]
+        for employee in employees:
+            employee["nominalMonthlyMinutes"] = 2_400
+            employee["maximumMonthlyMinutes"] = 4_800
+            employee["maximumWeeklyMinutes"] = 4_800
+            employee["softDayOffDates"] = []
+        employees[0]["softDayOffDates"] = [
+            f"2026-08-{day:02d}" for day in range(1, 20)
+        ]
+        raw["employees"] = employees
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        raw["lockedAssignments"] = []
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["strategies"] = [{
+            "id": "strategy-preferences-fairness",
+            "code": "PREFERENCES",
+            "label": "Preferencje i rowny podzial",
+            "sortOrder": 0,
+            "timeLimitSeconds": 30,
+            "objectiveTerms": [
+                {"tier": 1, "metric": "PREFERENCE_VIOLATIONS", "weight": 250_000, "direction": "MIN"},
+                {"tier": 2, "metric": "ROLE_LOAD_FAIRNESS_SCORE", "weight": 1, "direction": "MIN"},
+                {"tier": 3, "metric": "NOMINAL_DEVIATION_MINUTES", "weight": 1, "direction": "MIN"},
+            ],
+        }]
+
+        variant = CpSatScheduleEngine(max_total_seconds=45).solve(
+            Snapshot.from_dict(raw)
+        )[0]
+        counts = Counter(item.employee_id for item in variant.assignments)
+        self.assertLessEqual(abs(counts[employees[0]["id"]] - counts[employees[1]["id"]]), 1)
+        self.assertLess(
+            next(stage["tier"] for stage in variant.stage_objectives if any(term.get("metric") == "ROLE_LOAD_FAIRNESS_SCORE" for term in stage.get("terms", []))),
+            next(stage["tier"] for stage in variant.stage_objectives if any(term.get("metric") == "PREFERENCE_VIOLATIONS" for term in stage.get("terms", []))),
+        )
+        self.assertGreater(variant.metrics["PREFERENCE_VIOLATIONS"], 0)
+
+    def test_preferences_shortage_is_proportional_to_individual_targets(self) -> None:
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-09"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        shift = next(item for item in raw["shiftTemplates"] if item["id"] == "shift-morning")
+        shift.update({"startTime": "08:00", "endTime": "09:00", "weekdays": [1, 2, 3, 4, 5, 6, 7]})
+        raw["shiftTemplates"] = [shift]
+        raw["demand"] = [{
+            **raw["demand"][0],
+            "dates": [f"2026-08-{day:02d}" for day in range(1, 10)],
+            "requiredCount": 1,
+        }]
+        employees = copy.deepcopy(raw["employees"])
+        targets = [240, 480, 360]
+        for employee, target in zip(employees, targets, strict=True):
+            employee["nominalMonthlyMinutes"] = target
+            employee["maximumMonthlyMinutes"] = 1_000
+            employee["maximumWeeklyMinutes"] = 1_000
+            employee["softDayOffDates"] = []
+            employee["dutyIds"] = ["duty-service", "duty-close"]
+        raw["employees"] = employees
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        raw["lockedAssignments"] = []
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["strategies"] = [{
+            "id": "strategy-preferences-proportional",
+            "code": "PREFERENCES",
+            "label": "Preferencje i rowny podzial",
+            "sortOrder": 0,
+            "timeLimitSeconds": 30,
+            "objectiveTerms": [
+                {"tier": 1, "metric": "PREFERENCE_VIOLATIONS", "weight": 1, "direction": "MIN"},
+                {"tier": 2, "metric": "ROLE_LOAD_FAIRNESS_SCORE", "weight": 1, "direction": "MIN"},
+            ],
+        }]
+        variant = CpSatScheduleEngine(max_total_seconds=45).solve(Snapshot.from_dict(raw))[0]
+        minutes = Counter(item.employee_id for item in variant.assignments)
+        fulfillments = [minutes[employee["id"]] * 1000 // target for employee, target in zip(employees, targets, strict=True)]
+        self.assertLessEqual(max(fulfillments) - min(fulfillments), 250)
+        self.assertEqual(
+            variant.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"],
+            max(fulfillments) - min(fulfillments),
+        )
+
+    def test_preferences_ten_identical_employees_split_month_exactly(self) -> None:
+        """B4F-119 A: no preferences means a genuinely equal split, not 10/180 h."""
+        raw = load_raw()
+        raw.pop("slots")
+        raw["periodStart"] = "2026-08-01"
+        raw["periodEnd"] = "2026-08-30"
+        raw["settings"]["missingAvailabilityMeansAvailable"] = True
+        raw["settings"]["requireOptimal"] = True
+        shift = next(
+            item for item in raw["shiftTemplates"] if item["id"] == "shift-morning"
+        )
+        shift.update(
+            {
+                "startTime": "08:00",
+                "endTime": "09:00",
+                "weekdays": [1, 2, 3, 4, 5, 6, 7],
+            }
+        )
+        raw["shiftTemplates"] = [shift]
+        raw["demand"] = [
+            {
+                **raw["demand"][0],
+                "dates": [f"2026-08-{day:02d}" for day in range(1, 31)],
+                "requiredCount": 1,
+            }
+        ]
+        template = next(
+            employee
+            for employee in raw["employees"]
+            if employee["id"] == "employee-bob"
+        )
+        employees = []
+        for index in range(10):
+            employee = copy.deepcopy(template)
+            employee.update(
+                {
+                    "id": f"employee-fair-{index:02d}",
+                    "nominalMonthlyMinutes": 180,
+                    "maximumMonthlyMinutes": 600,
+                    "maximumWeeklyMinutes": 600,
+                    "softDayOffDates": [],
+                    "preferredShiftTemplateIds": [],
+                    "avoidedShiftTemplateIds": [],
+                }
+            )
+            employees.append(employee)
+        raw["employees"] = employees
+        raw["availabilityWindows"] = []
+        raw["hardBlocks"] = []
+        raw["externalAssignments"] = []
+        raw["lockedAssignments"] = []
+        raw["payRules"] = []
+        raw["budget"] = {"amountMinor": None, "hard": False}
+        raw["strategies"] = [
+            {
+                "id": "strategy-preferences-ten-equal",
+                "code": "PREFERENCES",
+                "label": "Preferencje i rowny podzial",
+                "sortOrder": 0,
+                "timeLimitSeconds": 30,
+                "objectiveTerms": [
+                    {
+                        "tier": 1,
+                        "metric": "PREFERENCE_VIOLATIONS",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                    {
+                        "tier": 2,
+                        "metric": "ROLE_LOAD_FAIRNESS_SCORE",
+                        "weight": 1,
+                        "direction": "MIN",
+                    },
+                ],
+            }
+        ]
+
+        variant = CpSatScheduleEngine(max_total_seconds=60).solve(
+            Snapshot.from_dict(raw)
+        )[0]
+        counts = Counter(item.employee_id for item in variant.assignments)
+        self.assertEqual(sorted(counts.values()), [3] * 10)
+        self.assertEqual(variant.metrics["PREFERENCE_VIOLATIONS"], 0)
+        self.assertEqual(
+            variant.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"], 0
+        )
 
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:
         raw = load_raw()

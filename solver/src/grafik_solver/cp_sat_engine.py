@@ -629,6 +629,165 @@ class CpSatScheduleEngine:
                 "ponownie albo ułóż grafik w Studio; ten wynik nie zostanie "
                 "pokazany jako rzeczywisty niedobór zespołu."
             )
+
+        # Coverage has now been proved (or a complete zero-vacancy incumbent is
+        # itself the proof) and the minimum use of BACKUP roles is fixed.  Before
+        # expanding that roster into the expensive pay/strategy model, improve
+        # the shared assignment on the small hard-constraint model by maximizing
+        # the least realized attainable target.  This is a seed, not a hidden
+        # business optimum: every strategy still performs its own auditable
+        # lexicographic stages, but it no longer starts from an arbitrary
+        # coverage-only roster that can give one person 10 h and another 180 h.
+        common_hint_solver = common_solver
+        fair_coverage_seed_status: str | None = None
+        fair_coverage_seed_budget = 0.0
+        fair_coverage_spread_status: str | None = None
+        fair_coverage_spread_budget = 0.0
+        fair_coverage_seed_minimum = int(
+            common_solver.value(
+                common.metrics["MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
+            )
+        )
+        if (
+            not snapshot.settings.require_optimal
+            and any(
+                strategy.code.upper() == "PREFERENCES"
+                for strategy in snapshot.strategies
+            )
+            and common.metric_bounds[
+                "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+            ]
+            > 0
+        ):
+            common.model.add(common.metrics["UNFILLED"] == minimum_unfilled)
+            common.model.add(
+                common.metrics["ROLE_BACKUP_PENALTY"]
+                == minimum_role_backup_penalty
+            )
+            common.model.clear_objective()
+            self._replace_with_nonzero_solution_hints(
+                common.model,
+                common_solver,
+                common.hint_variables,
+            )
+            common.model.minimize(
+                common.metrics[
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+                ]
+            )
+            remaining_for_seed = self._remaining_seconds(
+                global_deadline, "GLOBAL:FAIR_COVERAGE_SEED:BUDGET"
+            )
+            configured_preference_budgets = [
+                float(strategy.time_limit_seconds)
+                for strategy in snapshot.strategies
+                if strategy.code.upper() == "PREFERENCES"
+                and strategy.time_limit_seconds is not None
+            ]
+            preferred_seed_ceiling = (
+                max(configured_preference_budgets) * 0.5
+                if configured_preference_budgets
+                else remaining_for_seed * 0.2
+            )
+            fair_coverage_seed_budget = max(
+                0.001,
+                min(
+                    remaining_for_seed * 0.2,
+                    max(15.0, min(120.0, preferred_seed_ceiling)),
+                ),
+            )
+            fair_seed_solver, fair_seed_status = self._solve_model(
+                common.model,
+                snapshot,
+                strategy=None,
+                stage_name="FAIR_COVERAGE_SEED",
+                time_limit_seconds=fair_coverage_seed_budget,
+            )
+            if fair_seed_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+                candidate_minimum = int(
+                    fair_seed_solver.value(
+                        common.metrics[
+                            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+                        ]
+                    )
+                )
+                if candidate_minimum >= fair_coverage_seed_minimum:
+                    common_hint_solver = fair_seed_solver
+                    fair_coverage_seed_minimum = candidate_minimum
+                    fair_coverage_seed_status = fair_seed_solver.status_name(
+                        fair_seed_status
+                    )
+            LOGGER.info(
+                "Fair coverage seed status=%s minimumAchievableUtilizationBps=%s "
+                "timeBudgetSeconds=%.3f",
+                fair_coverage_seed_status,
+                fair_coverage_seed_minimum,
+                fair_coverage_seed_budget,
+            )
+            if fair_coverage_seed_status is not None:
+                # Strict second lexicographic step: keep the best minimum and
+                # then lower the maximum utilization.  With fixed coverage this
+                # distributes all remaining work instead of allowing the first
+                # constrained employee to define the minimum while somebody
+                # else remains close to 100%.
+                common.model.add(
+                    common.metrics["MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
+                    >= fair_coverage_seed_minimum
+                )
+                common.model.clear_objective()
+                self._replace_with_nonzero_solution_hints(
+                    common.model,
+                    common_hint_solver,
+                    common.hint_variables,
+                )
+                common.model.minimize(
+                    common.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
+                )
+                remaining_for_spread = self._remaining_seconds(
+                    global_deadline, "GLOBAL:FAIR_COVERAGE_SPREAD:BUDGET"
+                )
+                preferred_spread_ceiling = (
+                    max(configured_preference_budgets) * 0.3
+                    if configured_preference_budgets
+                    else remaining_for_spread * 0.15
+                )
+                fair_coverage_spread_budget = max(
+                    0.001,
+                    min(
+                        remaining_for_spread * 0.15,
+                        max(10.0, min(60.0, preferred_spread_ceiling)),
+                    ),
+                )
+                spread_solver, spread_status = self._solve_model(
+                    common.model,
+                    snapshot,
+                    strategy=None,
+                    stage_name="FAIR_COVERAGE_SPREAD",
+                    time_limit_seconds=fair_coverage_spread_budget,
+                )
+                if spread_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+                    common_hint_solver = spread_solver
+                    fair_coverage_spread_status = spread_solver.status_name(
+                        spread_status
+                    )
+                LOGGER.info(
+                    "Fair coverage spread status=%s spreadBps=%s "
+                    "timeBudgetSeconds=%.3f",
+                    fair_coverage_spread_status,
+                    int(
+                        common_hint_solver.value(
+                            common.metrics[
+                                "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+                            ]
+                        )
+                    ),
+                    fair_coverage_spread_budget,
+                )
+        fair_coverage_seed_spread = int(
+            common_hint_solver.value(
+                common.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
+            )
+        )
         self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
         self._emit_progress(
             phase="SOLVING",
@@ -683,7 +842,7 @@ class CpSatScheduleEngine:
             )
             self._apply_coverage_solution_hint(
                 common,
-                common_solver,
+                common_hint_solver,
                 warm_artifacts,
                 slots,
             )
@@ -778,20 +937,44 @@ class CpSatScheduleEngine:
                 == minimum_role_backup_penalty
             )
             coverage_hint_count = self._apply_coverage_solution_hint(
-                common, common_solver, artifacts, slots
+                common, common_hint_solver, artifacts, slots
             )
             LOGGER.info(
                 "Strategy %s seeded with %s coverage hint values",
                 strategy.code,
                 coverage_hint_count,
             )
+            preference_fairness_strategy = strategy.code.upper() == "PREFERENCES"
+
+            def effective_objective_tier(metric_name: str, configured_tier: int) -> int:
+                """Keep the PREFERENCES promise safe from stale Matrix ordering."""
+                if not preference_fairness_strategy:
+                    return configured_tier
+                return {
+                    "UNFILLED": 1,
+                    "ROLE_LOAD_FAIRNESS_SCORE": 2,
+                    "LOAD_UTILIZATION_SPREAD_BPS": 2,
+                    "NOMINAL_DEVIATION_MINUTES": 3,
+                    "PREFERENCE_VIOLATIONS": 4,
+                    "ROLE_WEEKEND_FAIRNESS_SCORE": 5,
+                    "WEEKEND_SPREAD": 5,
+                    "TOTAL_COST": 6,
+                    "HOME_LOCATION_VIOLATIONS": 6,
+                    "OVERTIME_MINUTES": 7,
+                    "BASELINE_CHANGES": 7,
+                    "BUDGET_TARGET_EXCESS": 8,
+                }.get(metric_name, max(9, configured_tier))
+
             active_metric_tiers: dict[str, list[int]] = defaultdict(list)
             for objective_term in strategy.objective_terms:
                 if objective_term.weight == 0:
                     continue
-                active_metric_tiers[
-                    METRIC_ALIASES.get(objective_term.metric, objective_term.metric)
-                ].append(objective_term.tier)
+                metric_name = METRIC_ALIASES.get(
+                    objective_term.metric, objective_term.metric
+                )
+                active_metric_tiers[metric_name].append(
+                    effective_objective_tier(metric_name, objective_term.tier)
+                )
             fairness_tiers = [
                 tier
                 for metric_name in (
@@ -843,6 +1026,32 @@ class CpSatScheduleEngine:
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
                     "roleBackupPenalty": minimum_role_backup_penalty,
+                    "fairCoverageSeedMinimumAchievableUtilizationBps": (
+                        fair_coverage_seed_minimum
+                    ),
+                    "fairCoverageSeedAchievableUtilizationSpreadBps": (
+                        fair_coverage_seed_spread
+                    ),
+                    **(
+                        {
+                            "fairCoverageSeedStatus": fair_coverage_seed_status,
+                            "fairCoverageSeedTimeBudgetSeconds": round(
+                                fair_coverage_seed_budget, 3
+                            ),
+                        }
+                        if fair_coverage_seed_status is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "fairCoverageSpreadStatus": fair_coverage_spread_status,
+                            "fairCoverageSpreadTimeBudgetSeconds": round(
+                                fair_coverage_spread_budget, 3
+                            ),
+                        }
+                        if fair_coverage_spread_status is not None
+                        else {}
+                    ),
                     **(
                         {"fairnessIncumbentGuard": dict(applied_fairness_bounds)}
                         if applied_fairness_bounds
@@ -1033,6 +1242,7 @@ class CpSatScheduleEngine:
             tier_terms: dict[int, list[dict[str, Any]]] = defaultdict(list)
             for term_index, term in enumerate(strategy.objective_terms):
                 metric_name = METRIC_ALIASES.get(term.metric, term.metric)
+                effective_tier = effective_objective_tier(metric_name, term.tier)
                 if metric_name not in artifacts.metrics:
                     raise SnapshotError(
                         f"Strategy {strategy.id} uses unsupported metric {term.metric}"
@@ -1071,22 +1281,25 @@ class CpSatScheduleEngine:
                         ),
                     )
                 sign = 1 if term.direction == "MIN" else -1
-                tier_upper_bounds[term.tier] += (
+                tier_upper_bounds[effective_tier] += (
                     normalization_coefficient * expression_bound
                 )
-                tier_tolerances[term.tier] += normalization_coefficient * term.tolerance
+                tier_tolerances[effective_tier] += (
+                    normalization_coefficient * term.tolerance
+                )
                 if (
-                    tier_upper_bounds[term.tier] + tier_tolerances[term.tier]
+                    tier_upper_bounds[effective_tier]
+                    + tier_tolerances[effective_tier]
                     > SAFE_CP_SAT_INTEGER
                 ):
                     raise SnapshotError(
-                        f"Strategy {strategy.id} tier {term.tier} exceeds the "
+                        f"Strategy {strategy.id} tier {effective_tier} exceeds the "
                         "safe CP-SAT integer range"
                     )
-                tiers[term.tier].append(
+                tiers[effective_tier].append(
                     sign * normalization_coefficient * metric_expression
                 )
-                tier_terms[term.tier].append(
+                tier_terms[effective_tier].append(
                     {
                         "metric": metric_name,
                         "direction": term.direction,
@@ -1095,6 +1308,11 @@ class CpSatScheduleEngine:
                         "parameters": dict(term.parameters),
                         "normalizationCoefficient": normalization_coefficient,
                         "metricUpperBound": raw_expression_bound,
+                        **(
+                            {"configuredTier": term.tier}
+                            if effective_tier != term.tier
+                            else {}
+                        ),
                     }
                 )
 
@@ -1174,7 +1392,11 @@ class CpSatScheduleEngine:
             # Negative values are internal ordering keys only.  Persisted
             # objective tiers remain non-negative for the gateway contract.
             guard_tier = -1
-            guard_metric = "COMMON_FAIRNESS_GUARD_SCORE"
+            guard_metric = (
+                "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+                if preference_fairness_strategy
+                else "COMMON_FAIRNESS_GUARD_SCORE"
+            )
             guard_bound = artifacts.metric_bounds[guard_metric]
             if guard_bound > 0:
                 tiers[guard_tier].append(artifacts.metrics[guard_metric])
@@ -1195,6 +1417,27 @@ class CpSatScheduleEngine:
                     }
                 )
 
+            spread_guard_tier = 0
+            spread_guard_metric = "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+            spread_guard_bound = artifacts.metric_bounds[spread_guard_metric]
+            if preference_fairness_strategy and spread_guard_bound > 0:
+                tiers[spread_guard_tier].append(
+                    artifacts.metrics[spread_guard_metric]
+                )
+                tier_upper_bounds[spread_guard_tier] = spread_guard_bound
+                tier_tolerances[spread_guard_tier] = 0
+                tier_terms[spread_guard_tier].append(
+                    {
+                        "metric": spread_guard_metric,
+                        "direction": "MIN",
+                        "weight": 1,
+                        "tolerance": 0,
+                        "parameters": {},
+                        "normalizationCoefficient": 1,
+                        "metricUpperBound": spread_guard_bound,
+                    }
+                )
+
             def stage_name(tier: int) -> str:
                 if tier == zero_hour_guard_tier:
                     return "ZERO_HOUR_GUARD"
@@ -1202,6 +1445,8 @@ class CpSatScheduleEngine:
                     return "PRIMARY_ROLE_GUARD"
                 if tier == guard_tier:
                     return "COMMON_FAIRNESS_GUARD"
+                if tier == spread_guard_tier:
+                    return "ACHIEVABLE_TARGET_SPREAD_GUARD"
                 return f"TIER_{tier}"
 
             self._emit_progress(
@@ -1270,6 +1515,73 @@ class CpSatScheduleEngine:
                         and "targetValue" not in term["parameters"]
                         for term in tier_terms[tier]
                     )
+                    certified_tier_value: int | None = None
+                    if preference_fairness_strategy and feasible_fallback_solver is not None:
+                        if tier == guard_tier and fair_coverage_seed_status == "OPTIMAL":
+                            candidate = 1000 - fair_coverage_seed_minimum
+                            if int(
+                                feasible_fallback_solver.value(
+                                    artifacts.metrics[guard_metric]
+                                )
+                            ) == candidate:
+                                certified_tier_value = candidate
+                        elif (
+                            tier == spread_guard_tier
+                            and fair_coverage_spread_status == "OPTIMAL"
+                            and int(
+                                feasible_fallback_solver.value(
+                                    artifacts.metrics[
+                                        "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+                                    ]
+                                )
+                            )
+                            >= fair_coverage_seed_minimum
+                            and int(
+                                feasible_fallback_solver.value(
+                                    artifacts.metrics[spread_guard_metric]
+                                )
+                            )
+                            == fair_coverage_seed_spread
+                        ):
+                            certified_tier_value = fair_coverage_seed_spread
+                    if certified_tier_value is not None:
+                        allowed_degradation = tier_tolerances[tier]
+                        stage_results.append(
+                            {
+                                "tier": 0 if tier < 0 else tier,
+                                "name": stage_name(tier),
+                                "value": certified_tier_value,
+                                "status": "OPTIMAL",
+                                "bestBound": float(certified_tier_value),
+                                "tolerance": allowed_degradation,
+                                "frozenUpperBound": (
+                                    certified_tier_value + allowed_degradation
+                                ),
+                                "terms": tier_terms[tier],
+                                "certifiedCoverageSeed": True,
+                            }
+                        )
+                        artifacts.model.add(
+                            expression
+                            <= certified_tier_value + allowed_degradation
+                        )
+                        self._emit_progress(
+                            phase=f"TIER_{tier}",
+                            progress=10
+                            + (
+                                80
+                                * (
+                                    strategy_index * len(ordered_tiers)
+                                    + tier_index
+                                )
+                                // (strategy_count * len(ordered_tiers))
+                            ),
+                            strategyId=strategy.id,
+                            strategyProgress=(90 * tier_index // len(ordered_tiers)),
+                            strategyCount=strategy_count,
+                            completedStrategies=strategy_index,
+                        )
+                        continue
                     # Every supported business metric is non-negative. If the
                     # verified Matrix-compatible incumbent already reaches zero
                     # for an all-minimization tier, zero is a mathematical lower
@@ -1388,10 +1700,35 @@ class CpSatScheduleEngine:
                             0.001,
                             usable_tier_budget / max(1, remaining_tier_count),
                         )
+                        if preference_fairness_strategy and tier == guard_tier:
+                            # The large monthly model needs materially more than
+                            # an equal per-tier slice to improve max-min fairness.
+                            # Reserve 40% for all later goals (including actual
+                            # preferences), but give the defining fairness gate
+                            # the majority share.  This affects PREFERENCES only.
+                            tier_time_budget = max(
+                                tier_time_budget,
+                                min(
+                                    usable_tier_budget,
+                                    max(0.001, strategy_budget * 0.60),
+                                ),
+                            )
+                        elif preference_fairness_strategy and tier == 2:
+                            tier_time_budget = max(
+                                tier_time_budget,
+                                min(
+                                    usable_tier_budget,
+                                    max(0.001, strategy_budget * 0.60),
+                                ),
+                            )
                         if tier in (
                             zero_hour_guard_tier,
                             primary_role_guard_tier,
                             guard_tier,
+                            spread_guard_tier,
+                        ) and not (
+                            preference_fairness_strategy
+                            and tier in (guard_tier, spread_guard_tier)
                         ):
                             tier_time_budget = min(
                                 tier_time_budget,
@@ -2789,6 +3126,62 @@ class CpSatScheduleEngine:
                         assigned_week + external_week <= employee.maximum_weekly_minutes
                     )
 
+        # Build the max-min target metric before the coverage-only fast paths
+        # return.  The monthly coverage model already contains every hard
+        # availability, rest and hours constraint, while deliberately omitting
+        # the large soft-cost surface.  It is therefore the right place to
+        # create a fair, hard-feasible roster seed: first prove/fix coverage and
+        # dedicated-role use, then maximize the least realized attainable
+        # target.  Previously this metric existed only in the full strategy
+        # model, so a coverage-optimal but extremely uneven roster (for example
+        # 10 h versus 180 h) became the shared fixed warm start.
+        achievable_utilization_vars: list[Any] = []
+        for employee in snapshot.employees:
+            achievable_target = achievable_target_minutes[employee.id]
+            if achievable_target <= 0:
+                continue
+            capped_minutes = model.new_int_var(
+                0,
+                achievable_target,
+                f"achievable_capped_minutes|{employee.id}",
+            )
+            model.add_min_equality(
+                capped_minutes, [total_minutes[employee.id], achievable_target]
+            )
+            achievable_utilization = model.new_int_var(
+                0,
+                1000,
+                f"achievable_utilization_bps|{employee.id}",
+            )
+            model.add_division_equality(
+                achievable_utilization,
+                capped_minutes * 1000,
+                achievable_target,
+            )
+            achievable_utilization_vars.append(achievable_utilization)
+        if achievable_utilization_vars:
+            minimum_achievable_utilization = model.new_int_var(
+                0, 1000, "minimum_achievable_utilization_bps"
+            )
+            maximum_achievable_utilization = model.new_int_var(
+                0, 1000, "maximum_achievable_utilization_bps"
+            )
+            model.add_min_equality(
+                minimum_achievable_utilization, achievable_utilization_vars
+            )
+            model.add_max_equality(
+                maximum_achievable_utilization, achievable_utilization_vars
+            )
+            achievable_utilization_deficit = 1000 - minimum_achievable_utilization
+            achievable_utilization_spread = (
+                maximum_achievable_utilization - minimum_achievable_utilization
+            )
+        else:
+            minimum_achievable_utilization = 0
+            maximum_achievable_utilization = 0
+            achievable_utilization_deficit = 0
+            achievable_utilization_spread = 0
+
         # Stand-by is a post-publication, best-effort operational layer.  It is
         # intentionally not a hard CP-SAT constraint: a cross-trained person
         # can be needed by another role, so reserving capacity here could still
@@ -2806,8 +3199,20 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
-                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
+                metrics={
+                    "UNFILLED": _sum(unfilled.values()),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                },
+                metric_bounds={
+                    "UNFILLED": len(slots),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                },
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -2904,8 +3309,20 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
-                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
+                metrics={
+                    "UNFILLED": _sum(unfilled.values()),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                },
+                metric_bounds={
+                    "UNFILLED": len(slots),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                },
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -3080,8 +3497,20 @@ class CpSatScheduleEngine:
                 work=work,
                 day_work=day_work,
                 total_minutes=total_minutes,
-                metrics={"UNFILLED": _sum(unfilled.values()), "ROLE_BACKUP_PENALTY": role_backup_penalty_expression},
-                metric_bounds={"UNFILLED": len(slots), "ROLE_BACKUP_PENALTY": role_backup_penalty_bound},
+                metrics={
+                    "UNFILLED": _sum(unfilled.values()),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                },
+                metric_bounds={
+                    "UNFILLED": len(slots),
+                    "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                },
                 hint_variables=tuple(
                     list(x.values())
                     + list(unfilled.values())
@@ -3147,32 +3576,13 @@ class CpSatScheduleEngine:
         weekend_vars: list[Any] = []
         zero_target_vars: list[Any] = []
         zero_primary_role_vars: list[Any] = []
-        achievable_utilization_vars: list[Any] = []
+        under_target_vars: list[Any] = []
+        under_target_bound_total = 0
         deviation_bound_total = 0
         overtime_bound_total = 0
         for employee in snapshot.employees:
             total = total_minutes[employee.id]
             achievable_target = achievable_target_minutes[employee.id]
-            if achievable_target > 0:
-                capped_minutes = model.new_int_var(
-                    0,
-                    achievable_target,
-                    f"achievable_capped_minutes|{employee.id}",
-                )
-                model.add_min_equality(
-                    capped_minutes, [total, achievable_target]
-                )
-                achievable_utilization = model.new_int_var(
-                    0,
-                    1000,
-                    f"achievable_utilization_bps|{employee.id}",
-                )
-                model.add_division_equality(
-                    achievable_utilization,
-                    capped_minutes * 1000,
-                    achievable_target,
-                )
-                achievable_utilization_vars.append(achievable_utilization)
             if employee.nominal_monthly_minutes is not None:
                 nominal = employee.nominal_monthly_minutes
                 deviation = model.new_int_var(
@@ -3181,6 +3591,12 @@ class CpSatScheduleEngine:
                 model.add_abs_equality(deviation, total - nominal)
                 deviation_vars.append(deviation)
                 deviation_bound_total += max_total_bound + nominal
+                under_target = model.new_int_var(
+                    0, nominal, f"under_target|{employee.id}"
+                )
+                model.add_max_equality(under_target, [nominal - total, 0])
+                under_target_vars.append(under_target)
+                under_target_bound_total += nominal
                 overtime = model.new_int_var(
                     0, max_total_bound, f"overtime|{employee.id}"
                 )
@@ -3379,17 +3795,6 @@ class CpSatScheduleEngine:
         # unjustified zero-hour outcomes first, maximize the least-realized
         # achievable target (capped at 100%), then minimize the worst and total
         # proportional spread inside comparable role-location pools.
-        if achievable_utilization_vars:
-            minimum_achievable_utilization = model.new_int_var(
-                0, 1000, "minimum_achievable_utilization_bps"
-            )
-            model.add_min_equality(
-                minimum_achievable_utilization, achievable_utilization_vars
-            )
-            achievable_utilization_deficit = 1000 - minimum_achievable_utilization
-        else:
-            minimum_achievable_utilization = 0
-            achievable_utilization_deficit = 0
         common_fairness_guard_score = (
             zero_target_count * (1001 * (role_load_score_bound + 1))
             + achievable_utilization_deficit * (role_load_score_bound + 1)
@@ -3446,6 +3851,7 @@ class CpSatScheduleEngine:
             "PREFERENCE_VIOLATIONS": preference_expression,
             "HOME_LOCATION_VIOLATIONS": home_expression,
             "NOMINAL_DEVIATION_MINUTES": _sum(deviation_vars),
+            "UNDER_TARGET_MINUTES": _sum(under_target_vars),
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(deviation_vars),
             "OVERTIME_MINUTES": _sum(overtime_vars),
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
@@ -3453,6 +3859,8 @@ class CpSatScheduleEngine:
             "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+            "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+            "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
@@ -3477,6 +3885,7 @@ class CpSatScheduleEngine:
             "PREFERENCE_VIOLATIONS": 5 * len(slots),
             "HOME_LOCATION_VIOLATIONS": 0,
             "NOMINAL_DEVIATION_MINUTES": deviation_bound_total,
+            "UNDER_TARGET_MINUTES": under_target_bound_total,
             "NOMINAL_TARGET_EMPLOYEE_COUNT": len(snapshot.employees),
             "OVERTIME_MINUTES": overtime_bound_total,
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
@@ -3484,6 +3893,8 @@ class CpSatScheduleEngine:
             "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
             "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
             "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+            "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+            "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,
