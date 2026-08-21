@@ -40,7 +40,7 @@ test("management navigation follows application roles and scoped managers can re
   const journey = read("lib/product-journey.ts");
   const page = read("app/page.tsx");
   assert.match(journey, /managementNavigationForRoles/);
-  assert.match(journey, /ROLE_MANAGER: \["start", "team", "schedule", "operations", "analytics"\]/);
+  assert.match(journey, /ROLE_MANAGER: \["start", "team", "schedule", "operations", "analytics", "profile"\]/);
   assert.match(page, /"ROLE_MANAGER","LOCATION_MANAGER"/);
   assert.match(page, /scheduleWriteAllowed/);
 });

@@ -34,7 +34,9 @@ test("navigation selects a dedicated shell for an employee", () => {
   assert.equal(isEmployeePersona([{ app_role: "EMPLOYEE" }]), true);
   assert.equal(isEmployeePersona([{ app_role: "EMPLOYEE" }, { app_role: "OWNER" }]), false);
   assert.equal(sectionFromPath("/today", true), "today");
-  assert.equal(sectionFromPath("/availability", true), "availability");
+  assert.equal(sectionFromPath("/availability", true), "today");
+  assert.equal(sectionFromPath("/profile", true), "profile");
+  assert.equal(sectionFromPath("/profile", false), "profile");
   assert.equal(sectionFromPath("/settings", true), "today");
   assert.equal(sectionFromPath("/unknown", false), "start");
   assert.equal(pathForSection("schedule"), "/schedule");

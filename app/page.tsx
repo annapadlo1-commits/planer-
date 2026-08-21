@@ -2,7 +2,7 @@
 
 import {
   AlertTriangle, ArrowLeftRight, BarChart3, Bell, CalendarDays, Check, ChevronLeft, ChevronRight,
-  CircleDollarSign, Clock3, Download, Edit3, Filter, Gauge, LogOut, MapPin,
+  CircleDollarSign, CircleUserRound, Clock3, Download, Edit3, Filter, Gauge, LogOut, MapPin,
   Menu, Plus, RefreshCw, Settings, ShieldCheck, Users, WandSparkles, Wifi, X, Boxes,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -23,6 +23,7 @@ import {AnalyticsDashboard} from "@/components/AnalyticsDashboard";
 import {MessageCenter} from "@/components/MessageCenter";
 import {OperationalEventsCenter} from "@/components/OperationalEventsCenter";
 import {MonthlyBudgetDrawer} from "@/components/MonthlyBudgetDrawer";
+import {PersonalActionNote,UniversalPersonalWorkspace} from "@/components/PersonalWorkspace";
 import {
   getOperationalSolverWorkspace,
   getManagerStandbyMonth,
@@ -56,7 +57,7 @@ import {
   type SetupSection,
   type SetupStepKey,
 } from "@/lib/product-journey";
- type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"wydarzenia"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet";
+ type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"wydarzenia"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet"|"profil";
 type Modal = "plan"|"shift"|null;
 type PlanScope = {type:"COMPANY";category:null}|{type:"CATEGORY";category:SolverRoleCategory};
 type WorkforceCalendarEvent = {id:string;date:string;kind:"EVENT"|"HOT_DAY";title:string;locationName?:string|null};
@@ -92,12 +93,12 @@ function issueMessage(i:Issue,roleLabels:Record<string,string>){if(i.issue_type=
 const productIcons: Record<ProductSection, LucideIcon> = {
   start: Gauge, team: Users, schedule: CalendarDays, operations: Bell, analytics: BarChart3, settings: Settings,
   today: Gauge,
-  "my-schedule": CalendarDays, "company-schedule": Users, availability: Clock3, swaps: ArrowLeftRight, messages: Bell,
+  "my-schedule": CalendarDays, "company-schedule": Users, swaps: ArrowLeftRight, messages: Bell, profile: CircleUserRound,
 };
 const legacySection: Record<NavKey, ProductSection> = {
   centrum:"start",kadra:"team",zespoly:"schedule",scalanie:"schedule",generator:"schedule",grafik:"schedule",
   kalendarz:"operations",wydarzenia:"operations",portal:"operations",czas:"operations",integracje:"operations",alerty:"operations",naprawy:"operations",wiadomosci:"operations",
-  budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",
+  budzet:"analytics",matrix:"settings",hr:"settings",finanse:"settings",profil:"profile",
 };
 
 function fmtTime(value:string,timeZone="Europe/Warsaw") {
@@ -188,7 +189,7 @@ export default function GrafikPro() {
   },[employeeShell,pathname,router,selectedMonth]);
   const openProductSection=useCallback((section:ProductSection)=>{
     setRecoveryFocus(null);
-    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
+    const managementDefaults:Partial<Record<ProductSection,NavKey>>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix",profile:"profil"};
     if(!employeeShell)setActiveState(managementDefaults[section]??"centrum");
     router.push(`${pathForSection(section)}?month=${selectedMonth}`);
   },[employeeShell,router,selectedMonth]);
@@ -378,7 +379,7 @@ export default function GrafikPro() {
       return;
     }
     setRecoveryFocus(null);
-    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix"};
+    const defaults:Record<string,NavKey>={start:"centrum",team:"kadra",schedule:"zespoly",operations:"wydarzenia",analytics:"budzet",settings:"matrix",profile:"profil"};
     setActiveState(current=>legacySection[current]===primarySection?current:defaults[primarySection]??"centrum");
   },[employeeShell,pathname,primarySection]);
   useEffect(()=>{
@@ -477,7 +478,7 @@ export default function GrafikPro() {
     label:"Ładowanie aplikacji",
     description:"Sprawdzamy Twój zakres dostępu",
   };
-  const employeePortalSection=primarySection==="today"?"overview":primarySection==="company-schedule"?"company-schedule":primarySection==="availability"?"availability":primarySection==="swaps"?"swaps":"my-schedule";
+  const employeePortalSection=primarySection==="today"?"overview":primarySection==="company-schedule"?"company-schedule":primarySection==="swaps"?"swaps":"my-schedule";
 
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
     <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
@@ -512,13 +513,19 @@ export default function GrafikPro() {
       <div className="content">
         {employeeShell?<>
           {primarySection==="messages"&&<MessageCenter notify={notify} fail={setError}/>} 
-          {["today","my-schedule","company-schedule","availability","swaps"].includes(primarySection)&&complete&&<ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} employeeIdentity={employeePortalIdentity} openEmployeeSection={openProductSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>}
+          {["today","my-schedule","company-schedule","swaps"].includes(primarySection)&&complete&&(
+            <ActiveModules month={selectedMonth} view="portal" portalSection={employeePortalSection} employeeIdentity={employeePortalIdentity} openEmployeeSection={openProductSection} data={complete} reload={load} notify={notify} fail={setError} solverEngine={solverConfiguration?.engine} solverVersion={solverConfiguration?.solverVersion??undefined} solverRoles={solverConfiguration?.roles} timezone={activeTimezone} currency={activeCurrency}/>
+          )}
           {primarySection==="swaps"&&complete&&<RecoveryCenter month={selectedMonth} employees={complete.employees} currency={activeCurrency} employeeMode notify={notify} fail={setError} reload={load}/>} 
-          {!complete&&primarySection!=="messages"&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
+          {primarySection==="profile"&&(
+            <UniversalPersonalWorkspace management={false}/>
+          )}
+          {!complete&&!['messages','profile'].includes(primarySection)&&<section className="empty-engine"><AlertTriangle/><h2>Portal nie ma jeszcze kompletnego kontekstu</h2><p>Odśwież dane albo poproś właściciela o powiązanie konta z profilem pracownika.</p></section>}
         </>:<>
         {primarySection==="schedule"&&<ContextTabs items={[["zespoly","1. Grafiki ról"],["scalanie","2. Scal i porównaj grafik firmy"],["grafik","3. Opublikowany grafik"]]} active={active} select={setActive}/>} 
         {primarySection==="operations"&&<ContextTabs items={[["wydarzenia","Wydarzenia zespołu"],["naprawy","Centrum napraw"],["alerty","Alerty"],["kalendarz","Kalendarz"],["wiadomosci","Wiadomości"],["portal","Podgląd pracownika"],["integracje","Eksport"]]} active={active} select={setActive}/>} 
         {active==="centrum"&&<>
+          <PersonalActionNote compact/>
           {matrixV2&&<ConfigurationJourney compact data={matrixV2} month={selectedMonth} onOpenStep={openSetupStep} onCreateSchedule={()=>setActive("zespoly")} onConfigurationChanged={load}/>}
           <section className="kpi-grid">
             <button className="kpi-card" onClick={()=>setActive("grafik")}><span className="kpi-icon violet"><Users/></span><span><small>Obsada</small><strong>{data.plan?`${coverage}%`:"—"}</strong><em>{data.plan?`${data.assignments.length} przydziałów`:"Brak planu"}</em></span></button>
@@ -580,6 +587,7 @@ export default function GrafikPro() {
         }:undefined}/>} 
         {active==="wiadomosci"&&<MessageCenter notify={notify} fail={setError}/>} 
         {active==="budzet"&&<AnalyticsDashboard data={data} matrix={matrixV2} currency={activeCurrency}/>} 
+        {active==="profil"&&<UniversalPersonalWorkspace management/>}
         </>}
       </div>}
     </section>

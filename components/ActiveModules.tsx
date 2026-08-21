@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import * as XLSX from "xlsx";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
+import { PersonalActionNote, PersonalHomeGreeting } from "@/components/PersonalWorkspace";
 import { APP_COLOR_PALETTE, uiSafeColor } from "@/lib/app-color-palette";
 import { employeeHomeSnapshot } from "@/lib/employee-home";
 
@@ -217,7 +218,7 @@ type UatMasterPortalContext = Omit<PortalWorkspace, "assignments"> & {
 };
 
 type View = "rolePlans" | "portal" | "czas" | "integracje";
-export type EmployeePortalSection = "overview" | "my-schedule" | "company-schedule" | "availability" | "swaps";
+export type EmployeePortalSection = "overview" | "my-schedule" | "company-schedule" | "swaps";
 const days = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
 const rolePl: Record<string, string> = {
   KELNER: "Kelner",
@@ -263,7 +264,7 @@ export function ActiveModules({
   portalSection?: EmployeePortalSection;
   allowUatMasterPersona?: boolean;
   employeeIdentity?: EmployeePortalIdentity;
-  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
 }) {
   const selectedMonthDate = `${month}-01`;
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -456,9 +457,10 @@ export function ActiveModules({
   }, [fail, selectedMonthDate, supabase, view]);
   useEffect(() => { void loadOperationalContext(); }, [loadOperationalContext]);
 
-  async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
+  async function saveTimeConstraint(entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK" | "LEAVE" | "SICKNESS"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) {
     let publicationConflicts: Array<{ scheduleName?: string; publishedAt?: string; date?: string; shiftName?: string; locationName?: string }> = [];
-    if (entry.kind === "CANNOT_WORK" && supabase) {
+    const absenceRequest=["CANNOT_WORK","LEAVE","SICKNESS"].includes(entry.kind);
+    if (absenceRequest && supabase) {
       // OR-Tools' published schedule payload intentionally contains only assignments
       // and stand-by entries.  The stable employee id is provided by the shared
       // availability workspace, so keep it as the self-service fallback.  Without
@@ -482,22 +484,30 @@ export function ActiveModules({
         }
       }
     }
-    const result = await rpc(uatMasterEmployeeId
-      ? "uat_master_employee_availability_days_save_v2"
-      : "employee_availability_days_save_uat_v3", {
+    if(uatMasterEmployeeId&&["LEAVE","SICKNESS"].includes(entry.kind)){
+      fail("Wniosku urlopowego ani L4 nie można złożyć w symulowanym trybie MASTER. Zaloguj się na rzeczywiste konto pracownika.");
+      return false;
+    }
+    const requestType=entry.kind==="CANNOT_WORK"?"HARD_UNAVAILABLE":entry.kind;
+    const requestMode=!uatMasterEmployeeId&&["HARD_UNAVAILABLE","LEAVE","SICKNESS"].includes(requestType);
+    const result = await rpc(requestMode
+      ? "employee_request_submit_uat_v1"
+      : uatMasterEmployeeId ? "uat_master_employee_availability_days_save_v2" : "employee_availability_days_save_uat_v3", {
       ...(uatMasterEmployeeId ? { p_employee_id: uatMasterEmployeeId } : {}),
       p_dates: entry.dates,
-      p_kind: entry.kind,
+      ...(requestMode?{p_request_type:requestType}:{p_kind:entry.kind}),
       p_all_day: entry.allDay,
       p_local_start: entry.allDay ? null : entry.start,
       p_local_end: entry.allDay ? null : entry.end,
-      p_preferred_location_id: entry.preferredLocationId || null,
+      ...(!requestMode?{p_preferred_location_id:entry.preferredLocationId || null}:{}),
       p_note: entry.note || null,
     });
     if (!result) return false;
-    const reviewCount = Number((result as { pendingReviewDays?: number }).pendingReviewDays || 0);
+    const reviewCount = Number((result as { pendingReviewDays?: number;pending?:number }).pendingReviewDays ?? (result as {pending?:number}).pending ?? 0);
     notify(publicationConflicts.length > 0
       ? `Zapisano niedostępność po publikacji. Konflikty z opublikowanym grafikiem: ${publicationConflicts.length}. Wymagają decyzji lidera.`
+      : entry.kind==="LEAVE" ? "Wniosek urlopowy trafił do skrzynki lidera. Do czasu decyzji ma status oczekujący."
+      : entry.kind==="SICKNESS" ? "L4 zapisano od razu. Lider dostał zadanie potwierdzenia odbioru i organizacji zastępstwa."
       : reviewCount > 0
       ? `${reviewCount} dni z limitem nieobecności przekazano liderowi do weryfikacji.`
       : "Zapisano wybrany zakres dostępności.");
@@ -831,7 +841,7 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
   roleNames: Record<string, string>;
   masterMode: boolean;
   openShift: (assignment: PortalAssignment) => void;
-  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
 }) {
   const employee = portal.employee;
   const employeeId = employee?.id || portal.timeConstraints?.employeeId || portal.companyCalendar?.employeeId;
@@ -848,9 +858,10 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
   const selectedMonth = labelMonth(month, timezone);
   return <section className="employee-home" aria-label="Dziś w portalu pracownika">
     <header className="employee-home-hero">
-      <span><small>DZIŚ • {new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(new Date())}</small><h2>Cześć{employee?.firstName ? `, ${employee.firstName}` : ""}</h2><p>Najbliższa opublikowana zmiana i sprawy, które wymagają Twojej reakcji.</p></span>
+      <span><small>DZIŚ • {new Intl.DateTimeFormat("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: timezone }).format(new Date())}</small><PersonalHomeGreeting fallbackName={employee?.firstName}/></span>
       <button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Otwórz cały grafik <ChevronRight /></button>
     </header>
+    <PersonalActionNote compact/>
 
     <div className="employee-home-primary">
       <article className={`employee-next-shift ${snapshot.nextState === "NOW" ? "active" : ""}`}>
@@ -876,7 +887,7 @@ function EmployeeHome({ portal, month, timezone, dynamic, roleNames, masterMode,
         <div>{snapshot.targetedSwapCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Propozycje zamiany skierowane do Ciebie</b><small>{snapshot.targetedSwapCount} do odpowiedzi</small></span><ChevronRight /></button>}{snapshot.waitingLeaderCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Zamiany czekające na decyzję lidera</b><small>{snapshot.waitingLeaderCount} w toku</small></span><ChevronRight /></button>}{snapshot.openShiftCount > 0 && <button type="button" onClick={() => openEmployeeSection?.("swaps")}><span><b>Pasujące otwarte zmiany</b><small>{snapshot.openShiftCount} możesz sprawdzić</small></span><ChevronRight /></button>}{todayEvents.map(event => <article key={event.id}><Megaphone /><span><b>{event.title}</b><small>{event.description || "Wydarzenie zespołu na dziś"}</small></span></article>)}{actionCount === 0 && snapshot.openShiftCount === 0 && todayEvents.length === 0 && <p>Nie masz nowych próśb ani decyzji do wykonania.</p>}</div>
       </section>
 
-      <section className="employee-home-week"><header><span><small>TEN TYDZIEŃ</small><h3>{snapshot.weekShiftCount} {snapshot.weekShiftCount === 1 ? "zmiana" : "zmian"} • {employeeMinutesLabel(snapshot.weekMinutes)}</h3></span><Clock3 /></header><p>{snapshot.todayShiftCount ? `Dziś masz ${snapshot.todayShiftCount} ${snapshot.todayShiftCount === 1 ? "zmianę" : "zmiany"}.` : "Dziś nie masz zaplanowanej zmiany."}</p><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("availability")}>Sprawdź dostępność <ChevronRight /></button></section>
+      <section className="employee-home-week"><header><span><small>TEN TYDZIEŃ</small><h3>{snapshot.weekShiftCount} {snapshot.weekShiftCount === 1 ? "zmiana" : "zmian"} • {employeeMinutesLabel(snapshot.weekMinutes)}</h3></span><Clock3 /></header><p>{snapshot.todayShiftCount ? `Dziś masz ${snapshot.todayShiftCount} ${snapshot.todayShiftCount === 1 ? "zmianę" : "zmiany"}.` : "Dziś nie masz zaplanowanej zmiany."}</p><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Grafik, dostępność i nieobecności <ChevronRight /></button></section>
     </div>
 
     <section className="employee-home-month"><header><span><small>TWÓJ MIESIĄC</small><h3>{selectedMonth}</h3></span><button type="button" className="secondary-button" onClick={() => openEmployeeSection?.("my-schedule")}>Zobacz grafik</button></header><div><span><small>Zaplanowane</small><strong>{employeeMinutesLabel(snapshot.monthMinutes)}</strong></span><span><small>Zmiany</small><strong>{snapshot.monthShiftCount}</strong></span><span><small>Zmiany weekendowe</small><strong>{snapshot.weekendShiftCount}</strong></span><span><small>Rezerwa</small><strong>{portal.standby.length}</strong></span></div></section>
@@ -902,9 +913,9 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   section: EmployeePortalSection;
   availabilityWorkspace?:PortalTimeConstraintsWorkspace;
   locations:MatrixItem[];
-  saveAvailability:(entry:{dates:string[];kind:"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK";allDay:boolean;start?:string;end?:string;preferredLocationId?:string;note:string})=>Promise<boolean>;
+  saveAvailability:(entry:{dates:string[];kind:"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK"|"LEAVE"|"SICKNESS";allDay:boolean;start?:string;end?:string;preferredLocationId?:string;note:string})=>Promise<boolean>;
   fail:(message:string)=>void;
-  openEmployeeSection?: (section: "my-schedule" | "availability" | "swaps" | "messages") => void;
+  openEmployeeSection?: (section: "my-schedule" | "swaps" | "messages" | "profile") => void;
 }) {
   const employee = portal.employee;
   const [selected, setSelected] = useState<PortalAssignment | null>(null);
@@ -923,13 +934,11 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
   const showHome = section === "overview";
   const showMine = section === "my-schedule";
   const showCompany = section === "company-schedule";
-  const showAvailability = section === "availability";
   const showSwaps = section === "swaps";
   const sectionCopy: Record<EmployeePortalSection, { title: string; subtitle: string }> = {
     overview: { title: "Dziś", subtitle: "Najbliższa zmiana, sprawy do reakcji i łatwy dostęp do ewidencji czasu pracy." },
-    "my-schedule": { title: "Mój grafik", subtitle: "Moje opublikowane zmiany, wydarzenia i dyżury rezerwowe." },
+    "my-schedule": { title: "Mój grafik", subtitle: "Zmiany, dostępność, preferencje, urlopy, L4 i twarde nieobecności w jednym kalendarzu." },
     "company-schedule": { title: "Grafik firmy", subtitle: "Czytelny podgląd tego, kto pracuje w wybranym dniu." },
-    availability: { title: "Moja dostępność", subtitle: "Zaznacz wyjątki oraz dokładne preferowane godziny bez szukania formularza w grafiku." },
     swaps: { title: "Zamiany zmian", subtitle: "Ogłoszenia, zgody pracowników i decyzje liderów w jednym procesie." },
   };
   const exportSchedule = () => {
@@ -948,7 +957,7 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
     {portal.publicationConflict && <div className="solver-v2-notice warning"><AlertTriangle /><span><strong>Właściciel musi rozstrzygnąć konflikt publikacji grafiku ról i firmy.</strong><small>Dostępność i preferencje można testować, ale opublikowane zmiany są ukryte do czasu wyboru ważnej wersji.</small></span></div>}
     {showHome && <EmployeeHome portal={portal} month={month} timezone={timezone} dynamic={dynamic} roleNames={roleNames} masterMode={masterMode} openShift={setSelected} openEmployeeSection={openEmployeeSection} />}
     {!showHome && <section className="employee-portal-callouts"><article><CalendarDays/><span><b>Grafik i dostępność razem</b><small>Na jednym dniu widzisz zmianę, lokal, rezerwę, wydarzenie i swoją deklarację.</small></span></article><article><ArrowLeftRight/><span><b>Zamiana bez przeklikiwania</b><small>Otwórz dzień ze zmianą i od razu opublikuj propozycję do wybranej osoby albo całej tablicy.</small></span></article><article><Megaphone/><span><b>Sprawy zespołu</b><small>Aktywne propozycje zamian są oznaczone również na kalendarzu.</small></span></article></section>}
-    {(showMine || showAvailability) && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section>{showAvailability&&<section><h3>Grafik i dostępność w jednym kalendarzu</h3><p>Zmiana, rezerwa, wydarzenie i Twoja deklaracja są nałożone na ten sam dzień. Edytor znajduje się bezpośrednio pod podsumowaniem.</p></section>}</div>}
+    {showMine && <div className="portal-grid portal-top"><section className="portal-profile"><UserRound />{masterMode || !dynamic ? <><h3>{employee?.firstName} {employee?.lastName}</h3><p>{employee?.employeeNo} • {employee ? rolePl[employee.primaryRole] || employee.primaryRole : "—"}</p><span>{employee?.locations.map((location) => location.name).join(", ") || "Brak przypisanego lokalu"}</span></> : <><h3>Moje konto</h3><p>Profil konfiguracji firmy</p><span>Role i lokale wynikają z opublikowanej konfiguracji.</span></>}</section><section><h3>Wszystko w jednym kalendarzu</h3><p>Zmiany, rezerwa, dostępność, preferencje, urlop, L4 i twarda nieobecność są nałożone na te same dni.</p></section></div>}
     {showMine&&<><section className="employee-month-summary"><span><small>Zaplanowane godziny</small><strong>{Math.floor(monthlyMinutes / 60)} h {monthlyMinutes % 60 ? `${monthlyMinutes % 60} min` : ""}</strong></span><span><small>Wszystkie zmiany</small><strong>{portal.assignments.length}</strong></span><span className="standby-summary"><small>Dyżury rezerwowe</small><strong>{portal.standby.length}</strong><em>osobno od godzin</em></span></section>
     {availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} standby={portal.standby} swapAnnouncements={activeSwapAnnouncements} onSelectDay={setSelectedDay}/>}
     {selectedDay&&<section className="employee-day-workspace">
@@ -963,7 +972,6 @@ function EmployeePortal({ portal, month, timezone, dynamic, roleNames, roleColor
       {swapTargetEmployeeId&&<section className="employee-swap-source-picker"><header><strong>Wybierz swoją zmianę, którą chcesz oddać w zamian</strong><button type="button" className="icon-button" onClick={()=>setSwapTargetEmployeeId("")}><X/></button></header>{portal.assignments.filter(assignment=>new Date(assignment.startsAt)>new Date()).map(assignment=><button type="button" key={assignment.id} onClick={()=>setSelected(assignment)}><b>{assignment.date} • {time(assignment.startsAt,timezone)}–{time(assignment.endsAt,timezone)}</b><small>{assignment.location} • {portalShiftLabel(assignment)}</small></button>)}</section>}
     </section>}
     </>}
-    {showAvailability&&!showMine&&availabilityWorkspace&&<AvailabilityCalendarDrawer embedded workspace={availabilityWorkspace} month={month} locations={locations} save={saveAvailability} fail={fail} busy={busy} calendarContext={portal.calendarContext} assignments={portal.assignments} standby={portal.standby} swapAnnouncements={activeSwapAnnouncements} onSelectDay={setSelectedDay}/>}
     {showSwaps && !masterMode && portal.swapBoard && <ShiftSwapBoardPanel board={portal.swapBoard} busy={busy} decideAsEmployee={decideSwapAsEmployee} decideAsLeader={decideSwapAsLeader} />}
     {showCompany && portal.companyCalendar && <CompanyScheduleCalendar calendar={portal.companyCalendar} month={month} timezone={timezone} events={portal.calendarContext?.events || []} roleColors={roleColors} />}
     {selected && <CoworkerDrawer assignment={selected} timezone={timezone} dynamic={dynamic} roleNames={roleNames} close={() => {setSelected(null);setSwapTargetEmployeeId("");}} requestSwap={requestSwap} loadSwapCandidates={loadSwapCandidates} allowSwap={!masterMode} busy={busy} preferredTargetEmployeeId={swapTargetEmployeeId}/>} 
@@ -999,7 +1007,9 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events, roleColors
   const [year, monthNumber] = month.split("-").map(Number);
   const offset = (new Date(Date.UTC(year, monthNumber - 1, 1, 12)).getUTCDay() + 6) % 7;
   const dayCount = new Date(Date.UTC(year, monthNumber, 0, 12)).getUTCDate();
-  const cells = Array.from({ length: offset + dayCount }, (_, index) => index < offset ? 0 : index - offset + 1);
+  const cellCount=Math.ceil((offset+dayCount)/7)*7;
+  const cells = Array.from({ length: cellCount }, (_, index) => index < offset || index>=offset+dayCount ? 0 : index - offset + 1);
+  const weeks=Array.from({length:cellCount/7},(_,index)=>cells.slice(index*7,index*7+7));
   const byDate = new Map<string, CompanyCalendarAssignment[]>();
   calendar.assignments.forEach(assignment => byDate.set(assignment.date, [...(byDate.get(assignment.date) || []), assignment]));
   const eventDates = new Set(events.map(event => event.date));
@@ -1016,11 +1026,12 @@ function CompanyScheduleCalendar({ calendar, month, timezone, events, roleColors
     result.set(key,[...(result.get(key)||[]),item]);return result;
   },new Map<string,CompanyCalendarAssignment[]>()).values()];
   const scopeLabel=calendar.scopeCategories?.map(category=>category.name).join(", ")||"kategorie przypisane do Twoich ról";
-  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik zespołu • {scopeLabel}</h3><p>Widzisz wyłącznie osoby z dozwolonych kategorii, bez cudzych kosztów, dostępności i powodów nieobecności. Wybierz dzień, a potem filtruj po osobie, roli lub lokalu.</p></div></div><div className="role-calendar-week">{days.map(day => <b key={day}>{day}</b>)}</div><div className="company-month-calendar">{cells.map((day, index) => {
-    const date = day ? `${month}-${String(day).padStart(2, "0")}` : "";
-    const assignments = byDate.get(date) || [];
-    return <button type="button" key={index} className={`${!day ? "blank" : ""} ${eventDates.has(date) ? "has-event" : ""} ${selectedDate === date ? "selected" : ""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day && <><b>{day}</b><strong>{assignments.length} os.</strong>{assignments.some(assignment => assignment.isSwap) && <small>Zamiana</small>}{eventDates.has(date) && <Megaphone />}</>}</button>;
-  })}</div>{selectedDate && <section className="company-day-workspace"><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId,roleColors[assignment.roleId])} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
+  return <section className="company-calendar-card"><div className="matrix-demand-head"><div><h3>Grafik zespołu • {scopeLabel}</h3><p>Pełne tygodnie od poniedziałku do niedzieli — tak samo jak w widoku właściciela i lidera. Widzisz wyłącznie dozwolone kategorie, bez cudzych kosztów, dostępności i powodów nieobecności.</p></div></div><div className="company-week-board">{weeks.map((week,weekIndex)=><section className="company-week-row" key={weekIndex}><header><small>TYDZIEŃ {weekIndex+1}</small><strong>{week.filter(Boolean).length?`${month}-${String(week.find(Boolean)).padStart(2,"0")} – ${month}-${String([...week].reverse().find(Boolean)).padStart(2,"0")}`:"Poza miesiącem"}</strong></header><div>{week.map((day,dayIndex)=>{
+    const date=day?`${month}-${String(day).padStart(2,"0")}`:"";
+    const assignments=byDate.get(date)||[];
+    const shiftGroups=[...assignments.reduce((map,item)=>{const key=`${item.startsAt}:${item.endsAt}:${item.locationName}:${item.shiftName}`;map.set(key,[...(map.get(key)||[]),item]);return map;},new Map<string,CompanyCalendarAssignment[]>()).values()];
+    return <button type="button" key={`${weekIndex}:${dayIndex}`} className={`company-week-day ${!day?"blank":""} ${eventDates.has(date)?"has-event":""} ${selectedDate===date?"selected":""}`} disabled={!day} onClick={() => setSelectedDate(date)}>{day&&<><span className="company-week-day-head"><small>{days[dayIndex]}</small><b>{day}</b><em>{assignments.length} os.</em></span><div className="company-week-shifts">{shiftGroups.slice(0,3).map(group=>{const first=group[0];return <span key={`${first.startsAt}:${first.locationId}:${first.shiftName}`} style={roleCardStyle(first.roleId,roleColors[first.roleId])}><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.locationName} • {first.shiftName}</small><em>{group.slice(0,3).map(item=>item.employeeName.split(" ")[0]).join(", ")}{group.length>3?` +${group.length-3}`:""}</em></span>})}{shiftGroups.length>3&&<small>+ {shiftGroups.length-3} kolejne zmiany</small>}</div>{assignments.some(assignment=>assignment.isSwap)&&<i>ZAMIANA</i>}{eventDates.has(date)&&<Megaphone/>}</>}</button>;
+  })}</div></section>)}</div>{selectedDate && <section className="company-day-workspace"><header><span><small>OBSADA WYBRANEGO DNIA</small><h3>{selectedDate}</h3><p>{filtered.length} osób po zastosowaniu filtrów</p></span><button className="icon-button" onClick={() => setSelectedDate(null)}><X /></button></header><div className="company-day-filters"><label>Znajdź osobę lub zmianę<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Imię, numer, rola, lokal lub zmiana"/></label><label>Rola<select value={roleFilter} onChange={event=>setRoleFilter(event.target.value)}><option value="">Wszystkie role</option>{roleOptions.map(role=><option value={role.id} key={role.id}>{role.name}</option>)}</select></label><label>Lokal<select value={locationFilter} onChange={event=>setLocationFilter(event.target.value)}><option value="">Wszystkie lokale</option>{locationOptions.map(location=><option value={location.id} key={location.id}>{location.name}</option>)}</select></label><button className="secondary-button" onClick={()=>{setQuery("");setRoleFilter("");setLocationFilter("");}}>Wyczyść</button></div><div className="company-day-groups">{groups.map(group=>{const first=group[0];return <article key={`${first.locationId}:${first.startsAt}:${first.shiftName}`}><header><span><b>{time(first.startsAt,timezone)}–{time(first.endsAt,timezone)}</b><small>{first.shiftName}</small></span><strong>{first.locationName}</strong></header><div>{group.map(assignment=><span className="company-day-person" style={roleCardStyle(assignment.roleId,roleColors[assignment.roleId])} key={assignment.id}><UserRound/><b>{assignment.employeeName}</b><small>{assignment.roleName} • {assignment.employeeNo}{assignment.isSwap?" • zamiana":""}</small></span>)}</div></article>})}{!groups.length&&<p className="solver-workspace-empty">Brak osób spełniających wybrane filtry.</p>}</div></section>}</section>;
 }
 
 function ShiftPreferencesDrawer({ workspace, month, close, save, busy }: { workspace: PortalShiftPreferences; month: string; close: () => void; save: (preferences: Record<ShiftPeriod, ShiftPreferenceLevel>) => Promise<boolean>; busy: boolean }) {
@@ -1034,7 +1045,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   month: string;
   locations: MatrixItem[];
   close?: () => void;
-  save: (entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) => Promise<boolean>;
+  save: (entry: { dates: string[]; kind: "AVAILABLE" | "PREFER_NOT_TO_WORK" | "CANNOT_WORK" | "LEAVE" | "SICKNESS"; allDay: boolean; start?: string; end?: string; preferredLocationId?: string; note: string }) => Promise<boolean>;
   fail: (message: string) => void;
   busy: boolean;
   calendarContext?: WorkforceCalendarContext;
@@ -1051,12 +1062,20 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   const calendarOffset=(new Date(`${month}-01T12:00:00Z`).getUTCDay()+6)%7;
   const [selectedDays,setSelectedDays]=useState<string[]>([]);
   const [rangeAnchor,setRangeAnchor]=useState<string|null>(null);
-  const [kind,setKind]=useState<"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK">("AVAILABLE");
+  const [kind,setKind]=useState<"AVAILABLE"|"PREFER_NOT_TO_WORK"|"CANNOT_WORK"|"LEAVE"|"SICKNESS">("AVAILABLE");
   const [allDay,setAllDay]=useState(true);
   const [start,setStart]=useState("08:00");
   const [end,setEnd]=useState("16:00");
   const [preferredLocationId,setPreferredLocationId]=useState("");
   const [note,setNote]=useState("");
+  const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
+  const [myRequests,setMyRequests]=useState<Array<{id:string;requestType:string;dateFrom:string;dateTo:string;status:string}>>([]);
+  const loadMyRequests=useCallback(async()=>{
+    if(!supabase)return;
+    const result=await supabase.rpc("personal_action_workspace_uat_v1");
+    if(!result.error)setMyRequests(((result.data as {myRequests?:typeof myRequests})?.myRequests??[]));
+  },[supabase]);
+  useEffect(()=>{void loadMyRequests();},[loadMyRequests]);
 
   const entriesByDay=useMemo(()=>{
     const result=new Map<string,PortalTimeConstraint[]>();
@@ -1085,7 +1104,8 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
   const publishedDays=new Set(assignments.map(assignment=>assignment.date)).size;
   const exceptionDays=monthDates.filter(date=>(entriesByDay.get(date)??[]).some(entry=>entry.kind!=="AVAILABLE_WINDOW")).length;
   const defaultDays=monthDates.length-explicitDays;
-  const dayIsProtected=(date:string)=>(entriesByDay.get(date)??[]).some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO");
+  const dayRequests=(date:string)=>myRequests.filter(request=>date>=request.dateFrom&&date<=request.dateTo&&["PENDING","APPLIED"].includes(request.status));
+  const dayIsProtected=(date:string)=>(entriesByDay.get(date)??[]).some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO")||dayRequests(date).length>0;
   const applyDayToEditor=(date:string)=>{
     const state=dayState(date);
     const entries=entriesByDay.get(date)??[];
@@ -1126,7 +1146,7 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
     try{
       if(!selectedDays.length)throw new Error("Zaznacz co najmniej jeden dzień.");
       const ok=await save({dates:selectedDays,kind,allDay,start,end,preferredLocationId,note});
-      if(ok){setSelectedDays([]);setRangeAnchor(null);setNote("");setPreferredLocationId("");}
+      if(ok){setSelectedDays([]);setRangeAnchor(null);setNote("");setPreferredLocationId("");await loadMyRequests();}
     }catch(cause){fail(cause instanceof Error?cause.message:"Nie udało się zapisać dostępności.");}
   };
 
@@ -1147,11 +1167,12 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
           const state=dayState(date),entries=entriesByDay.get(date)??[];
           const protectedEntry=entries.some(entry=>!entry.editable||entry.source!=="GRAFIK_PRO");
           const events=calendarContext?.events.filter(event=>event.date===date)??[];
-          const pending=calendarContext?.pendingReviews.some(review=>review.date===date)??false;
+          const requestEntries=dayRequests(date);
+          const pending=(calendarContext?.pendingReviews.some(review=>review.date===date)??false)||requestEntries.some(request=>request.status==="PENDING");
           const publishedAssignments=assignments.filter(assignment=>assignment.date===date);
           const dayStandby=standby.filter(entry=>entry.date===date);
           const daySwaps=swapAnnouncements.filter(request=>request.date===date);
-          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry} title={protectedEntry?`${state.label} • wpis chroniony, tylko do odczytu`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{pending&&<em>Oczekuje na lidera</em>}{protectedEntry&&<ShieldCheck/>}</button>;
+          return <button type="button" key={date} className={`${state.tone} ${selectedDays.includes(date)?"selected":""} ${protectedEntry||requestEntries.length?"protected":""} ${events.some(event=>event.kind==="HOT_DAY")?"hot-day":""} ${pending?"pending-review":""} ${publishedAssignments.length?"published-assignment":""} ${dayStandby.length?"has-standby":""} ${daySwaps.length?"has-swap-announcement":""}`} onClick={()=>clickDay(date)} aria-disabled={protectedEntry||requestEntries.length>0} title={protectedEntry||requestEntries.length?`${state.label} • wpis chroniony lub zgłoszenie w toku`:state.label}><b>{Number(date.slice(-2))}</b><small>{state.label}</small>{publishedAssignments.length>0&&<em><CalendarDays/> Zmiana: {publishedAssignments.map(assignment=>`${time(assignment.startsAt,assignmentTimezone(assignment,timezone))}–${time(assignment.endsAt,assignmentTimezone(assignment,timezone))} • ${assignment.location}`).join(", ")}</em>}{dayStandby.map(entry=><em className="calendar-standby-marker" key={entry.id}><ShieldCheck/> Rezerwa {entry.tier}: {entry.roleName}{entry.status==="ACTIVATED"?" • aktywowana":""}</em>)}{daySwaps.length>0&&<em className="calendar-swap-marker"><ArrowLeftRight/> {daySwaps.length} {daySwaps.length===1?"aktywna zamiana":"aktywne zamiany"}</em>}{events.some(event=>event.kind==="HOT_DAY")&&<em><Flame/> Limit nieobecności</em>}{events.some(event=>event.kind==="EVENT")&&<em><Megaphone/> {events.filter(event=>event.kind==="EVENT").map(event=>event.title).join(", ")}</em>}{requestEntries.map(request=><em className="calendar-request-marker" key={request.id}>{request.requestType==="LEAVE"?"Urlop — czeka na lidera":request.requestType==="SICKNESS"?"L4 — zapisane":"Nieobecność — czeka na lidera"}</em>)}{pending&&!requestEntries.length&&<em>Oczekuje na lidera</em>}{(protectedEntry||requestEntries.length>0)&&<ShieldCheck/>}</button>;
         })}</div>
         <p className="availability-selection-help">{rangeAnchor?"Kliknij ostatni dzień zakresu albo od razu ustaw wybrany dzień.":selectedDays.length?`Wybrano ${selectedDays.length} dni. Kliknij dzień, aby go odznaczyć.`:"Kliknij dzień. Drugie kliknięcie na innym dniu zaznaczy cały zakres."}</p>
       </section>
@@ -1160,16 +1181,19 @@ function AvailabilityCalendarDrawer({ workspace, month, locations, close, save, 
         <div className="availability-state-options">
           <button type="button" className={`available ${kind==="AVAILABLE"?"active":""}`} onClick={()=>setKind("AVAILABLE")}><span/>Mogę pracować</button>
           <button type="button" className={`soft ${kind==="PREFER_NOT_TO_WORK"?"active":""}`} onClick={()=>setKind("PREFER_NOT_TO_WORK")}><span/>Wolę nie pracować</button>
-          <button type="button" className={`hard ${kind==="CANNOT_WORK"?"active":""}`} onClick={()=>setKind("CANNOT_WORK")}><span/>Nie mogę pracować</button>
+          <button type="button" className={`hard ${kind==="CANNOT_WORK"?"active":""}`} onClick={()=>setKind("CANNOT_WORK")}><span/>Twarda nieobecność</button>
+          <button type="button" className={`leave ${kind==="LEAVE"?"active":""}`} onClick={()=>{setKind("LEAVE");setAllDay(true);}}><span/>Wnioskuję o urlop</button>
+          <button type="button" className={`sickness ${kind==="SICKNESS"?"active":""}`} onClick={()=>{setKind("SICKNESS");setAllDay(true);}}><span/>Zgłaszam L4</button>
         </div>
-        {kind!=="PREFER_NOT_TO_WORK"&&<><label className="availability-all-day"><input type="checkbox" checked={!allDay} onChange={event=>setAllDay(!event.target.checked)}/> Podaj konkretne godziny</label>{!allDay&&<div className="form-row"><label>Od (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="08:00" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Do (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="16:30" value={end} onChange={event=>setEnd(event.target.value)}/></label></div>}</>}
-        <fieldset className="availability-location-options"><legend>Preferowany lokal (opcjonalnie)</legend><button type="button" className={!preferredLocationId?"active":""} onClick={()=>setPreferredLocationId("")}>Bez preferencji</button>{locations.filter(location=>location.active).map(location=><button type="button" className={preferredLocationId===location.id?"active":""} onClick={()=>setPreferredLocationId(location.id)} key={location.id}>{location.name}</button>)}</fieldset>
+        {!["PREFER_NOT_TO_WORK","LEAVE","SICKNESS"].includes(kind)&&<><label className="availability-all-day"><input type="checkbox" checked={!allDay} onChange={event=>setAllDay(!event.target.checked)}/> Podaj konkretne godziny</label>{!allDay&&<div className="form-row"><label>Od (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="08:00" value={start} onChange={event=>setStart(event.target.value)}/></label><label>Do (24 h)<input required type="text" inputMode="numeric" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" placeholder="16:30" value={end} onChange={event=>setEnd(event.target.value)}/></label></div>}</>}
+        {["AVAILABLE","PREFER_NOT_TO_WORK"].includes(kind)&&<fieldset className="availability-location-options"><legend>Preferowany lokal (opcjonalnie)</legend><button type="button" className={!preferredLocationId?"active":""} onClick={()=>setPreferredLocationId("")}>Bez preferencji</button>{locations.filter(location=>location.active).map(location=><button type="button" className={preferredLocationId===location.id?"active":""} onClick={()=>setPreferredLocationId(location.id)} key={location.id}>{location.name}</button>)}</fieldset>}
+        <div className={`absence-flow-explainer ${kind.toLowerCase()}`}>{kind==="LEAVE"?"Urlop zostanie wysłany do lidera i zacznie obowiązywać dopiero po akceptacji.":kind==="SICKNESS"?"L4 zapisze się od razu. Lider nie może go odrzucić — dostanie zadanie potwierdzenia odbioru i organizacji zastępstwa.":kind==="CANNOT_WORK"?"Jeśli limit nieobecności nie jest przekroczony, wpis zapisze się od razu. Po przekroczeniu limitu trafi do lidera do decyzji.":"Dostępność i preferencje zapisują się od razu i pozostają edytowalne."}</div>
         <label>Notatka (opcjonalnie)<textarea maxLength={500} value={note} onChange={event=>setNote(event.target.value)}/></label>
-        <div className="availability-editor-actions"><button type="button" className="secondary-button" disabled={!selectedDays.length||busy} onClick={()=>{setSelectedDays([]);setRangeAnchor(null);}}>Wyczyść wybór</button><button className="primary-button" disabled={!selectedDays.length||busy}><Save/>{busy?"Zapisuję…":"Zapisz i zostań tutaj"}</button></div>
+        <div className="availability-editor-actions"><button type="button" className="secondary-button" disabled={!selectedDays.length||busy} onClick={()=>{setSelectedDays([]);setRangeAnchor(null);}}>Wyczyść wybór</button><button className="primary-button" disabled={!selectedDays.length||busy}><Save/>{busy?"Zapisuję…":kind==="LEAVE"?"Wyślij wniosek do lidera":kind==="SICKNESS"?"Zgłoś L4":kind==="CANNOT_WORK"?"Zapisz lub przekaż do decyzji":"Zapisz i zostań tutaj"}</button></div>
         <small className="availability-protected-note"><ShieldCheck/> Wpis pracodawcy, urlop lub L4 ma pierwszeństwo i pozostaje tylko do odczytu.</small>
       </form>
     </div>;
-  if(embedded)return <section className="employee-combined-calendar"><div className="matrix-demand-head"><div><h3>Mój grafik i dostępność — {labelMonth(month,timezone)}</h3><p>Opublikowane zmiany, wydarzenia i deklaracje dostępności są na jednym kalendarzu. Kliknij dzień, aby zobaczyć zespół i od razu zmienić dostępność.</p></div></div>{body}</section>;
+  if(embedded)return <section className="employee-combined-calendar"><div className="matrix-demand-head"><div><h3>Mój grafik — {labelMonth(month,timezone)}</h3><p>Grafik i dostępność w jednym kalendarzu: zmiany, rezerwa, urlop, L4 i twarde nieobecności. Kliknij dzień lub zakres i wybierz, co chcesz zgłosić.</p></div></div>{body}</section>;
   return <><button className="drawer-scrim" onClick={close}/><aside className="drawer role-drawer availability-calendar-drawer">
     <div className="drawer-head"><div><p className="eyebrow">PORTAL PRACOWNIKA • GRAFIK I DOSTĘPNOŚĆ</p><h2>{labelMonth(month,timezone)}</h2><small>Opublikowany grafik i deklaracje są na jednym kalendarzu.</small></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">{body}</div>

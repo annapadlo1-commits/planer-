@@ -1,14 +1,29 @@
 "use client";
 
-import { Bell, Check, MessageCircle, Plus, RefreshCw, Search, Send, UserRound, X } from "lucide-react";
+import { Bell, Check, MessageCircle, Plus, RefreshCw, Search, Send, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { PersonalAvatar } from "@/components/PersonalWorkspace";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type Contact = { authUserId: string; employeeId?: string | null; name: string; email: string; employeeNo?: string | null; roleName?: string | null };
-type Conversation = { id: string; subject: string; kind: string; contextType?: string | null; contextId?: string | null; updatedAt: string; unreadCount: number; lastMessage?: string | null; members: { authUserId: string; name: string }[] };
-type Message = { id: string; conversationId: string; senderUserId: string; senderName: string; body: string; createdAt: string };
+type AvatarMeta = { avatarMode?: "INITIALS" | "CAT" | "PHOTO"; catAvatarKey?: string | null };
+type Contact = AvatarMeta & { authUserId: string; employeeId?: string | null; name: string; email: string; employeeNo?: string | null; roleName?: string | null };
+type ConversationMember = AvatarMeta & { authUserId: string; name: string };
+type Conversation = { id: string; subject: string; kind: string; contextType?: string | null; contextId?: string | null; updatedAt: string; unreadCount: number; lastMessage?: string | null; members: ConversationMember[] };
+type Message = { id: string; conversationId: string; senderUserId: string; senderName: string; senderAvatarMode?: AvatarMeta["avatarMode"]; senderCatAvatarKey?: string | null; body: string; createdAt: string };
 type Workspace = { currentUserId: string; contacts: Contact[]; conversations: Conversation[]; messages: Message[] };
+
+function messageAvatar(name: string, meta: AvatarMeta) {
+  return {
+    authUserId: "",
+    displayName: name,
+    avatarMode: meta.avatarMode ?? "INITIALS",
+    catAvatarKey: meta.catAvatarKey ?? null,
+    noteColor: "#E8E1D6",
+    photoPath: null,
+  };
+}
 
 function formatMoment(value: string) {
   return new Intl.DateTimeFormat("pl-PL", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
@@ -23,6 +38,8 @@ function errorMessage(value: string) {
 }
 
 export function MessageCenter({ notify, fail }: { notify: (message: string) => void; fail: (message: string) => void }) {
+  const searchParams = useSearchParams();
+  const requestedConversationId = searchParams.get("conversation");
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -48,8 +65,12 @@ export function MessageCenter({ notify, fail }: { notify: (message: string) => v
     }
     const next = result.data as Workspace;
     setWorkspace(next);
-    setSelectedId(current => current && next.conversations.some(item => item.id === current) ? current : next.conversations[0]?.id ?? null);
-  }, [fail, supabase]);
+    setSelectedId(current => current && next.conversations.some(item => item.id === current)
+      ? current
+      : requestedConversationId && next.conversations.some(item => item.id === requestedConversationId)
+        ? requestedConversationId
+        : next.conversations[0]?.id ?? null);
+  }, [fail, requestedConversationId, supabase]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -111,9 +132,9 @@ export function MessageCenter({ notify, fail }: { notify: (message: string) => v
   return <section className="message-center">
     <header><div><p className="eyebrow">KOMUNIKACJA • ZESPÓŁ</p><h2>Wiadomości</h2><p>Rozmowy pracownik–pracownik i pracownik–przełożony, z historią dostępną tylko uczestnikom.</p></div><button className="primary-button" onClick={() => setComposeOpen(true)}><Plus /> Nowa rozmowa</button></header>
     <div className="message-layout">
-      <aside className="conversation-list"><label><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Szukaj osoby lub tematu" /></label><button className="message-refresh" onClick={() => void load()}><RefreshCw /> Odśwież</button>{visibleConversations.map(item => <button key={item.id} className={selectedId === item.id ? "active" : ""} onClick={() => selectConversation(item.id)}><span className="message-avatar"><MessageCircle /></span><span><b>{item.subject}</b><small>{item.members.filter(member => member.authUserId !== workspace?.currentUserId).map(member => member.name).join(", ") || "Rozmowa zespołu"}</small><em>{item.lastMessage || "Brak wiadomości"}</em></span><time>{formatMoment(item.updatedAt)}</time>{item.unreadCount > 0 && <i>{item.unreadCount}</i>}</button>)}{!visibleConversations.length && <p>Nie masz jeszcze rozmów spełniających filtr.</p>}</aside>
-      <main className="message-thread">{selected ? <><header><span><Bell /><div><h3>{selected.subject}</h3><p>{selected.members.map(member => member.name).join(" • ")}</p></div></span><small>{selected.kind === "DIRECT" ? "Rozmowa prywatna" : "Rozmowa zespołu"}</small></header><div className="message-stream">{messages.map(message => <article key={message.id} className={message.senderUserId === workspace?.currentUserId ? "mine" : "theirs"}><b>{message.senderName}</b><p>{message.body}</p><time>{formatMoment(message.createdAt)}</time></article>)}{!messages.length && <p className="message-empty">Napisz pierwszą wiadomość w tej rozmowie.</p>}<div ref={bottomRef} /></div><form onSubmit={send}><textarea value={body} onChange={event => setBody(event.target.value)} maxLength={2000} placeholder="Napisz wiadomość…" /><button className="primary-button" disabled={busy || !body.trim()}><Send /> {busy ? "Wysyłam…" : "Wyślij"}</button></form></> : <div className="message-thread-placeholder"><MessageCircle /><h3>Wybierz rozmowę</h3><p>Albo rozpocznij nową z osobą, która ma aktywny dostęp do SZAFUNEK.</p></div>}</main>
+      <aside className="conversation-list"><label><Search /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Szukaj osoby lub tematu" /></label><button className="message-refresh" onClick={() => void load()}><RefreshCw /> Odśwież</button>{visibleConversations.map(item => { const counterpart=item.members.find(member=>member.authUserId!==workspace?.currentUserId)??item.members[0]; return <button key={item.id} className={selectedId === item.id ? "active" : ""} onClick={() => selectConversation(item.id)}>{counterpart?<PersonalAvatar profile={messageAvatar(counterpart.name,counterpart)} size="small"/>:<span className="message-avatar"><MessageCircle /></span>}<span><b>{item.subject}</b><small>{item.members.filter(member => member.authUserId !== workspace?.currentUserId).map(member => member.name).join(", ") || "Rozmowa zespołu"}</small><em>{item.lastMessage || "Brak wiadomości"}</em></span><time>{formatMoment(item.updatedAt)}</time>{item.unreadCount > 0 && <i>{item.unreadCount}</i>}</button>})}{!visibleConversations.length && <p>Nie masz jeszcze rozmów spełniających filtr.</p>}</aside>
+      <main className="message-thread">{selected ? <><header><span><Bell /><div><h3>{selected.subject}</h3><p>{selected.members.map(member => member.name).join(" • ")}</p></div></span><small>{selected.kind === "DIRECT" ? "Rozmowa prywatna" : "Rozmowa zespołu"}</small></header><div className="message-stream">{messages.map(message => <article key={message.id} className={message.senderUserId === workspace?.currentUserId ? "mine" : "theirs"}><PersonalAvatar profile={messageAvatar(message.senderName,{avatarMode:message.senderAvatarMode,catAvatarKey:message.senderCatAvatarKey})} size="small"/><b>{message.senderName}</b><p>{message.body}</p><time>{formatMoment(message.createdAt)}</time></article>)}{!messages.length && <p className="message-empty">Napisz pierwszą wiadomość w tej rozmowie.</p>}<div ref={bottomRef} /></div><form onSubmit={send}><textarea value={body} onChange={event => setBody(event.target.value)} maxLength={2000} placeholder="Napisz wiadomość…" /><button className="primary-button" disabled={busy || !body.trim()}><Send /> {busy ? "Wysyłam…" : "Wyślij"}</button></form></> : <div className="message-thread-placeholder"><MessageCircle /><h3>Wybierz rozmowę</h3><p>Albo rozpocznij nową z osobą, która ma aktywny dostęp do SZAFUNEK.</p></div>}</main>
     </div>
-    {composeOpen && <><button className="drawer-scrim" onClick={() => setComposeOpen(false)} /><aside className="drawer complete-drawer message-compose"><div className="drawer-head"><div><p className="eyebrow">NOWA WIADOMOŚĆ</p><h2>Rozpocznij rozmowę</h2></div><button className="icon-button" onClick={() => setComposeOpen(false)}><X /></button></div><form className="drawer-content" onSubmit={createConversation}><label>Znajdź osobę<input value={contactQuery} onChange={event => setContactQuery(event.target.value)} placeholder="Imię, e-mail, numer lub rola" /></label><div className="message-contacts">{contacts.map(contact => <button type="button" key={contact.authUserId} className={recipientId === contact.authUserId ? "active" : ""} onClick={() => setRecipientId(contact.authUserId)}><UserRound /><span><b>{contact.name}</b><small>{contact.roleName || contact.email}{contact.employeeNo ? ` • ${contact.employeeNo}` : ""}</small></span>{recipientId === contact.authUserId && <Check />}</button>)}{!contacts.length && <p>Brak osób spełniających filtr.</p>}</div><label>Temat<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={160} placeholder="np. Zamiana w sobotę" /></label><label>Wiadomość<textarea value={firstMessage} onChange={event => setFirstMessage(event.target.value)} maxLength={2000} required /></label><button className="primary-button full" disabled={busy || !recipientId || !firstMessage.trim()}><Send /> {busy ? "Tworzę rozmowę…" : "Wyślij i rozpocznij rozmowę"}</button></form></aside></>}
+    {composeOpen && <><button className="drawer-scrim" onClick={() => setComposeOpen(false)} /><aside className="drawer complete-drawer message-compose"><div className="drawer-head"><div><p className="eyebrow">NOWA WIADOMOŚĆ</p><h2>Rozpocznij rozmowę</h2></div><button className="icon-button" onClick={() => setComposeOpen(false)}><X /></button></div><form className="drawer-content" onSubmit={createConversation}><label>Znajdź osobę<input value={contactQuery} onChange={event => setContactQuery(event.target.value)} placeholder="Imię, e-mail, numer lub rola" /></label><div className="message-contacts">{contacts.map(contact => <button type="button" key={contact.authUserId} className={recipientId === contact.authUserId ? "active" : ""} onClick={() => setRecipientId(contact.authUserId)}><PersonalAvatar profile={messageAvatar(contact.name,contact)} size="small"/><span><b>{contact.name}</b><small>{contact.roleName || contact.email}{contact.employeeNo ? ` • ${contact.employeeNo}` : ""}</small></span>{recipientId === contact.authUserId && <Check />}</button>)}{!contacts.length && <p>Brak osób spełniających filtr.</p>}</div><label>Temat<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={160} placeholder="np. Zamiana w sobotę" /></label><label>Wiadomość<textarea value={firstMessage} onChange={event => setFirstMessage(event.target.value)} maxLength={2000} required /></label><button className="primary-button full" disabled={busy || !recipientId || !firstMessage.trim()}><Send /> {busy ? "Tworzę rozmowę…" : "Wyślij i rozpocznij rozmowę"}</button></form></aside></>}
   </section>;
 }

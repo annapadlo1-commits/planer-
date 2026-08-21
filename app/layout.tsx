@@ -16,6 +16,7 @@ import "./recovery-center.css";
 import "./next-batch.css";
 import "./desktop-compact.css";
 import "./brand-streetart.css";
+import "./personal-workspace.css";
 
 export const metadata: Metadata = {
   title: {

@@ -4,8 +4,8 @@ import type {
   MatrixV2Workspace,
 } from "@/lib/matrix-v2";
 
-export type ManagementSection = "start" | "team" | "schedule" | "operations" | "analytics" | "settings";
-export type EmployeeSection = "today" | "my-schedule" | "company-schedule" | "availability" | "swaps" | "messages";
+export type ManagementSection = "start" | "team" | "schedule" | "operations" | "analytics" | "settings" | "profile";
+export type EmployeeSection = "today" | "my-schedule" | "company-schedule" | "swaps" | "messages" | "profile";
 export type ProductSection = ManagementSection | EmployeeSection;
 export type SetupSection = "structure" | "workforce" | "strategies" | "finance";
 export type SetupStepKey = "company" | "roles" | "shifts" | "employees" | "variants" | "readiness" | "publication";
@@ -84,24 +84,25 @@ export const managementNavigation: ProductNavigationItem[] = [
   { key: "operations", label: "Operacje", description: "Alerty, kalendarz i bieżące sprawy" },
   { key: "analytics", label: "Analizy", description: "Koszt, pokrycie i jakość planu" },
   { key: "settings", label: "Ustawienia", description: "Prowadzona konfiguracja firmy" },
+  { key: "profile", label: "Mój profil", description: "Karteczka, avatar i osobiste akcje" },
 ];
 
 export const employeeNavigation: ProductNavigationItem[] = [
   { key: "today", label: "Dziś", description: "Najbliższa zmiana i sprawy do reakcji" },
-  { key: "my-schedule", label: "Mój grafik", description: "Moje zmiany i rezerwa" },
+  { key: "my-schedule", label: "Mój grafik", description: "Zmiany, dostępność, urlopy i L4" },
   { key: "company-schedule", label: "Grafik firmy", description: "Kto pracuje w danym dniu" },
-  { key: "availability", label: "Dostępność", description: "Kiedy mogę pracować" },
   { key: "swaps", label: "Zamiany", description: "Prośby i ogłoszenia o zamianie" },
   { key: "messages", label: "Wiadomości", description: "Komunikacja w zespole" },
+  { key: "profile", label: "Mój profil", description: "Karteczka, avatar i osobiste akcje" },
 ];
 
 const MANAGEMENT_ACCESS: Record<string, ManagementSection[]> = {
-  OWNER: ["start", "team", "schedule", "operations", "analytics", "settings"],
-  ADMIN: ["start", "team", "schedule", "operations", "analytics", "settings"],
-  HR_FINANCE: ["start", "team", "operations", "analytics", "settings"],
-  ROLE_MANAGER: ["start", "team", "schedule", "operations", "analytics"],
-  LOCATION_MANAGER: ["start", "team", "schedule", "operations", "analytics"],
-  VERIFIER: ["start", "schedule", "operations", "analytics"],
+  OWNER: ["start", "team", "schedule", "operations", "analytics", "settings", "profile"],
+  ADMIN: ["start", "team", "schedule", "operations", "analytics", "settings", "profile"],
+  HR_FINANCE: ["start", "team", "operations", "analytics", "settings", "profile"],
+  ROLE_MANAGER: ["start", "team", "schedule", "operations", "analytics", "profile"],
+  LOCATION_MANAGER: ["start", "team", "schedule", "operations", "analytics", "profile"],
+  VERIFIER: ["start", "schedule", "operations", "analytics", "profile"],
 };
 
 export function managementNavigationForRoles(roles: { app_role: string }[] | null | undefined) {
