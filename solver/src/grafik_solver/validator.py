@@ -202,6 +202,16 @@ def validate_variant(
             if snapshot.period_start <= day <= snapshot.period_end
         )
         if (
+            employee.nominal_monthly_minutes is not None
+            and employee.overtime_policy != "ALLOWED"
+            and total_minutes > employee.nominal_monthly_minutes
+        ):
+            errors.append(
+                "OVERTIME_POLICY_LIMIT:"
+                f"{employee_id}:{employee.overtime_policy}:{total_minutes}:"
+                f"{employee.nominal_monthly_minutes}"
+            )
+        if (
             employee.maximum_monthly_minutes is not None
             and total_minutes > employee.maximum_monthly_minutes
         ):

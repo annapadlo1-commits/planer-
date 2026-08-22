@@ -1840,7 +1840,7 @@ class SolverTests(unittest.TestCase):
             )
 
     def test_preferences_strategy_fairness_precedes_extreme_preferences(self) -> None:
-        """B4F-119: preferences choose shifts, never who gets the whole month."""
+        """B4F-159: protect the accepted fairness-first product hierarchy."""
         raw = load_raw()
         raw.pop("slots")
         raw["periodStart"] = "2026-08-01"
@@ -1898,6 +1898,40 @@ class SolverTests(unittest.TestCase):
             next(stage["tier"] for stage in variant.stage_objectives if any(term.get("metric") == "PREFERENCE_VIOLATIONS" for term in stage.get("terms", []))),
         )
         self.assertGreater(variant.metrics["PREFERENCE_VIOLATIONS"], 0)
+        stage_names = [stage["name"] for stage in variant.stage_objectives]
+        coverage_stage = variant.stage_objectives[0]
+        self.assertEqual(coverage_stage["name"], "UNFILLED")
+        self.assertIn("roleBackupPenalty", coverage_stage)
+        self.assertIn("overtimeMinimum", coverage_stage)
+        self.assertLess(
+            stage_names.index("ZERO_HOUR_GUARD"),
+            stage_names.index("PRIMARY_ROLE_GUARD"),
+        )
+        self.assertLess(
+            stage_names.index("PRIMARY_ROLE_GUARD"),
+            stage_names.index("COMMON_FAIRNESS_GUARD"),
+        )
+        self.assertLess(
+            stage_names.index("COMMON_FAIRNESS_GUARD"),
+            stage_names.index("ACHIEVABLE_TARGET_SPREAD_GUARD"),
+        )
+        metric_stage = {
+            term["metric"]: index
+            for index, stage in enumerate(variant.stage_objectives)
+            for term in stage.get("terms", [])
+        }
+        self.assertLess(
+            metric_stage["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"],
+            metric_stage["ROLE_LOAD_FAIRNESS_SCORE"],
+        )
+        self.assertLess(
+            metric_stage["ROLE_LOAD_FAIRNESS_SCORE"],
+            metric_stage["NOMINAL_DEVIATION_MINUTES"],
+        )
+        self.assertLess(
+            metric_stage["NOMINAL_DEVIATION_MINUTES"],
+            metric_stage["PREFERENCE_VIOLATIONS"],
+        )
 
     def test_preferences_shortage_is_proportional_to_individual_targets(self) -> None:
         raw = load_raw()
