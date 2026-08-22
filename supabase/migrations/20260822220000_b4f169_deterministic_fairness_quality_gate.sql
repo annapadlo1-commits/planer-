@@ -193,7 +193,12 @@ security definer
 set search_path=''
 as $$
 begin
-  perform solver_private.apply_strategy_semantics_b4f168(p_matrix_version_id);
+  -- The draft already inherits the active B4F168 contract. Re-applying the
+  -- older B4F165 base would temporarily require the HOME objective that v20
+  -- intentionally removed, so validate the inherited state and advance it.
+  perform solver_private.validate_strategy_semantics_b4f168(
+    p_matrix_version_id
+  );
 
   -- B4F-169 derives seeds from the immutable business snapshot. Remove any
   -- inherited technical seed from this new Matrix version only.

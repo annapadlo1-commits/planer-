@@ -23,6 +23,8 @@ test("Matrix v21 declares the approved 70 percent and 30 p.p. fairness gate",()=
   assert.match(migration,/'maximumEstimatedAchievableTargetUtilizationSpreadBps',300/);
   assert.match(migration,/'maxAttempts',3/);
   assert.match(migration,/B4F169_HISTORICAL_MATRIX_CONTENT_CHANGED/);
+  assert.doesNotMatch(migration,/perform solver_private\.apply_strategy_semantics_b4f168\(p_matrix_version_id\)/);
+  assert.match(migration,/perform solver_private\.validate_strategy_semantics_b4f168/);
   assert.match(engine,/STRATEGY_SEMANTICS_VERSION = "B4F169_V1"/);
   assert.match(models,/class FairnessQualityGate/);
 });
