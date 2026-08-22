@@ -39,7 +39,8 @@ begin
     'solver_private.build_snapshot_payload_v2(uuid,date,uuid,uuid,text,uuid)'::regprocedure
   ) into v_snapshot_function;
   if v_snapshot_function like '%hashtextextended(p_run_id::text%'
-    or v_snapshot_function not like '%v_seed_document := v_snapshot - ''runId''%'
+    or v_snapshot_function !~
+      'v_seed_document\s*:=\s*v_snapshot\s*-\s*''runId'''
     or v_snapshot_function not like '%BUSINESS_SNAPSHOT_B4F169_V1%'
     or v_snapshot_function not like '%fairnessQualityGate%'
   then
