@@ -6,7 +6,7 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import date, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -163,6 +163,7 @@ MAX_RELAXED_DIVERSITY_SECONDS = 6.0
 RELAXED_DIVERSITY_FRACTION = 0.01
 MAX_RELAXED_DIVERSITY_ASSIGNMENT_CHANGES = 20
 OBJECTIVE_COEFFICIENT_SCALE = 1_000_000_000
+ROTATION_TIE_BREAK_VERSION = "MONTH_EMPLOYEE_SHA256_V1"
 
 
 def _sum(expressions: Iterable[Any]) -> Any:
@@ -174,6 +175,28 @@ def _days(start: date, end: date) -> list[date]:
         date.fromordinal(ordinal)
         for ordinal in range(start.toordinal(), end.toordinal() + 1)
     ]
+
+
+def month_employee_rotation_priority(
+    employee_ids: Iterable[str], period_start: date
+) -> tuple[str, ...]:
+    """Return a stable month-scoped priority without a plain employee-ID bias."""
+    month = period_start.strftime("%Y-%m")
+    return tuple(
+        sorted(
+            set(employee_ids),
+            key=lambda employee_id: (
+                sha256_hex(
+                    {
+                        "version": ROTATION_TIE_BREAK_VERSION,
+                        "month": month,
+                        "employeeId": employee_id,
+                    }
+                ),
+                employee_id,
+            ),
+        )
+    )
 
 
 def _maximum_compatible_daily_minutes(
@@ -472,6 +495,220 @@ class CpSatScheduleEngine:
                 }
             )
         return tuple(exclusions)
+
+    @staticmethod
+    def _rotation_context_signature(
+        snapshot: Snapshot,
+        artifacts: _Artifacts,
+        employee: Employee,
+    ) -> tuple[Any, ...]:
+        """Describe every employee-scoped input that can affect a roster.
+
+        The identifier itself is deliberately excluded.  Rotation is allowed
+        only inside groups with exactly the same behavioural employee fields,
+        scoped availability/pattern/block/external inputs and eligible slots.
+        Locks and baselines are handled separately because they make identity
+        meaningful even when the remaining profile is identical.
+        """
+
+        employee_profile = tuple(
+            (field.name, getattr(employee, field.name))
+            for field in fields(employee)
+            if field.name != "id"
+        )
+
+        def scoped(collection: Iterable[Any]) -> tuple[tuple[Any, ...], ...]:
+            items = []
+            for item in collection:
+                if getattr(item, "employee_id", None) != employee.id:
+                    continue
+                items.append(
+                    tuple(
+                        (field.name, getattr(item, field.name))
+                        for field in fields(item)
+                        if field.name not in {"id", "employee_id"}
+                    )
+                )
+            return tuple(sorted(items, key=repr))
+
+        eligible_slot_ids = tuple(
+            sorted(
+                slot_id
+                for employee_id, slot_id in artifacts.x
+                if employee_id == employee.id
+            )
+        )
+        # Pay rules may explicitly name an employee.  Even two otherwise
+        # identical profiles are then not interchangeable, so retain identity
+        # in the signature and skip cross-employee rotation for that snapshot.
+        pay_rule_identity = (
+            employee.id
+            if any(
+                condition.field == "employee_id"
+                for rule in snapshot.pay_rules
+                for condition in rule.conditions
+            )
+            else None
+        )
+        return (
+            employee_profile,
+            scoped(snapshot.availability_windows),
+            scoped(snapshot.work_patterns),
+            scoped(snapshot.hard_blocks),
+            scoped(snapshot.external_assignments),
+            eligible_slot_ids,
+            pay_rule_identity,
+        )
+
+    @classmethod
+    def _apply_month_rotation_tie_break(
+        cls,
+        snapshot: Snapshot,
+        slots: tuple[Slot, ...],
+        artifacts: _Artifacts,
+        result: VariantResult,
+    ) -> VariantResult:
+        """Canonicalize only proven employee-symmetry permutations.
+
+        This post-objective pass never searches a wider solution space.  It
+        keeps each employee's complete monthly assignment bundle intact and
+        permutes those bundles only between employees whose complete solver
+        inputs are interchangeable.  The rearrangement inequality makes the
+        descending-load / ascending-month-rank pairing the exact minimum
+        rotation score inside that equivalence orbit.  Hard rules and the full
+        business metric vector therefore remain byte-for-byte unchanged.
+        """
+
+        locked_employee_ids = {
+            assignment.employee_id for assignment in snapshot.locked_assignments
+        }
+        baseline_employee_ids = {
+            assignment.employee_id
+            for assignment in snapshot.baseline_assignments
+            if assignment.employee_id is not None
+        }
+        excluded_employee_ids = locked_employee_ids | baseline_employee_ids
+        groups_by_signature: dict[tuple[Any, ...], list[str]] = defaultdict(list)
+        for employee in snapshot.employees:
+            if employee.id in excluded_employee_ids:
+                continue
+            signature = cls._rotation_context_signature(
+                snapshot, artifacts, employee
+            )
+            groups_by_signature[signature].append(employee.id)
+        groups = sorted(
+            (
+                tuple(employee_ids)
+                for employee_ids in groups_by_signature.values()
+                if len(employee_ids) > 1
+            ),
+            key=lambda employee_ids: tuple(sorted(employee_ids)),
+        )
+
+        slot_minutes = {slot.id: slot.duration_minutes for slot in slots}
+        assignments_by_employee: dict[str, list[Assignment]] = defaultdict(list)
+        for assignment in result.assignments:
+            assignments_by_employee[assignment.employee_id].append(assignment)
+
+        employee_mapping = {
+            employee.id: employee.id for employee in snapshot.employees
+        }
+        rotation_score = 0
+        priority_groups: list[tuple[str, ...]] = []
+        rotated_employee_count = 0
+        for group in groups:
+            priority = month_employee_rotation_priority(group, snapshot.period_start)
+            priority_groups.append(priority)
+            priority_rank = {
+                employee_id: rank
+                for rank, employee_id in enumerate(priority, start=1)
+            }
+
+            def bundle_key(employee_id: str) -> tuple[Any, ...]:
+                assignments = assignments_by_employee.get(employee_id, ())
+                minutes = sum(
+                    slot_minutes[assignment.slot_id] for assignment in assignments
+                )
+                bundle_hash = sha256_hex(
+                    sorted(assignment.slot_id for assignment in assignments)
+                )
+                return (
+                    -minutes,
+                    -len(assignments),
+                    bundle_hash,
+                    priority_rank[employee_id],
+                )
+
+            source_order = sorted(group, key=bundle_key)
+            for target_rank, (source_id, target_id) in enumerate(
+                zip(source_order, priority, strict=True), start=1
+            ):
+                employee_mapping[source_id] = target_id
+                rotation_score += target_rank * sum(
+                    slot_minutes[assignment.slot_id]
+                    for assignment in assignments_by_employee.get(source_id, ())
+                )
+            rotated_employee_count += len(group)
+
+        rotated_assignments = tuple(
+            replace(
+                assignment,
+                employee_id=employee_mapping[assignment.employee_id],
+            )
+            for assignment in result.assignments
+        )
+        changed_assignment_count = sum(
+            before.employee_id != after.employee_id
+            for before, after in zip(
+                result.assignments, rotated_assignments, strict=True
+            )
+        )
+        selected_map: dict[str, str | None] = {slot.id: None for slot in slots}
+        selected_map.update(
+            {
+                assignment.slot_id: assignment.employee_id
+                for assignment in rotated_assignments
+            }
+        )
+        rotated_solution_hash = sha256_hex(selected_map)
+        metric_vector_hash = sha256_hex(dict(sorted(result.metrics.items())))
+        existing_tiers = [
+            int(stage.get("tier", 0)) for stage in result.stage_objectives
+        ]
+        rotation_stage = {
+            "tier": max(existing_tiers, default=0) + 1,
+            "name": "ROTATION_TIE_BREAK",
+            "value": rotation_score,
+            "status": "OPTIMAL",
+            "bestBound": float(rotation_score),
+            "tolerance": 0,
+            "frozenUpperBound": rotation_score,
+            "timeBudgetSeconds": 0.0,
+            "elapsedSeconds": 0.0,
+            "usedFallback": False,
+            "rotationKeyVersion": ROTATION_TIE_BREAK_VERSION,
+            "rotationMonth": snapshot.period_start.strftime("%Y-%m"),
+            "rotationOrderHash": sha256_hex(priority_groups),
+            "scoreDefinition": (
+                "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)"
+            ),
+            "scope": "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS",
+            "applied": bool(groups),
+            "interchangeableGroupCount": len(groups),
+            "rotatedEmployeeCount": rotated_employee_count,
+            "changedAssignmentCount": changed_assignment_count,
+            "excludedIdentityBoundEmployeeCount": len(excluded_employee_ids),
+            "businessMetricVectorPreserved": True,
+            "businessMetricVectorHash": metric_vector_hash,
+            "solutionHashBefore": result.solution_hash,
+            "solutionHashAfter": rotated_solution_hash,
+        }
+        return replace(
+            result,
+            assignments=rotated_assignments,
+            stage_objectives=(*result.stage_objectives, rotation_stage),
+            solution_hash=rotated_solution_hash,
+        )
 
     @staticmethod
     def _replace_with_nonzero_solution_hints(
@@ -2103,6 +2340,12 @@ class CpSatScheduleEngine:
                 stage_results,
                 optimal=all_stages_optimal,
             )
+            result = self._apply_month_rotation_tie_break(
+                snapshot,
+                slots,
+                artifacts,
+                result,
+            )
             self._ensure_deadline(strategy_deadline, strategy.code)
             owner = solution_owners.get(result.solution_hash)
             if owner is not None and not snapshot.settings.require_optimal:
@@ -2163,6 +2406,12 @@ class CpSatScheduleEngine:
                             diversity_solver,
                             diversity_stages,
                             optimal=all_stages_optimal,
+                        )
+                        candidate = self._apply_month_rotation_tie_break(
+                            snapshot,
+                            slots,
+                            artifacts,
+                            candidate,
                         )
                         if candidate.solution_hash not in solution_owners:
                             LOGGER.info(

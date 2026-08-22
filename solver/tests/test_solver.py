@@ -2644,15 +2644,22 @@ class SolverTests(unittest.TestCase):
         self.assertIsNone(variants[0].equivalent_to_strategy_id)
         for variant in variants[1:]:
             self.assertIsNone(variant.equivalent_to_strategy_id)
-            final_stage = variant.stage_objectives[-1]
+            rotation_stage = variant.stage_objectives[-1]
+            self.assertEqual(rotation_stage["name"], "ROTATION_TIE_BREAK")
+            self.assertTrue(rotation_stage["businessMetricVectorPreserved"])
+            final_search_stage = variant.stage_objectives[-2]
             # A second tied strategy may already find a distinct roster during
             # its normal tier solve.  The explicit diversity pass is required
             # only when that first result duplicates an earlier solution.
-            if final_stage["name"] == "DIVERSIFY":
-                self.assertTrue(final_stage["businessObjectiveBoundsPreserved"])
-                self.assertTrue(final_stage["excludedEquivalentStrategies"])
+            if final_search_stage["name"] == "DIVERSIFY":
+                self.assertTrue(
+                    final_search_stage["businessObjectiveBoundsPreserved"]
+                )
+                self.assertTrue(
+                    final_search_stage["excludedEquivalentStrategies"]
+                )
             else:
-                self.assertTrue(final_stage["name"].startswith("TIER_"))
+                self.assertTrue(final_search_stage["name"].startswith("TIER_"))
             self.assertTrue(validate_variant(snapshot, variant).valid)
 
     def test_full_model_is_built_once_and_cloned_for_all_strategies(self) -> None:
