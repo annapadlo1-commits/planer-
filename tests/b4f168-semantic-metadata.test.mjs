@@ -11,6 +11,10 @@ const migrationUrl = new URL(
   "../supabase/migrations/20260822200000_b4f168_remove_obsolete_solver_metadata.sql",
   import.meta.url,
 );
+const stampMigrationUrl = new URL(
+  "../supabase/migrations/20260822203000_b4f168_database_stamp.sql",
+  import.meta.url,
+);
 
 test("B4F-168 publishes a new semantic contract without mutating history", async () => {
   const migration = await readFile(migrationUrl, "utf8");
@@ -25,6 +29,18 @@ test("B4F-168 publishes a new semantic contract without mutating history", async
   assert.match(migration, /metric_code='HOME_LOCATION_VIOLATIONS'/);
   assert.match(migration, /B4F168_HISTORICAL_MATRIX_CONTENT_CHANGED/);
   assert.match(migration, /matrix_v2_content_document\(v_prior\.id\)/);
+  assert.doesNotMatch(migration, /bdybebzvzapihjdauehg/);
+});
+
+test("B4F-168 advances the database stamp without changing solver results", async () => {
+  const migration = await readFile(stampMigrationUrl, "utf8");
+
+  assert.match(migration, /solver_save_variant_before_b4f168/);
+  assert.match(migration, /20260822203000_b4f168_database_stamp/);
+  assert.match(migration, /strategySemanticsVersion'='B4F168_V1'/);
+  assert.match(migration, /set version_stamp=jsonb_set/);
+  assert.doesNotMatch(migration, /stage_proof\s*=/);
+  assert.doesNotMatch(migration, /update public\.plan_assignments/);
   assert.doesNotMatch(migration, /bdybebzvzapihjdauehg/);
 });
 
