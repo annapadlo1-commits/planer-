@@ -663,7 +663,7 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "pełnoekranowe Studio nie może być wyższe od rzeczywistego obszaru przeglądarki");
   assert.match(styles,/leader-studio-fullscreen-body\{[^}]*container-type:size[^}]*padding-bottom:14px[^}]*scroll-padding-bottom:14px[^}]*scrollbar-gutter:stable both-edges/,
     "główny scroll nie może sztucznie powiększać obszaru bocznej puli pracowników");
-  assert.match(styles,/leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel,\.leader-studio>\.leader-studio-impact\{height:calc\(100cqh - 28px\);max-height:calc\(100cqh - 28px\)\}/,
+  assert.match(styles,/leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel,\.leader-studio>\.leader-studio-impact\{height:calc\(100cqh - 112px\);max-height:calc\(100cqh - 112px\)\}/,
     "boczne panele mają mieścić się w widocznym scrollporcie Studia, niezależnie od liczby tygodni kalendarza");
 });
 
