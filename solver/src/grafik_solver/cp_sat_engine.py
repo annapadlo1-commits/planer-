@@ -129,6 +129,102 @@ def _days(start: date, end: date) -> list[date]:
     ]
 
 
+def _maximum_compatible_daily_minutes(
+    slots: Iterable[Slot],
+    maximum_shifts: int,
+    minimum_rest_minutes: int,
+) -> int:
+    """Return a cheap exact daily capacity for interval/rest conflicts.
+
+    This is weighted interval scheduling with a cardinality bound.  It avoids
+    a CP-SAT subsolve per employee while ensuring simultaneous or too-close
+    internal shifts are not all counted in the fairness denominator.
+    """
+    ordered = sorted(
+        slots,
+        key=lambda item: (item.end.timestamp(), item.start.timestamp(), item.id),
+    )
+    shift_limit = min(max(0, maximum_shifts), len(ordered))
+    if not ordered or shift_limit == 0:
+        return 0
+
+    previous_compatible: list[int] = []
+    for index, current in enumerate(ordered):
+        previous = -1
+        for candidate_index in range(index - 1, -1, -1):
+            candidate = ordered[candidate_index]
+            if not violates_rest(
+                candidate.start,
+                candidate.end,
+                current.start,
+                current.end,
+                minimum_rest_minutes,
+            ):
+                previous = candidate_index
+                break
+        previous_compatible.append(previous)
+
+    best = [[0] * (shift_limit + 1) for _ in range(len(ordered) + 1)]
+    for row, current in enumerate(ordered, start=1):
+        compatible_row = previous_compatible[row - 1] + 1
+        for selected in range(1, shift_limit + 1):
+            best[row][selected] = max(
+                best[row - 1][selected],
+                current.duration_minutes + best[compatible_row][selected - 1],
+            )
+    return best[-1][-1]
+
+
+def _maximum_coupled_day_minutes(
+    days: Iterable[date],
+    daily_capacity: Mapping[date, int],
+    external_work_days: set[date],
+    fully_conflicting_day_pairs: set[date],
+    maximum_consecutive_days: int | None,
+) -> int:
+    """Cap capacity for consecutive days and obvious all-pair day conflicts.
+
+    ``fully_conflicting_day_pairs`` contains the second day of each adjacent
+    pair for which no internal occurrence can legally follow any occurrence
+    from the previous day.  Partial cross-day conflicts remain deliberately
+    outside this estimator and are disclosed as such in the UI.
+    """
+    ordered_days = tuple(days)
+    consecutive_limit = (
+        max(0, maximum_consecutive_days)
+        if maximum_consecutive_days is not None
+        else len(ordered_days) + 1
+    )
+    states: dict[tuple[int, bool], int] = {(0, False): 0}
+    for day in ordered_days:
+        next_states: dict[tuple[int, bool], int] = {}
+        external_work = day in external_work_days
+        capacity = max(0, daily_capacity.get(day, 0))
+        for (run_length, previous_internal), value in states.items():
+            if external_work:
+                next_run = run_length + 1
+                if next_run <= consecutive_limit:
+                    key = (next_run, False)
+                    next_states[key] = max(next_states.get(key, -1), value)
+            else:
+                key = (0, False)
+                next_states[key] = max(next_states.get(key, -1), value)
+
+            if capacity <= 0:
+                continue
+            next_run = run_length + 1
+            if next_run > consecutive_limit:
+                continue
+            if previous_internal and day in fully_conflicting_day_pairs:
+                continue
+            key = (next_run, True)
+            next_states[key] = max(next_states.get(key, -1), value + capacity)
+        states = next_states
+        if not states:
+            return 0
+    return max(states.values(), default=0)
+
+
 def coverage_minimum_is_proven(
     minimum_unfilled: int,
     proven_lower_bound: int,
@@ -645,7 +741,7 @@ class CpSatScheduleEngine:
         fair_coverage_spread_budget = 0.0
         fair_coverage_seed_minimum = int(
             common_solver.value(
-                common.metrics["MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
+                common.metrics["MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
             )
         )
         if (
@@ -655,7 +751,7 @@ class CpSatScheduleEngine:
                 for strategy in snapshot.strategies
             )
             and common.metric_bounds[
-                "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+                "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
             ]
             > 0
         ):
@@ -672,7 +768,7 @@ class CpSatScheduleEngine:
             )
             common.model.minimize(
                 common.metrics[
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
                 ]
             )
             remaining_for_seed = self._remaining_seconds(
@@ -707,7 +803,7 @@ class CpSatScheduleEngine:
                 candidate_minimum = int(
                     fair_seed_solver.value(
                         common.metrics[
-                            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+                            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
                         ]
                     )
                 )
@@ -718,7 +814,7 @@ class CpSatScheduleEngine:
                         fair_seed_status
                     )
             LOGGER.info(
-                "Fair coverage seed status=%s minimumAchievableUtilizationBps=%s "
+                "Fair coverage seed status=%s minimumEstimatedAchievableUtilizationBps=%s "
                 "timeBudgetSeconds=%.3f",
                 fair_coverage_seed_status,
                 fair_coverage_seed_minimum,
@@ -731,7 +827,7 @@ class CpSatScheduleEngine:
                 # constrained employee to define the minimum while somebody
                 # else remains close to 100%.
                 common.model.add(
-                    common.metrics["MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
+                    common.metrics["MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
                     >= fair_coverage_seed_minimum
                 )
                 common.model.clear_objective()
@@ -741,7 +837,7 @@ class CpSatScheduleEngine:
                     common.hint_variables,
                 )
                 common.model.minimize(
-                    common.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
+                    common.metrics["ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
                 )
                 remaining_for_spread = self._remaining_seconds(
                     global_deadline, "GLOBAL:FAIR_COVERAGE_SPREAD:BUDGET"
@@ -777,7 +873,7 @@ class CpSatScheduleEngine:
                     int(
                         common_hint_solver.value(
                             common.metrics[
-                                "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+                                "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
                             ]
                         )
                     ),
@@ -785,7 +881,7 @@ class CpSatScheduleEngine:
                 )
         fair_coverage_seed_spread = int(
             common_hint_solver.value(
-                common.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
+                common.metrics["ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
             )
         )
         self._ensure_deadline(global_deadline, "GLOBAL:UNFILLED")
@@ -1026,10 +1122,10 @@ class CpSatScheduleEngine:
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
                     "roleBackupPenalty": minimum_role_backup_penalty,
-                    "fairCoverageSeedMinimumAchievableUtilizationBps": (
+                    "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps": (
                         fair_coverage_seed_minimum
                     ),
-                    "fairCoverageSeedAchievableUtilizationSpreadBps": (
+                    "fairCoverageSeedEstimatedAchievableUtilizationSpreadBps": (
                         fair_coverage_seed_spread
                     ),
                     **(
@@ -1393,7 +1489,7 @@ class CpSatScheduleEngine:
             # objective tiers remain non-negative for the gateway contract.
             guard_tier = -1
             guard_metric = (
-                "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
+                "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS"
                 if preference_fairness_strategy
                 else "COMMON_FAIRNESS_GUARD_SCORE"
             )
@@ -1418,7 +1514,7 @@ class CpSatScheduleEngine:
                 )
 
             spread_guard_tier = 0
-            spread_guard_metric = "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+            spread_guard_metric = "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
             spread_guard_bound = artifacts.metric_bounds[spread_guard_metric]
             if preference_fairness_strategy and spread_guard_bound > 0:
                 tiers[spread_guard_tier].append(
@@ -1446,7 +1542,7 @@ class CpSatScheduleEngine:
                 if tier == guard_tier:
                     return "COMMON_FAIRNESS_GUARD"
                 if tier == spread_guard_tier:
-                    return "ACHIEVABLE_TARGET_SPREAD_GUARD"
+                    return "ESTIMATED_ACHIEVABLE_TARGET_SPREAD_GUARD"
                 return f"TIER_{tier}"
 
             self._emit_progress(
@@ -1531,7 +1627,7 @@ class CpSatScheduleEngine:
                             and int(
                                 feasible_fallback_solver.value(
                                     artifacts.metrics[
-                                        "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+                                        "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
                                     ]
                                 )
                             )
@@ -2959,13 +3055,14 @@ class CpSatScheduleEngine:
             for item in snapshot.external_assignments
         )
 
-        # Capacity-based target used by every strategy.  Count only occurrences
-        # that the employee can actually cover after role, duty, location,
-        # employment, availability, hard-block and external-rest checks.  Daily
-        # and weekly limits then cap that compatible capacity before the
-        # employee's monthly target/maximum is applied.  External work belongs
-        # to the same monthly utilization numerator and target.
-        achievable_target_minutes: dict[str, int] = {}
+        # Estimated capacity target used by every strategy.  It is deliberately
+        # not called certified/achievable: the calculation is deterministic and
+        # cheap, not a separate optimization proof per employee.  It includes
+        # individual eligibility, exact same-day overlap/rest selection, weekly
+        # caps, maximum consecutive days and adjacent days whose every internal
+        # pair conflicts.  More complex partial cross-day coupling can still
+        # make the real capacity lower and is disclosed in diagnostics/UI.
+        estimated_achievable_target_minutes: dict[str, int] = {}
         for employee in snapshot.employees:
             external = external_by_employee.get(employee.id, [])
             external_daily_count: dict[date, int] = defaultdict(int)
@@ -2980,27 +3077,32 @@ class CpSatScheduleEngine:
             for slot in slots:
                 if eligibility.evaluate(employee, slot).allowed:
                     compatible_occurrences.setdefault(slot.occurrence_id, slot)
-            compatible_by_day: dict[date, list[int]] = defaultdict(list)
+            compatible_by_day: dict[date, list[Slot]] = defaultdict(list)
             for occurrence in compatible_occurrences.values():
-                compatible_by_day[occurrence.date].append(
-                    occurrence.duration_minutes
-                )
+                compatible_by_day[occurrence.date].append(occurrence)
 
-            compatible_by_week: dict[tuple[int, int], int] = defaultdict(int)
-            for day, durations in compatible_by_day.items():
+            rest_minutes = eligibility.minimum_rest(employee)
+            daily_capacity: dict[date, int] = {}
+            for day, day_occurrences in compatible_by_day.items():
                 remaining_shifts = max(
                     0,
                     employee.maximum_shifts_per_day
                     - external_daily_count.get(day, 0),
                 )
                 if remaining_shifts:
-                    week_key = (day.isocalendar().year, day.isocalendar().week)
-                    compatible_by_week[week_key] += sum(
-                        sorted(durations, reverse=True)[:remaining_shifts]
+                    daily_capacity[day] = _maximum_compatible_daily_minutes(
+                        day_occurrences,
+                        remaining_shifts,
+                        rest_minutes,
                     )
 
-            compatible_minutes = 0
-            for week_key, candidate_minutes in compatible_by_week.items():
+            weekly_capacity: dict[tuple[int, int], int] = defaultdict(int)
+            for day, capacity in daily_capacity.items():
+                week_key = (day.isocalendar().year, day.isocalendar().week)
+                weekly_capacity[week_key] += capacity
+
+            weekly_capped_minutes = 0
+            for week_key, candidate_minutes in weekly_capacity.items():
                 if employee.maximum_weekly_minutes is not None:
                     external_week = sum(
                         duration
@@ -3012,7 +3114,50 @@ class CpSatScheduleEngine:
                         candidate_minutes,
                         max(0, employee.maximum_weekly_minutes - external_week),
                     )
-                compatible_minutes += candidate_minutes
+                weekly_capped_minutes += candidate_minutes
+
+            fully_conflicting_day_pairs: set[date] = set()
+            for day in all_days[1:]:
+                previous_occurrences = compatible_by_day.get(
+                    day - timedelta(days=1), []
+                )
+                current_occurrences = compatible_by_day.get(day, [])
+                if (
+                    previous_occurrences
+                    and current_occurrences
+                    and all(
+                        violates_rest(
+                            first.start,
+                            first.end,
+                            second.start,
+                            second.end,
+                            rest_minutes,
+                        )
+                        or consecutive_shift_sequence(
+                            sequence_boundaries, first, second
+                        )
+                        for first in previous_occurrences
+                        for second in current_occurrences
+                    )
+                ):
+                    fully_conflicting_day_pairs.add(day)
+
+            coupled_day_minutes = _maximum_coupled_day_minutes(
+                all_days,
+                daily_capacity,
+                {
+                    day
+                    for day, count in external_daily_count.items()
+                    if count > 0 and day in day_work_day_set
+                },
+                fully_conflicting_day_pairs,
+                employee.maximum_consecutive_days,
+            )
+            compatible_minutes = min(
+                sum(daily_capacity.values()),
+                weekly_capped_minutes,
+                coupled_day_minutes,
+            )
 
             external_month_total = sum(
                 minutes
@@ -3024,7 +3169,7 @@ class CpSatScheduleEngine:
                 attainable = min(attainable, employee.maximum_monthly_minutes)
             if employee.nominal_monthly_minutes is not None:
                 attainable = min(attainable, employee.nominal_monthly_minutes)
-            achievable_target_minutes[employee.id] = max(0, attainable)
+            estimated_achievable_target_minutes[employee.id] = max(0, attainable)
 
         for employee in snapshot.employees:
             external = external_by_employee.get(employee.id, [])
@@ -3137,26 +3282,26 @@ class CpSatScheduleEngine:
         # 10 h versus 180 h) became the shared fixed warm start.
         achievable_utilization_vars: list[Any] = []
         for employee in snapshot.employees:
-            achievable_target = achievable_target_minutes[employee.id]
-            if achievable_target <= 0:
+            estimated_target = estimated_achievable_target_minutes[employee.id]
+            if estimated_target <= 0:
                 continue
             capped_minutes = model.new_int_var(
                 0,
-                achievable_target,
-                f"achievable_capped_minutes|{employee.id}",
+                estimated_target,
+                f"estimated_achievable_capped_minutes|{employee.id}",
             )
             model.add_min_equality(
-                capped_minutes, [total_minutes[employee.id], achievable_target]
+                capped_minutes, [total_minutes[employee.id], estimated_target]
             )
             achievable_utilization = model.new_int_var(
                 0,
                 1000,
-                f"achievable_utilization_bps|{employee.id}",
+                f"estimated_achievable_utilization_bps|{employee.id}",
             )
             model.add_division_equality(
                 achievable_utilization,
                 capped_minutes * 1000,
-                achievable_target,
+                estimated_target,
             )
             achievable_utilization_vars.append(achievable_utilization)
         if achievable_utilization_vars:
@@ -3202,16 +3347,16 @@ class CpSatScheduleEngine:
                 metrics={
                     "UNFILLED": _sum(unfilled.values()),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
                 },
                 metric_bounds={
                     "UNFILLED": len(slots),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
                 },
                 hint_variables=tuple(
                     list(x.values())
@@ -3312,16 +3457,16 @@ class CpSatScheduleEngine:
                 metrics={
                     "UNFILLED": _sum(unfilled.values()),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
                 },
                 metric_bounds={
                     "UNFILLED": len(slots),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
                 },
                 hint_variables=tuple(
                     list(x.values())
@@ -3500,16 +3645,16 @@ class CpSatScheduleEngine:
                 metrics={
                     "UNFILLED": _sum(unfilled.values()),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
                 },
                 metric_bounds={
                     "UNFILLED": len(slots),
                     "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
-                    "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
-                    "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
                 },
                 hint_variables=tuple(
                     list(x.values())
@@ -3582,7 +3727,6 @@ class CpSatScheduleEngine:
         overtime_bound_total = 0
         for employee in snapshot.employees:
             total = total_minutes[employee.id]
-            achievable_target = achievable_target_minutes[employee.id]
             if employee.nominal_monthly_minutes is not None:
                 nominal = employee.nominal_monthly_minutes
                 deviation = model.new_int_var(
@@ -3609,7 +3753,7 @@ class CpSatScheduleEngine:
                 # minimize the number of zero-hour target employees, then the
                 # category-wide spread of target realization. Availability and
                 # every hard rule are already reflected in the x variables.
-                if nominal > 0 and achievable_target_minutes[employee.id] > 0:
+                if nominal > 0 and estimated_achievable_target_minutes[employee.id] > 0:
                     has_minutes = model.new_bool_var(
                         f"has_target_minutes|{employee.id}"
                     )
@@ -3649,7 +3793,7 @@ class CpSatScheduleEngine:
         # Only eligible assignments in the exact STANDARD role and on a date
         # where that grant is active can satisfy this indicator.
         for employee in snapshot.employees:
-            if achievable_target_minutes[employee.id] <= 0:
+            if estimated_achievable_target_minutes[employee.id] <= 0:
                 continue
             for role_id in sorted(role_dates):
                 if not standard_role_member(employee, role_id):
@@ -3698,7 +3842,7 @@ class CpSatScheduleEngine:
                 employee
                 for employee in snapshot.employees
                 if standard_role_member(employee, role_id)
-                and achievable_target_minutes[employee.id] > 0
+                and estimated_achievable_target_minutes[employee.id] > 0
                 and any(
                     employee_id == employee.id
                     and slots_by_id[slot_id].role_id == role_id
@@ -3712,7 +3856,7 @@ class CpSatScheduleEngine:
             role_weekends: list[Any] = []
             for employee in members:
                 utilization_participants.add(employee.id)
-                basis = achievable_target_minutes[employee.id]
+                basis = estimated_achievable_target_minutes[employee.id]
                 if employee.nominal_monthly_minutes is not None:
                     explicit_utilization_participants.add(employee.id)
                 else:
@@ -3868,10 +4012,13 @@ class CpSatScheduleEngine:
             "ZERO_TARGET_EMPLOYEE_COUNT": zero_target_count,
             "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT": zero_primary_role_count,
             "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
-            "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
-            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
-            "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
-            "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
+            "ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(
+                estimated_achievable_target_minutes.values()
+            ),
+            "ESTIMATED_ACHIEVABLE_TARGET_METHOD_VERSION": 2,
+            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": minimum_achievable_utilization,
+            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": achievable_utilization_deficit,
+            "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": achievable_utilization_spread,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_score,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_fairness_score,
             "LOAD_UTILIZATION_SPREAD_BPS": role_load_max,
@@ -3902,10 +4049,13 @@ class CpSatScheduleEngine:
             "ZERO_TARGET_EMPLOYEE_COUNT": len(zero_target_vars),
             "ZERO_PRIMARY_ROLE_ASSIGNMENT_COUNT": len(zero_primary_role_vars),
             "PRIMARY_ROLE_GUARD_PAIR_COUNT": len(zero_primary_role_vars),
-            "ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(achievable_target_minutes.values()),
-            "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
-            "MIN_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
-            "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
+            "ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL": sum(
+                estimated_achievable_target_minutes.values()
+            ),
+            "ESTIMATED_ACHIEVABLE_TARGET_METHOD_VERSION": 2,
+            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS": 1000,
+            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_DEFICIT_BPS": 1000,
+            "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS": 1000,
             "COMMON_FAIRNESS_GUARD_SCORE": common_fairness_guard_bound,
             "ROLE_LOAD_FAIRNESS_SCORE": role_load_score_bound,
             "LOAD_UTILIZATION_SPREAD_BPS": utilization_bound,

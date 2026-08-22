@@ -426,6 +426,8 @@ function validateStageObjective(value: unknown): void {
       "certifiedCoverageSeed",
       "fairCoverageSeedMinimumAchievableUtilizationBps",
       "fairCoverageSeedAchievableUtilizationSpreadBps",
+      "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps",
+      "fairCoverageSeedEstimatedAchievableUtilizationSpreadBps",
       "fairCoverageSeedStatus",
       "fairCoverageSeedTimeBudgetSeconds",
       "fairCoverageSpreadStatus",
@@ -543,6 +545,32 @@ function validateStageObjective(value: unknown): void {
     assertInteger(
       value.fairCoverageSeedAchievableUtilizationSpreadBps,
       "FAIR_COVERAGE_SEED_ACHIEVABLE_UTILIZATION_SPREAD_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (
+    Object.hasOwn(
+      value,
+      "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps",
+    )
+  ) {
+    assertInteger(
+      value.fairCoverageSeedMinimumEstimatedAchievableUtilizationBps,
+      "FAIR_COVERAGE_SEED_MINIMUM_ESTIMATED_ACHIEVABLE_UTILIZATION_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (
+    Object.hasOwn(
+      value,
+      "fairCoverageSeedEstimatedAchievableUtilizationSpreadBps",
+    )
+  ) {
+    assertInteger(
+      value.fairCoverageSeedEstimatedAchievableUtilizationSpreadBps,
+      "FAIR_COVERAGE_SEED_ESTIMATED_ACHIEVABLE_UTILIZATION_SPREAD_BPS",
       0,
       1_000,
     );

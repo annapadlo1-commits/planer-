@@ -20,7 +20,13 @@ const HIDDEN_METRICS = new Set([
   "ROLE_LOAD_FAIRNESS_ROLE_COUNT",
   "ROLE_WEEKEND_FAIRNESS_SCORE",
   "ROLE_WEEKEND_SPREAD_SUM",
+  "ACHIEVABLE_TARGET_MINUTES_TOTAL",
+  "ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL",
+  "ESTIMATED_ACHIEVABLE_TARGET_METHOD_VERSION",
 ]);
+
+const ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION =
+  "Szacunek uwzględniający dostępność, kwalifikacje i podstawowe limity czasu pracy. W złożonych przypadkach kolizji zmian, odpoczynku lub limitów kolejnych dni rzeczywista możliwa liczba godzin może być niższa.";
 
 const METRICS: Record<string, { label: string; explanation: string; unit?: "MINUTES" }> = {
   PREFERENCE_VIOLATIONS: {
@@ -38,12 +44,20 @@ const METRICS: Record<string, { label: string; explanation: string; unit?: "MINU
     unit: "MINUTES",
   },
   MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS: {
-    label: "Najniższa realizacja osiągalnego celu",
-    explanation: "Najmniejszy procent realizacji celu możliwego dla danej osoby po uwzględnieniu jej dostępności, ról i twardych limitów. Wariant równy najpierw maksymalizuje właśnie tę wartość.",
+    label: "Najniższa realizacja szacowanego osiągalnego celu",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wariant równy najpierw maksymalizuje najniższą procentową realizację tego szacunku.`,
+  },
+  MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS: {
+    label: "Najniższa realizacja szacowanego osiągalnego celu",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wariant równy najpierw maksymalizuje najniższą procentową realizację tego szacunku.`,
   },
   ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: {
-    label: "Rozstęp realizacji osiągalnych celów",
-    explanation: "Różnica między najwyższą i najniższą procentową realizacją indywidualnego osiągalnego celu w całym planowanym zespole. Mniej oznacza równiejszy podział pozostałych godzin po ochronie najsłabiej obsłużonej osoby.",
+    label: "Rozstęp realizacji szacowanych osiągalnych celów",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wartość pokazuje różnicę między najwyższą i najniższą procentową realizacją szacunku; mniej oznacza równiejszy podział.`,
+  },
+  ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: {
+    label: "Rozstęp realizacji szacowanych osiągalnych celów",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wartość pokazuje różnicę między najwyższą i najniższą procentową realizacją szacunku; mniej oznacza równiejszy podział.`,
   },
   OVERTIME_MINUTES: {
     label: "Planowane nadgodziny",
@@ -98,9 +112,9 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
       ? "Brak wymiarów"
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
         ? "Brak danych"
-        : code === "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+        : code === "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS" || code === "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
           ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`
-          : code === "LOAD_UTILIZATION_SPREAD_BPS" || code === "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+          : code === "LOAD_UTILIZATION_SPREAD_BPS" || code === "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS" || code === "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
           ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} p.p.`
           : definition.unit === "MINUTES"
       ? formatDurationMinutes(rawValue)

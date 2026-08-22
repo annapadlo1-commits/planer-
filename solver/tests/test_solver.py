@@ -1780,7 +1780,7 @@ class SolverTests(unittest.TestCase):
                 self.assertEqual(assigned["shift-host-early"], "c-standard-early")
                 self.assertEqual(assigned["shift-host-late"], "a-standard-both")
 
-    def test_all_strategies_share_work_by_achievable_target_in_role_location_pool(self) -> None:
+    def test_all_strategies_share_work_by_estimated_target_in_role_location_pool(self) -> None:
         raw = load_raw()
         raw.pop("slots")
         raw["periodStart"] = "2026-08-01"
@@ -1836,7 +1836,8 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(variant.metrics["LOAD_UTILIZATION_SPREAD_BPS"], 0)
             self.assertEqual(variant.metrics["ROLE_LOCATION_FAIRNESS_POOL_COUNT"], 1)
             self.assertEqual(
-                variant.metrics["ACHIEVABLE_TARGET_MINUTES_TOTAL"], 4_800
+                variant.metrics["ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL"],
+                4_320,
             )
 
     def test_preferences_strategy_fairness_precedes_extreme_preferences(self) -> None:
@@ -1913,7 +1914,7 @@ class SolverTests(unittest.TestCase):
         )
         self.assertLess(
             stage_names.index("COMMON_FAIRNESS_GUARD"),
-            stage_names.index("ACHIEVABLE_TARGET_SPREAD_GUARD"),
+            stage_names.index("ESTIMATED_ACHIEVABLE_TARGET_SPREAD_GUARD"),
         )
         metric_stage = {
             term["metric"]: index
@@ -1921,7 +1922,9 @@ class SolverTests(unittest.TestCase):
             for term in stage.get("terms", [])
         }
         self.assertLess(
-            metric_stage["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"],
+            metric_stage[
+                "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+            ],
             metric_stage["ROLE_LOAD_FAIRNESS_SCORE"],
         )
         self.assertLess(
@@ -1979,7 +1982,9 @@ class SolverTests(unittest.TestCase):
         fulfillments = [minutes[employee["id"]] * 1000 // target for employee, target in zip(employees, targets, strict=True)]
         self.assertLessEqual(max(fulfillments) - min(fulfillments), 250)
         self.assertEqual(
-            variant.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"],
+            variant.metrics[
+                "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+            ],
             max(fulfillments) - min(fulfillments),
         )
 
@@ -2067,7 +2072,10 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(sorted(counts.values()), [3] * 10)
         self.assertEqual(variant.metrics["PREFERENCE_VIOLATIONS"], 0)
         self.assertEqual(
-            variant.metrics["ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"], 0
+            variant.metrics[
+                "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+            ],
+            0,
         )
 
     def test_daily_standby_reserve_never_creates_vacancies(self) -> None:

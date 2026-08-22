@@ -123,7 +123,10 @@ class AllowedOvertimeFairnessTests(unittest.TestCase):
         self.assertEqual(assignment_counts["employee-allowed"], 2)
         self.assertEqual(assignment_counts["employee-never"], 1)
         self.assertEqual(
-            variant.metrics["MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS"], 1000
+            variant.metrics[
+                "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+            ],
+            1000,
         )
         self.assertTrue(validate_variant(snapshot, variant).valid)
 

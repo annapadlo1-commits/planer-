@@ -266,8 +266,8 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
   variant.stageObjectives[0].verifiedZeroIncumbent = true;
   variant.stageObjectives[0].certifiedCoverageSeed = true;
   Object.assign(variant.stageObjectives[0], {
-    fairCoverageSeedMinimumAchievableUtilizationBps: 411,
-    fairCoverageSeedAchievableUtilizationSpreadBps: 261,
+    fairCoverageSeedMinimumEstimatedAchievableUtilizationBps: 411,
+    fairCoverageSeedEstimatedAchievableUtilizationSpreadBps: 261,
     fairCoverageSeedStatus: "OPTIMAL",
     fairCoverageSeedTimeBudgetSeconds: 90,
     fairCoverageSpreadStatus: "FEASIBLE",
