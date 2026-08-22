@@ -669,6 +669,8 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "otwarty filtr ról musi zostawić miejsce na pulę pracowników w niskim oknie");
   assert.match(styles,/leader-employee-pool\{[^}]*min-height:80px\}\.leader-employee-pool>div\{[^}]*min-height:48px\}/,
     "co najmniej jedna karta i jej własny scrollbar muszą pozostać widoczne");
+  assert.match(styles,/leader-employee-pool\{min-height:86px\}\.leader-employee-pool>div\{min-height:52px\}/,
+    "pełna karta ma mieścić się w puli także razem z obramowaniem");
   assert.match(styles,/@container\(max-height:500px\)\{\.leader-employee-pool>header small\{display:none\}/,
     "niski scrollport ma skracać opis zamiast usuwać pracowników");
   assert.match(styles,/leader-employee-pool>header>\.secondary-button\.placeholder\{visibility:hidden;pointer-events:none\}/,
