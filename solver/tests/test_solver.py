@@ -1184,6 +1184,28 @@ class SolverTests(unittest.TestCase):
             self.assertIn("LOAD_UTILIZATION_SPREAD_BPS", variant.metrics)
             self.assertNotIn("LOAD_SPREAD_MINUTES", variant.metrics)
 
+    def test_every_persisted_stage_has_complete_audit_proof(self) -> None:
+        required = {
+            "tier",
+            "name",
+            "status",
+            "value",
+            "frozenUpperBound",
+            "tolerance",
+            "timeBudgetSeconds",
+            "elapsedSeconds",
+            "usedFallback",
+        }
+        for variant in self.variants:
+            serialized = variant.to_dict()["stageObjectives"]
+            self.assertEqual(len(serialized), len(variant.stage_objectives))
+            for stage in serialized:
+                with self.subTest(strategy=variant.strategy_code, stage=stage.get("name")):
+                    self.assertTrue(required.issubset(stage), stage)
+                    self.assertGreaterEqual(stage["timeBudgetSeconds"], 0)
+                    self.assertGreaterEqual(stage["elapsedSeconds"], 0)
+                    self.assertIsInstance(stage["usedFallback"], bool)
+
     def test_targetless_employee_still_participates_in_fairness(self) -> None:
         raw = load_raw()
         bob = next(employee for employee in raw["employees"] if employee["id"] == "employee-bob")

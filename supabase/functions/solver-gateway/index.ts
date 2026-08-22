@@ -16,6 +16,7 @@ function requireEnvironment(name: string): string {
 const supabaseUrl = requireEnvironment("SUPABASE_URL").replace(/\/+$/u, "");
 const serviceRoleKey = requireEnvironment("SUPABASE_SERVICE_ROLE_KEY");
 const solverGatewayToken = requireEnvironment("SOLVER_GATEWAY_TOKEN");
+const gatewayVersion = Deno.env.get("DENO_DEPLOYMENT_ID")?.trim() || "local";
 if (solverGatewayToken === serviceRoleKey) {
   throw new Error("Gateway token must be independent from the service role key");
 }
@@ -77,6 +78,7 @@ const invokeRpc = async (
 Deno.serve(
   createGatewayHandler({
     solverGatewayToken,
+    gatewayVersion,
     invokeRpc,
   }),
 );

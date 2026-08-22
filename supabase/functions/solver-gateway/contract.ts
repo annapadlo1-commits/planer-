@@ -30,6 +30,7 @@ export type RpcInvoker = (
 
 type GatewayOptions = {
   solverGatewayToken: string;
+  gatewayVersion: string;
   invokeRpc: RpcInvoker;
 };
 
@@ -388,12 +389,40 @@ function validateStageObjective(value: unknown): void {
     assertExactKeys(value, [
       "tier",
       "name",
+      "value",
       "status",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
       "businessObjectiveBoundsPreserved",
       "excludedEquivalentStrategies",
     ]);
     assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
+    assertInteger(
+      value.value,
+      "OBJECTIVE_VALUE",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
     assertString(value.status, "OBJECTIVE_STATUS", 1, 40);
+    assertInteger(value.tolerance, "OBJECTIVE_TOLERANCE", 0, Number.MAX_SAFE_INTEGER);
+    assertInteger(
+      value.frozenUpperBound,
+      "OBJECTIVE_BOUND",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
+    assertFiniteNumber(value.elapsedSeconds, "ELAPSED_SECONDS");
+    if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
+      fail(400, "INVALID_TIME_BUDGET_SECONDS");
+    }
+    if (value.elapsedSeconds < 0 || value.elapsedSeconds > 86_400) {
+      fail(400, "INVALID_ELAPSED_SECONDS");
+    }
+    assertBoolean(value.usedFallback, "USED_FALLBACK");
     assertBoolean(
       value.businessObjectiveBoundsPreserved,
       "BUSINESS_OBJECTIVE_BOUNDS_PRESERVED",
@@ -418,7 +447,17 @@ function validateStageObjective(value: unknown): void {
   }
   assertExactKeys(
     value,
-    ["tier", "name", "value", "status", "tolerance", "frozenUpperBound"],
+    [
+      "tier",
+      "name",
+      "value",
+      "status",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
+    ],
     [
       "bestBound",
       "terms",
@@ -435,12 +474,12 @@ function validateStageObjective(value: unknown): void {
       "costIncumbentGuard",
       "verifiedZeroIncumbent",
       "certificate",
-      "timeBudgetSeconds",
       "roleBackupPenalty",
       "overtimeMinimum",
       "overtimeStatus",
       "overtimeFrozenUpperBound",
       "overtimeTimeBudgetSeconds",
+      "overtimeElapsedSeconds",
       "overtimeVerifiedZeroIncumbent",
       "overtimeUsedFallback",
     ],
@@ -469,12 +508,15 @@ function validateStageObjective(value: unknown): void {
   if (Object.hasOwn(value, "bestBound")) {
     assertFiniteNumber(value.bestBound, "BEST_BOUND");
   }
-  if (Object.hasOwn(value, "timeBudgetSeconds")) {
-    assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
-    if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
-      fail(400, "INVALID_TIME_BUDGET_SECONDS");
-    }
+  assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
+  assertFiniteNumber(value.elapsedSeconds, "ELAPSED_SECONDS");
+  if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
+    fail(400, "INVALID_TIME_BUDGET_SECONDS");
   }
+  if (value.elapsedSeconds < 0 || value.elapsedSeconds > 86_400) {
+    fail(400, "INVALID_ELAPSED_SECONDS");
+  }
+  assertBoolean(value.usedFallback, "USED_FALLBACK");
   if (Object.hasOwn(value, "roleBackupPenalty")) {
     assertInteger(
       value.roleBackupPenalty,
@@ -512,6 +554,15 @@ function validateStageObjective(value: unknown): void {
       value.overtimeTimeBudgetSeconds > 86_400
     ) {
       fail(400, "INVALID_OVERTIME_TIME_BUDGET_SECONDS");
+    }
+  }
+  if (Object.hasOwn(value, "overtimeElapsedSeconds")) {
+    assertFiniteNumber(value.overtimeElapsedSeconds, "OVERTIME_ELAPSED_SECONDS");
+    if (
+      value.overtimeElapsedSeconds < 0 ||
+      value.overtimeElapsedSeconds > 86_400
+    ) {
+      fail(400, "INVALID_OVERTIME_ELAPSED_SECONDS");
     }
   }
   if (Object.hasOwn(value, "overtimeVerifiedZeroIncumbent")) {
@@ -739,6 +790,16 @@ function validateConfiguredToken(token: string): void {
   }
 }
 
+function validateGatewayVersion(version: string): void {
+  if (
+    version.length < 1 ||
+    version.length > 500 ||
+    /[\p{Cc}\p{Cf}\p{White_Space}]/u.test(version)
+  ) {
+    throw new Error("Invalid gateway version configuration");
+  }
+}
+
 async function tokensEqual(presented: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [presentedHash, expectedHash] = await Promise.all([
@@ -813,6 +874,7 @@ function parseEnvelope(body: Uint8Array): JsonObject {
 
 export function createGatewayHandler(options: GatewayOptions) {
   validateConfiguredToken(options.solverGatewayToken);
+  validateGatewayVersion(options.gatewayVersion);
 
   return async (request: Request): Promise<Response> => {
     try {
@@ -852,7 +914,10 @@ export function createGatewayHandler(options: GatewayOptions) {
 
       let result: RpcResult;
       try {
-        result = await options.invokeRpc(envelope.action, envelope.args);
+        const rpcArgs = envelope.action === "solver_save_variant_v2"
+          ? { ...envelope.args, p_gateway_version: options.gatewayVersion }
+          : envelope.args;
+        result = await options.invokeRpc(envelope.action, rpcArgs);
       } catch {
         return jsonResponse(502, "UPSTREAM_UNAVAILABLE");
       }

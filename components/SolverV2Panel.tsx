@@ -156,6 +156,41 @@ function aggregateVariantFingerprint(variant: SolverVariant) {
   });
 }
 
+function auditObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function solverStageProofLabel(variant: SolverVariant) {
+  const fallbackCount = variant.stageProof.filter(stage => stage.usedFallback === true).length;
+  const elapsed = variant.stageProof.reduce(
+    (total, stage) => total + (Number(stage.elapsedSeconds) || 0),
+    0,
+  );
+  const budget = variant.stageProof.reduce(
+    (total, stage) => total + (Number(stage.timeBudgetSeconds) || 0),
+    0,
+  );
+  return `${variant.stageProof.length} etapów • ${elapsed.toFixed(2)} s / ${budget.toFixed(2)} s • fallback: ${fallbackCount}`;
+}
+
+function solverVersionStampLabel(variant: SolverVariant) {
+  const frontend = auditObject(variant.versionStamp.frontend);
+  const solver = auditObject(variant.versionStamp.solver);
+  const gateway = auditObject(variant.versionStamp.gateway);
+  const database = auditObject(variant.versionStamp.database);
+  const strategy = auditObject(variant.versionStamp.strategyConfig);
+  const values = [
+    `frontend ${String(frontend.buildId ?? "—").slice(0, 12)}`,
+    `solver ${String(solver.workerVersion ?? solver.configuredVersion ?? "—")}`,
+    `gateway ${String(gateway.deploymentId ?? "—").slice(0, 12)}`,
+    `DB ${String(database.schemaVersion ?? "—")}`,
+    `Matrix v${String(strategy.matrixVersion ?? "—")} / ${String(strategy.strategySemanticsVersion ?? "—")}`,
+  ];
+  return values.join(" • ");
+}
+
 function leaderOptimizationSource(variants:SolverVariant[],mode:SolverLeaderOptimizationMode){
   const valid=variants.filter(variant=>variant.hardViolations===0);
   if(!valid.length)return null;
@@ -315,6 +350,8 @@ export function SolverV2Panel({
     budgetMinor:selectedWorkspace.variants[0].finance?.budgetMinor??null,
     currency:selectedWorkspace.variants[0].finance?.currency??"PLN",
     metrics:{manualStudio:true},
+    stageProof:[],
+    versionStamp:{},
   } : generatedSelectedVariant;
   const leaderPublicationReady = !leaderVariant
     || selectedVariant?.id!==leaderVariant.id
@@ -1207,6 +1244,8 @@ export function SolverV2Panel({
             <dl className="solver-v2-analysis">
               {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
               {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
+              {variant.stageProof.length>0&&<div><dt>Dowód etapów optymalizacji<small>Status, wynik, zamrożona granica, tolerancja, budżet, czas i użycie fallbacku są zapisane dla każdego etapu.</small></dt><dd>{solverStageProofLabel(variant)}</dd></div>}
+              {Object.keys(variant.versionStamp).length>0&&<div><dt>Stamp wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
             </dl>
           </details>
           {variant.strategy.name.toLocaleLowerCase("pl-PL").includes("równ")&&Number(variant.metrics.LOAD_UTILIZATION_SPREAD_BPS??0)>1000&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Podział godzin nadal wymaga decyzji lidera</strong><small>Różnica wykorzystania indywidualnych wymiarów przekracza 100 punktów procentowych. Nie jest to procent różnicy godzin min–max. Otwórz „Rozkład pracy”, aby sprawdzić godziny, wymiary, dostępność i decyzje generatora dla każdej osoby.</small></span></div>}

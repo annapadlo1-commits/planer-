@@ -89,6 +89,8 @@ export type SolverVariant = {
   selected: boolean;
   equivalentToVariantId?: string | null;
   metrics: Record<string, unknown>;
+  stageProof: Record<string, unknown>[];
+  versionStamp: Record<string, unknown>;
 };
 
 export type SolverVariants = { runId: string; variants: SolverVariant[] };
@@ -1072,6 +1074,8 @@ function normalizeVariant(value: unknown): SolverVariant {
   const cost = source.totalCostMinor ?? source.total_cost_minor;
   const budget = source.budgetMinor ?? source.budget_minor;
   const finance = record(source.finance);
+  const stageProof = valueOf<unknown>(source, "stageProof", "stage_proof", []);
+  const versionStamp = valueOf<unknown>(source, "versionStamp", "version_stamp", {});
   return {
     id: String(valueOf(source, "id", "id", "")),
     name: String(valueOf(source, "name", "name", valueOf(strategy, "name", "name", "Wariant"))),
@@ -1095,6 +1099,8 @@ function normalizeVariant(value: unknown): SolverVariant {
     selected: Boolean(valueOf(source, "selected", "selected", false)),
     equivalentToVariantId: valueOf<string | null | undefined>(source, "equivalentToVariantId", "equivalent_to_variant_id", undefined),
     metrics,
+    stageProof: Array.isArray(stageProof) ? stageProof.map(record) : [],
+    versionStamp: record(versionStamp),
   };
 }
 
@@ -1340,6 +1346,7 @@ export async function requestSolverRun(
     p_scope_role_id: input.scopeRoleId ?? null,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
+    p_frontend_version: process.env.NEXT_PUBLIC_APP_BUILD_ID || "local",
   }));
   const run = normalizeRun(payload);
   if (!run.id) throw new Error("RUN_ID_MISSING");

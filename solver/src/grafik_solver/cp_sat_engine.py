@@ -853,8 +853,10 @@ class CpSatScheduleEngine:
         common_hint_solver = common_solver
         fair_coverage_seed_status: str | None = None
         fair_coverage_seed_budget = 0.0
+        fair_coverage_seed_elapsed = 0.0
         fair_coverage_spread_status: str | None = None
         fair_coverage_spread_budget = 0.0
+        fair_coverage_spread_elapsed = 0.0
         fair_coverage_seed_minimum = int(
             common_solver.value(
                 common.metrics["MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"]
@@ -914,6 +916,9 @@ class CpSatScheduleEngine:
                 strategy=None,
                 stage_name="FAIR_COVERAGE_SEED",
                 time_limit_seconds=fair_coverage_seed_budget,
+            )
+            fair_coverage_seed_elapsed = float(
+                self._solver_measure(fair_seed_solver, "wall_time") or 0.0
             )
             if fair_seed_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
                 candidate_minimum = int(
@@ -976,6 +981,9 @@ class CpSatScheduleEngine:
                     strategy=None,
                     stage_name="FAIR_COVERAGE_SPREAD",
                     time_limit_seconds=fair_coverage_spread_budget,
+                )
+                fair_coverage_spread_elapsed = float(
+                    self._solver_measure(spread_solver, "wall_time") or 0.0
                 )
                 if spread_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
                     common_hint_solver = spread_solver
@@ -1217,6 +1225,21 @@ class CpSatScheduleEngine:
                     "status": common_solver.status_name(common_status),
                     "tolerance": 0,
                     "frozenUpperBound": minimum_unfilled,
+                    "timeBudgetSeconds": round(
+                        common_time_limit
+                        + fair_coverage_seed_budget
+                        + fair_coverage_spread_budget,
+                        3,
+                    ),
+                    "elapsedSeconds": round(
+                        float(
+                            self._solver_measure(common_solver, "wall_time") or 0.0
+                        )
+                        + fair_coverage_seed_elapsed
+                        + fair_coverage_spread_elapsed,
+                        3,
+                    ),
+                    "usedFallback": False,
                     "roleBackupPenalty": minimum_role_backup_penalty,
                     "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps": (
                         fair_coverage_seed_minimum
@@ -1335,6 +1358,7 @@ class CpSatScheduleEngine:
                 overtime_value = 0 if fallback_overtime == 0 else None
                 used_overtime_fallback = False
                 overtime_time_budget = 0.0
+                overtime_elapsed_seconds = 0.0
 
                 if overtime_value is None:
                     artifacts.model.clear_objective()
@@ -1369,6 +1393,9 @@ class CpSatScheduleEngine:
                             not snapshot.settings.require_optimal
                             and feasible_fallback_solver is not None
                         ),
+                    )
+                    overtime_elapsed_seconds = float(
+                        self._solver_measure(overtime_solver, "wall_time") or 0.0
                     )
                     if (
                         overtime_status == cp_model.UNKNOWN
@@ -1415,6 +1442,20 @@ class CpSatScheduleEngine:
                             else overtime_solver.status_name(overtime_status)
                         ),
                         "overtimeFrozenUpperBound": overtime_value,
+                        "timeBudgetSeconds": round(
+                            stage_results[0]["timeBudgetSeconds"]
+                            + overtime_time_budget,
+                            3,
+                        ),
+                        "elapsedSeconds": round(
+                            stage_results[0]["elapsedSeconds"]
+                            + overtime_elapsed_seconds,
+                            3,
+                        ),
+                        "usedFallback": used_overtime_fallback,
+                        "overtimeElapsedSeconds": round(
+                            overtime_elapsed_seconds, 3
+                        ),
                         **(
                             {"overtimeTimeBudgetSeconds": round(overtime_time_budget, 3)}
                             if overtime_time_budget > 0
@@ -1749,6 +1790,9 @@ class CpSatScheduleEngine:
                                 "frozenUpperBound": (
                                     certified_tier_value + allowed_degradation
                                 ),
+                                "timeBudgetSeconds": 0.0,
+                                "elapsedSeconds": 0.0,
+                                "usedFallback": False,
                                 "terms": tier_terms[tier],
                                 "certifiedCoverageSeed": True,
                             }
@@ -1805,6 +1849,9 @@ class CpSatScheduleEngine:
                                 "bestBound": 0.0,
                                 "tolerance": allowed_degradation,
                                 "frozenUpperBound": allowed_degradation,
+                                "timeBudgetSeconds": 0.0,
+                                "elapsedSeconds": 0.0,
+                                "usedFallback": False,
                                 "terms": tier_terms[tier],
                                 "verifiedZeroIncumbent": True,
                             }
@@ -1841,6 +1888,9 @@ class CpSatScheduleEngine:
                                 "bestBound": float(exact_value),
                                 "tolerance": allowed_degradation,
                                 "frozenUpperBound": (exact_value + allowed_degradation),
+                                "timeBudgetSeconds": 0.0,
+                                "elapsedSeconds": 0.0,
+                                "usedFallback": False,
                                 "terms": tier_terms[tier],
                             }
                         )
@@ -1945,6 +1995,9 @@ class CpSatScheduleEngine:
                             not in (zero_hour_guard_tier, primary_role_guard_tier)
                         ),
                     )
+                    tier_elapsed_seconds = float(
+                        self._solver_measure(final_solver, "wall_time") or 0.0
+                    )
                     used_fallback = False
                     if (
                         final_status == cp_model.UNKNOWN
@@ -2006,6 +2059,8 @@ class CpSatScheduleEngine:
                             "tolerance": allowed_degradation,
                             "frozenUpperBound": exact_value + allowed_degradation,
                             "timeBudgetSeconds": round(tier_time_budget, 3),
+                            "elapsedSeconds": round(tier_elapsed_seconds, 3),
+                            "usedFallback": used_fallback,
                             "terms": tier_terms[tier],
                             **(
                                 {"verifiedZeroIncumbent": True}
@@ -2060,15 +2115,16 @@ class CpSatScheduleEngine:
                 exclusions = self._add_diversity_constraints(artifacts, results)
                 remaining = strategy_deadline - self._clock()
                 if exclusions and remaining > 0.05:
+                    diversity_time_budget = min(
+                        MAX_RELAXED_DIVERSITY_SECONDS,
+                        max(0.001, remaining - 0.01),
+                    )
                     diversity_solver, diversity_status = self._solve_model(
                         artifacts.model,
                         snapshot,
                         strategy=strategy,
                         stage_name="DIVERSIFY",
-                        time_limit_seconds=min(
-                            MAX_RELAXED_DIVERSITY_SECONDS,
-                            max(0.001, remaining - 0.01),
-                        ),
+                        time_limit_seconds=diversity_time_budget,
                         disable_presolve=True,
                     )
                     if diversity_status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
@@ -2077,9 +2133,24 @@ class CpSatScheduleEngine:
                             {
                                 "tier": max(tiers) + 1 if tiers else 1,
                                 "name": "DIVERSIFY",
+                                "value": 0,
                                 "status": diversity_solver.status_name(
                                     diversity_status
                                 ),
+                                "tolerance": 0,
+                                "frozenUpperBound": 0,
+                                "timeBudgetSeconds": round(
+                                    diversity_time_budget, 3
+                                ),
+                                "elapsedSeconds": round(
+                                    float(
+                                        self._solver_measure(
+                                            diversity_solver, "wall_time"
+                                        ) or 0.0
+                                    ),
+                                    3,
+                                ),
+                                "usedFallback": False,
                                 "businessObjectiveBoundsPreserved": True,
                                 "excludedEquivalentStrategies": list(exclusions),
                             },
