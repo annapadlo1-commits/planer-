@@ -3717,18 +3717,29 @@ class CpSatScheduleEngine:
                     explicit_utilization_participants.add(employee.id)
                 else:
                     fallback_utilization_participants.add(employee.id)
-                # Achievable target is an upper bound on minutes this employee
-                # can receive in the snapshot, so utilization is naturally
-                # capped at 1000 (100%).  The fixed bound also keeps the
-                # lexicographic score safely inside CP-SAT int64 arithmetic.
+                # Fairness measures target realization, not overtime volume.
+                # ALLOWED employees can legitimately exceed their achievable
+                # target up to the hard monthly maximum, so cap the numerator
+                # exactly as the category-wide utilization metric does above.
+                # Without this min(), an employee above 100% made the equality
+                # contradict the fixed 0..1000 utilization domain and the
+                # otherwise hard-feasible overtime model became infeasible.
                 bound = 1000
+                capped_minutes = model.new_int_var(
+                    0,
+                    basis,
+                    f"pool_capped_minutes|{role_id}|{location_id}|{employee.id}",
+                )
+                model.add_min_equality(
+                    capped_minutes, [total_minutes[employee.id], basis]
+                )
                 utilization = model.new_int_var(
                     0,
                     bound,
                     f"pool_utilization_bps|{role_id}|{location_id}|{employee.id}",
                 )
                 model.add_division_equality(
-                    utilization, total_minutes[employee.id] * 1000, basis
+                    utilization, capped_minutes * 1000, basis
                 )
                 role_utilizations.append(utilization)
                 utilization_bound = max(utilization_bound, bound)
