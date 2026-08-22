@@ -199,6 +199,8 @@ class Strategy:
     label: str
     sort_order: int
     objective_terms: tuple[ObjectiveTerm, ...]
+    strategy_semantics_version: str | None = None
+    mandatory_product_guards: tuple[str, ...] = ()
     time_limit_seconds: int | None = None
     random_seed: int | None = None
 
@@ -213,6 +215,23 @@ class Strategy:
         )
         limit_raw = _pick(raw, "timeLimitSeconds", "time_limit_seconds", default=None)
         seed_raw = _pick(raw, "randomSeed", "random_seed", default=None)
+        semantics_raw = _pick(
+            raw,
+            "strategySemanticsVersion",
+            "strategy_semantics_version",
+            default=None,
+        )
+        guards_raw = _pick(
+            raw,
+            "mandatoryProductGuards",
+            "mandatory_product_guards",
+            default=[],
+        )
+        if not isinstance(guards_raw, Sequence) or isinstance(
+            guards_raw, (str, bytes, bytearray)
+        ):
+            raise SnapshotError("mandatoryProductGuards must be an array")
+        guards = tuple(str(item).upper() for item in guards_raw)
         return cls(
             id=str(_pick(raw, "id")),
             code=str(_pick(raw, "code", default=f"STRATEGY_{index + 1}")),
@@ -221,6 +240,10 @@ class Strategy:
                 _pick(raw, "sortOrder", "sort_order", default=index), "sortOrder", 0
             ),
             objective_terms=terms,
+            strategy_semantics_version=(
+                None if semantics_raw is None else str(semantics_raw)
+            ),
+            mandatory_product_guards=guards,
             time_limit_seconds=(
                 None
                 if limit_raw is None

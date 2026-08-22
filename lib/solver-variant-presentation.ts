@@ -23,12 +23,17 @@ const HIDDEN_METRICS = new Set([
   "ACHIEVABLE_TARGET_MINUTES_TOTAL",
   "ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL",
   "ESTIMATED_ACHIEVABLE_TARGET_METHOD_VERSION",
+  "MANDATORY_PRODUCT_GUARDS_VERSION",
 ]);
 
 const ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION =
   "Szacunek uwzględniający dostępność, kwalifikacje i podstawowe limity czasu pracy. W złożonych przypadkach kolizji zmian, odpoczynku lub limitów kolejnych dni rzeczywista możliwa liczba godzin może być niższa.";
 
 const METRICS: Record<string, { label: string; explanation: string; unit?: "MINUTES" }> = {
+  MATRIX_RUNTIME_SEMANTICS_MATCH: {
+    label: "Zgodność konfiguracji ze sposobem działania silnika",
+    explanation: "Silnik potwierdził, że wykonał poziomy celów zapisane w opublikowanej konfiguracji — bez ukrytej zmiany kolejności strategii.",
+  },
   PREFERENCE_VIOLATIONS: {
     label: "Niespełnione prośby pracowników",
     explanation: "Ile miękkich preferencji dostępności nie udało się spełnić. Mniej oznacza wariant bliższy prośbom zespołu.",
@@ -108,7 +113,9 @@ export function presentSolverVariantMetrics(metrics: Record<string, unknown>): S
     const nominalTargetCount = finiteNumber(metrics.NOMINAL_TARGET_EMPLOYEE_COUNT) ?? 0;
     const utilizationTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_TARGET_COUNT) ?? 0;
     const fallbackTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_FALLBACK_COUNT) ?? 0;
-    const value = code === "NOMINAL_DEVIATION_MINUTES" && nominalTargetCount === 0
+    const value = code === "MATRIX_RUNTIME_SEMANTICS_MATCH"
+      ? finiteNumber(rawValue) === 1 ? "Potwierdzona" : "Niepotwierdzona"
+      : code === "NOMINAL_DEVIATION_MINUTES" && nominalTargetCount === 0
       ? "Brak wymiarów"
       : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
         ? "Brak danych"

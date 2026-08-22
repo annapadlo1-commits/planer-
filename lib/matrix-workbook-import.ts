@@ -1,3 +1,8 @@
+import {
+  DEFAULT_STRATEGY_DESCRIPTIONS,
+  DEFAULT_STRATEGY_SOLVER_CONTRACT,
+} from "./solver-strategy-contract.ts";
+
 export type MatrixWorkbookPayload = {
   settings: Record<string, unknown>;
   roleCategories: Record<string, unknown>[];
@@ -102,9 +107,9 @@ const DEFAULT_SCENARIOS=[{
 const DEFAULT_SHIFT_COLOR="#879681";
 
 const DEFAULT_STRATEGIES=[
-  {code:"BALANCED",name:"Zrównoważony",description:"Kompromis kosztu, preferencji i równego obciążenia. Dobry wariant startowy, gdy żaden z tych celów nie ma bezwzględnego pierwszeństwa.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"1",active:true},
-  {code:"MIN_COST",name:"Minimalny koszt",description:"Po zapewnieniu najlepszej możliwej obsady wybiera najniższy łączny koszt. Nadgodziny i pozostałe kryteria rozstrzygają dopiero przy takim samym koszcie.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"2",active:true},
-  {code:"PREFERENCES",name:"Preferencje i równy podział",description:"Po uzupełnieniu wymaganej obsady najpierw maksymalizuje realizację celu najsłabiej obsłużonej osoby, następnie wyrównuje procent realizacji indywidualnych celów i odchylenia godzinowe. Preferencje rozstrzygają dopiero między podobnie sprawiedliwymi rozwiązaniami, a koszt później.",solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"3",active:true},
+  {code:"BALANCED",name:"Zrównoważony",description:DEFAULT_STRATEGY_DESCRIPTIONS.BALANCED,solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"1",active:true},
+  {code:"MIN_COST",name:"Minimalny koszt",description:DEFAULT_STRATEGY_DESCRIPTIONS.MIN_COST,solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"2",active:true},
+  {code:"PREFERENCES",name:"Preferencje i równy podział",description:DEFAULT_STRATEGY_DESCRIPTIONS.PREFERENCES,solverCode:"CP_SAT",solverOptions:{maxTimeSeconds:120,randomSeed:0},sortOrder:"3",active:true},
 ];
 
 const DEFAULT_OBJECTIVE_WEIGHTS:Record<string,Record<string,number>>={
@@ -604,7 +609,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const normalizedScenarioPayRuleOverrides=scenarioPayRuleOverrides.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
   const normalizedScenarioBudgets=scenarioBudgets.map(budget=>({...budget,scenarioCode:normalizeScenarioCode(String(budget.scenarioCode??""))}));
 
-  return {settings:{...settings,standbyTiersPerRoleDay:0,standbyGroups},roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
+  return {settings:{...settings,standbyTiersPerRoleDay:0,standbyGroups,...DEFAULT_STRATEGY_SOLVER_CONTRACT},roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
     payRules,scenarioPayRuleOverrides:normalizedScenarioPayRuleOverrides,scenarioBudgets:normalizedScenarioBudgets,employees,employeeDuties,employeeRoles,
     employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties,adHocWorkers,
     _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};

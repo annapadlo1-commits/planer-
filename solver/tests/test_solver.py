@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from grafik_solver.canonical import sha256_hex
 from grafik_solver.config import WorkerConfig
 from grafik_solver.cp_sat_engine import (
+    MANDATORY_PRODUCT_GUARDS,
     CpSatScheduleEngine,
     OptimizationError,
     OptimizationIncomplete,
@@ -1882,10 +1883,18 @@ class SolverTests(unittest.TestCase):
             "label": "Preferencje i rowny podzial",
             "sortOrder": 0,
             "timeLimitSeconds": 30,
+            "strategySemanticsVersion": "B4F165_V1",
+            "mandatoryProductGuards": list(MANDATORY_PRODUCT_GUARDS),
             "objectiveTerms": [
-                {"tier": 1, "metric": "PREFERENCE_VIOLATIONS", "weight": 250_000, "direction": "MIN"},
+                {"tier": 1, "metric": "UNFILLED", "weight": 1_000_000, "direction": "MIN"},
                 {"tier": 2, "metric": "ROLE_LOAD_FAIRNESS_SCORE", "weight": 1, "direction": "MIN"},
                 {"tier": 3, "metric": "NOMINAL_DEVIATION_MINUTES", "weight": 1, "direction": "MIN"},
+                {"tier": 4, "metric": "PREFERENCE_VIOLATIONS", "weight": 250_000, "direction": "MIN"},
+                {"tier": 5, "metric": "ROLE_WEEKEND_FAIRNESS_SCORE", "weight": 1, "direction": "MIN"},
+                {"tier": 6, "metric": "TOTAL_COST", "weight": 1, "direction": "MIN"},
+                {"tier": 6, "metric": "HOME_LOCATION_VIOLATIONS", "weight": 1, "direction": "MIN"},
+                {"tier": 7, "metric": "OVERTIME_MINUTES", "weight": 1, "direction": "MIN"},
+                {"tier": 7, "metric": "BASELINE_CHANGES", "weight": 1, "direction": "MIN"},
             ],
         }]
 
@@ -1899,6 +1908,7 @@ class SolverTests(unittest.TestCase):
             next(stage["tier"] for stage in variant.stage_objectives if any(term.get("metric") == "PREFERENCE_VIOLATIONS" for term in stage.get("terms", []))),
         )
         self.assertGreater(variant.metrics["PREFERENCE_VIOLATIONS"], 0)
+        self.assertEqual(variant.metrics["MATRIX_RUNTIME_SEMANTICS_MATCH"], 1)
         stage_names = [stage["name"] for stage in variant.stage_objectives]
         coverage_stage = variant.stage_objectives[0]
         self.assertEqual(coverage_stage["name"], "UNFILLED")

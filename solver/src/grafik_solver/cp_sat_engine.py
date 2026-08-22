@@ -83,6 +83,53 @@ METRIC_ALIASES = {
     "NON_HOME_LOCATION_COUNT": "HOME_LOCATION_VIOLATIONS",
 }
 
+STRATEGY_SEMANTICS_VERSION = "B4F165_V1"
+MANDATORY_PRODUCT_GUARDS = (
+    "HARD_CONSTRAINTS",
+    "COVERAGE",
+    "ROLE_BACKUP",
+    "OVERTIME",
+    "ZERO_HOURS",
+    "PRIMARY_ROLE",
+    "MAX_MIN_FAIRNESS",
+    "FAIRNESS_SPREAD",
+)
+BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
+    "BALANCED": {
+        "UNFILLED": 1,
+        "TOTAL_COST": 2,
+        "PREFERENCE_VIOLATIONS": 2,
+        "OVERTIME_MINUTES": 2,
+        "NOMINAL_DEVIATION_MINUTES": 2,
+        "ROLE_LOAD_FAIRNESS_SCORE": 2,
+        "ROLE_WEEKEND_FAIRNESS_SCORE": 2,
+        "HOME_LOCATION_VIOLATIONS": 2,
+        "BASELINE_CHANGES": 2,
+    },
+    "MIN_COST": {
+        "UNFILLED": 1,
+        "TOTAL_COST": 2,
+        "OVERTIME_MINUTES": 3,
+        "HOME_LOCATION_VIOLATIONS": 3,
+        "PREFERENCE_VIOLATIONS": 4,
+        "NOMINAL_DEVIATION_MINUTES": 5,
+        "ROLE_LOAD_FAIRNESS_SCORE": 5,
+        "ROLE_WEEKEND_FAIRNESS_SCORE": 5,
+        "BASELINE_CHANGES": 6,
+    },
+    "PREFERENCES": {
+        "UNFILLED": 1,
+        "ROLE_LOAD_FAIRNESS_SCORE": 2,
+        "NOMINAL_DEVIATION_MINUTES": 3,
+        "PREFERENCE_VIOLATIONS": 4,
+        "ROLE_WEEKEND_FAIRNESS_SCORE": 5,
+        "TOTAL_COST": 6,
+        "HOME_LOCATION_VIOLATIONS": 6,
+        "OVERTIME_MINUTES": 7,
+        "BASELINE_CHANGES": 7,
+    },
+}
+
 # Technical resource ceilings, not business rules. Matrix remains fully
 # dynamic inside these bounds; the limits protect PostgreSQL, the worker host and
 # CP-SAT's signed 64-bit arithmetic from an accidental unbounded scenario.
@@ -547,6 +594,73 @@ class CpSatScheduleEngine:
             not other_goal_tiers or min(cost_tiers) < min(other_goal_tiers)
         )
 
+    @staticmethod
+    def _fairness_precedes_preferences_and_cost(strategy: Strategy) -> bool:
+        """Derive fairness-first behavior only from published objective tiers."""
+        metric_tiers: dict[str, list[int]] = defaultdict(list)
+        for term in strategy.objective_terms:
+            if term.weight == 0:
+                continue
+            metric_tiers[METRIC_ALIASES.get(term.metric, term.metric)].append(
+                term.tier
+            )
+        fairness_tiers = [
+            tier
+            for metric in (
+                "ROLE_LOAD_FAIRNESS_SCORE",
+                "LOAD_UTILIZATION_SPREAD_BPS",
+                "NOMINAL_DEVIATION_MINUTES",
+            )
+            for tier in metric_tiers.get(metric, [])
+        ]
+        later_goal_tiers = [
+            tier
+            for metric in ("PREFERENCE_VIOLATIONS", "TOTAL_COST")
+            for tier in metric_tiers.get(metric, [])
+        ]
+        return bool(fairness_tiers and later_goal_tiers) and min(
+            fairness_tiers
+        ) < min(later_goal_tiers)
+
+    @staticmethod
+    def _validate_strategy_semantics(strategy: Strategy) -> None:
+        """Reject a declared built-in contract that the worker would not execute."""
+        version = strategy.strategy_semantics_version
+        if version is None:
+            return
+        if version != STRATEGY_SEMANTICS_VERSION:
+            raise SnapshotError(
+                "STRATEGY_SEMANTICS_MISMATCH: unsupported declared semantics "
+                f"{version} for {strategy.code}"
+            )
+        if strategy.mandatory_product_guards != MANDATORY_PRODUCT_GUARDS:
+            raise SnapshotError(
+                "STRATEGY_SEMANTICS_MISMATCH: mandatory product guards differ "
+                f"for {strategy.code}"
+            )
+        expected = BUILT_IN_STRATEGY_OBJECTIVE_TIERS.get(strategy.code.upper())
+        if expected is None:
+            raise SnapshotError(
+                "STRATEGY_SEMANTICS_MISMATCH: the declared contract is only "
+                f"defined for built-in strategies, got {strategy.code}"
+            )
+        actual: dict[str, set[int]] = defaultdict(set)
+        for term in strategy.objective_terms:
+            if term.weight == 0:
+                continue
+            metric_name = METRIC_ALIASES.get(term.metric, term.metric)
+            actual[metric_name].add(term.tier)
+        mismatches = [
+            f"{metric}={sorted(actual.get(metric, set()))}, expected={tier}"
+            for metric, tier in expected.items()
+            if actual.get(metric) != {tier}
+        ]
+        if mismatches:
+            raise SnapshotError(
+                "STRATEGY_SEMANTICS_MISMATCH: declared Matrix tiers differ "
+                f"from the {strategy.code} runtime contract: " + "; ".join(mismatches)
+            )
+
     def stop(self) -> None:
         self._cancel_event.set()
         with self._solver_lock:
@@ -557,6 +671,8 @@ class CpSatScheduleEngine:
     def solve(self, snapshot: Snapshot) -> tuple[VariantResult, ...]:
         self._cancel_event.clear()
         global_deadline = self._clock() + self._cp_sat_budget_seconds
+        for strategy in snapshot.strategies:
+            self._validate_strategy_semantics(strategy)
         self._validate_snapshot_references(snapshot)
         validate_pay_rules(snapshot)
         slots = generate_slots(snapshot)
@@ -747,7 +863,7 @@ class CpSatScheduleEngine:
         if (
             not snapshot.settings.require_optimal
             and any(
-                strategy.code.upper() == "PREFERENCES"
+                self._fairness_precedes_preferences_and_cost(strategy)
                 for strategy in snapshot.strategies
             )
             and common.metric_bounds[
@@ -777,7 +893,7 @@ class CpSatScheduleEngine:
             configured_preference_budgets = [
                 float(strategy.time_limit_seconds)
                 for strategy in snapshot.strategies
-                if strategy.code.upper() == "PREFERENCES"
+                if self._fairness_precedes_preferences_and_cost(strategy)
                 and strategy.time_limit_seconds is not None
             ]
             preferred_seed_ceiling = (
@@ -1040,27 +1156,6 @@ class CpSatScheduleEngine:
                 strategy.code,
                 coverage_hint_count,
             )
-            preference_fairness_strategy = strategy.code.upper() == "PREFERENCES"
-
-            def effective_objective_tier(metric_name: str, configured_tier: int) -> int:
-                """Keep the PREFERENCES promise safe from stale Matrix ordering."""
-                if not preference_fairness_strategy:
-                    return configured_tier
-                return {
-                    "UNFILLED": 1,
-                    "ROLE_LOAD_FAIRNESS_SCORE": 2,
-                    "LOAD_UTILIZATION_SPREAD_BPS": 2,
-                    "NOMINAL_DEVIATION_MINUTES": 3,
-                    "PREFERENCE_VIOLATIONS": 4,
-                    "ROLE_WEEKEND_FAIRNESS_SCORE": 5,
-                    "WEEKEND_SPREAD": 5,
-                    "TOTAL_COST": 6,
-                    "HOME_LOCATION_VIOLATIONS": 6,
-                    "OVERTIME_MINUTES": 7,
-                    "BASELINE_CHANGES": 7,
-                    "BUDGET_TARGET_EXCESS": 8,
-                }.get(metric_name, max(9, configured_tier))
-
             active_metric_tiers: dict[str, list[int]] = defaultdict(list)
             for objective_term in strategy.objective_terms:
                 if objective_term.weight == 0:
@@ -1068,9 +1163,7 @@ class CpSatScheduleEngine:
                 metric_name = METRIC_ALIASES.get(
                     objective_term.metric, objective_term.metric
                 )
-                active_metric_tiers[metric_name].append(
-                    effective_objective_tier(metric_name, objective_term.tier)
-                )
+                active_metric_tiers[metric_name].append(objective_term.tier)
             fairness_tiers = [
                 tier
                 for metric_name in (
@@ -1083,6 +1176,9 @@ class CpSatScheduleEngine:
             cost_tiers = active_metric_tiers.get("TOTAL_COST", [])
             fairness_first = bool(fairness_tiers) and (
                 not cost_tiers or min(fairness_tiers) < min(cost_tiers)
+            )
+            preference_fairness_strategy = (
+                self._fairness_precedes_preferences_and_cost(strategy)
             )
             cost_first = self._cost_precedes_other_goals(strategy)
             applied_fairness_bounds: dict[str, int] = {}
@@ -1338,7 +1434,7 @@ class CpSatScheduleEngine:
             tier_terms: dict[int, list[dict[str, Any]]] = defaultdict(list)
             for term_index, term in enumerate(strategy.objective_terms):
                 metric_name = METRIC_ALIASES.get(term.metric, term.metric)
-                effective_tier = effective_objective_tier(metric_name, term.tier)
+                effective_tier = term.tier
                 if metric_name not in artifacts.metrics:
                     raise SnapshotError(
                         f"Strategy {strategy.id} uses unsupported metric {term.metric}"
@@ -3997,6 +4093,17 @@ class CpSatScheduleEngine:
                 baseline_terms.append(1 if variable is None else 1 - variable)
 
         metrics = {
+            "MATRIX_RUNTIME_SEMANTICS_MATCH": int(
+                bool(snapshot.strategies)
+                and all(
+                    strategy.strategy_semantics_version
+                    == STRATEGY_SEMANTICS_VERSION
+                    and strategy.mandatory_product_guards
+                    == MANDATORY_PRODUCT_GUARDS
+                    for strategy in snapshot.strategies
+                )
+            ),
+            "MANDATORY_PRODUCT_GUARDS_VERSION": 1,
             "UNFILLED": _sum(unfilled.values()),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
             "TOTAL_COST": total_cost_expression,
@@ -4034,6 +4141,8 @@ class CpSatScheduleEngine:
             "BASELINE_CHANGES": _sum(baseline_terms),
         }
         metric_bounds = {
+            "MATRIX_RUNTIME_SEMANTICS_MATCH": 1,
+            "MANDATORY_PRODUCT_GUARDS_VERSION": 1,
             "UNFILLED": len(slots),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
             "TOTAL_COST": total_cost_upper,
