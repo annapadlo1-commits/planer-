@@ -661,8 +661,10 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "przyciski etapu muszą dostać własny widoczny wiersz na zwężonym ekranie");
   assert.match(styles,/leader-studio-fullscreen\{height:100dvh;max-height:100dvh;box-sizing:border-box\}/,
     "pełnoekranowe Studio nie może być wyższe od rzeczywistego obszaru przeglądarki");
-  assert.match(styles,/leader-studio-fullscreen-body\{[^}]*padding-bottom:max\(96px,env\(safe-area-inset-bottom\)\)[^}]*scroll-padding-bottom:max\(96px,env\(safe-area-inset-bottom\)\)[^}]*scrollbar-gutter:stable both-edges/,
-    "dolne akcje muszą pozostać nad paskiem przewijania i bezpieczną krawędzią okna");
+  assert.match(styles,/leader-studio-fullscreen-body\{[^}]*container-type:size[^}]*padding-bottom:14px[^}]*scroll-padding-bottom:14px[^}]*scrollbar-gutter:stable both-edges/,
+    "główny scroll nie może sztucznie powiększać obszaru bocznej puli pracowników");
+  assert.match(styles,/leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel,\.leader-studio>\.leader-studio-impact\{height:calc\(100cqh - 28px\);max-height:calc\(100cqh - 28px\)\}/,
+    "boczne panele mają mieścić się w widocznym scrollporcie Studia, niezależnie od liczby tygodni kalendarza");
 });
 
 test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
