@@ -665,6 +665,8 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "główny scroll nie może sztucznie powiększać obszaru bocznej puli pracowników");
   assert.match(styles,/leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel,\.leader-studio>\.leader-studio-impact\{height:calc\(100cqh - 112px\);max-height:calc\(100cqh - 112px\)\}/,
     "boczne panele mają mieścić się w widocznym scrollporcie Studia, niezależnie od liczby tygodni kalendarza");
+  assert.match(styles,/leader-employee-pool>header>\.secondary-button\{position:absolute[^}]*max-width:92px/,
+    "po wyborze osoby przycisk czyszczenia nie może zmniejszać wysokości przewijanej listy ani przesuwać kalendarza");
 });
 
 test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
