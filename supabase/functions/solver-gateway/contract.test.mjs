@@ -467,6 +467,103 @@ test("accepts a diversity proof that preserves frozen objectives", async () => {
   }]);
 });
 
+test("accepts the month-scoped symmetric-remainder rotation proof", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives.push({
+    tier: 2,
+    name: "ROTATION_TIE_BREAK",
+    value: 14_400,
+    status: "OPTIMAL",
+    bestBound: 14_400,
+    tolerance: 0,
+    frozenUpperBound: 14_400,
+    timeBudgetSeconds: 0,
+    elapsedSeconds: 0,
+    usedFallback: false,
+    rotationKeyVersion: "MONTH_EMPLOYEE_SHA256_V1",
+    rotationMonth: "2026-08",
+    rotationOrderHash: "b".repeat(64),
+    scoreDefinition:
+      "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)",
+    scope: "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS",
+    applied: true,
+    interchangeableGroupCount: 1,
+    rotatedEmployeeCount: 20,
+    changedAssignmentCount: 2,
+    excludedIdentityBoundEmployeeCount: 0,
+    businessMetricVectorPreserved: true,
+    businessMetricVectorHash: "c".repeat(64),
+    solutionHashBefore: "d".repeat(64),
+    solutionHashAfter: "e".repeat(64),
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects incomplete or contradictory rotation proofs", async () => {
+  for (const mutate of [
+    (stage) => { stage.rotationMonth = "2026-13"; },
+    (stage) => { stage.businessMetricVectorPreserved = false; },
+    (stage) => { stage.changedAssignmentCount = 0; },
+    (stage) => { stage.unexpected = true; },
+  ]) {
+    const calls = [];
+    const handler = handlerWith(calls);
+    const variant = normalizedVariant();
+    const stage = {
+      tier: 2,
+      name: "ROTATION_TIE_BREAK",
+      value: 14_400,
+      status: "OPTIMAL",
+      bestBound: 14_400,
+      tolerance: 0,
+      frozenUpperBound: 14_400,
+      timeBudgetSeconds: 0,
+      elapsedSeconds: 0,
+      usedFallback: false,
+      rotationKeyVersion: "MONTH_EMPLOYEE_SHA256_V1",
+      rotationMonth: "2026-08",
+      rotationOrderHash: "b".repeat(64),
+      scoreDefinition:
+        "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)",
+      scope: "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS",
+      applied: true,
+      interchangeableGroupCount: 1,
+      rotatedEmployeeCount: 20,
+      changedAssignmentCount: 2,
+      excludedIdentityBoundEmployeeCount: 0,
+      businessMetricVectorPreserved: true,
+      businessMetricVectorHash: "c".repeat(64),
+      solutionHashBefore: "d".repeat(64),
+      solutionHashAfter: "e".repeat(64),
+    };
+    mutate(stage);
+    variant.stageObjectives.push(stage);
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  }
+});
+
 test("rejects non-JSON requests and unsupported methods", async () => {
   const handler = handlerWith();
   const get = await handler(new Request("https://example.test", {

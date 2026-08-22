@@ -385,6 +385,115 @@ function validateObjectiveTerm(value: unknown): void {
 
 function validateStageObjective(value: unknown): void {
   assertObject(value, "STAGE_OBJECTIVE");
+  if (value.name === "ROTATION_TIE_BREAK") {
+    assertExactKeys(value, [
+      "tier",
+      "name",
+      "value",
+      "status",
+      "bestBound",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
+      "rotationKeyVersion",
+      "rotationMonth",
+      "rotationOrderHash",
+      "scoreDefinition",
+      "scope",
+      "applied",
+      "interchangeableGroupCount",
+      "rotatedEmployeeCount",
+      "changedAssignmentCount",
+      "excludedIdentityBoundEmployeeCount",
+      "businessMetricVectorPreserved",
+      "businessMetricVectorHash",
+      "solutionHashBefore",
+      "solutionHashAfter",
+    ]);
+    assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
+    assertInteger(
+      value.value,
+      "OBJECTIVE_VALUE",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertFiniteNumber(value.bestBound, "BEST_BOUND");
+    assertInteger(
+      value.frozenUpperBound,
+      "OBJECTIVE_BOUND",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (
+      value.status !== "OPTIMAL" ||
+      value.bestBound !== value.value ||
+      value.tolerance !== 0 ||
+      value.frozenUpperBound !== value.value ||
+      value.timeBudgetSeconds !== 0 ||
+      value.elapsedSeconds !== 0 ||
+      value.usedFallback !== false
+    ) {
+      fail(400, "INVALID_ROTATION_PROOF");
+    }
+    if (value.rotationKeyVersion !== "MONTH_EMPLOYEE_SHA256_V1") {
+      fail(400, "INVALID_ROTATION_KEY_VERSION");
+    }
+    if (
+      typeof value.rotationMonth !== "string" ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/u.test(value.rotationMonth)
+    ) {
+      fail(400, "INVALID_ROTATION_MONTH");
+    }
+    for (const hashField of [
+      "rotationOrderHash",
+      "businessMetricVectorHash",
+      "solutionHashBefore",
+      "solutionHashAfter",
+    ] as const) {
+      if (
+        typeof value[hashField] !== "string" ||
+        !HASH_PATTERN.test(value[hashField])
+      ) {
+        fail(400, `INVALID_${hashField.replace(/([A-Z])/gu, "_$1").toUpperCase()}`);
+      }
+    }
+    if (
+      value.scoreDefinition !==
+        "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)" ||
+      value.scope !== "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS"
+    ) {
+      fail(400, "INVALID_ROTATION_SCOPE");
+    }
+    assertBoolean(value.applied, "ROTATION_APPLIED");
+    for (const countField of [
+      "interchangeableGroupCount",
+      "rotatedEmployeeCount",
+      "changedAssignmentCount",
+      "excludedIdentityBoundEmployeeCount",
+    ] as const) {
+      assertInteger(value[countField], countField.toUpperCase(), 0, 100_000);
+    }
+    assertBoolean(
+      value.businessMetricVectorPreserved,
+      "BUSINESS_METRIC_VECTOR_PRESERVED",
+    );
+    if (value.businessMetricVectorPreserved !== true) {
+      fail(400, "INVALID_ROTATION_BUSINESS_GUARD");
+    }
+    if (
+      value.applied !== (value.interchangeableGroupCount > 0) ||
+      (value.applied && value.rotatedEmployeeCount < 2) ||
+      (!value.applied &&
+        (value.rotatedEmployeeCount !== 0 || value.changedAssignmentCount !== 0)) ||
+      ((value.changedAssignmentCount === 0) !==
+        (value.solutionHashBefore === value.solutionHashAfter))
+    ) {
+      fail(400, "INVALID_ROTATION_COUNTS");
+    }
+    return;
+  }
   if (value.name === "DIVERSIFY") {
     assertExactKeys(value, [
       "tier",
