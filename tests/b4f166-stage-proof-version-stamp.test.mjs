@@ -7,6 +7,9 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8"
 const migration = read(
   "supabase/migrations/20260822173000_b4f166_stage_proof_version_stamp.sql",
 );
+const postgresRegexFix = read(
+  "supabase/migrations/20260822180000_b4f166_postgres_version_stamp_regex_fix.sql",
+);
 const gatewayContract = read("supabase/functions/solver-gateway/contract.ts");
 const gatewayEntrypoint = read("supabase/functions/solver-gateway/index.ts");
 const client = read("lib/solver-v2.ts");
@@ -55,4 +58,17 @@ test("B4F-166 sends the frontend build and exposes proof in technical details", 
   assert.match(client, /versionStamp:\s*record/u);
   assert.match(panel, /Dowód etapów optymalizacji/u);
   assert.match(panel, /Stamp wersji przebiegu/u);
+});
+
+test("B4F-166 keeps the 500-character boundary outside PostgreSQL regex quantifiers", () => {
+  assert.doesNotMatch(postgresRegexFix, /\{0,499\}.*\*\$/u);
+  assert.match(
+    postgresRegexFix,
+    /length\(coalesce\(p_frontend_version,[\s\S]*not between 1 and 500/u,
+  );
+  assert.match(
+    postgresRegexFix,
+    /length\(coalesce\(p_gateway_version,[\s\S]*not between 1 and 500/u,
+  );
+  assert.match(postgresRegexFix, /notify pgrst,'reload schema'/u);
 });
