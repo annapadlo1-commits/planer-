@@ -653,7 +653,7 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "rozwinięta lista ról musi mieć własny ograniczony scroll zamiast przykrywać pracowników");
   assert.match(styles,/leader-employee-pool\{[^}]*flex:1 1 0[^}]*min-height:0[^}]*overflow:hidden/,
     "pula ma przejmować wyłącznie pozostałą wysokość panelu");
-  assert.match(styles,/leader-employee-pool\{height:auto;max-height:100%\}\.leader-employee-pool>div\{height:auto;max-height:100%\}/,
+  assert.match(styles,/leader-employee-pool\{height:auto;max-height:100%;[^}]*\}\.leader-employee-pool>div\{height:auto;max-height:100%;[^}]*\}/,
     "pula i jej lista muszą anulować pełną wysokość, która wypychała karty ponad filtr ról");
   assert.match(styles,/@media\(max-width:1700px\)\{\.leader-studio-fullscreen-head\{[^}]*flex-wrap:wrap[^}]*\}[\s\S]*\.leader-studio-workflow\{[^}]*flex-wrap:wrap[^}]*overflow-x:visible/,
     "nagłówek i etapy Studio muszą zawijać akcje przed prawą krawędzią okna");
@@ -663,8 +663,14 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "pełnoekranowe Studio nie może być wyższe od rzeczywistego obszaru przeglądarki");
   assert.match(styles,/leader-studio-fullscreen-body\{[^}]*container-type:size[^}]*padding-bottom:14px[^}]*scroll-padding-bottom:14px[^}]*scrollbar-gutter:stable both-edges/,
     "główny scroll nie może sztucznie powiększać obszaru bocznej puli pracowników");
-  assert.match(styles,/leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel,\.leader-studio>\.leader-studio-impact\{height:calc\(100cqh - 112px\);max-height:calc\(100cqh - 112px\)\}/,
-    "boczne panele mają mieścić się w widocznym scrollporcie Studia, niezależnie od liczby tygodni kalendarza");
+  assert.match(styles,/leader-studio>\.solver-workspace-head\{grid-column:2\/-1\}\.leader-studio>\.solver-global-filters,\.leader-studio>\.leader-studio-candidate-panel\{grid-row:1\/5;height:calc\(100cqh - 28px\)/,
+    "lewa kolumna ma zaczynać się w pierwszym wierszu i wykorzystywać cały widoczny scrollport Studia");
+  assert.match(styles,/solver-global-filters>\.checkbox-dropdown>fieldset\{max-height:min\(20cqh,120px\)!important\}/,
+    "otwarty filtr ról musi zostawić miejsce na pulę pracowników w niskim oknie");
+  assert.match(styles,/leader-employee-pool\{[^}]*min-height:80px\}\.leader-employee-pool>div\{[^}]*min-height:48px\}/,
+    "co najmniej jedna karta i jej własny scrollbar muszą pozostać widoczne");
+  assert.match(styles,/@container\(max-height:500px\)\{\.leader-employee-pool>header small\{display:none\}/,
+    "niski scrollport ma skracać opis zamiast usuwać pracowników");
   assert.match(styles,/leader-employee-pool>header>\.secondary-button\.placeholder\{visibility:hidden;pointer-events:none\}/,
     "miejsce na przycisk czyszczenia wyboru musi być zarezerwowane bez zmiany wysokości listy");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
