@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 
-test("B4F-119 fairness-first copy now comes from the published Matrix contract", async () => {
+test("B4F-159 fairness-first copy comes from the published Matrix contract", async () => {
   const [panel, contract] = await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/solver-strategy-contract.ts", import.meta.url), "utf8"),

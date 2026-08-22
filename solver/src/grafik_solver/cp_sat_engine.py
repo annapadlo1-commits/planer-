@@ -83,7 +83,12 @@ METRIC_ALIASES = {
     "NON_HOME_LOCATION_COUNT": "HOME_LOCATION_VIOLATIONS",
 }
 
-STRATEGY_SEMANTICS_VERSION = "B4F165_V1"
+STRATEGY_SEMANTICS_VERSION = "B4F168_V1"
+LEGACY_STRATEGY_SEMANTICS_VERSION = "B4F165_V1"
+SUPPORTED_STRATEGY_SEMANTICS_VERSIONS = (
+    LEGACY_STRATEGY_SEMANTICS_VERSION,
+    STRATEGY_SEMANTICS_VERSION,
+)
 MANDATORY_PRODUCT_GUARDS = (
     "HARD_CONSTRAINTS",
     "COVERAGE",
@@ -103,14 +108,12 @@ BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
         "NOMINAL_DEVIATION_MINUTES": 2,
         "ROLE_LOAD_FAIRNESS_SCORE": 2,
         "ROLE_WEEKEND_FAIRNESS_SCORE": 2,
-        "HOME_LOCATION_VIOLATIONS": 2,
         "BASELINE_CHANGES": 2,
     },
     "MIN_COST": {
         "UNFILLED": 1,
         "TOTAL_COST": 2,
         "OVERTIME_MINUTES": 3,
-        "HOME_LOCATION_VIOLATIONS": 3,
         "PREFERENCE_VIOLATIONS": 4,
         "NOMINAL_DEVIATION_MINUTES": 5,
         "ROLE_LOAD_FAIRNESS_SCORE": 5,
@@ -124,10 +127,22 @@ BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
         "PREFERENCE_VIOLATIONS": 4,
         "ROLE_WEEKEND_FAIRNESS_SCORE": 5,
         "TOTAL_COST": 6,
-        "HOME_LOCATION_VIOLATIONS": 6,
         "OVERTIME_MINUTES": 7,
         "BASELINE_CHANGES": 7,
     },
+}
+LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
+    code: {
+        **tiers,
+        **(
+            {"HOME_LOCATION_VIOLATIONS": 2}
+            if code == "BALANCED"
+            else {"HOME_LOCATION_VIOLATIONS": 3}
+            if code == "MIN_COST"
+            else {"HOME_LOCATION_VIOLATIONS": 6}
+        ),
+    }
+    for code, tiers in BUILT_IN_STRATEGY_OBJECTIVE_TIERS.items()
 }
 
 # Technical resource ceilings, not business rules. Matrix remains fully
@@ -865,7 +880,7 @@ class CpSatScheduleEngine:
         version = strategy.strategy_semantics_version
         if version is None:
             return
-        if version != STRATEGY_SEMANTICS_VERSION:
+        if version not in SUPPORTED_STRATEGY_SEMANTICS_VERSIONS:
             raise SnapshotError(
                 "STRATEGY_SEMANTICS_MISMATCH: unsupported declared semantics "
                 f"{version} for {strategy.code}"
@@ -875,7 +890,12 @@ class CpSatScheduleEngine:
                 "STRATEGY_SEMANTICS_MISMATCH: mandatory product guards differ "
                 f"for {strategy.code}"
             )
-        expected = BUILT_IN_STRATEGY_OBJECTIVE_TIERS.get(strategy.code.upper())
+        objective_contract = (
+            LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS
+            if version == LEGACY_STRATEGY_SEMANTICS_VERSION
+            else BUILT_IN_STRATEGY_OBJECTIVE_TIERS
+        )
+        expected = objective_contract.get(strategy.code.upper())
         if expected is None:
             raise SnapshotError(
                 "STRATEGY_SEMANTICS_MISMATCH: the declared contract is only "
@@ -892,6 +912,13 @@ class CpSatScheduleEngine:
             for metric, tier in expected.items()
             if actual.get(metric) != {tier}
         ]
+        if (
+            version == STRATEGY_SEMANTICS_VERSION
+            and actual.get("HOME_LOCATION_VIOLATIONS")
+        ):
+            mismatches.append(
+                "HOME_LOCATION_VIOLATIONS is obsolete and must not be configured"
+            )
         if mismatches:
             raise SnapshotError(
                 "STRATEGY_SEMANTICS_MISMATCH: declared Matrix tiers differ "
@@ -4417,7 +4444,7 @@ class CpSatScheduleEngine:
                 bool(snapshot.strategies)
                 and all(
                     strategy.strategy_semantics_version
-                    == STRATEGY_SEMANTICS_VERSION
+                    in SUPPORTED_STRATEGY_SEMANTICS_VERSIONS
                     and strategy.mandatory_product_guards
                     == MANDATORY_PRODUCT_GUARDS
                     for strategy in snapshot.strategies

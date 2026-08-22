@@ -2021,7 +2021,7 @@ class SolverTests(unittest.TestCase):
         )
 
     def test_preferences_ten_identical_employees_split_month_exactly(self) -> None:
-        """B4F-119 A: no preferences means a genuinely equal split, not 10/180 h."""
+        """B4F-159 A: no preferences means a genuinely equal split, not 10/180 h."""
         raw = load_raw()
         raw.pop("slots")
         raw["periodStart"] = "2026-08-01"

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_STRATEGY_DESCRIPTIONS,
   MANDATORY_PRODUCT_GUARDS,
+  SUPPORTED_STRATEGY_SEMANTICS_VERSIONS,
   STRATEGY_SEMANTICS_VERSION,
 } from "../lib/solver-strategy-contract.ts";
 
@@ -15,7 +16,11 @@ const migrationUrl = new URL(
 test("B4F-165 publishes one explicit strategy contract and protects history", async () => {
   const migration = await readFile(migrationUrl, "utf8");
 
-  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F165_V1");
+  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F168_V1");
+  assert.deepEqual(SUPPORTED_STRATEGY_SEMANTICS_VERSIONS, [
+    "B4F165_V1",
+    "B4F168_V1",
+  ]);
   assert.deepEqual(MANDATORY_PRODUCT_GUARDS, [
     "HARD_CONSTRAINTS",
     "COVERAGE",

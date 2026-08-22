@@ -4,14 +4,27 @@ import unittest
 
 from grafik_solver.cp_sat_engine import (
     BUILT_IN_STRATEGY_OBJECTIVE_TIERS,
+    LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS,
+    LEGACY_STRATEGY_SEMANTICS_VERSION,
     MANDATORY_PRODUCT_GUARDS,
+    STRATEGY_SEMANTICS_VERSION,
     CpSatScheduleEngine,
 )
 from grafik_solver.models import SnapshotError, Strategy
 
 
-def strategy_raw(code: str, *, tier_override: tuple[str, int] | None = None) -> dict:
-    tiers = dict(BUILT_IN_STRATEGY_OBJECTIVE_TIERS[code])
+def strategy_raw(
+    code: str,
+    *,
+    tier_override: tuple[str, int] | None = None,
+    version: str = STRATEGY_SEMANTICS_VERSION,
+) -> dict:
+    objective_contract = (
+        LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS
+        if version == LEGACY_STRATEGY_SEMANTICS_VERSION
+        else BUILT_IN_STRATEGY_OBJECTIVE_TIERS
+    )
+    tiers = dict(objective_contract[code])
     if tier_override is not None:
         tiers[tier_override[0]] = tier_override[1]
     return {
@@ -19,7 +32,7 @@ def strategy_raw(code: str, *, tier_override: tuple[str, int] | None = None) -> 
         "code": code,
         "label": code,
         "sortOrder": 0,
-        "strategySemanticsVersion": "B4F165_V1",
+        "strategySemanticsVersion": version,
         "mandatoryProductGuards": list(MANDATORY_PRODUCT_GUARDS),
         "objectiveTerms": [
             {
@@ -38,11 +51,43 @@ class StrategySemanticsContractTests(unittest.TestCase):
         for index, code in enumerate(BUILT_IN_STRATEGY_OBJECTIVE_TIERS):
             strategy = Strategy.from_dict(strategy_raw(code), index)
             CpSatScheduleEngine._validate_strategy_semantics(strategy)
-            self.assertEqual(strategy.strategy_semantics_version, "B4F165_V1")
+            self.assertEqual(
+                strategy.strategy_semantics_version,
+                STRATEGY_SEMANTICS_VERSION,
+            )
             self.assertEqual(
                 strategy.mandatory_product_guards,
                 MANDATORY_PRODUCT_GUARDS,
             )
+
+    def test_historical_b4f165_matrix_remains_readable(self) -> None:
+        for index, code in enumerate(LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS):
+            strategy = Strategy.from_dict(
+                strategy_raw(code, version=LEGACY_STRATEGY_SEMANTICS_VERSION),
+                index,
+            )
+            CpSatScheduleEngine._validate_strategy_semantics(strategy)
+            self.assertEqual(
+                strategy.strategy_semantics_version,
+                LEGACY_STRATEGY_SEMANTICS_VERSION,
+            )
+
+    def test_current_contract_rejects_obsolete_home_location_objective(self) -> None:
+        raw = strategy_raw("BALANCED")
+        raw["objectiveTerms"].append(
+            {
+                "tier": 2,
+                "metric": "HOME_LOCATION_VIOLATIONS",
+                "weight": 1,
+                "direction": "MIN",
+            }
+        )
+        strategy = Strategy.from_dict(raw, 0)
+        with self.assertRaisesRegex(
+            SnapshotError,
+            "HOME_LOCATION_VIOLATIONS is obsolete",
+        ):
+            CpSatScheduleEngine._validate_strategy_semantics(strategy)
 
     def test_declared_and_effective_tier_mismatch_fails_closed(self) -> None:
         strategy = Strategy.from_dict(

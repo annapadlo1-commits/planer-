@@ -367,7 +367,6 @@ export const OBJECTIVE_METRICS = [
   { value: "UNFILLED", label: "Liczba nieobsadzonych miejsc" },
   { value: "TOTAL_COST", label: "Całkowity koszt" },
   { value: "PREFERENCE_VIOLATIONS", label: "Niespełnione preferencje" },
-  { value: "HOME_LOCATION_VIOLATIONS", label: "Wycofane kryterium lokalu macierzystego (zawsze 0)" },
   { value: "NOMINAL_DEVIATION_MINUTES", label: "Odchylenie od nominału" },
   { value: "OVERTIME_MINUTES", label: "Nadgodziny" },
   { value: "LOAD_SPREAD_MINUTES", label: "Różnica wykorzystania wymiarów pracy" },
