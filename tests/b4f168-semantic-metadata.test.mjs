@@ -19,10 +19,11 @@ const stampMigrationUrl = new URL(
 test("B4F-168 publishes a new semantic contract without mutating history", async () => {
   const migration = await readFile(migrationUrl, "utf8");
 
-  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F168_V1");
+  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F169_V1");
   assert.deepEqual(SUPPORTED_STRATEGY_SEMANTICS_VERSIONS, [
     "B4F165_V1",
     "B4F168_V1",
+    "B4F169_V1",
   ]);
   assert.match(migration, /apply_strategy_semantics_b4f168/);
   assert.match(migration, /delete from public\.matrix_strategy_objectives_v2/);

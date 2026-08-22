@@ -5,7 +5,7 @@ import signal
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from .canonical import verify_snapshot_hash
@@ -16,11 +16,18 @@ from .cp_sat_engine import (
     OptimizationError,
     OptimizationIncomplete,
 )
-from .models import Snapshot, SnapshotError
+from .models import Snapshot, SnapshotError, VariantResult
 from .rpc import Claim, RpcError, SolverGatewayClient
 from .validator import VariantValidationError, validate_variant
 
 LOGGER = logging.getLogger(__name__)
+
+_MAX_RANDOM_SEED = 2_147_483_647
+_FAIRNESS_RETRY_SEED_STEP = 104_729
+
+
+class FairnessQualityGateFailed(OptimizationIncomplete):
+    """Controlled deterministic attempts did not reach the Matrix gate."""
 
 _HEARTBEAT_PROGRESS_KEYS = frozenset(
     {
@@ -215,6 +222,191 @@ class WorkerRuntime:
             lease_seconds=self.config.lease_seconds,
         )
 
+    @staticmethod
+    def _retry_seed(seed: int, attempt_index: int) -> int:
+        return (seed + attempt_index * _FAIRNESS_RETRY_SEED_STEP) % _MAX_RANDOM_SEED
+
+    @classmethod
+    def _quality_attempt_snapshot(
+        cls, snapshot: Snapshot, attempt_index: int
+    ) -> Snapshot:
+        if attempt_index == 0:
+            return snapshot
+        retry_seed = cls._retry_seed(snapshot.settings.random_seed, attempt_index)
+        strategies = tuple(
+            replace(
+                strategy,
+                random_seed=cls._retry_seed(
+                    strategy.random_seed
+                    if strategy.random_seed is not None
+                    else snapshot.settings.random_seed,
+                    attempt_index,
+                ),
+            )
+            for strategy in snapshot.strategies
+        )
+        return replace(
+            snapshot,
+            settings=replace(snapshot.settings, random_seed=retry_seed),
+            strategies=strategies,
+        )
+
+    @staticmethod
+    def _preferences_quality(
+        variants: tuple[VariantResult, ...],
+    ) -> tuple[VariantResult, int, int, int]:
+        preferences = next(
+            (
+                variant
+                for variant in variants
+                if variant.strategy_code.upper() == "PREFERENCES"
+            ),
+            None,
+        )
+        if preferences is None:
+            raise SnapshotError(
+                "FAIRNESS_QUALITY_GATE requires the PREFERENCES strategy"
+            )
+        required_metrics = (
+            "LOAD_UTILIZATION_TARGET_COUNT",
+            "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS",
+            "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS",
+        )
+        missing = [
+            metric for metric in required_metrics if metric not in preferences.metrics
+        ]
+        if missing:
+            raise OptimizationError(
+                "FAIRNESS_QUALITY_GATE metrics missing: " + ",".join(missing)
+            )
+        return (
+            preferences,
+            int(preferences.metrics["LOAD_UTILIZATION_TARGET_COUNT"]),
+            int(
+                preferences.metrics[
+                    "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+                ]
+            ),
+            int(
+                preferences.metrics[
+                    "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+                ]
+            ),
+        )
+
+    @staticmethod
+    def _with_quality_audit(
+        variants: tuple[VariantResult, ...],
+        *,
+        attempt_count: int,
+        selected_seed: int,
+        minimum_bps: int,
+        maximum_spread_bps: int,
+        not_applicable: bool,
+    ) -> tuple[VariantResult, ...]:
+        audited: list[VariantResult] = []
+        for variant in variants:
+            if variant.strategy_code.upper() != "PREFERENCES":
+                audited.append(variant)
+                continue
+            metrics = dict(variant.metrics)
+            metrics.update(
+                {
+                    "FAIRNESS_QUALITY_GATE_PASSED": 1,
+                    "FAIRNESS_QUALITY_GATE_MINIMUM_BPS": minimum_bps,
+                    "FAIRNESS_QUALITY_GATE_MAXIMUM_SPREAD_BPS": maximum_spread_bps,
+                    "FAIRNESS_QUALITY_GATE_ATTEMPT_COUNT": attempt_count,
+                    "FAIRNESS_QUALITY_GATE_SELECTED_SEED": selected_seed,
+                }
+            )
+            spread = int(
+                metrics["ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"]
+            )
+            gate_stage = {
+                "tier": 0,
+                "name": "FAIRNESS_QUALITY_GATE",
+                "value": spread,
+                "status": "NOT_APPLICABLE" if not_applicable else "PASS",
+                "tolerance": maximum_spread_bps,
+                "frozenUpperBound": maximum_spread_bps,
+                "timeBudgetSeconds": 0,
+                "elapsedSeconds": 0,
+                "usedFallback": attempt_count > 1,
+            }
+            audited.append(
+                replace(
+                    variant,
+                    metrics=metrics,
+                    stage_objectives=variant.stage_objectives + (gate_stage,),
+                )
+            )
+        return tuple(audited)
+
+    def _solve_with_quality_gate(
+        self, snapshot: Snapshot
+    ) -> tuple[VariantResult, ...]:
+        gate = snapshot.settings.fairness_quality_gate
+        if gate is None:
+            return self.engine.solve(snapshot)
+
+        best_failure: tuple[int, int, int] | None = None
+        for attempt_index in range(gate.max_attempts):
+            attempt_snapshot = self._quality_attempt_snapshot(snapshot, attempt_index)
+            attempt_number = attempt_index + 1
+            LOGGER.info(
+                "Fairness quality attempt %s/%s seed=%s",
+                attempt_number,
+                gate.max_attempts,
+                attempt_snapshot.settings.random_seed,
+            )
+            variants = self.engine.solve(attempt_snapshot)
+            if self._stop.event.is_set():
+                raise OptimizationCancelled(
+                    self._stop.get_reason() or "INTERRUPTED"
+                )
+            _, target_count, minimum_bps, spread_bps = self._preferences_quality(
+                variants
+            )
+            passed = target_count == 0 or (
+                minimum_bps
+                >= gate.minimum_estimated_achievable_target_utilization_bps
+                and spread_bps
+                <= gate.maximum_estimated_achievable_target_utilization_spread_bps
+            )
+            if passed:
+                return self._with_quality_audit(
+                    variants,
+                    attempt_count=attempt_number,
+                    selected_seed=attempt_snapshot.settings.random_seed,
+                    minimum_bps=gate.minimum_estimated_achievable_target_utilization_bps,
+                    maximum_spread_bps=(
+                        gate.maximum_estimated_achievable_target_utilization_spread_bps
+                    ),
+                    not_applicable=target_count == 0,
+                )
+            candidate = (1_000 - minimum_bps, spread_bps, attempt_number)
+            if best_failure is None or candidate < best_failure:
+                best_failure = candidate
+            LOGGER.warning(
+                "Fairness quality attempt %s/%s missed the Matrix gate: "
+                "minimum=%s required=%s spread=%s allowed=%s",
+                attempt_number,
+                gate.max_attempts,
+                minimum_bps,
+                gate.minimum_estimated_achievable_target_utilization_bps,
+                spread_bps,
+                gate.maximum_estimated_achievable_target_utilization_spread_bps,
+            )
+
+        best_deficit, best_spread, _ = best_failure or (1_000, 1_000, 0)
+        raise FairnessQualityGateFailed(
+            "FAIRNESS_QUALITY_GATE_FAILED: wariant Preferencje i równy podział "
+            f"nie osiągnął minimum {gate.minimum_estimated_achievable_target_utilization_bps / 10:.1f}% "
+            f"i rozstępu do {gate.maximum_estimated_achievable_target_utilization_spread_bps / 10:.1f} p.p. "
+            f"po {gate.max_attempts} deterministycznych próbach; najlepsze minimum "
+            f"{(1_000 - best_deficit) / 10:.1f}%, najlepszy rozstęp {best_spread / 10:.1f} p.p."
+        )
+
     def _execute_claim(self, claim: Claim) -> int:
         self._progress = {"schemaVersion": 2, "phase": "STARTING"}
         try:
@@ -232,7 +424,7 @@ class WorkerRuntime:
                 completedStrategies=0,
             )
             self._start_heartbeat(claim)
-            variants = self.engine.solve(snapshot)
+            variants = self._solve_with_quality_gate(snapshot)
             if self._stop.event.is_set():
                 raise OptimizationCancelled(self._stop.get_reason() or "INTERRUPTED")
 
@@ -361,6 +553,8 @@ class WorkerRuntime:
     def _classify_failure(exc: Exception) -> tuple[bool, str]:
         if isinstance(exc, RpcError):
             return exc.retryable, "RPC_ERROR"
+        if isinstance(exc, FairnessQualityGateFailed):
+            return False, "FAIRNESS_QUALITY_GATE_FAILED"
         if isinstance(exc, OptimizationIncomplete):
             # The same immutable snapshot, solver image and time budget produce
             # the same proof failure. Retrying only burns the budget again;

@@ -83,13 +83,15 @@ METRIC_ALIASES = {
     "NON_HOME_LOCATION_COUNT": "HOME_LOCATION_VIOLATIONS",
 }
 
-STRATEGY_SEMANTICS_VERSION = "B4F168_V1"
+STRATEGY_SEMANTICS_VERSION = "B4F169_V1"
 LEGACY_STRATEGY_SEMANTICS_VERSION = "B4F165_V1"
+PREVIOUS_STRATEGY_SEMANTICS_VERSION = "B4F168_V1"
 SUPPORTED_STRATEGY_SEMANTICS_VERSIONS = (
     LEGACY_STRATEGY_SEMANTICS_VERSION,
+    PREVIOUS_STRATEGY_SEMANTICS_VERSION,
     STRATEGY_SEMANTICS_VERSION,
 )
-MANDATORY_PRODUCT_GUARDS = (
+LEGACY_MANDATORY_PRODUCT_GUARDS = (
     "HARD_CONSTRAINTS",
     "COVERAGE",
     "ROLE_BACKUP",
@@ -98,6 +100,9 @@ MANDATORY_PRODUCT_GUARDS = (
     "PRIMARY_ROLE",
     "MAX_MIN_FAIRNESS",
     "FAIRNESS_SPREAD",
+)
+MANDATORY_PRODUCT_GUARDS = LEGACY_MANDATORY_PRODUCT_GUARDS + (
+    "FAIRNESS_QUALITY_GATE",
 )
 BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
     "BALANCED": {
@@ -885,7 +890,12 @@ class CpSatScheduleEngine:
                 "STRATEGY_SEMANTICS_MISMATCH: unsupported declared semantics "
                 f"{version} for {strategy.code}"
             )
-        if strategy.mandatory_product_guards != MANDATORY_PRODUCT_GUARDS:
+        expected_guards = (
+            MANDATORY_PRODUCT_GUARDS
+            if version == STRATEGY_SEMANTICS_VERSION
+            else LEGACY_MANDATORY_PRODUCT_GUARDS
+        )
+        if strategy.mandatory_product_guards != expected_guards:
             raise SnapshotError(
                 "STRATEGY_SEMANTICS_MISMATCH: mandatory product guards differ "
                 f"for {strategy.code}"
@@ -935,6 +945,14 @@ class CpSatScheduleEngine:
     def solve(self, snapshot: Snapshot) -> tuple[VariantResult, ...]:
         self._cancel_event.clear()
         global_deadline = self._clock() + self._cp_sat_budget_seconds
+        if any(
+            strategy.strategy_semantics_version == STRATEGY_SEMANTICS_VERSION
+            for strategy in snapshot.strategies
+        ) and snapshot.settings.fairness_quality_gate is None:
+            raise SnapshotError(
+                "STRATEGY_SEMANTICS_MISMATCH: B4F169_V1 requires "
+                "fairnessQualityGate settings"
+            )
         for strategy in snapshot.strategies:
             self._validate_strategy_semantics(strategy)
         self._validate_snapshot_references(snapshot)
@@ -4446,11 +4464,25 @@ class CpSatScheduleEngine:
                     strategy.strategy_semantics_version
                     in SUPPORTED_STRATEGY_SEMANTICS_VERSIONS
                     and strategy.mandatory_product_guards
-                    == MANDATORY_PRODUCT_GUARDS
+                    == (
+                        MANDATORY_PRODUCT_GUARDS
+                        if strategy.strategy_semantics_version
+                        == STRATEGY_SEMANTICS_VERSION
+                        else LEGACY_MANDATORY_PRODUCT_GUARDS
+                    )
                     for strategy in snapshot.strategies
                 )
             ),
-            "MANDATORY_PRODUCT_GUARDS_VERSION": 1,
+            "MANDATORY_PRODUCT_GUARDS_VERSION": (
+                2
+                if snapshot.strategies
+                and all(
+                    strategy.strategy_semantics_version
+                    == STRATEGY_SEMANTICS_VERSION
+                    for strategy in snapshot.strategies
+                )
+                else 1
+            ),
             "UNFILLED": _sum(unfilled.values()),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_expression,
             "TOTAL_COST": total_cost_expression,
@@ -4489,7 +4521,7 @@ class CpSatScheduleEngine:
         }
         metric_bounds = {
             "MATRIX_RUNTIME_SEMANTICS_MATCH": 1,
-            "MANDATORY_PRODUCT_GUARDS_VERSION": 1,
+            "MANDATORY_PRODUCT_GUARDS_VERSION": 2,
             "UNFILLED": len(slots),
             "ROLE_BACKUP_PENALTY": role_backup_penalty_bound,
             "TOTAL_COST": total_cost_upper,

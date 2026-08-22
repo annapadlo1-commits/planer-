@@ -5,8 +5,10 @@ import unittest
 from grafik_solver.cp_sat_engine import (
     BUILT_IN_STRATEGY_OBJECTIVE_TIERS,
     LEGACY_BUILT_IN_STRATEGY_OBJECTIVE_TIERS,
+    LEGACY_MANDATORY_PRODUCT_GUARDS,
     LEGACY_STRATEGY_SEMANTICS_VERSION,
     MANDATORY_PRODUCT_GUARDS,
+    PREVIOUS_STRATEGY_SEMANTICS_VERSION,
     STRATEGY_SEMANTICS_VERSION,
     CpSatScheduleEngine,
 )
@@ -33,7 +35,11 @@ def strategy_raw(
         "label": code,
         "sortOrder": 0,
         "strategySemanticsVersion": version,
-        "mandatoryProductGuards": list(MANDATORY_PRODUCT_GUARDS),
+        "mandatoryProductGuards": list(
+            MANDATORY_PRODUCT_GUARDS
+            if version == STRATEGY_SEMANTICS_VERSION
+            else LEGACY_MANDATORY_PRODUCT_GUARDS
+        ),
         "objectiveTerms": [
             {
                 "tier": tier,
@@ -70,6 +76,18 @@ class StrategySemanticsContractTests(unittest.TestCase):
             self.assertEqual(
                 strategy.strategy_semantics_version,
                 LEGACY_STRATEGY_SEMANTICS_VERSION,
+            )
+
+    def test_historical_b4f168_matrix_remains_readable(self) -> None:
+        for index, code in enumerate(BUILT_IN_STRATEGY_OBJECTIVE_TIERS):
+            strategy = Strategy.from_dict(
+                strategy_raw(code, version=PREVIOUS_STRATEGY_SEMANTICS_VERSION),
+                index,
+            )
+            CpSatScheduleEngine._validate_strategy_semantics(strategy)
+            self.assertEqual(
+                strategy.strategy_semantics_version,
+                PREVIOUS_STRATEGY_SEMANTICS_VERSION,
             )
 
     def test_current_contract_rejects_obsolete_home_location_objective(self) -> None:

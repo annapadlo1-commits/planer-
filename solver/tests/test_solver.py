@@ -1871,6 +1871,11 @@ class SolverTests(unittest.TestCase):
         raw["periodEnd"] = "2026-08-19"
         raw["settings"]["missingAvailabilityMeansAvailable"] = True
         raw["settings"]["requireOptimal"] = True
+        raw["settings"]["fairnessQualityGate"] = {
+            "minimumEstimatedAchievableTargetUtilizationBps": 700,
+            "maximumEstimatedAchievableTargetUtilizationSpreadBps": 300,
+            "maxAttempts": 3,
+        }
         shift = next(item for item in raw["shiftTemplates"] if item["id"] == "shift-morning")
         shift["weekdays"] = [1, 2, 3, 4, 5, 6, 7]
         raw["shiftTemplates"] = [shift]
@@ -1905,7 +1910,7 @@ class SolverTests(unittest.TestCase):
             "label": "Preferencje i rowny podzial",
             "sortOrder": 0,
             "timeLimitSeconds": 30,
-            "strategySemanticsVersion": "B4F165_V1",
+            "strategySemanticsVersion": "B4F169_V1",
             "mandatoryProductGuards": list(MANDATORY_PRODUCT_GUARDS),
             "objectiveTerms": [
                 {"tier": 1, "metric": "UNFILLED", "weight": 1_000_000, "direction": "MIN"},
@@ -1914,7 +1919,6 @@ class SolverTests(unittest.TestCase):
                 {"tier": 4, "metric": "PREFERENCE_VIOLATIONS", "weight": 250_000, "direction": "MIN"},
                 {"tier": 5, "metric": "ROLE_WEEKEND_FAIRNESS_SCORE", "weight": 1, "direction": "MIN"},
                 {"tier": 6, "metric": "TOTAL_COST", "weight": 1, "direction": "MIN"},
-                {"tier": 6, "metric": "HOME_LOCATION_VIOLATIONS", "weight": 1, "direction": "MIN"},
                 {"tier": 7, "metric": "OVERTIME_MINUTES", "weight": 1, "direction": "MIN"},
                 {"tier": 7, "metric": "BASELINE_CHANGES", "weight": 1, "direction": "MIN"},
             ],

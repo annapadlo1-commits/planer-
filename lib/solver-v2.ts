@@ -2721,6 +2721,7 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("FAIRNESS_QUALITY_GATE_FAILED")) return "Generator nie zapisał wariantu „Preferencje i równy podział”, ponieważ po trzech kontrolowanych próbach nie osiągnął zatwierdzonej jakości: co najmniej 70% szacowanego osiągalnego celu dla każdej porównywanej osoby i najwyżej 30 p.p. rozstępu. Ten słaby wynik nie jest gotowy do publikacji. Sprawdź dostępność, cele godzinowe i obsadę kategorii, a następnie uruchom generowanie ponownie.";
   if (normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_MISMATCH")) return "Szkic zmienił się podczas kontroli całego grafiku. Wynik nie został uznany za aktualny — uruchom „Sprawdź cały grafik” ponownie dla bieżącej rewizji.";
   if (normalized.includes("WORKLOAD_VARIANT_MISMATCH") || normalized.includes("WORKLOAD_VARIANT_ID_INVALID")) return "Serwer zwrócił analizę godzin dla innego lub nieoznaczonego wariantu. Dane nie zostały pokazane. Odśwież Studio lidera i ponów pełną analizę bieżącego szkicu.";
   if (normalized.includes("WORKLOAD_REVISION_INVALID") || normalized.includes("WORKLOAD_EMPLOYEES_INVALID") || normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_INVALID")) return "Serwer zwrócił niepełną analizę godzin bez prawidłowej rewizji lub listy pracowników. Dane nie zostały uznane za aktualne. Odśwież Studio lidera i uruchom „Sprawdź cały grafik” ponownie.";
