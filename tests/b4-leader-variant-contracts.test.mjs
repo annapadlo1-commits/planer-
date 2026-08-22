@@ -653,6 +653,16 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
     "rozwinięta lista ról musi mieć własny ograniczony scroll zamiast przykrywać pracowników");
   assert.match(styles,/leader-employee-pool\{[^}]*flex:1 1 0[^}]*min-height:0[^}]*overflow:hidden/,
     "pula ma przejmować wyłącznie pozostałą wysokość panelu");
+  assert.match(styles,/leader-employee-pool\{height:auto;max-height:100%\}\.leader-employee-pool>div\{height:auto;max-height:100%\}/,
+    "pula i jej lista muszą anulować pełną wysokość, która wypychała karty ponad filtr ról");
+  assert.match(styles,/@media\(max-width:1700px\)\{\.leader-studio-fullscreen-head\{[^}]*flex-wrap:wrap[^}]*\}[\s\S]*\.leader-studio-workflow\{[^}]*flex-wrap:wrap[^}]*overflow-x:visible/,
+    "nagłówek i etapy Studio muszą zawijać akcje przed prawą krawędzią okna");
+  assert.match(styles,/leader-studio-workflow>div\{[^}]*flex:1 0 100%[^}]*justify-content:flex-end[^}]*max-width:100%/,
+    "przyciski etapu muszą dostać własny widoczny wiersz na zwężonym ekranie");
+  assert.match(styles,/leader-studio-fullscreen\{height:100dvh;max-height:100dvh;box-sizing:border-box\}/,
+    "pełnoekranowe Studio nie może być wyższe od rzeczywistego obszaru przeglądarki");
+  assert.match(styles,/leader-studio-fullscreen-body\{[^}]*padding-bottom:max\(96px,env\(safe-area-inset-bottom\)\)[^}]*scroll-padding-bottom:max\(96px,env\(safe-area-inset-bottom\)\)[^}]*scrollbar-gutter:stable both-edges/,
+    "dolne akcje muszą pozostać nad paskiem przewijania i bezpieczną krawędzią okna");
 });
 
 test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
