@@ -5,6 +5,7 @@ import {
   ALLOWED_ACTIONS,
   createGatewayHandler,
 } from "./contract.ts";
+import { comprehensiveGateAVariant } from "./gate-a-fixture.mjs";
 
 const TOKEN = "solver-gateway-test-token".padEnd(64, "x");
 const GATEWAY_VERSION = "solver-gateway-test-deployment";
@@ -12,6 +13,8 @@ const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
 const STRATEGY_ID = "44444444-4444-4444-8444-444444444444";
+const DISPATCH_NONCE = "55555555-5555-4555-8555-555555555555";
+const JOB_SIGNING_SECRET = "solver-job-signing-test-secret".padEnd(64, "y");
 
 const claimArgs = {
   p_worker_id: "free-host-worker-1:42",
@@ -44,6 +47,24 @@ function handlerWith(calls = []) {
       };
     },
   });
+}
+
+async function jobToken(runId = RUN_ID, dispatchNonce = DISPATCH_NONCE, offset = 600) {
+  const expires = String(Math.floor(Date.now() / 1000) + offset);
+  const value = `sj1|${runId}|${dispatchNonce}|${expires}`;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(JOB_SIGNING_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = Buffer.from(await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(value),
+  )).toString("base64url");
+  return `sj1_${runId}_${dispatchNonce}_${expires}_${signature}`;
 }
 
 function normalizedVariant() {
@@ -105,6 +126,83 @@ test("forwards a valid pull claim with exact arguments", async () => {
   assert.deepEqual(calls, [
     { action: "solver_claim_next_v2", args: claimArgs },
   ]);
+});
+
+test("translates a capability-bound Job claim to the target-only RPC", async () => {
+  const calls = [];
+  const handler = createGatewayHandler({
+    solverGatewayToken: TOKEN,
+    jobTokenSigningSecret: JOB_SIGNING_SECRET,
+    gatewayVersion: GATEWAY_VERSION,
+    invokeRpc: async (action, args) => {
+      calls.push({ action, args });
+      return {
+        status: 200,
+        body: JSON.stringify({ claimed: false, status: "TARGET_TERMINAL" }),
+        contentType: "application/json",
+      };
+    },
+  });
+  const response = await handler(gatewayRequest(
+    "solver_claim_next_v2",
+    claimArgs,
+    await jobToken(),
+  ));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_claim_run_v2",
+    args: {
+      p_target_run_id: RUN_ID,
+      p_dispatch_nonce: DISPATCH_NONCE,
+      ...claimArgs,
+      p_gateway_version: GATEWAY_VERSION,
+    },
+  }]);
+});
+
+test("a Job capability cannot access a different run after claim", async () => {
+  const calls = [];
+  const handler = createGatewayHandler({
+    solverGatewayToken: TOKEN,
+    jobTokenSigningSecret: JOB_SIGNING_SECRET,
+    gatewayVersion: GATEWAY_VERSION,
+    invokeRpc: async (action, args) => {
+      calls.push({ action, args });
+      return { status: 200, body: "{}", contentType: "application/json" };
+    },
+  });
+  const response = await handler(gatewayRequest(
+    "solver_load_snapshot_v2",
+    {
+      p_run_id: "99999999-9999-4999-8999-999999999999",
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+    },
+    await jobToken(),
+  ));
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "TARGET_RUN_MISMATCH" });
+  assert.equal(calls.length, 0);
+});
+
+test("rejects expired or tampered Job capabilities", async () => {
+  const handler = createGatewayHandler({
+    solverGatewayToken: TOKEN,
+    jobTokenSigningSecret: JOB_SIGNING_SECRET,
+    gatewayVersion: GATEWAY_VERSION,
+    invokeRpc: async () => ({ status: 200 }),
+  });
+  for (const token of [
+    await jobToken(RUN_ID, DISPATCH_NONCE, -120),
+    `${await jobToken()}x`,
+  ]) {
+    const response = await handler(gatewayRequest(
+      "solver_claim_next_v2",
+      claimArgs,
+      token,
+    ));
+    assert.equal(response.status, 401);
+  }
 });
 
 test("rejects removed dispatcher actions and unknown arguments", async () => {
@@ -220,6 +318,23 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
 
   const response = await handler(gatewayRequest("solver_save_variant_v2", args));
 
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("Gate A accepts the complete current solver audit contract", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: comprehensiveGateAVariant(),
+  };
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{
     action: "solver_save_variant_v2",

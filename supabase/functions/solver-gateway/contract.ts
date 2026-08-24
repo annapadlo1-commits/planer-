@@ -14,6 +14,7 @@ export const ALLOWED_ACTIONS = WORKER_ACTIONS;
 
 export type WorkerAction = (typeof WORKER_ACTIONS)[number];
 export type AllowedAction = WorkerAction;
+export type UpstreamAction = AllowedAction | "solver_claim_run_v2";
 export type JsonObject = Record<string, unknown>;
 
 export type RpcResult = {
@@ -24,12 +25,13 @@ export type RpcResult = {
 };
 
 export type RpcInvoker = (
-  action: AllowedAction,
+  action: UpstreamAction,
   args: Readonly<JsonObject>,
 ) => Promise<RpcResult>;
 
 type GatewayOptions = {
   solverGatewayToken: string;
+  jobTokenSigningSecret?: string;
   gatewayVersion: string;
   invokeRpc: RpcInvoker;
 };
@@ -62,6 +64,7 @@ const CODE_PATTERN = /^[A-Z][A-Z0-9_:-]{0,99}$/;
 const METRIC_PATTERN = /^[A-Z][A-Z0-9_]{0,79}$/;
 const WORKER_ID_PATTERN = /^[A-Za-z0-9._:@/-]{3,200}$/;
 const WORKER_VERSION_PATTERN = /^[A-Za-z0-9._:+/-]{1,200}$/;
+const JOB_TOKEN_PATTERN = /^sj1_([0-9a-f-]{36})_([0-9a-f-]{36})_(\d{10})_([A-Za-z0-9_-]{43})$/u;
 const JSON_HEADERS = {
   "Cache-Control": "no-store",
   "Content-Type": "application/json; charset=utf-8",
@@ -899,6 +902,70 @@ function validateConfiguredToken(token: string): void {
   }
 }
 
+function validateJobSigningSecret(secret: string): void {
+  const looksLikeSupabaseCredential =
+    secret.startsWith("sb_secret_") ||
+    secret.startsWith("sb_publishable_") ||
+    secret.split(".").length === 3;
+  if (
+    secret.length < 32 ||
+    secret.length > 512 ||
+    looksLikeSupabaseCredential ||
+    /[\p{White_Space}\p{Cc}\p{Cf}]/u.test(secret)
+  ) {
+    throw new Error("Invalid job signing secret configuration");
+  }
+}
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const value of bytes) binary += String.fromCharCode(value);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+}
+
+type GatewayIdentity =
+  | { kind: "service" }
+  | { kind: "job"; runId: string; dispatchNonce: string };
+
+async function authenticateToken(
+  presented: string,
+  staticToken: string,
+  signingSecret?: string,
+): Promise<GatewayIdentity | null> {
+  if (await tokensEqual(presented, staticToken)) return { kind: "service" };
+  if (!signingSecret) return null;
+  const match = JOB_TOKEN_PATTERN.exec(presented);
+  if (!match) return null;
+  const [, runId, dispatchNonce, expiresRaw, signature] = match;
+  if (!POSTGRES_UUID_PATTERN.test(runId) || !POSTGRES_UUID_PATTERN.test(dispatchNonce)) {
+    return null;
+  }
+  const expires = Number(expiresRaw);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(expires) || expires < now - 30 || expires > now + 3_600) {
+    return null;
+  }
+  const signedValue = `sj1|${runId}|${dispatchNonce}|${expiresRaw}`;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(signingSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = base64Url(new Uint8Array(await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(signedValue),
+  )));
+  if (!(await tokensEqual(signature, expected))) return null;
+  return { kind: "job", runId, dispatchNonce };
+}
+
 function validateGatewayVersion(version: string): void {
   if (
     version.length < 1 ||
@@ -983,6 +1050,12 @@ function parseEnvelope(body: Uint8Array): JsonObject {
 
 export function createGatewayHandler(options: GatewayOptions) {
   validateConfiguredToken(options.solverGatewayToken);
+  if (options.jobTokenSigningSecret !== undefined) {
+    validateJobSigningSecret(options.jobTokenSigningSecret);
+    if (options.jobTokenSigningSecret === options.solverGatewayToken) {
+      throw new Error("Job signing secret must be independent from the worker token");
+    }
+  }
   validateGatewayVersion(options.gatewayVersion);
 
   return async (request: Request): Promise<Response> => {
@@ -996,7 +1069,12 @@ export function createGatewayHandler(options: GatewayOptions) {
 
       const presentedToken =
         request.headers.get("x-solver-gateway-token") ?? "";
-      if (!(await tokensEqual(presentedToken, options.solverGatewayToken))) {
+      const identity = await authenticateToken(
+        presentedToken,
+        options.solverGatewayToken,
+        options.jobTokenSigningSecret,
+      );
+      if (!identity) {
         return jsonResponse(401, "UNAUTHORIZED");
       }
 
@@ -1021,12 +1099,33 @@ export function createGatewayHandler(options: GatewayOptions) {
       }
       spec.validate(envelope.args);
 
+      if (
+        identity.kind === "job" &&
+        envelope.action !== "solver_claim_next_v2" &&
+        envelope.args.p_run_id !== identity.runId
+      ) {
+        return jsonResponse(409, "TARGET_RUN_MISMATCH");
+      }
+
       let result: RpcResult;
       try {
-        const rpcArgs = envelope.action === "solver_save_variant_v2"
+        const upstreamAction: UpstreamAction =
+          identity.kind === "job" && envelope.action === "solver_claim_next_v2"
+            ? "solver_claim_run_v2"
+            : envelope.action;
+        const rpcArgs = upstreamAction === "solver_claim_run_v2"
+          ? {
+              p_target_run_id: identity.kind === "job" ? identity.runId : "",
+              p_dispatch_nonce: identity.kind === "job"
+                ? identity.dispatchNonce
+                : "",
+              ...envelope.args,
+              p_gateway_version: options.gatewayVersion,
+            }
+          : envelope.action === "solver_save_variant_v2"
           ? { ...envelope.args, p_gateway_version: options.gatewayVersion }
           : envelope.args;
-        result = await options.invokeRpc(envelope.action, rpcArgs);
+        result = await options.invokeRpc(upstreamAction, rpcArgs);
       } catch {
         return jsonResponse(502, "UPSTREAM_UNAVAILABLE");
       }

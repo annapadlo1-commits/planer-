@@ -42,6 +42,23 @@ export type SolverConfiguration = {
   timezone: string | null;
 };
 
+export type SolverExecutionMode = "SERVICE" | "JOB";
+
+export type SolverVersionStamp = {
+  schemaVersion: 1;
+  frontendCommit: string;
+  solverCommit: string;
+  solverImageDigest: string | null;
+  solverBuildId: string;
+  gatewayVersion: string | null;
+  strategyConfigVersion: string;
+  databaseMigrationVersion: string;
+  snapshotSchemaVersion: number;
+  executionMode: SolverExecutionMode;
+  northflankRunId: string | null;
+  dispatcherVersion: string | null;
+};
+
 export type SolverRun = {
   id: string;
   requestEngine?: Exclude<SolverEngine, "ALPHA15">;
@@ -61,6 +78,9 @@ export type SolverRun = {
   waitingSeconds?: number;
   runningSeconds?: number | null;
   updatedAt?: string;
+  executionMode?: SolverExecutionMode;
+  dispatchStatus?: string | null;
+  versionStamp?: SolverVersionStamp | null;
 };
 
 export type SolverStrategyProgress = {
@@ -90,7 +110,7 @@ export type SolverVariant = {
   equivalentToVariantId?: string | null;
   metrics: Record<string, unknown>;
   stageProof: Record<string, unknown>[];
-  versionStamp: Record<string, unknown>;
+  versionStamp: SolverVersionStamp | null;
 };
 
 export type SolverVariants = { runId: string; variants: SolverVariant[] };
@@ -1019,6 +1039,19 @@ function normalizeRoleCompositeCandidates(value: unknown): SolverRoleCompositeCa
 function normalizeRun(value: unknown): SolverRun {
   const payload = record(value);
   const run = record(payload.run ?? payload);
+  const versionStamp = parseSolverVersionStamp(
+    valueOf<unknown>(run, "versionStamp", "version_stamp", undefined),
+  );
+  const rawExecutionMode = valueOf<unknown>(
+    run,
+    "executionMode",
+    "execution_mode",
+    versionStamp?.executionMode,
+  );
+  if (
+    rawExecutionMode !== undefined && rawExecutionMode !== "SERVICE" &&
+    rawExecutionMode !== "JOB"
+  ) throw new Error("SOLVER_EXECUTION_MODE_INVALID");
   return {
     id: String(valueOf(run, "id", "id", "")),
     requestEngine: valueOf<Exclude<SolverEngine, "ALPHA15"> | undefined>(
@@ -1048,6 +1081,14 @@ function normalizeRun(value: unknown): SolverRun {
     waitingSeconds: numberOf(run, "waitingSeconds", "waiting_seconds"),
     runningSeconds: valueOf<number | null | undefined>(run, "runningSeconds", "running_seconds", undefined),
     updatedAt: valueOf<string | undefined>(run, "updatedAt", "updated_at", undefined),
+    executionMode: rawExecutionMode,
+    dispatchStatus: valueOf<string | null | undefined>(
+      run,
+      "dispatchStatus",
+      "dispatch_status",
+      undefined,
+    ),
+    versionStamp,
   };
 }
 
@@ -1060,6 +1101,60 @@ function normalizeStrategy(value: unknown): SolverStrategyProgress {
     status: String(valueOf(source, "status", "status", "QUEUED")),
     phase: String(valueOf(source, "phase", "phase", "QUEUED")),
     progress: Math.min(100, Math.max(0, numberOf(source, "progress", "progress"))),
+  };
+}
+
+function requiredStampString(
+  source: Record<string, unknown>,
+  key: keyof SolverVersionStamp,
+  pattern?: RegExp,
+): string {
+  const value = source[key];
+  if (typeof value !== "string" || !value || (pattern && !pattern.test(value))) {
+    throw new Error(`SOLVER_VERSION_STAMP_${String(key).toUpperCase()}_INVALID`);
+  }
+  return value;
+}
+
+function nullableStampString(
+  source: Record<string, unknown>,
+  key: keyof SolverVersionStamp,
+): string | null {
+  const value = source[key];
+  if (value === null) return null;
+  if (typeof value !== "string" || !value) {
+    throw new Error(`SOLVER_VERSION_STAMP_${String(key).toUpperCase()}_INVALID`);
+  }
+  return value;
+}
+
+export function parseSolverVersionStamp(value: unknown): SolverVersionStamp | null {
+  const source = record(value);
+  if (!Object.keys(source).length || source.schemaVersion === undefined) return null;
+  if (source.schemaVersion !== 1) throw new Error("SOLVER_VERSION_STAMP_SCHEMA_INVALID");
+  if (source.executionMode !== "SERVICE" && source.executionMode !== "JOB") {
+    throw new Error("SOLVER_VERSION_STAMP_EXECUTIONMODE_INVALID");
+  }
+  if (!Number.isSafeInteger(source.snapshotSchemaVersion) || Number(source.snapshotSchemaVersion) < 1) {
+    throw new Error("SOLVER_VERSION_STAMP_SNAPSHOTSCHEMAVERSION_INVALID");
+  }
+  return {
+    schemaVersion: 1,
+    frontendCommit: requiredStampString(source, "frontendCommit"),
+    solverCommit: requiredStampString(source, "solverCommit", /^[0-9a-f]{40}$/u),
+    solverImageDigest: nullableStampString(source, "solverImageDigest"),
+    solverBuildId: requiredStampString(source, "solverBuildId"),
+    gatewayVersion: nullableStampString(source, "gatewayVersion"),
+    strategyConfigVersion: requiredStampString(
+      source,
+      "strategyConfigVersion",
+      /^[0-9a-f]{64}$/u,
+    ),
+    databaseMigrationVersion: requiredStampString(source, "databaseMigrationVersion"),
+    snapshotSchemaVersion: Number(source.snapshotSchemaVersion),
+    executionMode: source.executionMode,
+    northflankRunId: nullableStampString(source, "northflankRunId"),
+    dispatcherVersion: nullableStampString(source, "dispatcherVersion"),
   };
 }
 
@@ -1100,7 +1195,7 @@ function normalizeVariant(value: unknown): SolverVariant {
     equivalentToVariantId: valueOf<string | null | undefined>(source, "equivalentToVariantId", "equivalent_to_variant_id", undefined),
     metrics,
     stageProof: Array.isArray(stageProof) ? stageProof.map(record) : [],
-    versionStamp: record(versionStamp),
+    versionStamp: parseSolverVersionStamp(versionStamp),
   };
 }
 
@@ -2680,6 +2775,10 @@ export function isSolverRunTerminal(status: string) {
 
 const STATUS_LABELS: Record<string, string> = {
   QUEUED: "Oczekuje na uruchomienie",
+  DISPATCHING: "Uruchamianie bezpiecznego zadania obliczeniowego",
+  STARTING: "Startuje środowisko generatora",
+  GENERATING: "Trwa układanie grafiku",
+  FINALIZING: "Trwa końcowe sprawdzanie wyniku",
   RUNNING: "Trwa układanie grafiku",
   VALIDATING: "Końcowa kontrola reguł",
   READY: "Warianty są gotowe",
@@ -2691,12 +2790,17 @@ const STATUS_LABELS: Record<string, string> = {
 
 const PHASE_LABELS: Record<string, string> = {
   QUEUED: "Przygotowanie danych",
+  DISPATCH_PENDING: "Oczekiwanie na wolne miejsce do uruchomienia",
+  DISPATCHING: "Uruchamianie bezpiecznego zadania obliczeniowego",
+  DISPATCH_UNCERTAIN: "Sprawdzanie, czy zadanie zostało przyjęte",
+  JOB_RETRY_WAIT: "Przygotowanie bezpiecznego ponowienia obliczeń",
   RETRY_QUEUED: "Oczekiwanie na automatyczne ponowienie",
   CLAIMED: "Worker odebrał zadanie",
   STARTING: "Uruchamianie workera",
   LOADING: "Wczytywanie konfiguracji firmy",
   SNAPSHOT: "Zapisywanie konfiguracji użytej do obliczeń",
   MODEL: "Budowanie modelu grafiku",
+  GENERATING: "Szukanie najlepszego rozwiązania",
   SOLVING: "Szukanie najlepszego rozwiązania",
   VALIDATING: "Sprawdzanie wyniku",
   SAVING: "Zapisywanie policzonych wariantów",

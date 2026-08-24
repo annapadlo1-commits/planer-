@@ -176,17 +176,18 @@ function solverStageProofLabel(variant: SolverVariant) {
 }
 
 function solverVersionStampLabel(variant: SolverVariant) {
-  const frontend = auditObject(variant.versionStamp.frontend);
-  const solver = auditObject(variant.versionStamp.solver);
-  const gateway = auditObject(variant.versionStamp.gateway);
-  const database = auditObject(variant.versionStamp.database);
-  const strategy = auditObject(variant.versionStamp.strategyConfig);
+  const stamp = variant.versionStamp;
+  if (!stamp) return "—";
   const values = [
-    `frontend ${String(frontend.buildId ?? "—").slice(0, 12)}`,
-    `solver ${String(solver.workerVersion ?? solver.configuredVersion ?? "—")}`,
-    `gateway ${String(gateway.deploymentId ?? "—").slice(0, 12)}`,
-    `DB ${String(database.schemaVersion ?? "—")}`,
-    `Matrix v${String(strategy.matrixVersion ?? "—")} / ${String(strategy.strategySemanticsVersion ?? "—")}`,
+    `frontend ${stamp.frontendCommit.slice(0, 12)}`,
+    `solver ${stamp.solverCommit.slice(0, 12)}`,
+    `build ${stamp.solverBuildId}`,
+    `gateway ${stamp.gatewayVersion?.slice(0, 16) ?? "—"}`,
+    `DB ${stamp.databaseMigrationVersion}`,
+    `strategia ${stamp.strategyConfigVersion.slice(0, 12)}`,
+    stamp.executionMode === "JOB" && stamp.northflankRunId
+      ? `Job ${stamp.northflankRunId.slice(0, 12)}`
+      : stamp.executionMode,
   ];
   return values.join(" • ");
 }
@@ -351,7 +352,7 @@ export function SolverV2Panel({
     currency:selectedWorkspace.variants[0].finance?.currency??"PLN",
     metrics:{manualStudio:true},
     stageProof:[],
-    versionStamp:{},
+    versionStamp:null,
   } : generatedSelectedVariant;
   const leaderPublicationReady = !leaderVariant
     || selectedVariant?.id!==leaderVariant.id
@@ -1245,7 +1246,7 @@ export function SolverV2Panel({
               {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
               {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
               {variant.stageProof.length>0&&<div><dt>Dowód etapów optymalizacji<small>Status, wynik, zamrożona granica, tolerancja, budżet, czas i użycie fallbacku są zapisane dla każdego etapu.</small></dt><dd>{solverStageProofLabel(variant)}</dd></div>}
-              {Object.keys(variant.versionStamp).length>0&&<div><dt>Stamp wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
+              {variant.versionStamp&&<div><dt>Stamp wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
             </dl>
           </details>
           {variant.strategy.name.toLocaleLowerCase("pl-PL").includes("równ")&&Number(variant.metrics.LOAD_UTILIZATION_SPREAD_BPS??0)>1000&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Podział godzin nadal wymaga decyzji lidera</strong><small>Różnica wykorzystania indywidualnych wymiarów przekracza 100 punktów procentowych. Nie jest to procent różnicy godzin min–max. Otwórz „Rozkład pracy”, aby sprawdzić godziny, wymiary, dostępność i decyzje generatora dla każdej osoby.</small></span></div>}

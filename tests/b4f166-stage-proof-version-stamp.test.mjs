@@ -55,7 +55,7 @@ test("B4F-166 fails closed when canonical stage telemetry is incomplete", () => 
 test("B4F-166 sends the frontend build and exposes proof in technical details", () => {
   assert.match(client, /p_frontend_version:\s*process\.env\.NEXT_PUBLIC_APP_BUILD_ID/u);
   assert.match(client, /stageProof:\s*Array\.isArray/u);
-  assert.match(client, /versionStamp:\s*record/u);
+  assert.match(client, /versionStamp:\s*parseSolverVersionStamp/u);
   assert.match(panel, /Dowód etapów optymalizacji/u);
   assert.match(panel, /Stamp wersji przebiegu/u);
 });

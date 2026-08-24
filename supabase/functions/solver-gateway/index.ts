@@ -1,10 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 import {
-  type AllowedAction,
   createGatewayHandler,
   type JsonObject,
   type RpcResult,
+  type UpstreamAction,
 } from "./contract.ts";
 
 function requireEnvironment(name: string): string {
@@ -16,9 +16,16 @@ function requireEnvironment(name: string): string {
 const supabaseUrl = requireEnvironment("SUPABASE_URL").replace(/\/+$/u, "");
 const serviceRoleKey = requireEnvironment("SUPABASE_SERVICE_ROLE_KEY");
 const solverGatewayToken = requireEnvironment("SOLVER_GATEWAY_TOKEN");
+const jobTokenSigningSecret = requireEnvironment("SOLVER_JOB_TOKEN_SIGNING_SECRET");
 const gatewayVersion = Deno.env.get("DENO_DEPLOYMENT_ID")?.trim() || "local";
 if (solverGatewayToken === serviceRoleKey) {
   throw new Error("Gateway token must be independent from the service role key");
+}
+if (
+  jobTokenSigningSecret === serviceRoleKey ||
+  jobTokenSigningSecret === solverGatewayToken
+) {
+  throw new Error("Job signing secret must be independent from other credentials");
 }
 
 const parsedSupabaseUrl = new URL(supabaseUrl);
@@ -33,7 +40,7 @@ if (
 }
 
 const invokeRpc = async (
-  action: AllowedAction,
+  action: UpstreamAction,
   args: Readonly<JsonObject>,
 ): Promise<RpcResult> => {
   const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${action}`, {
@@ -78,6 +85,7 @@ const invokeRpc = async (
 Deno.serve(
   createGatewayHandler({
     solverGatewayToken,
+    jobTokenSigningSecret,
     gatewayVersion,
     invokeRpc,
   }),
