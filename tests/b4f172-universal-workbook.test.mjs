@@ -67,6 +67,20 @@ test("B4F-172: Polish letters, maximum length and a blank shift code are normali
   assert.equal(parsed.shifts[0].code,"LODZ_SRODMIESCIE_WIECZOR");
 });
 
+test("B4F-172: staffing resolves a visible shift name after its blank code is generated",async()=>{
+  const parsed=await readMatrixWorkbook(workbookFile({
+    _META:[{Klucz:"workbookMode",Wartość:"EMPTY_TEMPLATE"},{Klucz:"contractVersion",Wartość:"2"}],
+    "Kategorie grafików":[{Kod:"",Nazwa:"Sala",Aktywna:"TAK"}],
+    Role:[{Kod:"",Nazwa:"Kelner","Kategoria grafiku":"Sala",Aktywna:"TAK"}],
+    Lokale:[{Kod:"",Nazwa:"Centrum","Strefa czasowa":"Europe/Warsaw",Aktywna:"TAK"}],
+    Obowiązki:[{Kod:"",Nazwa:"Serwis",Aktywna:"TAK"}],
+    Zmiany:[{Kod:"",Nazwa:"Wieczór",Lokal:"Centrum",Od:"17:00",Do:"23:00","Kończy się następnego dnia":"NIE","Dni tygodnia":"1",Aktywna:"TAK"}],
+    Obsada:[{Zmiana:"Wieczór",Rola:"Kelner","Obowiązek (opcjonalnie)":"Serwis","Liczba osób":"1",Aktywna:"TAK"}],
+  }));
+  assert.equal(parsed.shifts[0].code,"CENTRUM_WIECZOR");
+  assert.equal(parsed.staffingRules[0].shiftCode,"CENTRUM_WIECZOR");
+});
+
 test("B4F-174: normalized reserve-group relation supports several roles without comma text",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
     "Kategorie grafików":[{Kod:"BAR",Nazwa:"Bar",Aktywna:"TAK"}],

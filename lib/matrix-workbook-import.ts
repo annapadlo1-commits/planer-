@@ -542,6 +542,11 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const groupedShifts=Array.from(new Map(shifts.map(shift=>[`${shift.locationCode}:${shift.code}:${shift.startsAt}:${shift.endsAt}`,shift])).values()).map(shift=>({
     ...shift,days:[...new Set(shifts.filter(candidate=>candidate.locationCode===shift.locationCode&&candidate.code===shift.code&&candidate.startsAt===shift.startsAt&&candidate.endsAt===shift.endsAt).flatMap(candidate=>candidate.days))].sort(),
   }));
+  const shiftAliases=new Map<string,string>();
+  for(const shift of groupedShifts){
+    const code=String(shift.code??"");
+    for(const alias of [code,String(shift.name??"")])if(alias.trim())shiftAliases.set(importCode(alias),code);
+  }
 
   const staffingRows=rows(["Obsada","Staffing","MACIERZ_OBSADY"]);
   const staffingRules=staffingRows.map((row,index)=>{
@@ -672,7 +677,10 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     const alias=importCode(value);
     return alias?(scenarioAliases.get(alias)??alias):defaultScenarioCode;
   };
-  const resolvedStaffingRules=staffingRules.map(rule=>({...rule,scenarioCode:normalizeScenarioCode(String(rule.scenarioCode??""))}));
+  const resolvedStaffingRules=staffingRules.map(rule=>{
+    const shiftAlias=importCode(String(rule.shiftCode??""));
+    return {...rule,shiftCode:shiftAliases.get(shiftAlias)??String(rule.shiftCode??""),scenarioCode:normalizeScenarioCode(String(rule.scenarioCode??""))};
+  });
   const normalizedScenarioStrategies=resolvedScenarioStrategies.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
   const normalizedScenarioPayRuleOverrides=scenarioPayRuleOverrides.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
   const normalizedScenarioBudgets=scenarioBudgets.map(budget=>({...budget,scenarioCode:normalizeScenarioCode(String(budget.scenarioCode??""))}));
