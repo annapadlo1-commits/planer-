@@ -129,17 +129,17 @@ Kanoniczny `https://uat.szafunek.pl`, zalogowana sesja właściciela, aktywna ko
 ## COMMITS
 
 - `a852a0ad46a2d1bfcb2dd2fca715efb9297868f0` — `fix(solver):fairness-target-fallback`;
-- kolejny commit dokumentacyjno-kontraktowy zostanie dopisany po zamknięciu pakietu dowodowego.
+- `9251185137d6927287212b6ede98da2eb678f363` — `docs-uat-record-fairness-fallback-evidence`; zawiera raport, postflight oraz zapytania dowodowe. Ewentualna korekta samego raportu nie jest samoreferencyjnie hashowana w jego treści; dokładny HEAD pozostaje w historii gałęzi i końcowym przekazaniu zadania.
 
 ## DEPLOYMENT STAMP
 
 - branch: `codex/uat-consolidated-fixes`;
-- frontend build w wariancie: `a852a0ad46a2d1bfcb2dd2fca715efb9297868f0`;
-- Vercel: `Active/Deployed`, preview `https://planer-ktfj84540-planner10.vercel.app`, kanoniczny `https://uat.szafunek.pl`;
-- Northflank: deployment `solver-gateway-6c5bbd8576`, pod `solver-gateway-6c5bbd8576-7m68n`, `Running 1/1`, `0` restartów, źródło dokładnie `a852a0a`;
+- build funkcjonalny użyty przez run UAT: `a852a0ad46a2d1bfcb2dd2fca715efb9297868f0`;
+- Vercel po publikacji dowodów: deployment `6qitmNuR6tTVbQNB8Qjfn4Lwo1jW`, `Ready / Latest`, preview `https://planer-gfhlduonj-planner10.vercel.app`, alias `https://uat.szafunek.pl`, źródło `9251185`;
+- Northflank po publikacji dowodów: deployment `solver-gateway-64764f7db7`, pod `solver-gateway-64764f7db7-6x49z`, `Running 1/1`, `0` restartów, źródło `9251185`;
 - Supabase: `nhthrtpkfpmufmrmdyjg`;
 - schema stamp: `20260824160525_b4f170_fairness_target_best_valid_fallback`;
 - Matrix: version `22`, semantics `B4F170_V1`, id `57ff107c-6c36-4e43-b657-3fe67369b273`, content hash `2d4e5d9e5717c46b6665c67465bc93d4f1b60e43a7de08ffbe890fa43cbbc12a`;
 - gateway contract: v13.
 
-Znane ryzyko audytowe: pole `solver.commit` zapisane w version stampie wariantu nadal ma wcześniejszą wartość `86522fe...`, mimo że panel Northflank potwierdza kod źródłowy deploymentu `a852a0a`. Zachowanie nowego fallbacku jest fizycznie aktywne i udowodnione runem, ale metadane obrazu/jobu wymagają osobnego uporządkowania; nie są przedstawiane jako spójne.
+Znane ryzyko audytowe: pole `solver.commit` zapisane w version stampie wariantu nadal ma wcześniejszą wartość `86522fe...`, mimo że panel Northflank potwierdził najpierw kod funkcjonalny `a852a0a`, a następnie bieżącą gałąź `9251185`. Zachowanie nowego fallbacku jest fizycznie aktywne i udowodnione runem, ale metadane obrazu/jobu wymagają osobnego uporządkowania; nie są przedstawiane jako spójne.
