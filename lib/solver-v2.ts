@@ -73,6 +73,22 @@ export type SolverStrategyProgress = {
 
 export type SolverStatus = { run: SolverRun; strategies: SolverStrategyProgress[] };
 
+export type SolverFairnessTarget = {
+  applicable: boolean;
+  met: boolean;
+  targetMinimumBps: number;
+  targetMaximumSpreadBps: number;
+  actualMinimumBps: number;
+  actualSpreadBps: number;
+  failureReasons: Array<"MINIMUM_BELOW_TARGET" | "SPREAD_ABOVE_TARGET">;
+  attemptCount: number;
+  selectedAttempt: number;
+  fallbackUsed: boolean;
+  timeoutFallbackUsed: boolean;
+  provenUnattainable: boolean;
+  classification: string;
+};
+
 export type SolverVariant = {
   id: string;
   name: string;
@@ -91,6 +107,7 @@ export type SolverVariant = {
   metrics: Record<string, unknown>;
   stageProof: Record<string, unknown>[];
   versionStamp: Record<string, unknown>;
+  fairnessTarget: SolverFairnessTarget | null;
 };
 
 export type SolverVariants = { runId: string; variants: SolverVariant[] };
@@ -1063,6 +1080,40 @@ function normalizeStrategy(value: unknown): SolverStrategyProgress {
   };
 }
 
+function normalizeFairnessTarget(
+  metrics: Record<string, unknown>,
+  stageProof: Record<string, unknown>[],
+): SolverFairnessTarget | null {
+  if (!Object.hasOwn(metrics, "FAIRNESS_TARGET_MET")) return null;
+  const minimumFailed = Number(metrics.FAIRNESS_TARGET_FAILURE_MINIMUM ?? 0) === 1;
+  const spreadFailed = Number(metrics.FAIRNESS_TARGET_FAILURE_SPREAD ?? 0) === 1;
+  const targetStage = stageProof.find(
+    stage => stage.name === "FAIRNESS_QUALITY_TARGET",
+  );
+  return {
+    applicable: Number(metrics.LOAD_UTILIZATION_TARGET_COUNT ?? 0) > 0,
+    met: Number(metrics.FAIRNESS_TARGET_MET) === 1,
+    targetMinimumBps: Number(metrics.FAIRNESS_TARGET_MINIMUM_BPS ?? 0),
+    targetMaximumSpreadBps: Number(
+      metrics.FAIRNESS_TARGET_MAXIMUM_SPREAD_BPS ?? 0,
+    ),
+    actualMinimumBps: Number(metrics.FAIRNESS_TARGET_ACTUAL_MINIMUM_BPS ?? 0),
+    actualSpreadBps: Number(metrics.FAIRNESS_TARGET_ACTUAL_SPREAD_BPS ?? 0),
+    failureReasons: [
+      ...(minimumFailed ? ["MINIMUM_BELOW_TARGET" as const] : []),
+      ...(spreadFailed ? ["SPREAD_ABOVE_TARGET" as const] : []),
+    ],
+    attemptCount: Number(metrics.FAIRNESS_TARGET_ATTEMPT_COUNT ?? 0),
+    selectedAttempt: Number(metrics.FAIRNESS_TARGET_SELECTED_ATTEMPT ?? 0),
+    fallbackUsed: Number(metrics.FAIRNESS_TARGET_FALLBACK_USED ?? 0) === 1,
+    timeoutFallbackUsed:
+      Number(metrics.FAIRNESS_TARGET_TIMEOUT_FALLBACK_USED ?? 0) === 1,
+    provenUnattainable:
+      Number(metrics.FAIRNESS_TARGET_PROVEN_UNATTAINABLE ?? 0) === 1,
+    classification: String(targetStage?.status ?? "UNKNOWN"),
+  };
+}
+
 function normalizeVariant(value: unknown): SolverVariant {
   const source = record(value);
   if (!source.strategy) throw new Error("VARIANT_STRATEGY_MISSING");
@@ -1076,6 +1127,8 @@ function normalizeVariant(value: unknown): SolverVariant {
   const finance = record(source.finance);
   const stageProof = valueOf<unknown>(source, "stageProof", "stage_proof", []);
   const versionStamp = valueOf<unknown>(source, "versionStamp", "version_stamp", {});
+  const normalizedStageProof = Array.isArray(stageProof) ? stageProof.map(record) : [];
+  const fairnessTarget = normalizeFairnessTarget(metrics, normalizedStageProof);
   return {
     id: String(valueOf(source, "id", "id", "")),
     name: String(valueOf(source, "name", "name", valueOf(strategy, "name", "name", "Wariant"))),
@@ -1101,6 +1154,7 @@ function normalizeVariant(value: unknown): SolverVariant {
     metrics,
     stageProof: Array.isArray(stageProof) ? stageProof.map(record) : [],
     versionStamp: record(versionStamp),
+    fairnessTarget,
   };
 }
 
@@ -2721,7 +2775,7 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
-  if (normalized.includes("FAIRNESS_QUALITY_GATE_FAILED")) return "Generator nie zapisał wariantu „Preferencje i równy podział”, ponieważ po trzech kontrolowanych próbach nie osiągnął zatwierdzonej jakości: co najmniej 70% szacowanego osiągalnego celu dla każdej porównywanej osoby i najwyżej 30 p.p. rozstępu. Ten słaby wynik nie jest gotowy do publikacji. Sprawdź dostępność, cele godzinowe i obsadę kategorii, a następnie uruchom generowanie ponownie.";
+  if (normalized.includes("FAIRNESS_QUALITY_GATE_FAILED")) return "Ten starszy przebieg został zatrzymany przez wycofaną, blokującą bramkę jakości fairness. Uruchom nowe generowanie: obecna wersja zawsze pokaże najlepszy legalny grafik, a niespełnienie celu 70% / 30 p.p. oznaczy nieblokującym ostrzeżeniem.";
   if (normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_MISMATCH")) return "Szkic zmienił się podczas kontroli całego grafiku. Wynik nie został uznany za aktualny — uruchom „Sprawdź cały grafik” ponownie dla bieżącej rewizji.";
   if (normalized.includes("WORKLOAD_VARIANT_MISMATCH") || normalized.includes("WORKLOAD_VARIANT_ID_INVALID")) return "Serwer zwrócił analizę godzin dla innego lub nieoznaczonego wariantu. Dane nie zostały pokazane. Odśwież Studio lidera i ponów pełną analizę bieżącego szkicu.";
   if (normalized.includes("WORKLOAD_REVISION_INVALID") || normalized.includes("WORKLOAD_EMPLOYEES_INVALID") || normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_INVALID")) return "Serwer zwrócił niepełną analizę godzin bez prawidłowej rewizji lub listy pracowników. Dane nie zostały uznane za aktualne. Odśwież Studio lidera i uruchom „Sprawdź cały grafik” ponownie.";

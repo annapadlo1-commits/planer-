@@ -18,7 +18,7 @@ test("B4F-169 derives the default seed from the complete business snapshot, not 
   assert.match(sqlContract,/v_seed_document\\s\*:=\\s\*v_snapshot/);
 });
 
-test("Matrix v21 declares the approved 70 percent and 30 p.p. fairness gate",()=>{
+test("historical Matrix v21 retains the originally published 70 percent and 30 p.p. gate",()=>{
   assert.match(migration,/'strategySemanticsVersion','B4F169_V1'/);
   assert.match(migration,/'FAIRNESS_QUALITY_GATE'/);
   assert.match(migration,/'minimumEstimatedAchievableTargetUtilizationBps',700/);
@@ -27,16 +27,16 @@ test("Matrix v21 declares the approved 70 percent and 30 p.p. fairness gate",()=
   assert.match(migration,/B4F169_HISTORICAL_MATRIX_CONTENT_CHANGED/);
   assert.doesNotMatch(migration,/perform solver_private\.apply_strategy_semantics_b4f168\(p_matrix_version_id\)/);
   assert.match(migration,/perform solver_private\.validate_strategy_semantics_b4f168/);
-  assert.match(engine,/STRATEGY_SEMANTICS_VERSION = "B4F169_V1"/);
-  assert.match(models,/class FairnessQualityGate/);
+  assert.match(engine,/PREVIOUS_STRATEGY_SEMANTICS_VERSION = "B4F169_V1"/);
+  assert.match(models,/"fairnessQualityGate"/);
 });
 
-test("worker retries deterministically and a missed gate has a dedicated non-ready error",()=>{
+test("current worker keeps deterministic retries but no longer turns a quality miss into failure",()=>{
   assert.match(lifecycle,/_FAIRNESS_RETRY_SEED_STEP = 104_729/);
-  assert.match(lifecycle,/for attempt_index in range\(gate\.max_attempts\)/);
-  assert.match(lifecycle,/raise FairnessQualityGateFailed/);
-  assert.match(lifecycle,/return False, "FAIRNESS_QUALITY_GATE_FAILED"/);
-  assert.match(lifecycle,/"FAIRNESS_QUALITY_GATE_PASSED": 1/);
-  assert.match(ui,/po trzech kontrolowanych próbach/);
-  assert.match(ui,/najwyżej 30 p\.p\. rozstępu/);
+  assert.match(lifecycle,/for attempt_index in range\(target\.max_attempts\)/);
+  assert.match(lifecycle,/best_valid/);
+  assert.doesNotMatch(lifecycle,/raise FairnessQualityGateFailed/);
+  assert.doesNotMatch(lifecycle,/return False, "FAIRNESS_QUALITY_GATE_FAILED"/);
+  assert.match(lifecycle,/"FAIRNESS_TARGET_MET": int\(target_met\)/);
+  assert.match(ui,/wycofaną, blokującą bramkę jakości fairness/);
 });

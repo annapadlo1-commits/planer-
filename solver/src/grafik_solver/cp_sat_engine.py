@@ -83,11 +83,13 @@ METRIC_ALIASES = {
     "NON_HOME_LOCATION_COUNT": "HOME_LOCATION_VIOLATIONS",
 }
 
-STRATEGY_SEMANTICS_VERSION = "B4F169_V1"
+STRATEGY_SEMANTICS_VERSION = "B4F170_V1"
 LEGACY_STRATEGY_SEMANTICS_VERSION = "B4F165_V1"
-PREVIOUS_STRATEGY_SEMANTICS_VERSION = "B4F168_V1"
+PREVIOUS_STRATEGY_SEMANTICS_VERSION = "B4F169_V1"
+OBSOLETE_HOME_STRATEGY_SEMANTICS_VERSION = "B4F168_V1"
 SUPPORTED_STRATEGY_SEMANTICS_VERSIONS = (
     LEGACY_STRATEGY_SEMANTICS_VERSION,
+    OBSOLETE_HOME_STRATEGY_SEMANTICS_VERSION,
     PREVIOUS_STRATEGY_SEMANTICS_VERSION,
     STRATEGY_SEMANTICS_VERSION,
 )
@@ -101,8 +103,11 @@ LEGACY_MANDATORY_PRODUCT_GUARDS = (
     "MAX_MIN_FAIRNESS",
     "FAIRNESS_SPREAD",
 )
-MANDATORY_PRODUCT_GUARDS = LEGACY_MANDATORY_PRODUCT_GUARDS + (
+PREVIOUS_MANDATORY_PRODUCT_GUARDS = LEGACY_MANDATORY_PRODUCT_GUARDS + (
     "FAIRNESS_QUALITY_GATE",
+)
+MANDATORY_PRODUCT_GUARDS = LEGACY_MANDATORY_PRODUCT_GUARDS + (
+    "FAIRNESS_QUALITY_TARGET",
 )
 BUILT_IN_STRATEGY_OBJECTIVE_TIERS = {
     "BALANCED": {
@@ -890,11 +895,10 @@ class CpSatScheduleEngine:
                 "STRATEGY_SEMANTICS_MISMATCH: unsupported declared semantics "
                 f"{version} for {strategy.code}"
             )
-        expected_guards = (
-            MANDATORY_PRODUCT_GUARDS
-            if version == STRATEGY_SEMANTICS_VERSION
-            else LEGACY_MANDATORY_PRODUCT_GUARDS
-        )
+        expected_guards = {
+            STRATEGY_SEMANTICS_VERSION: MANDATORY_PRODUCT_GUARDS,
+            PREVIOUS_STRATEGY_SEMANTICS_VERSION: PREVIOUS_MANDATORY_PRODUCT_GUARDS,
+        }.get(version, LEGACY_MANDATORY_PRODUCT_GUARDS)
         if strategy.mandatory_product_guards != expected_guards:
             raise SnapshotError(
                 "STRATEGY_SEMANTICS_MISMATCH: mandatory product guards differ "
@@ -923,7 +927,7 @@ class CpSatScheduleEngine:
             if actual.get(metric) != {tier}
         ]
         if (
-            version == STRATEGY_SEMANTICS_VERSION
+            version != LEGACY_STRATEGY_SEMANTICS_VERSION
             and actual.get("HOME_LOCATION_VIOLATIONS")
         ):
             mismatches.append(
@@ -946,12 +950,13 @@ class CpSatScheduleEngine:
         self._cancel_event.clear()
         global_deadline = self._clock() + self._cp_sat_budget_seconds
         if any(
-            strategy.strategy_semantics_version == STRATEGY_SEMANTICS_VERSION
+            strategy.strategy_semantics_version
+            in (PREVIOUS_STRATEGY_SEMANTICS_VERSION, STRATEGY_SEMANTICS_VERSION)
             for strategy in snapshot.strategies
-        ) and snapshot.settings.fairness_quality_gate is None:
+        ) and snapshot.settings.fairness_quality_target is None:
             raise SnapshotError(
-                "STRATEGY_SEMANTICS_MISMATCH: B4F169_V1 requires "
-                "fairnessQualityGate settings"
+                "STRATEGY_SEMANTICS_MISMATCH: fairness target semantics require "
+                "fairnessQualityTarget settings"
             )
         for strategy in snapshot.strategies:
             self._validate_strategy_semantics(strategy)

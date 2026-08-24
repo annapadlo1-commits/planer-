@@ -1189,7 +1189,7 @@ class Budget:
 
 
 @dataclass(frozen=True)
-class FairnessQualityGate:
+class FairnessQualityTarget:
     minimum_estimated_achievable_target_utilization_bps: int
     maximum_estimated_achievable_target_utilization_spread_bps: int
     max_attempts: int
@@ -1197,19 +1197,19 @@ class FairnessQualityGate:
     def __post_init__(self) -> None:
         if self.minimum_estimated_achievable_target_utilization_bps > 1_000:
             raise SnapshotError(
-                "fairnessQualityGate minimum utilization must be between 0 and 1000"
+                "fairnessQualityTarget minimum utilization must be between 0 and 1000"
             )
         if self.maximum_estimated_achievable_target_utilization_spread_bps > 1_000:
             raise SnapshotError(
-                "fairnessQualityGate maximum spread must be between 0 and 1000"
+                "fairnessQualityTarget maximum spread must be between 0 and 1000"
             )
         if self.max_attempts > 3:
             raise SnapshotError(
-                "fairnessQualityGate maxAttempts must be between 1 and 3"
+                "fairnessQualityTarget maxAttempts must be between 1 and 3"
             )
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, Any]) -> FairnessQualityGate:
+    def from_dict(cls, raw: Mapping[str, Any]) -> FairnessQualityTarget:
         supported = {
             "minimumEstimatedAchievableTargetUtilizationBps",
             "minimum_estimated_achievable_target_utilization_bps",
@@ -1221,7 +1221,7 @@ class FairnessQualityGate:
         unsupported = set(raw) - supported
         if unsupported:
             raise SnapshotError(
-                f"Unsupported fairnessQualityGate fields: {sorted(unsupported)}"
+                f"Unsupported fairnessQualityTarget fields: {sorted(unsupported)}"
             )
         return cls(
             minimum_estimated_achievable_target_utilization_bps=_integer(
@@ -1230,7 +1230,7 @@ class FairnessQualityGate:
                     "minimumEstimatedAchievableTargetUtilizationBps",
                     "minimum_estimated_achievable_target_utilization_bps",
                 ),
-                "fairnessQualityGate minimumEstimatedAchievableTargetUtilizationBps",
+                "fairnessQualityTarget minimumEstimatedAchievableTargetUtilizationBps",
                 0,
             ),
             maximum_estimated_achievable_target_utilization_spread_bps=_integer(
@@ -1239,12 +1239,12 @@ class FairnessQualityGate:
                     "maximumEstimatedAchievableTargetUtilizationSpreadBps",
                     "maximum_estimated_achievable_target_utilization_spread_bps",
                 ),
-                "fairnessQualityGate maximumEstimatedAchievableTargetUtilizationSpreadBps",
+                "fairnessQualityTarget maximumEstimatedAchievableTargetUtilizationSpreadBps",
                 0,
             ),
             max_attempts=_integer(
                 _pick(raw, "maxAttempts", "max_attempts"),
-                "fairnessQualityGate maxAttempts",
+                "fairnessQualityTarget maxAttempts",
                 1,
             ),
         )
@@ -1258,7 +1258,7 @@ class Settings:
     require_optimal: bool = True
     random_seed: int = 1
     standby_tiers_per_role_day: int = 0
-    fairness_quality_gate: FairnessQualityGate | None = None
+    fairness_quality_target: FairnessQualityTarget | None = None
 
     def __post_init__(self) -> None:
         if self.standby_tiers_per_role_day > 2:
@@ -1266,16 +1266,18 @@ class Settings:
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Settings:
-        fairness_quality_gate_raw = _pick(
+        fairness_quality_target_raw = _pick(
             raw,
+            "fairnessQualityTarget",
+            "fairness_quality_target",
             "fairnessQualityGate",
             "fairness_quality_gate",
             default=None,
         )
-        if fairness_quality_gate_raw is not None and not isinstance(
-            fairness_quality_gate_raw, Mapping
+        if fairness_quality_target_raw is not None and not isinstance(
+            fairness_quality_target_raw, Mapping
         ):
-            raise SnapshotError("fairnessQualityGate must be an object")
+            raise SnapshotError("fairnessQualityTarget must be an object")
         return cls(
             timezone=str(_pick(raw, "timezone")),
             missing_availability_means_available=bool(
@@ -1312,10 +1314,10 @@ class Settings:
                 "standbyTiersPerRoleDay",
                 0,
             ),
-            fairness_quality_gate=(
+            fairness_quality_target=(
                 None
-                if fairness_quality_gate_raw is None
-                else FairnessQualityGate.from_dict(fairness_quality_gate_raw)
+                if fairness_quality_target_raw is None
+                else FairnessQualityTarget.from_dict(fairness_quality_target_raw)
             ),
         )
 

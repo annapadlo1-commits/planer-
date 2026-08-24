@@ -1,8 +1,9 @@
-export const STRATEGY_SEMANTICS_VERSION = "B4F169_V1";
+export const STRATEGY_SEMANTICS_VERSION = "B4F170_V1";
 
 export const SUPPORTED_STRATEGY_SEMANTICS_VERSIONS = [
   "B4F165_V1",
   "B4F168_V1",
+  "B4F169_V1",
   STRATEGY_SEMANTICS_VERSION,
 ] as const;
 
@@ -15,14 +16,14 @@ export const MANDATORY_PRODUCT_GUARDS = [
   "PRIMARY_ROLE",
   "MAX_MIN_FAIRNESS",
   "FAIRNESS_SPREAD",
-  "FAIRNESS_QUALITY_GATE",
+  "FAIRNESS_QUALITY_TARGET",
 ] as const;
 
 export const MANDATORY_PRODUCT_GUARDS_LABEL =
   "MANDATORY PRODUCT GUARDS • obowiązkowe zabezpieczenia produktu";
 
 export const MANDATORY_PRODUCT_GUARDS_DESCRIPTION =
-  "Każdy wariant zachowuje kolejno: twarde reguły, wymaganą obsadę, konieczne role dodatkowe, minimalne nadgodziny, ochronę osób z zerową liczbą godzin, pierwszeństwo ról podstawowych oraz podstawowy sprawiedliwy podział. Wariant „Preferencje i równy podział” musi dodatkowo osiągnąć minimum 70% szacowanego celu i najwyżej 30 p.p. rozstępu; słabszy wynik nie jest gotowy. Dopiero potem stosowane są pozostałe cele strategii.";
+  "Każdy wariant zachowuje kolejno: twarde reguły, najlepszą możliwą obsadę, konieczne role dodatkowe, minimalne nadgodziny, ochronę osób z zerową liczbą godzin, pierwszeństwo ról podstawowych oraz podstawowy sprawiedliwy podział. Dla wariantu „Preferencje i równy podział” silnik dąży dodatkowo do minimum 70% szacowanego celu i najwyżej 30 p.p. rozstępu. Jeżeli legalny grafik nie osiągnie tego poziomu jakości, aplikacja nadal pokaże najlepszy poprawny wynik z ostrzeżeniem.";
 
 export const DEFAULT_STRATEGY_DESCRIPTIONS = {
   BALANCED:

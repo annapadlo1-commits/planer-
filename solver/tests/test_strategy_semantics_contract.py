@@ -8,6 +8,8 @@ from grafik_solver.cp_sat_engine import (
     LEGACY_MANDATORY_PRODUCT_GUARDS,
     LEGACY_STRATEGY_SEMANTICS_VERSION,
     MANDATORY_PRODUCT_GUARDS,
+    OBSOLETE_HOME_STRATEGY_SEMANTICS_VERSION,
+    PREVIOUS_MANDATORY_PRODUCT_GUARDS,
     PREVIOUS_STRATEGY_SEMANTICS_VERSION,
     STRATEGY_SEMANTICS_VERSION,
     CpSatScheduleEngine,
@@ -38,6 +40,8 @@ def strategy_raw(
         "mandatoryProductGuards": list(
             MANDATORY_PRODUCT_GUARDS
             if version == STRATEGY_SEMANTICS_VERSION
+            else PREVIOUS_MANDATORY_PRODUCT_GUARDS
+            if version == PREVIOUS_STRATEGY_SEMANTICS_VERSION
             else LEGACY_MANDATORY_PRODUCT_GUARDS
         ),
         "objectiveTerms": [
@@ -79,6 +83,21 @@ class StrategySemanticsContractTests(unittest.TestCase):
             )
 
     def test_historical_b4f168_matrix_remains_readable(self) -> None:
+        for index, code in enumerate(BUILT_IN_STRATEGY_OBJECTIVE_TIERS):
+            strategy = Strategy.from_dict(
+                strategy_raw(
+                    code,
+                    version=OBSOLETE_HOME_STRATEGY_SEMANTICS_VERSION,
+                ),
+                index,
+            )
+            CpSatScheduleEngine._validate_strategy_semantics(strategy)
+            self.assertEqual(
+                strategy.strategy_semantics_version,
+                OBSOLETE_HOME_STRATEGY_SEMANTICS_VERSION,
+            )
+
+    def test_historical_b4f169_matrix_remains_readable(self) -> None:
         for index, code in enumerate(BUILT_IN_STRATEGY_OBJECTIVE_TIERS):
             strategy = Strategy.from_dict(
                 strategy_raw(code, version=PREVIOUS_STRATEGY_SEMANTICS_VERSION),

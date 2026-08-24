@@ -303,6 +303,50 @@ test("accepts verified fairness diagnostics emitted by the worker", async () => 
   }]);
 });
 
+test("accepts a ready variant whose fairness quality target was not met", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  Object.assign(variant.metrics, {
+    LOAD_UTILIZATION_TARGET_COUNT: 19,
+    FAIRNESS_TARGET_MET: 0,
+    FAIRNESS_TARGET_MINIMUM_BPS: 700,
+    FAIRNESS_TARGET_MAXIMUM_SPREAD_BPS: 300,
+    FAIRNESS_TARGET_ACTUAL_MINIMUM_BPS: 660,
+    FAIRNESS_TARGET_ACTUAL_SPREAD_BPS: 240,
+    FAIRNESS_TARGET_FAILURE_MINIMUM: 1,
+    FAIRNESS_TARGET_FAILURE_SPREAD: 0,
+    FAIRNESS_TARGET_ATTEMPT_COUNT: 3,
+    FAIRNESS_TARGET_FALLBACK_USED: 1,
+    FAIRNESS_TARGET_PROVEN_UNATTAINABLE: 0,
+  });
+  variant.stageObjectives.push({
+    tier: 0,
+    name: "FAIRNESS_QUALITY_TARGET",
+    value: 240,
+    status: "TARGET_NOT_MET_BEST_FOUND",
+    tolerance: 300,
+    frozenUpperBound: 300,
+    timeBudgetSeconds: 0,
+    elapsedSeconds: 0,
+    usedFallback: true,
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
 test("accepts versioned cost categories emitted by the current worker", async () => {
   const calls = [];
   const handler = handlerWith(calls);

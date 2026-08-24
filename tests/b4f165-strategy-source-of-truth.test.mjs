@@ -16,11 +16,12 @@ const migrationUrl = new URL(
 test("B4F-165 publishes one explicit strategy contract and protects history", async () => {
   const migration = await readFile(migrationUrl, "utf8");
 
-  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F169_V1");
+  assert.equal(STRATEGY_SEMANTICS_VERSION, "B4F170_V1");
   assert.deepEqual(SUPPORTED_STRATEGY_SEMANTICS_VERSIONS, [
     "B4F165_V1",
     "B4F168_V1",
     "B4F169_V1",
+    "B4F170_V1",
   ]);
   assert.deepEqual(MANDATORY_PRODUCT_GUARDS, [
     "HARD_CONSTRAINTS",
@@ -31,7 +32,7 @@ test("B4F-165 publishes one explicit strategy contract and protects history", as
     "PRIMARY_ROLE",
     "MAX_MIN_FAIRNESS",
     "FAIRNESS_SPREAD",
-    "FAIRNESS_QUALITY_GATE",
+    "FAIRNESS_QUALITY_TARGET",
   ]);
   for (const description of Object.values(DEFAULT_STRATEGY_DESCRIPTIONS)) {
     assert.match(migration, new RegExp(description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

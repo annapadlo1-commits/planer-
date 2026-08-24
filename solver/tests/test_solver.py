@@ -1871,7 +1871,7 @@ class SolverTests(unittest.TestCase):
         raw["periodEnd"] = "2026-08-19"
         raw["settings"]["missingAvailabilityMeansAvailable"] = True
         raw["settings"]["requireOptimal"] = True
-        raw["settings"]["fairnessQualityGate"] = {
+        raw["settings"]["fairnessQualityTarget"] = {
             "minimumEstimatedAchievableTargetUtilizationBps": 700,
             "maximumEstimatedAchievableTargetUtilizationSpreadBps": 300,
             "maxAttempts": 3,
@@ -1910,7 +1910,7 @@ class SolverTests(unittest.TestCase):
             "label": "Preferencje i rowny podzial",
             "sortOrder": 0,
             "timeLimitSeconds": 30,
-            "strategySemanticsVersion": "B4F169_V1",
+            "strategySemanticsVersion": "B4F170_V1",
             "mandatoryProductGuards": list(MANDATORY_PRODUCT_GUARDS),
             "objectiveTerms": [
                 {"tier": 1, "metric": "UNFILLED", "weight": 1_000_000, "direction": "MIN"},

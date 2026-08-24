@@ -186,7 +186,7 @@ test("a freshly downloaded quick-start workbook remains self-importable after an
   assert.equal(parsed.duties.length,0,"obowiązki są opcjonalne i pusty arkusz nie może blokować pierwszego uruchomienia");
   assert.deepEqual(parsed.scenarios.map(item=>item.code),["BASE"]);
   assert.deepEqual(parsed.strategies.map(item=>item.code),["BALANCED","MIN_COST","PREFERENCES"]);
-  assert.equal(parsed.settings.strategySemanticsVersion,"B4F169_V1");
+  assert.equal(parsed.settings.strategySemanticsVersion,"B4F170_V1");
   assert.equal(parsed.settings.configurableObjectivesStartAfterMandatoryGuards,true);
   assert.equal(parsed.strategies.find(item=>item.code==="PREFERENCES").description,
     "Najpierw sprawiedliwie rozdziela pracę względem celów i możliwości pracowników. Następnie wśród podobnie sprawiedliwych grafików możliwie najlepiej uwzględnia preferowane dni, zmiany i lokalizacje.");

@@ -175,6 +175,26 @@ function solverStageProofLabel(variant: SolverVariant) {
   return `${variant.stageProof.length} etapów • ${elapsed.toFixed(2)} s / ${budget.toFixed(2)} s • fallback: ${fallbackCount}`;
 }
 
+function fairnessPercent(bps:number){
+  return `${(bps/10).toLocaleString("pl-PL",{maximumFractionDigits:1})}%`;
+}
+
+function fairnessSpread(bps:number){
+  return `${(bps/10).toLocaleString("pl-PL",{maximumFractionDigits:1})} p.p.`;
+}
+
+function fairnessTargetExplanation(variant:SolverVariant){
+  const target=variant.fairnessTarget;
+  if(!target||!target.applicable||target.met)return "";
+  if(target.provenUnattainable){
+    return "Docelowy poziom nie był możliwy do osiągnięcia przy obecnym zapotrzebowaniu i twardych ograniczeniach. Pokazujemy najlepszy legalny układ potwierdzony przez solver.";
+  }
+  if(target.timeoutFallbackUsed){
+    return "Dalsza próba poprawy zakończyła się limitem czasu. Pokazujemy wcześniej zweryfikowany, najlepszy legalny układ.";
+  }
+  return "Nie udało się znaleźć wyniku osiągającego pełny cel jakości w dostępnym czasie. Pokazujemy najlepszy znaleziony legalny układ.";
+}
+
 function solverVersionStampLabel(variant: SolverVariant) {
   const frontend = auditObject(variant.versionStamp.frontend);
   const solver = auditObject(variant.versionStamp.solver);
@@ -352,6 +372,7 @@ export function SolverV2Panel({
     metrics:{manualStudio:true},
     stageProof:[],
     versionStamp:{},
+    fairnessTarget:null,
   } : generatedSelectedVariant;
   const leaderPublicationReady = !leaderVariant
     || selectedVariant?.id!==leaderVariant.id
@@ -1239,6 +1260,9 @@ export function SolverV2Panel({
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
           <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
+          {variant.fairnessTarget?.applicable&&<div className={`solver-v2-notice ${variant.fairnessTarget.met?"":"warning"}`} role="status">
+            {variant.fairnessTarget.met?<Check/>:<AlertTriangle/>}<span><strong>{variant.fairnessTarget.met?"Docelowy poziom wyrównania osiągnięty":"Nie udało się osiągnąć docelowego poziomu wyrównania"}</strong><small>{variant.fairnessTarget.met?"Grafik spełnia twarde zasady, najlepszą możliwą obsadę i oba cele jakości fairness.":fairnessTargetExplanation(variant)}</small><small>Najniższa realizacja: {fairnessPercent(variant.fairnessTarget.actualMinimumBps)} / cel {fairnessPercent(variant.fairnessTarget.targetMinimumBps)} • rozstęp: {fairnessSpread(variant.fairnessTarget.actualSpreadBps)} / cel maks. {fairnessSpread(variant.fairnessTarget.targetMaximumSpreadBps)} • próby: {variant.fairnessTarget.attemptCount}</small></span>
+          </div>}
           <details className="solver-v2-technical-metrics">
             <summary><span>Jak silnik ocenił ten wariant?</span><small>Techniczne wskaźniki i wyjaśnienia</small></summary>
             <dl className="solver-v2-analysis">
