@@ -593,6 +593,17 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
         active:importBoolean(importCell(row,"Aktywne","active","AKTYWNA"),true),
       };
     });
+  // The guided workbook deliberately has no separate technical role-duty
+  // sheet. An exact staffing row that names both a role and a duty is already
+  // an unambiguous declaration that this role can perform that duty. Seed the
+  // missing competency relation (minimum remains 0); demand still comes only
+  // from the exact shift staffing rule.
+  const resolvedRoleDuties=[...roleDuties];
+  for(const rule of staffingRules){
+    const roleCode=String(rule.roleCode??""),dutyCode=String(rule.dutyCode??"");
+    if(!roleCode||!dutyCode||resolvedRoleDuties.some(link=>link.roleCode===roleCode&&link.dutyCode===dutyCode))continue;
+    resolvedRoleDuties.push({roleCode,dutyCode,assignmentMode:"OPTIONAL",minimumCount:"0",shiftObligation:false,shiftPeriod:"",active:true});
+  }
 
   const employeeRoles=rows(["Role pracowników","Role pracownikow","Employee Roles"]).map(row=>{
     const isPrimary=importBoolean(importCell(row,"Podstawowa","isPrimary"));
@@ -714,6 +725,6 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
 
   return {settings:{...settings,standbyTiersPerRoleDay:0,standbyGroups,...DEFAULT_STRATEGY_SOLVER_CONTRACT},roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
     payRules,scenarioPayRuleOverrides:normalizedScenarioPayRuleOverrides,scenarioBudgets:normalizedScenarioBudgets,employees,employeeDuties,employeeRoles,
-    employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties,adHocWorkers,
+    employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties:resolvedRoleDuties,adHocWorkers,
     _workbook:workbookIdentity,_sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
 }

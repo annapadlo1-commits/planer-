@@ -79,6 +79,10 @@ test("B4F-172: staffing resolves a visible shift name after its blank code is ge
   }));
   assert.equal(parsed.shifts[0].code,"CENTRUM_WIECZOR");
   assert.equal(parsed.staffingRules[0].shiftCode,"CENTRUM_WIECZOR");
+  assert.deepEqual(parsed.roleDuties,[{
+    roleCode:"KELNER",dutyCode:"SERWIS",assignmentMode:"OPTIONAL",minimumCount:"0",
+    shiftObligation:false,shiftPeriod:"",active:true,
+  }]);
 });
 
 test("B4F-174: normalized reserve-group relation supports several roles without comma text",async()=>{
