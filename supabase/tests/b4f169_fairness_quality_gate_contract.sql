@@ -51,6 +51,13 @@ begin
   select pg_get_functiondef(
     'public.solver_save_variant_before_b4f170(uuid,uuid,uuid,jsonb,text)'::regprocedure
   ) into v_save_function;
+  if to_regprocedure(
+      'public.solver_save_variant_before_nfjob_uat_v1(uuid,uuid,uuid,jsonb,text)'
+    ) is not null then
+    v_save_function:=v_save_function||pg_get_functiondef(
+      'public.solver_save_variant_before_nfjob_uat_v1(uuid,uuid,uuid,jsonb,text)'::regprocedure
+    );
+  end if;
   if v_save_function not like
     '%20260822220000_b4f169_deterministic_fairness_quality_gate%'
   then

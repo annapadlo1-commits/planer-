@@ -54,6 +54,13 @@ begin
   v_finalize_function:=pg_get_functiondef(
     'public.solver_finalize_v2(uuid,uuid,uuid)'::regprocedure
   );
+  if to_regprocedure(
+      'public.solver_finalize_before_nfjob_uat_v1(uuid,uuid,uuid)'
+    ) is not null then
+    v_finalize_function:=v_finalize_function||pg_get_functiondef(
+      'public.solver_finalize_before_nfjob_uat_v1(uuid,uuid,uuid)'::regprocedure
+    );
+  end if;
   if v_finalize_function like '%FAIRNESS_TARGET%'
     or v_finalize_function like '%fairnessQuality%'
     or v_finalize_function not like '%variant.hard_violations=0%' then

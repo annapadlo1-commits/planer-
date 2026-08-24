@@ -2,6 +2,8 @@
 -- feasibility condition. Historical Matrix v21 remains immutable; v22
 -- publishes the corrected contract and preserves deterministic attempts.
 
+begin;
+
 create temp table b4f170_prior_active on commit drop as
 select mv.id,mv.version,mv.content_hash,
   public.matrix_v2_content_document(mv.id) content_document
@@ -443,3 +445,5 @@ grant execute on function public.solver_save_variant_v2(
 ) to service_role;
 
 notify pgrst,'reload schema';
+
+commit;
