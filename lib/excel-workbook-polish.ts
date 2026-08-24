@@ -53,7 +53,8 @@ const REQUIRED:Record<string,Set<string>>={
   "Pracownicy":new Set(["Aktywny","Imię","Nazwisko","Rola podstawowa","Lokal pracy 1","Etap zatrudnienia","Zatrudniony od","Miesięczny cel godzin","Twardy limit miesięczny godzin","Limit tygodniowy godzin","Maks. kolejnych dni","Rodzaj umowy","Zgoda na nadgodziny"]),
   "Zmiany":new Set(["Nazwa","Lokal","Od","Do","Kończy się następnego dnia","Dni tygodnia","Aktywna"]),
   "Obsada":new Set(["Zmiana","Rola","Liczba osób","Aktywna"]),
-  "Grupy rezerwy":new Set(["Nazwa","Kategoria grafiku","Role obsługiwane wspólnie","Poziomy rezerwy"]),
+  "Grupy rezerwy":new Set(["Nazwa","Kategoria grafiku","Poziomy rezerwy"]),
+  "Role grup rezerwy":new Set(["Grupa rezerwy","Rola"]),
   "Pula ad-hoc":new Set(["Imię","Nazwisko","Telefon","Rola","Rodzaj współpracy","Stawka godzinowa","Waluta","Aktywna"]),
   "Dostępy":new Set(["Adres e-mail","Rodzaj dostępu","Aktywny"]),
   "Finanse pracowników":new Set(["Numer pracownika","Obowiązuje od","Stawka godzinowa","Waluta","Aktywna"]),
@@ -95,7 +96,7 @@ function styleSheet(sheet:Worksheet,kind:WorkbookKind){
   for(let col=1;col<=cols;col++){
     const cell=header.getCell(col);const raw=String(cell.value??"");if(!raw)continue;
     const plain=baseHeader(raw),fieldKind=headerKind(sheet.name,plain,kind);
-    cell.value=headerLabel(plain,fieldKind);
+    cell.value=sheet.name==="Opis pól"?plain:headerLabel(plain,fieldKind);
     cell.font={name:"Aptos",size:10,bold:true,color:{argb:argb(BRAND.ink)}};
     cell.alignment={vertical:"middle",horizontal:"left",wrapText:true};
     cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(fieldKind==="required"?BRAND.required:fieldKind==="conditional"?BRAND.conditional:fieldKind==="system"?BRAND.system:BRAND.optional)}};
@@ -120,9 +121,12 @@ function findColumn(sheet:Worksheet,label:string){
   for(let col=1;col<=usedColumnCount(sheet);col++)if(baseHeader(String(sheet.getRow(1).getCell(col).value??""))===label)return col;
   return 0;
 }
-function listFormula(listSheet:Worksheet,column:number,count:number){return `'${listSheet.name}'!$${listSheet.getColumn(column).letter}$2:$${listSheet.getColumn(column).letter}$${count+1}`;}
+function listFormula(listSheet:Worksheet,column:number,count:number,fixedEnd?:number){
+  const end=fixedEnd??Math.max(2,count+1);
+  return `'${listSheet.name}'!$${listSheet.getColumn(column).letter}$2:$${listSheet.getColumn(column).letter}$${end}`;
+}
 function addListValidation(sheet:Worksheet,column:number,formula:string,prompt:string){
-  if(!column||/\$2:\$1$/u.test(formula))return;
+  if(!column)return;
   for(let row=2;row<=501;row++){
     sheet.getCell(row,column).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Wybierz wartość z listy",error:"Ta wartość nie jest obsługiwana przez import.",showInputMessage:true,promptTitle:"SZAFUNEK",prompt};
   }
@@ -213,7 +217,53 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
   sheet.getColumn(1).width=14;sheet.getColumn(2).width=36;sheet.getColumn(3).width=100;
   sheet.views=[{state:"frozen",ySplit:2,showGridLines:false}];
   const header=sheet.getRow(2);header.height=28;header.eachCell(cell=>{cell.font={name:"Aptos",size:10,bold:true,color:{argb:"FFFFFFFF"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:argb(BRAND.primaryDark)}};cell.alignment={vertical:"middle"};});
-  for(let row=3;row<=sheet.rowCount;row++){const current=sheet.getRow(row);current.height=34;current.eachCell(cell=>{cell.font={name:"Aptos",size:10,color:{argb:argb(BRAND.ink)}};cell.alignment={vertical:"middle",wrapText:true};cell.border={bottom:{style:"thin",color:{argb:argb(BRAND.line)}}};});current.getCell(1).font={name:"Aptos",size:11,bold:true,color:{argb:argb(BRAND.primaryDark)}};}
+  for(let row=3;row<=sheet.rowCount;row++){const current=sheet.getRow(row);current.height=row===sheet.rowCount?64:34;current.eachCell(cell=>{cell.font={name:"Aptos",size:10,color:{argb:argb(BRAND.ink)}};cell.alignment={vertical:"middle",wrapText:true};cell.border={bottom:{style:"thin",color:{argb:argb(BRAND.line)}}};});current.getCell(1).font={name:"Aptos",size:11,bold:true,color:{argb:argb(BRAND.primaryDark)}};}
+}
+
+function writeDynamicReferenceList(sheet:Worksheet,column:number,title:string,sourceSheet:string,nameColumn:string,codeColumn:string){
+  sheet.getCell(1,column).value=title;
+  for(let row=2;row<=501;row++){
+    sheet.getCell(row,column).value={formula:`=IF('${sourceSheet}'!$${nameColumn}${row}="","",'${sourceSheet}'!$${nameColumn}${row}&IF('${sourceSheet}'!$${codeColumn}${row}="",""," ["&'${sourceSheet}'!$${codeColumn}${row}&"]"))`};
+  }
+}
+
+type TypedValidation={sheet:string;headers:string[];type:"decimal"|"whole"|"date"|"time";operator?:"between"|"greaterThanOrEqual";formulae?:Array<number|string>;prompt:string};
+const QUICK_TYPED_VALIDATIONS:TypedValidation[]=[
+  {sheet:"Firma",headers:["Minimalny odpoczynek (godz.)"],type:"decimal",formulae:[0,168],prompt:"Wpisz liczbę godzin od 0 do 168."},
+  {sheet:"Firma",headers:["Maks. zmian jednego pracownika na dobę"],type:"whole",formulae:[1,24],prompt:"Wpisz liczbę całkowitą od 1 do 24."},
+  {sheet:"Pracownicy",headers:["Koniec okresu próbnego","Zatrudniony od","Zatrudniony do"],type:"date",formulae:["2000-01-01","2200-12-31"],prompt:"Wpisz datę w formacie RRRR-MM-DD."},
+  {sheet:"Pracownicy",headers:["Miesięczny cel godzin","Twardy limit miesięczny godzin","Limit tygodniowy godzin","Minimalny odpoczynek godzin"],type:"decimal",operator:"greaterThanOrEqual",formulae:[0],prompt:"Wpisz liczbę godzin nie mniejszą od zera."},
+  {sheet:"Pracownicy",headers:["Maks. kolejnych dni"],type:"whole",formulae:[1,366],prompt:"Wpisz liczbę całkowitą od 1 do 366."},
+  {sheet:"Zmiany",headers:["Od","Do"],type:"time",formulae:[0,0.99999],prompt:"Wpisz godzinę w formacie GG:MM."},
+  {sheet:"Obsada",headers:["Liczba osób"],type:"whole",formulae:[1,1000],prompt:"Wpisz liczbę całkowitą co najmniej 1."},
+  {sheet:"Pula ad-hoc",headers:["Stawka godzinowa"],type:"decimal",operator:"greaterThanOrEqual",formulae:[0],prompt:"Wpisz kwotę nie mniejszą od zera."},
+  {sheet:"Pula ad-hoc",headers:["Dostępny od","Dostępny do"],type:"date",formulae:["2000-01-01","2200-12-31"],prompt:"Wpisz datę w formacie RRRR-MM-DD."},
+];
+
+function applyQuickTypedValidations(workbook:ExcelJS.Workbook){
+  for(const rule of QUICK_TYPED_VALIDATIONS){
+    const sheet=workbook.getWorksheet(rule.sheet);if(!sheet)continue;
+    for(const header of rule.headers){
+      const column=findColumn(sheet,header);if(!column)continue;
+      for(let row=2;row<=501;row++)sheet.getCell(row,column).dataValidation={type:rule.type as never,operator:rule.operator??"between",allowBlank:true,formulae:rule.formulae??[],showErrorMessage:true,errorStyle:"stop",errorTitle:"Nieprawidłowa wartość",error:rule.prompt,showInputMessage:true,promptTitle:"SZAFUNEK",prompt:rule.prompt};
+    }
+  }
+}
+
+async function protectQuickWorkbook(workbook:ExcelJS.Workbook){
+  for(const sheet of workbook.worksheets){
+    if(sheet.name==="Instrukcja"||sheet.name==="Opis pól")continue;
+    const business=QUICK_WORKBOOK_SHEETS[sheet.name];
+    if(business){
+      for(let column=1;column<=usedColumnCount(sheet);column++){
+        const header=baseHeader(String(sheet.getCell(1,column).value??""));
+        const technical=business.fields[header]?.status==="SYSTEM";
+        sheet.getColumn(column).hidden=technical;
+        for(let row=2;row<=501;row++)sheet.getCell(row,column).protection={locked:technical};
+      }
+    }
+    await sheet.protect("SZAFUNEK_TEMPLATE_V2",{selectLockedCells:false,selectUnlockedCells:true,formatCells:false,formatColumns:false,formatRows:false,insertRows:true,deleteRows:true,sort:true,autoFilter:true});
+  }
 }
 
 const TECHNICAL_SHEET_PURPOSE:Record<string,string>={
@@ -232,7 +282,7 @@ function addDataDictionary(workbook:ExcelJS.Workbook,kind:WorkbookKind){
   const dictionary=workbook.addWorksheet("Opis pól");
   dictionary.addRow(["ZAKŁADKA","DO CZEGO SŁUŻY","KIEDY WYPEŁNIĆ","POLE","STATUS","CO WPISAĆ / JAK WYBRAĆ","DOZWOLONE WARTOŚCI / FORMAT","PRZYKŁAD","CO ZMIENI W APLIKACJI","CO JEŚLI POZOSTAWISZ PUSTE","GDZIE ZOBACZYSZ EFEKT"]);
   for(const sheet of workbook.worksheets){
-    if(["Instrukcja","Opis pól","_LISTY"].includes(sheet.name)||(kind!=="FULL"&&sheet.name==="Słowniki"))continue;
+    if(["Instrukcja","Opis pól","_LISTY","_META"].includes(sheet.name)||(kind!=="FULL"&&sheet.name==="Słowniki"))continue;
     const quick=kind==="QUICK"?QUICK_WORKBOOK_SHEETS[sheet.name]:undefined;
     const guided=kind==="ACCESS"&&sheet.name==="Dostępy"?ACCESS_GUIDE:kind==="FINANCE"&&sheet.name==="Finanse pracowników"?FINANCE_GUIDE:undefined;
     const purpose=quick?.purpose??guided?.purpose??TECHNICAL_SHEET_PURPOSE[sheet.name]??"Dane techniczne pełnej kopii konfiguracji.";
@@ -247,7 +297,8 @@ function addDataDictionary(workbook:ExcelJS.Workbook,kind:WorkbookKind){
   [24,54,58,34,16,66,54,34,62,62,44].forEach((width,index)=>dictionary.getColumn(index+1).width=width);
 }
 
-async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
+export type QuickWorkbookMode="EMPTY_TEMPLATE"|"CURRENT_CONFIG_EXPORT";
+async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind,options?:{mode?:QuickWorkbookMode}){
   // Rebuild the SheetJS export in a fresh ExcelJS package. Loading and then
   // rewriting the same OOXML package produces files accepted by tolerant
   // readers but rejected by some desktop Excel builds (error 1004). Copying
@@ -261,6 +312,11 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
     const sheet=workbook.addWorksheet(name);
     if(rows.length)sheet.addRows(rows);
   }
+  if(kind==="QUICK"&&options?.mode){
+    let meta=workbook.getWorksheet("_META");if(!meta)meta=workbook.addWorksheet("_META");
+    const existing=new Map<string,unknown>();meta.eachRow((row,index)=>{if(index>1)existing.set(String(row.getCell(1).value??""),row.getCell(2).value);});
+    meta.spliceRows(1,Math.max(1,meta.rowCount),["Klucz","Wartość"],["workbookMode",options.mode],["contractVersion","2"],...[...existing].filter(([key])=>key==="sourceMatrixVersionId").map(([key,value])=>[key,value]));
+  }
   const instruction=workbook.getWorksheet("Instrukcja");if(instruction)formatInstruction(instruction,kind);
   addDataDictionary(workbook,kind);
   const adHoc=workbook.getWorksheet("Pula ad-hoc");if(adHoc)splitAdHocNames(adHoc);
@@ -271,9 +327,15 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
   if(kind!=="FULL"&&sourceDictionaries?.name==="Słowniki")sourceDictionaries.state="hidden";
   let lists=workbook.getWorksheet("_LISTY");if(lists)workbook.removeWorksheet(lists.id);lists=workbook.addWorksheet("_LISTY",{state:"hidden"});
   writeList(lists,1,"Tak / nie",BOOL_VALUES);writeList(lists,2,"Etap zatrudnienia",EMPLOYMENT_STAGE_VALUES);writeList(lists,3,"Rodzaj umowy",CONTRACT_VALUES);writeList(lists,4,"Kolor",COLOR_VALUES);
-  writeList(lists,5,"Role",roleReferences);writeList(lists,6,"Lokale",locationReferences);writeList(lists,7,"Kategorie",categoryReferences);writeList(lists,8,"Rodzaje dostępu",accessRoles);writeList(lists,9,"Zgoda na nadgodziny",OVERTIME_VALUES);writeList(lists,10,"Obowiązki",dutyReferences);writeList(lists,11,"Zmiany",shiftReferences);writeList(lists,12,"Poziomy rezerwy",["1","2"]);
+  if(kind==="QUICK"){
+    writeDynamicReferenceList(lists,5,"Role","Role","B","A");writeDynamicReferenceList(lists,6,"Lokale","Lokale","B","A");writeDynamicReferenceList(lists,7,"Kategorie","Kategorie grafików","B","A");
+    writeDynamicReferenceList(lists,10,"Obowiązki","Obowiązki","B","A");writeDynamicReferenceList(lists,11,"Zmiany","Zmiany","B","A");writeDynamicReferenceList(lists,13,"Grupy rezerwy","Grupy rezerwy","B","A");
+  }else{
+    writeList(lists,5,"Role",roleReferences);writeList(lists,6,"Lokale",locationReferences);writeList(lists,7,"Kategorie",categoryReferences);writeList(lists,10,"Obowiązki",dutyReferences);writeList(lists,11,"Zmiany",shiftReferences);
+  }
+  writeList(lists,8,"Rodzaje dostępu",accessRoles);writeList(lists,9,"Zgoda na nadgodziny",OVERTIME_VALUES);writeList(lists,12,"Poziomy rezerwy",["1","2"]);
   for(const sheet of workbook.worksheets){
-    if(sheet.name==="_LISTY"||sheet.name==="Instrukcja")continue;
+    if(sheet.name==="_LISTY"||sheet.name==="_META"||sheet.name==="Instrukcja")continue;
     replaceBooleanValues(sheet);replaceEmploymentStages(sheet);replaceContracts(sheet);styleSheet(sheet,kind);
     const accessColumn=findColumn(sheet,"Rodzaj dostępu");
     if(accessColumn)for(let row=2;row<=usedRowCount(sheet);row++){const cell=sheet.getCell(row,accessColumn),label=accessRoleLabels.get(String(cell.value??"").trim());if(label)cell.value=label;}
@@ -283,25 +345,33 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind){
         for(let row=2;row<=usedRowCount(sheet);row++){const cell=sheet.getCell(row,column),label=labels.get(String(cell.value??"").trim());if(label)cell.value=label;}
       }
     }
+    const dynamicEnd=kind==="QUICK"?501:undefined;
     const boolFormula=listFormula(lists,1,BOOL_VALUES.length);
     for(const label of ["Aktywna","Aktywny","Aktywne","Domyślny","Podstawowa","Może zatwierdzać","Zwykła praca","Dodatkowa praca","Lokal bazowy","Następny dzień","Kończy się następnego dnia","Włączona","Twardy limit","Brak dostępności oznacza dostępność","Brak wpisanej dostępności oznacza dostępność","Wymagaj wyniku optymalnego","Bez weekendów"])addListValidation(sheet,findColumn(sheet,label),boolFormula,"Wybierz ☐ Nie albo ☑ Tak.");
     addListValidation(sheet,findColumn(sheet,"Etap zatrudnienia"),listFormula(lists,2,EMPLOYMENT_STAGE_VALUES.length),"Wybierz etap zatrudnienia. Dla okresu próbnego uzupełnij również datę końca.");
     for(const label of ["Rodzaj umowy","Rodzaj współpracy"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,3,CONTRACT_VALUES.length),"Wybierz rodzaj umowy z listy.");
     addListValidation(sheet,findColumn(sheet,"Kolor"),listFormula(lists,4,COLOR_VALUES.length),"Wybierz kolor z gotowej palety.");
-    for(const label of ["Kod roli","Kod roli podstawowej","Rola podstawowa","Rola dodatkowa 1","Rola dodatkowa 2","Rola dodatkowa 3","Rola","Zakres roli"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,5,roleReferences.length),"Wybierz rolę z listy. Role dodatkowe są zawsze używane wyłącznie awaryjnie.");
-    for(const label of ["Kod lokalu","Lokal bazowy","Zakres lokalu","Lokal","Lokal pracy 1","Lokal pracy 2","Lokal pracy 3"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,6,locationReferences.length),"Wybierz istniejący lokal.");
-    for(const label of ["Kod kategorii","Kategoria grafiku"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,7,categoryReferences.length),"Wybierz kategorię grafiku.");
+    for(const label of ["Kod roli","Kod roli podstawowej","Rola podstawowa","Rola dodatkowa 1","Rola dodatkowa 2","Rola dodatkowa 3","Rola","Zakres roli"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,5,roleReferences.length,dynamicEnd),"Wybierz rolę z listy. Jeśli lista jest pusta, najpierw dodaj rolę w zakładce „Role”.");
+    for(const label of ["Kod lokalu","Lokal bazowy","Zakres lokalu","Lokal","Lokal pracy 1","Lokal pracy 2","Lokal pracy 3"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,6,locationReferences.length,dynamicEnd),"Wybierz lokal z listy. Jeśli lista jest pusta, najpierw dodaj lokal w zakładce „Lokale”.");
+    for(const label of ["Kod kategorii","Kategoria grafiku"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,7,categoryReferences.length,dynamicEnd),"Wybierz kategorię z listy. Jeśli lista jest pusta, najpierw dodaj ją w zakładce „Kategorie grafików”.");
     addListValidation(sheet,findColumn(sheet,"Rodzaj dostępu"),listFormula(lists,8,accessRoles.length),"Wybierz rodzaj dostępu w języku użytkownika.");
     addListValidation(sheet,findColumn(sheet,"Zgoda na nadgodziny"),listFormula(lists,9,OVERTIME_VALUES.length),"NIE blokuje nadgodziny; TYLKO PO ZATWIERDZENIU pozostawia decyzję liderowi; TAK pozwala użyć nadgodzin dopiero po zwykłym wymiarze.");
-    for(const label of ["Kod obowiązku","Obowiązek (opcjonalnie)","Kompetencja dodatkowa 1","Kompetencja dodatkowa 2","Kompetencja dodatkowa 3"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,10,dutyReferences.length),"Wybierz obowiązek z listy albo pozostaw puste, jeśli sama rola wystarcza.");
-    for(const label of ["Kod zmiany","Zmiana"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,11,shiftReferences.length),"Wybierz zmianę z listy.");
+    for(const label of ["Kod obowiązku","Obowiązek (opcjonalnie)","Kompetencja dodatkowa 1","Kompetencja dodatkowa 2","Kompetencja dodatkowa 3"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,10,dutyReferences.length,dynamicEnd),"Wybierz obowiązek z listy albo pozostaw puste, jeśli sama rola wystarcza.");
+    for(const label of ["Kod zmiany","Zmiana"])addListValidation(sheet,findColumn(sheet,label),listFormula(lists,11,shiftReferences.length,dynamicEnd),"Wybierz zmianę z listy. Jeśli lista jest pusta, najpierw dodaj ją w zakładce „Zmiany”.");
+    addListValidation(sheet,findColumn(sheet,"Grupa rezerwy"),listFormula(lists,13,0,dynamicEnd),"Wybierz grupę utworzoną w zakładce „Grupy rezerwy”.");
     addListValidation(sheet,findColumn(sheet,"Poziomy rezerwy"),listFormula(lists,12,2),"Wybierz 1 albo 2 poziomy rezerwy.");
   }
-  lists.state="hidden";
+  if(kind==="QUICK"){
+    applyQuickTypedValidations(workbook);
+    workbook.calcProperties.fullCalcOnLoad=true;
+    const meta=workbook.getWorksheet("_META");if(meta)meta.state="veryHidden";
+    lists.state="veryHidden";
+    await protectQuickWorkbook(workbook);
+  }else lists.state="hidden";
   return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 
-export function polishMatrixWorkbook(input:ArrayBuffer|Uint8Array,variant:"QUICK"|"FULL"){return polish(input,variant);}
+export function polishMatrixWorkbook(input:ArrayBuffer|Uint8Array,variant:"QUICK"|"FULL",options?:{mode?:QuickWorkbookMode}){return polish(input,variant,options);}
 export function polishAccessWorkbook(input:ArrayBuffer|Uint8Array){return polish(input,"ACCESS");}
 export function polishFinanceWorkbook(input:ArrayBuffer|Uint8Array){return polish(input,"FINANCE");}
 

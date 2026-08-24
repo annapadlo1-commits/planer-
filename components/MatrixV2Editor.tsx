@@ -11,7 +11,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAppAuth } from "@/components/AppAuthProvider";
 import { CheckboxDropdown } from "@/components/CheckboxDropdown";
 import { configurationBlockerAction } from "@/lib/product-journey";
-import { readMatrixWorkbook } from "@/lib/matrix-workbook-import";
+import { MatrixWorkbookValidationError, readMatrixWorkbook, type WorkbookValidationIssue } from "@/lib/matrix-workbook-import";
 import { readWorkforceFinanceWorkbook } from "@/lib/workforce-finance-import";
 import { employeeMatchesWorkforceQuery, workforceProfileReadiness, type WorkforceProfileCheckKey } from "@/lib/workforce-profile";
 import { automaticShiftPeriod, parseTime24 } from "@/lib/uat006-workflows";
@@ -1794,7 +1794,7 @@ function AuditPayload({title,data}:{title:string;data?:Record<string,unknown>|nu
 function auditFieldLabel(key:string){return ({name:"Nazwa",code:"Kod",active:"Aktywna",employeeNo:"Numer pracownika",employmentStart:"Zatrudnienie od",employmentEnd:"Zatrudnienie do",operation:"Sposób działania",countValue:"Liczba osób",validFrom:"Ważne od",validTo:"Ważne do",version:"Wersja",effectiveFrom:"Obowiązuje od",reason:"Powód",updated:"Liczba zmienionych",saved:"Liczba zapisanych",delta:"Zmiana liczby osób"} as Record<string,string>)[key]??key.replace(/([A-Z])/g," $1").replace(/^./,letter=>letter.toUpperCase());}
 function auditValue(value:unknown){if(value===null||value===undefined||value==="")return "—";if(typeof value==="boolean")return value?"Tak":"Nie";if(Array.isArray(value))return `${value.length} elementów`;if(typeof value==="object")return `${Object.keys(asRecord(value)).length} ustawień`;return String(value);}
 
-type MatrixImportIssue={sheet:string;row:number;code:string;message:string};
+type MatrixImportIssue={sheet:string;row:number;column?:string;value?:string;code:string;message:string;fix?:string};
 type MatrixImportArchive={employeeId:string;employeeNo:string;employeeName:string;email?:string|null;reason:"NOT_IN_FILE"|"DUPLICATE_IDENTITY"};
 function importIssueMessage(issue:MatrixImportIssue){
   const friendly:Record<string,string>={
@@ -1839,9 +1839,33 @@ type FullImportPreview={
     payRules:number;
     timeConstraints:number;
   };
+  structureImpact?:Record<"roleCategories"|"roles"|"locations"|"duties"|"shifts",{create:number;update:number}>;
 };
 
-async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
+function workbookStructureImpact(
+  configuration:Awaited<ReturnType<typeof readMatrixWorkbook>>,
+  data:MatrixV2Workspace,
+):NonNullable<FullImportPreview["structureImpact"]>{
+  const count=(incoming:Record<string,unknown>[],current:Array<{code:string}>)=>{
+    const currentCodes=new Set(current.map(item=>item.code.trim().toLocaleUpperCase("pl-PL")));
+    return incoming.reduce<{create:number;update:number}>((result,item)=>{
+      const code=String(item.code??"").trim().toLocaleUpperCase("pl-PL");
+      if(code&&currentCodes.has(code))result.update+=1;
+      else result.create+=1;
+      return result;
+    },{create:0,update:0});
+  };
+  return {
+    roleCategories:count(configuration.roleCategories,data.roleCategories??[]),
+    roles:count(configuration.roles,data.roles),
+    locations:count(configuration.locations,data.locations),
+    duties:count(configuration.duties,data.duties),
+    shifts:count(configuration.shifts,data.shiftTemplates),
+  };
+}
+
+type QuickWorkbookMode="EMPTY_TEMPLATE"|"CURRENT_CONFIG_EXPORT";
+async function buildQuickMatrixTemplate(data:MatrixV2Workspace,mode:QuickWorkbookMode){
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const add=(name:keyof typeof QUICK_WORKBOOK_SHEETS,rows:(string|number|boolean|null)[][]=[])=>{
@@ -1854,16 +1878,17 @@ async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
   };
   const instructions=XLSX.utils.aoa_to_sheet([["SZAFUNEK — prosta konfiguracja firmy"]]);
   XLSX.utils.book_append_sheet(workbook,instructions,"Instrukcja");
+  const includeCurrent=mode==="CURRENT_CONFIG_EXPORT";
   const settings=matrixV2Settings(data.matrixVersion);
-  add("Firma",[[settings.currency,settings.timezone,settings.minimumRestMinutes/60,settings.maximumShiftsPerDay,settings.missingAvailabilityMeansAvailable?"TAK":"NIE"]]);
-  add("Kategorie grafików",(data.roleCategories??[]).map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]));
-  add("Role",data.roles.map(item=>[
+  add("Firma",[[includeCurrent?settings.currency:"PLN",includeCurrent?settings.timezone:"Europe/Warsaw",includeCurrent?settings.minimumRestMinutes/60:11,includeCurrent?settings.maximumShiftsPerDay:1,includeCurrent?(settings.missingAvailabilityMeansAvailable?"TAK":"NIE"):"TAK"]]);
+  add("Kategorie grafików",includeCurrent?(data.roleCategories??[]).map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]):[]);
+  add("Role",includeCurrent?data.roles.map(item=>[
     item.code,item.name,referenceLabel((data.roleCategories??[]).find(category=>category.id===item.category_id)?.name,(data.roleCategories??[]).find(category=>category.id===item.category_id)?.code),item.color??"",item.active?"TAK":"NIE",
-  ]));
-  add("Lokale",data.locations.map(item=>[item.code,item.name,item.timezone,item.active?"TAK":"NIE"]));
-  add("Obowiązki",data.duties.map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]));
+  ]):[]);
+  add("Lokale",includeCurrent?data.locations.map(item=>[item.code,item.name,item.timezone,item.active?"TAK":"NIE"]):[]);
+  add("Obowiązki",includeCurrent?data.duties.map(item=>[item.code,item.name,item.description??"",item.color??"",item.active?"TAK":"NIE"]):[]);
 
-  const employees=data.employees.filter(employee=>employee.active).map(employee=>{
+  const employees=includeCurrent?data.employees.filter(employee=>employee.active).map(employee=>{
     const primary=data.roles.find(role=>role.id===employee.primaryRoleId);
     const additional=(data.employeeRoles??[]).filter(link=>link.employee_id===employee.id&&link.active&&!link.is_primary)
       .sort((left,right)=>(left.backup_priority??100)-(right.backup_priority??100)||left.id.localeCompare(right.id))
@@ -1877,46 +1902,41 @@ async function buildQuickMatrixTemplate(data:MatrixV2Workspace){
       employee.employmentStage??"REGULAR",employee.probationEnd??"",employee.employmentStart??"",employee.employmentEnd??"",Number(employee.nominalMonthlyMinutes??0)/60,
       Number(employee.maximumMonthlyMinutes??0)/60,Number(employee.maximumWeeklyMinutes??0)/60,employee.maximumConsecutiveDays,
       employee.minimumRestMinutes===null||employee.minimumRestMinutes===undefined?"":employee.minimumRestMinutes/60,employee.noWeekends?"TAK":"NIE",employee.contractType??"INNE",employee.overtimePolicy??"NEVER"];
-  });
+  }):[];
   add("Pracownicy",employees);
-  add("Zmiany",data.shiftTemplates.map(shift=>{
+  add("Zmiany",includeCurrent?data.shiftTemplates.map(shift=>{
     const location=data.locations.find(item=>item.id===shift.location_id);
     return [shift.code,shift.name,referenceLabel(location?.name,location?.code),time(shift.starts_at),time(shift.ends_at),shift.ends_next_day?"TAK":"NIE",shift.day_mask.join(","),uiSafeColor(shift.color,DEFAULT_SHIFT_MARKER_COLOR),shift.active?"TAK":"NIE"];
-  }));
+  }):[]);
   const defaultScenario=data.scenarios.find(scenario=>scenario.active&&scenario.is_default)??data.scenarios.find(scenario=>scenario.active);
-  add("Obsada",data.staffingRules.filter(rule=>!defaultScenario||rule.scenario_id===defaultScenario.id).map(rule=>{
+  add("Obsada",includeCurrent?data.staffingRules.filter(rule=>!defaultScenario||rule.scenario_id===defaultScenario.id).map(rule=>{
     const shift=data.shiftTemplates.find(item=>item.id===rule.shift_template_id);
     const role=data.roles.find(item=>item.id===rule.role_id);
     const duty=data.duties.find(item=>item.id===rule.duty_id);
     return [referenceLabel(shift?.name,shift?.code),referenceLabel(role?.name,role?.code),referenceLabel(duty?.name,duty?.code),rule.count_value??"",rule.active?"TAK":"NIE"];
-  }));
-  add("Grupy rezerwy",settings.standbyGroups.map(group=>{
+  }):[]);
+  add("Grupy rezerwy",includeCurrent?settings.standbyGroups.map(group=>{
     const category=(data.roleCategories??[]).find(item=>item.code===group.categoryCode);
-    const roles=group.roleCodes.map(code=>{const role=data.roles.find(item=>item.code===code);return referenceLabel(role?.name,role?.code);});
-    return [group.code,group.name,referenceLabel(category?.name,category?.code),roles.join(", "),group.tiers];
-  }));
-  add("Pula ad-hoc",(data.adHocWorkers??[]).map(item=>{
+    return [group.code,group.name,referenceLabel(category?.name,category?.code),group.tiers];
+  }):[]);
+  add("Role grup rezerwy",includeCurrent?settings.standbyGroups.flatMap(group=>group.roleCodes.map(code=>{
+    const role=data.roles.find(item=>item.code===code);
+    return [referenceLabel(group.name,group.code),referenceLabel(role?.name,role?.code)];
+  })):[]);
+  add("Pula ad-hoc",includeCurrent?(data.adHocWorkers??[]).map(item=>{
     const role=data.roles.find(candidate=>candidate.id===item.role_id);
     const names=String(item.display_name??"").trim().split(/\s+/);const firstName=names.shift()??"";
     return [firstName,names.join(" "),item.email??"",item.phone??"",referenceLabel(role?.name,role?.code),item.contract_type,item.base_rate_minor===null||item.base_rate_minor===undefined?"":item.base_rate_minor/100,item.currency,item.available_from??"",item.available_to??"",item.notes??"",item.active?"TAK":"NIE"];
-  }));
-  const dictionaries=[
-    ["TYP","KOD","NAZWA"],
-    ...(data.roleCategories??[]).filter(item=>item.active).map(item=>["KATEGORIA GRAFIKU",item.code,item.name]),
-    ...data.roles.filter(item=>item.active).map(item=>["ROLA",item.code,item.name]),
-    ...data.locations.filter(item=>item.active).map(item=>["LOKAL",item.code,item.name]),
-    ...data.duties.filter(item=>item.active).map(item=>["OBOWIĄZEK",item.code,item.name]),
-    ...data.shiftTemplates.filter(item=>item.active).map(item=>["ZMIANA",item.code,item.name]),
-  ];
-  const dictionarySheet=XLSX.utils.aoa_to_sheet(dictionaries);
-  XLSX.utils.book_append_sheet(workbook,dictionarySheet,"_LISTY");
+  }):[]);
+  const meta=XLSX.utils.aoa_to_sheet([["Klucz","Wartość"],["workbookMode",mode],["contractVersion","2"],...(includeCurrent?[["sourceMatrixVersionId",data.matrixVersion.id]]:[])]);
+  XLSX.utils.book_append_sheet(workbook,meta,"_META");
   const raw=XLSX.write(workbook,{type:"array",bookType:"xlsx"});
   const {polishMatrixWorkbook}=await import("@/lib/excel-workbook-polish");
-  return {bytes:await polishMatrixWorkbook(raw,"QUICK"),fileName:`szafunek-prosta-konfiguracja-v${data.matrixVersion.version}.xlsx`};
+  return {bytes:await polishMatrixWorkbook(raw,"QUICK",{mode}),fileName:includeCurrent?`szafunek-obecna-konfiguracja-v${data.matrixVersion.version}.xlsx`:"szafunek-pusty-szablon-konfiguracji-v2.xlsx"};
 }
 
-async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL"){
-  if(variant==="QUICK")return buildQuickMatrixTemplate(data);
+async function buildMatrixTemplate(data:MatrixV2Workspace,variant:"FULL"|"QUICK"="FULL",quickMode:QuickWorkbookMode="CURRENT_CONFIG_EXPORT"){
+  if(variant==="QUICK")return buildQuickMatrixTemplate(data,quickMode);
   const XLSX=await import("xlsx");
   const workbook=XLSX.utils.book_new();
   const add=(name:string,headers:string[],rows:(string|number|boolean|null)[][]=[])=>{
@@ -2118,6 +2138,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   const restored=useMemo(()=>readStoredMatrixImport(data.matrixVersion.id),[data.matrixVersion.id]);
   const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"TEAM");
   const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
+  const [localIssues,setLocalIssues]=useState<WorkbookValidationIssue[]>([]);
   const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
   const [googleServerReady,setGoogleServerReady]=useState(false);
   const [googleFallback,setGoogleFallback]=useState(false);
@@ -2145,13 +2166,13 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     clearPersistedImport();
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
   }
-  async function exportTemplate(toGoogle=false){
+  async function exportTemplate(toGoogle=false,quickMode:QuickWorkbookMode="CURRENT_CONFIG_EXPORT"){
     setBusy(true);setLocalError("");
     try{
       const token=toGoogle&&!googleServerReady?await authorizeGoogleDriveFile():null;
       const artifact=scope==="FINANCE"
         ?await buildWorkforceFinanceTemplate(data)
-        :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL");
+        :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL",quickMode);
       if(toGoogle){
         if(googleServerReady){
           window.location.assign(await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
@@ -2174,7 +2195,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   }
   async function inspect(){
     if(!file||!supabase)return;
-    setBusy(true);setLocalError("");setPreview(null);
+    setBusy(true);setLocalError("");setLocalIssues([]);setPreview(null);
     try{
       if(scope==="FINANCE"){
         const parsed=await readWorkforceFinanceWorkbook(file);
@@ -2206,8 +2227,9 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
         ?await supabase.rpc("matrix_v2_team_import_preview_uat_v1",{p_configuration:configuration,p_mode:mode})
         :await supabase.rpc("matrix_v2_full_import_preview_uat_v1",{p_payload:parsed,p_mode:mode});
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
-      setPayload(parsed);setPreview(result.data as FullImportPreview);
-    }catch(error){setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
+      const serverPreview=result.data as FullImportPreview;
+      setPayload(parsed);setPreview({...serverPreview,structureImpact:workbookStructureImpact(configuration,data)});
+    }catch(error){if(error instanceof MatrixWorkbookValidationError)setLocalIssues(error.issues);setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
     finally{setBusy(false);}
   }
   async function applyImport(){
@@ -2244,23 +2266,35 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Nie czyść UAT przed importem: podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
       <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":scope==="TEAM"?"System najpierw tworzy nowe role, lokale i obowiązki, potem przypisuje zespół. Nowa osoba może mieć pusty numer; istniejący e-mail zostanie bezpiecznie podpięty do zachowanej historii.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
       {scope==="CONFIGURATION"&&<details className="matrix-import-advanced-guide"><summary>Co zawiera pełna kopia i kiedy jej użyć?</summary><div><article><strong>Dane codzienne</strong><p>Firma, role, lokale, obowiązki, pracownicy, zmiany i wymagana obsada.</p></article><article><strong>Dane dodatkowe</strong><p>Scenariusze, strategie, budżety, reguły płacowe oraz dostępność.</p></article><article><strong>Kiedy użyć</strong><p>Do kopii bezpieczeństwa, migracji albo pełnego odtworzenia. Pierwszą konfigurację zacznij od kroków 1 i 2.</p></article></div></details>}
-      <button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button>
+      {scope==="TEAM"?<section className="matrix-import-preview">
+        <h3>Wybierz właściwy plik</h3>
+        <div className="matrix-import-impact">
+          <span><small>NOWA KONFIGURACJA</small><b>Pusty szablon</b><button className="secondary-button" type="button" disabled={busy} onClick={()=>void exportTemplate(false,"EMPTY_TEMPLATE")}><Download/> Pobierz pusty szablon</button></span>
+          <span><small>ISTNIEJĄCA KONFIGURACJA</small><b>Aktualne dane</b><button className="secondary-button" type="button" disabled={busy} onClick={()=>void exportTemplate(false,"CURRENT_CONFIG_EXPORT")}><Download/> Eksportuj obecną konfigurację</button></span>
+          <span><small>ARKUSZE GOOGLE</small><b>Aktualne dane</b><button className="secondary-button" type="button" disabled={busy} onClick={()=>void exportTemplate(true,"CURRENT_CONFIG_EXPORT")}><FileSpreadsheet/> {googleServerReady?"Utwórz na Dysku Google":"Otwórz w Google Sheets"}</button></span>
+        </div>
+        <p className="matrix-v2-form-hint">Pusty szablon nie zawiera danych firmy. Eksport obecnej konfiguracji zachowuje ukryte, stabilne identyfikatory, dlatego zmiana nazwy aktualizuje właściwy rekord zamiast tworzyć drugi.</p>
+      </section>:<button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button>}
       {googleServerReady&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Konto Google jest połączone</strong><small>Arkusz nie powstał jeszcze automatycznie. Kliknij „Utwórz arkusz na Dysku Google”, aby świadomie wysłać przygotowany plik.</small></span></div>}
       {googleFallback&&!googleServerReady&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Użyj bezpiecznego przekierowania Google</strong><small>{googleStatusMessage||"Logowanie w małym oknie jest blokowane przez przeglądarkę. Połącz konto przez pełną stronę Google, a potem wrócisz do tego importu."}</small></span><button type="button" className="secondary-button" onClick={beginGoogleDriveRedirectAuthorization}>Połącz konto Google</button></div>}
-      <button className="secondary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate()}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy Excel":scope==="TEAM"?"Pobierz prosty plik Excel":"Pobierz pełną bazę Excel"}</button>
+      {scope!=="TEAM"&&<button className="secondary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate()}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy Excel":"Pobierz pełną bazę Excel"}</button>}
       {scope!=="FINANCE"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej. Liczba osób nie jest zaszyta w kodzie.</small></button></fieldset>}
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
-      <label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label>
+      <section className="matrix-import-preview"><h3>IMPORTUJ PLIK</h3><p>Najpierw sprawdzimy cały plik i pokażemy podgląd. Żaden rekord nie zostanie zapisany na tym etapie.</p><label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label></section>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
       {localError&&<div className="solver-v2-notice warning"><AlertTriangle/><span className="matrix-import-error-text">{localError}</span></div>}
+      {localIssues.map((issue,index)=><div className="solver-v2-notice warning" key={`${issue.sheet}:${issue.row}:${issue.column}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row} • kolumna „{issue.column}”</b><small>{issue.value?`Wartość: „${issue.value}”. `:""}{issue.message} Jak naprawić: {issue.fix}</small></span></div>)}
       {preview&&scope==="FINANCE"&&<FinanceImportPreviewCard preview={preview as FinanceImportPreview} busy={busy} apply={()=>void applyImport()}/>} 
       {preview&&scope!=="FINANCE"&&<section className="matrix-import-preview">
         <h3>{preview.valid?"Plik gotowy do zapisu":"Plik wymaga poprawy"}</h3>
         <p>{(preview as FullImportPreview).summary.total} wierszy konfiguracji oraz {(preview as FullImportPreview).summary.financeRows} okresów stawek: {(preview as FullImportPreview).summary.employees} pracowników, {(preview as FullImportPreview).summary.roles} ról, {(preview as FullImportPreview).summary.locations} lokali, {(preview as FullImportPreview).summary.shifts} zmian, {(preview as FullImportPreview).summary.staffingRules} reguł obsady i {(preview as FullImportPreview).summary.timeConstraints} wpisów dostępności.</p>
         <p className="matrix-v2-form-hint">Źródło: {(payload?.configuration as {_sourceLayout?:string}|undefined)?._sourceLayout==="APPS_SCRIPT_BASE"?"starszy układ Apps Script":scope==="TEAM"?"prosty plik startowy SZAFUNEK":"pełny plik SZAFUNEK"}. Tryb zastąpienia przyjmuje rzeczywisty skład z pliku — bez stałej liczby pracowników w kodzie.</p>
         <div className="matrix-import-impact"><span><small>Aktualizowani</small><b>{(preview as FullImportPreview).summary.employeesToUpdate??0}</b></span><span><small>Nowi</small><b>{(preview as FullImportPreview).summary.employeesToCreate??0}</b></span><span><small>Zmiany stawek</small><b>{(preview as FullImportPreview).summary.financeChanges}</b></span><span className={mode==="REPLACE"&&Number((preview as FullImportPreview).summary.employeesToArchive??0)>0?"warning":""}><small>Archiwizowani</small><b>{(preview as FullImportPreview).summary.employeesToArchive??0}</b></span></div>
+        {(preview as FullImportPreview).structureImpact&&<details className="matrix-import-archive-list" open><summary>Zmiany w strukturze firmy</summary><ul>{([
+          ["Kategorie grafiku","roleCategories"],["Role","roles"],["Lokale","locations"],["Obowiązki","duties"],["Zmiany","shifts"],
+        ] as const).map(([label,key])=>{const impact=(preview as FullImportPreview).structureImpact![key];return <li key={key}><span><b>{label}</b><small>{impact.update} aktualizowanych</small></span><em>{impact.create} nowych</em></li>;})}</ul></details>}
         {mode==="REPLACE"&&Boolean((preview as FullImportPreview).configuration.employeesToArchive?.length)&&<details className="matrix-import-archive-list" open><summary>Sprawdź osoby przeznaczone do archiwizacji ({(preview as FullImportPreview).configuration.employeesToArchive?.length})</summary><ul>{(preview as FullImportPreview).configuration.employeesToArchive?.map(item=><li key={item.employeeId}><span><b>{item.employeeName}</b><small>{item.employeeNo}{item.email?` • ${item.email}`:""}</small></span><em>{item.reason==="DUPLICATE_IDENTITY"?"duplikat tej samej osoby":"brak w pliku"}</em></li>)}</ul></details>}
-        {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}</b><small>{importIssueMessage(issue)}</small></span></div>)}
+        {[...(preview as FullImportPreview).errors,...(preview as FullImportPreview).warnings].map((issue,index)=><div className={`solver-v2-notice ${(preview as FullImportPreview).errors.includes(issue)?"warning":""}`} key={`${issue.sheet}:${issue.row}:${issue.code}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row}{issue.column?` • kolumna „${issue.column}”`:""}</b><small>{issue.value?`Wartość: „${issue.value}”. `:""}{importIssueMessage(issue)}{issue.fix?` Jak naprawić: ${issue.fix}`:""}</small></span></div>)}
         {preview.valid&&<button className="primary-button full" disabled={busy} onClick={()=>void applyImport()}><Save/> {scope==="TEAM"?"Zapisz strukturę i zespół":"Odtwórz pełną kopię firmy"}</button>}
       </section>}
     </div>

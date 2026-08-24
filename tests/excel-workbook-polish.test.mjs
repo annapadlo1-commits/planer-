@@ -34,7 +34,7 @@ test("configuration workbook gets guided instructions, portable lists and separa
   assert.equal(workbook.getWorksheet("Instrukcja").getCell("A2").value,"KROK");
   assert.equal(workbook.getWorksheet("Instrukcja").getCell("A2").fill.fgColor.argb,"FF1A1A1A");
   assert.doesNotMatch(workbook.getWorksheet("Instrukcja").getColumn(1).values.join("\n"),/Co uzupełnić/);
-  assert.equal(workbook.getWorksheet("_LISTY").state,"hidden");
+  assert.equal(workbook.getWorksheet("_LISTY").state,"veryHidden");
   const colorValues=workbook.getWorksheet("_LISTY").getColumn(4).values
     .slice(2)
     .filter(Boolean)

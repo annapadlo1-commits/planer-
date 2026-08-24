@@ -31,7 +31,8 @@ test("configuration and access exports retain both Google Sheets and Excel actio
   assert.ok((editor.match(/Połącz konto Google/g) ?? []).length >= 2);
   assert.ok((editor.match(/Utwórz arkusz na Dysku Google/g) ?? []).length >= 2);
   assert.match(editor, /Pobierz plik Excel/);
-  assert.match(editor, /Pobierz prosty plik Excel/);
+  assert.match(editor, /Pobierz pusty szablon/);
+  assert.match(editor, /Eksportuj obecną konfigurację/);
 });
 
 test("Google authorization happens before workbook generation and does not consume a second popup", () => {

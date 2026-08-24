@@ -424,6 +424,11 @@ export function objectiveName(code: string) {
 
 export function matrixV2ErrorMessage(message: string) {
   const value = message.toUpperCase();
+  if(value.includes("WORKBOOK_METADATA_REQUIRED")||value.includes("WORKBOOK_CONTRACT_UNSUPPORTED"))return "Ten plik pochodzi ze starszego albo nieobsługiwanego szablonu. Pobierz świeży pusty szablon lub wyeksportuj obecną konfigurację i przenieś do niego dane.";
+  if(value.includes("WORKBOOK_SOURCE_MATRIX_STALE"))return "Plik został wyeksportowany z innej wersji roboczej niż obecna. Wyeksportuj obecną konfigurację ponownie, nanieś zmiany i jeszcze raz użyj podglądu.";
+  if(value.includes("WORKBOOK_SOURCE_MATRIX_INVALID"))return "Ukryty identyfikator źródłowej konfiguracji jest nieprawidłowy albo został zmieniony. Pobierz plik ponownie z aplikacji; żadne dane nie zostały zapisane.";
+  if(value.includes("WORKBOOK_SCOPE_IDENTIFIER_FORBIDDEN"))return "Plik zawiera niedozwolony identyfikator zakresu firmy. Import nie ufa takim wartościom z Excela i został zatrzymany bez zapisu.";
+  if(value.includes("MATRIX_V2_SINGLE_DRAFT_REQUIRED"))return "Import wymaga dokładnie jednej bieżącej wersji roboczej konfiguracji firmy. Otwórz historię wersji i uporządkuj wersje robocze przed ponowną próbą.";
   const dictionaryValueError=message.match(/FULL_IMPORT_DICTIONARY_VALUE_REQUIRED\|([^|]+)\|([^|]+)\|([^|]+)/i);
   if(dictionaryValueError){
     const [,sheet,row,column]=dictionaryValueError;

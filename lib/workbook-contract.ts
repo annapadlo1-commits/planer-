@@ -149,13 +149,21 @@ export const QUICK_WORKBOOK_SHEETS:Record<string,WorkbookSheetDefinition>={
   "Grupy rezerwy":{
     purpose:"Definiują wspólną pulę gotowości dla wybranych ról w jednej kategorii. Role pominięte nie trafiają do rezerwy.",
     when:"Wypełnij tylko, jeśli firma używa rezerwy. Najpierw zapewniana jest wymagana obsada; rezerwa nie może zabierać osoby potrzebnej do pokrycia braku.",
-    headers:["Kod","Nazwa","Kategoria grafiku","Role obsługiwane wspólnie","Poziomy rezerwy"],
+    headers:["Kod","Nazwa","Kategoria grafiku","Poziomy rezerwy"],
     fields:{
       "Kod":system("Stały identyfikator grupy rezerwy.","BAR_CORE","Konfiguracja rezerwy."),
       "Nazwa":required("Czytelna nazwa grupy.","Tekst do 160 znaków.","Główna rezerwa baru","Tworzy oddzielną zasadę gotowości.","Rezerwa i ustawienia."),
       "Kategoria grafiku":required("Kategoria, do której należą wszystkie role grupy.","Wybierz z listy.","Bar [BAR]","Ogranicza grupę do jednej kategorii.","Rezerwa i generator."),
-      "Role obsługiwane wspólnie":required("Role, które jedna pula rezerwy może zabezpieczać wspólnie.","Wpisz wybrane role z arkusza Role, rozdzielone przecinkami.","Barman [BARMAN], Bar Kierownik [BAR_KIEROWNIK]","Tylko wskazane role biorą udział w tej rezerwie.","Rezerwa i generator."),
       "Poziomy rezerwy":required("Liczba kolejnych osób gotowości na dzień.","1 albo 2.","2","Tworzy Rezerwę 1 albo Rezerwę 1 i 2.","Rezerwa przed publikacją."),
+    },
+  },
+  "Role grup rezerwy":{
+    purpose:"Łączą jedną grupę rezerwy z dowolną liczbą ról bez ręcznego wpisywania list rozdzielanych przecinkami.",
+    when:"Dodaj po jednym wierszu dla każdej roli należącej do grupy. Ta sama grupa może wystąpić w wielu wierszach.",
+    headers:["Grupa rezerwy","Rola"],
+    fields:{
+      "Grupa rezerwy":required("Grupa, do której dodawana jest rola.","Wybierz grupę z listy.","Główna rezerwa baru [BAR_CORE]","Łączy wskazaną rolę z grupą rezerwy.","Rezerwa i generator."),
+      "Rola":required("Rola obsługiwana wspólnie przez tę grupę.","Wybierz rolę z listy.","Barman [BARMAN]","Dodaje rolę do wspólnej puli rezerwy.","Rezerwa i generator."),
     },
   },
   "Pula ad-hoc":{
@@ -204,7 +212,7 @@ for(const index of [1,2,3]){
 }
 
 export const QUICK_WORKBOOK_SHEET_ORDER=[
-  "Instrukcja","Firma","Kategorie grafików","Role","Lokale","Obowiązki","Pracownicy","Zmiany","Obsada","Grupy rezerwy","Pula ad-hoc","Opis pól","_LISTY",
+  "Instrukcja","Firma","Kategorie grafików","Role","Lokale","Obowiązki","Pracownicy","Zmiany","Obsada","Grupy rezerwy","Role grup rezerwy","Pula ad-hoc","Opis pól","_LISTY","_META",
 ] as const;
 
 export function referenceLabel(name:string|undefined|null,code:string|undefined|null){
@@ -220,6 +228,6 @@ export function quickWorkbookContractErrors(sheetHeaders:Record<string,string[]>
     if(actual.join("|")!==definition.headers.join("|"))errors.push(`${sheet}: niezgodne kolumny`);
     for(const field of definition.headers)if(!definition.fields[field])errors.push(`${sheet}.${field}: brak opisu pola`);
   }
-  for(const sheet of Object.keys(sheetHeaders))if(!QUICK_WORKBOOK_SHEETS[sheet]&&!['Instrukcja','Opis pól','_LISTY'].includes(sheet))errors.push(`${sheet}: nadmiarowa zakładka w prostym pliku`);
+  for(const sheet of Object.keys(sheetHeaders))if(!QUICK_WORKBOOK_SHEETS[sheet]&&!['Instrukcja','Opis pól','_LISTY','_META'].includes(sheet))errors.push(`${sheet}: nadmiarowa zakładka w prostym pliku`);
   return errors;
 }

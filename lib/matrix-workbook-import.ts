@@ -26,8 +26,22 @@ export type MatrixWorkbookPayload = {
   staffingRules: Record<string, unknown>[];
   roleDuties: Record<string, unknown>[];
   adHocWorkers: Record<string, unknown>[];
+  _workbook: {
+    mode: "EMPTY_TEMPLATE" | "CURRENT_CONFIG_EXPORT" | "LEGACY";
+    contractVersion: string;
+    sourceMatrixVersionId: string;
+  };
   _sourceLayout: "APPS_SCRIPT_BASE" | "GRAFIK_PRO_TEMPLATE";
 };
+
+export type WorkbookValidationIssue={sheet:string;row:number;column:string;value:string;code:string;message:string;fix:string};
+export class MatrixWorkbookValidationError extends Error{
+  issues:WorkbookValidationIssue[];
+  constructor(issues:WorkbookValidationIssue[]){
+    super(`Plik zawiera ${issues.length} ${issues.length===1?"błąd zależności":"błędów zależności"}. Popraw wskazane komórki i sprawdź plik ponownie.`);
+    this.name="MatrixWorkbookValidationError";this.issues=issues;
+  }
+}
 
 function normalizeImportHeader(value:string){
   return value.trim().replace(/\s*[\r\n]+\s*(?:WYMAGANE|OPCJONALNE|WARUNKOWE|SYSTEM)\s*$/iu,"").toLocaleLowerCase("pl-PL");
@@ -58,10 +72,39 @@ function normalizeOvertimePolicy(value:string){
 
 function importList(value:string){return value.split(/[;,|]/).map(item=>item.trim()).filter(Boolean);}
 
-function importCode(value:string){
+export function normalizeWorkbookCode(value:string){
   const reference=value.match(/\[([^\]]+)\]\s*$/u)?.[1]??value;
-  return reference.normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .toLocaleUpperCase("pl-PL").replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+  return reference.replace(/[Łł]/g,"L").normalize("NFKD").replace(/[\u0300-\u036f]/g,"")
+    .toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,80);
+}
+
+const importCode=normalizeWorkbookCode;
+
+function workbookCodeHash(value:string){
+  let hash=0x811c9dc5;
+  for(const character of value.normalize("NFKC")){
+    hash^=character.codePointAt(0)??0;
+    hash=Math.imul(hash,0x01000193)>>>0;
+  }
+  return hash.toString(16).toUpperCase().padStart(8,"0").slice(0,6);
+}
+
+function assignStableWorkbookCodes<T extends {code:string;name:string;sourceRow:number}>(items:T[],sheetName:string){
+  const names=new Map<string,T>();
+  for(const item of items){
+    const key=item.name.normalize("NFKC").trim().toLocaleLowerCase("pl-PL"),previous=names.get(key);
+    if(previous)throw new Error(`${sheetName} • wiersze ${previous.sourceRow} i ${item.sourceRow} • kolumna „Nazwa”: ta sama nazwa występuje dwa razy. Usuń duplikat albo nadaj elementom różne nazwy.`);
+    names.set(key,item);
+  }
+  const groups=new Map<string,T[]>();
+  for(const item of items){const group=groups.get(item.code)??[];group.push(item);groups.set(item.code,group);}
+  for(const [base,group] of groups){
+    if(!base)throw new Error(`${sheetName} • wiersz ${group[0].sourceRow} • kolumna „Nazwa”: nazwa nie pozwala utworzyć bezpiecznego kodu. Użyj co najmniej jednej litery A–Z lub cyfry.`);
+    if(group.length===1)continue;
+    for(const item of group){const suffix=`__${workbookCodeHash(item.name)}`;item.code=`${base.slice(0,80-suffix.length)}${suffix}`;}
+    if(new Set(group.map(item=>item.code)).size!==group.length)throw new Error(`${sheetName} • kolumna „Kod”: nie udało się jednoznacznie rozstrzygnąć kolizji kodów. Nadaj tym elementom ręcznie różne stabilne kody.`);
+  }
+  return items;
 }
 
 function importDays(value:string){
@@ -158,6 +201,14 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     // already understand Excel serial dates, numeric times and money values.
     return sheetName?XLSX.utils.sheet_to_json<Record<string,unknown>>(workbook.Sheets[sheetName],{defval:"",raw:true}):[];
   };
+  const metaRows=rows(["_META","META"]);
+  const meta=new Map(metaRows.map(row=>[importCell(row,"Klucz","key"),importCell(row,"Wartość","value")]));
+  const rawWorkbookMode=meta.get("workbookMode");
+  const workbookIdentity={
+    mode:(rawWorkbookMode==="EMPTY_TEMPLATE"||rawWorkbookMode==="CURRENT_CONFIG_EXPORT"?rawWorkbookMode:"LEGACY") as "EMPTY_TEMPLATE"|"CURRENT_CONFIG_EXPORT"|"LEGACY",
+    contractVersion:meta.get("contractVersion")??"1",
+    sourceMatrixVersionId:meta.get("sourceMatrixVersionId")??"",
+  };
   const splitName=(value:string)=>{const parts=value.trim().split(/\s+/);return {firstName:parts.shift()??"",lastName:parts.join(" ")};};
   const normalizeContract=(value:string)=>{
     const key=value.toLocaleUpperCase("pl-PL").replace(/[^A-ZĄĆĘŁŃÓŚŹŻ0-9]/g,"");
@@ -243,36 +294,36 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     });
   };
   const normalizeColor=(value:string)=>/#[0-9A-F]{6}/i.exec(value)?.[0].toUpperCase()??value;
-  const namedRows=(sheetNames:string[],entityName:string)=>validatedDictionaryRows(sheetNames,entityName).map(({row,sourceRow},index)=>({
+  const namedRows=(sheetNames:string[],entityName:string)=>assignStableWorkbookCodes(validatedDictionaryRows(sheetNames,entityName).map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
-  }));
+  })),matchingSheetName(sheetNames)??sheetNames[0]);
   const roleCategories=namedRows(["Kategorie grafików","Kategorie grafikow","Role categories"],"kategorii grafiku");
-  const roles=validatedDictionaryRows(["Role","Roles"],"roli").map(({row,sourceRow},index)=>({
+  const roles=assignStableWorkbookCodes(validatedDictionaryRows(["Role","Roles"],"roli").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     categoryCode:importCode(importCell(row,"Kategoria grafiku","Kod kategorii","Kategoria","categoryCode")),
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
     sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
-  }));
-  const standbyGroups=validatedDictionaryRows(["Grupy rezerwy","Standby groups"],"grupy rezerwy").map(({row,sourceRow},index)=>({
+  })),matchingSheetName(["Role","Roles"])??"Role");
+  const standbyGroups=assignStableWorkbookCodes(validatedDictionaryRows(["Grupy rezerwy","Standby groups"],"grupy rezerwy").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),
     name:importCell(row,"Nazwa","name"),
     categoryCode:importCode(importCell(row,"Kategoria grafiku","Kod kategorii","categoryCode")),
     roleCodes:importList(importCell(row,"Role obsługiwane wspólnie","Kody ról","roleCodes")).map(importCode),
     tiers:Number(importCell(row,"Poziomy rezerwy","Poziomy","tiers")||"1"),sourceRow,index:index+1,
-  }));
+  })),matchingSheetName(["Grupy rezerwy","Standby groups"])??"Grupy rezerwy");
   const roleAliases=new Map<string,string>();
   for(const role of roles){
     const code=String(role.code??"");
     for(const alias of [code,String(role.name??"")])if(alias.trim())roleAliases.set(importCode(alias),code);
   }
   const normalizeRoleCode=(value:string)=>roleAliases.get(importCode(value))??importCode(value);
-  const locations=validatedDictionaryRows(["Lokale","Locations"],"lokalu").map(({row,sourceRow},index)=>({
+  const locations=assignStableWorkbookCodes(validatedDictionaryRows(["Lokale","Locations"],"lokalu").map(({row,sourceRow},index)=>({
     code:importCode(importCell(row,"Kod","code")||importCell(row,"Nazwa","name")),name:importCell(row,"Nazwa","name"),
     timezone:importCell(row,"Strefa czasowa","timezone"),sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),
     active:importBoolean(importCell(row,"Aktywna","Aktywny","active"),true),sourceRow,
-  }));
+  })),matchingSheetName(["Lokale","Locations"])??"Lokale");
   const locationAliases=new Map<string,string>();
   for(const location of locations){
     const code=String(location.code??"");
@@ -283,6 +334,21 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const dutyAliases=new Map<string,string>();
   for(const duty of duties){const code=String(duty.code??"");for(const alias of [code,String(duty.name??"")])if(alias.trim())dutyAliases.set(importCode(alias),code);}
   const normalizeDutyCode=(value:string)=>dutyAliases.get(importCode(value))??importCode(value);
+  const standbyAliases=new Map<string,string>();
+  for(const group of standbyGroups){for(const alias of [String(group.code),String(group.name)])if(alias.trim())standbyAliases.set(importCode(alias),String(group.code));}
+  const reserveRoleRows=rows(["Role grup rezerwy","Standby group roles"]);
+  if(reserveRoleRows.length){
+    const memberships=new Map<string,string[]>();
+    reserveRoleRows.forEach((row,index)=>{
+      const rawGroup=importCell(row,"Grupa rezerwy","Kod grupy","standbyGroupCode");
+      const groupCode=standbyAliases.get(importCode(rawGroup))??importCode(rawGroup);
+      const roleCode=normalizeRoleCode(importCell(row,"Rola","Kod roli","roleCode"));
+      if(!standbyGroups.some(group=>group.code===groupCode))throw new Error(`Role grup rezerwy • wiersz ${index+2} • kolumna „Grupa rezerwy”: wartość „${rawGroup}” nie wskazuje grupy z arkusza „Grupy rezerwy”.`);
+      if(!roles.some(role=>role.code===roleCode))throw new Error(`Role grup rezerwy • wiersz ${index+2} • kolumna „Rola”: wybierz rolę z arkusza „Role”.`);
+      const values=memberships.get(groupCode)??[];if(!values.includes(roleCode))values.push(roleCode);memberships.set(groupCode,values);
+    });
+    for(const group of standbyGroups)group.roleCodes=memberships.get(String(group.code))??[];
+  }
   const scenarios=rows(["Scenariusze","Scenarios"]).map(row=>({
     code:importCell(row,"Kod","code").toUpperCase(),name:importCell(row,"Nazwa","name"),
     description:importCell(row,"Opis","description"),color:normalizeColor(importCell(row,"Kolor","color")),
@@ -444,13 +510,15 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const shifts=shiftRows.map((row,index)=>{
     const baseCode=importCell(row,"Kod","code","ZMIANA_ID");
     const group=importCell(row,"GRUPA_DNI");
-    const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:baseCode;
+    const shiftName=importCell(row,"Nazwa","name","NAZWA");
+    const locationCode=normalizeLocationCode(importCell(row,"Lokal","Kod lokalu","locationCode","LOKALIZACJA_ID"));
+    const sourceCode=sourceShiftLayout?`${baseCode}_${group}`:importCode(baseCode)||importCode(`${locationCode}_${shiftName}`);
     const day=importCell(row,"DZIEŃ_TYGODNIA");
     const startsAt=normalizeTime(importCell(row,"Od","startsAt","START"));
     const color=normalizeColor(importCell(row,"Kolor","color"))||DEFAULT_SHIFT_COLOR;
     if(!/^#[0-9A-F]{6}$/i.test(color))throw new Error(`${shiftSheetName} • wiersz ${index+2} • kolumna „Kolor”: wpisz kolor z listy albo wartość #RRGGBB.`);
     return {
-      code:sourceCode,name:importCell(row,"Nazwa","name","NAZWA")+(group?` • ${group}`:""),locationCode:normalizeLocationCode(importCell(row,"Lokal","Kod lokalu","locationCode","LOKALIZACJA_ID")),
+      code:sourceCode,name:shiftName+(group?` • ${group}`:""),locationCode,
       // Pora jest wyłącznie techniczną wartością pochodną. Użytkownik podaje
       // dokładne godziny, a import nigdy nie ufa ręcznemu MORNING/MIDDLE/EVENING.
       shiftPeriod:automaticShiftPeriod(startsAt),startsAt,endsAt:normalizeTime(importCell(row,"Do","endsAt","KONIEC")),
@@ -458,7 +526,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       // „Kolejność” jest polem opcjonalnym i nie występuje w prostym pliku
       // startowym. Nigdy nie wysyłamy pustego tekstu do pola liczbowego w bazie;
       // stabilna kolejność wierszy jest bezpiecznym ustawieniem domyślnym.
-      sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),color:color.toUpperCase(),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
+      sortOrder:importCell(row,"Kolejność","sortOrder")||String(index+1),color:color.toUpperCase(),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),sourceRow:index+2,
     };
   });
   const overnightErrors=shifts.flatMap((shift,index)=>{
@@ -476,7 +544,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   }));
 
   const staffingRows=rows(["Obsada","Staffing","MACIERZ_OBSADY"]);
-  const staffingRules=staffingRows.map(row=>{
+  const staffingRules=staffingRows.map((row,index)=>{
     const group=importCell(row,"GRUPA_DNI");
     const sourceShift=importCell(row,"ZMIANA_ID");
     return {
@@ -487,7 +555,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
       // brak oznacza bezpieczne i intuicyjne SET zamiast blokować cały plik.
       operation:importCell(row,"Operacja","operation","OPERACJA").toUpperCase()||"SET",
       countValue:importCell(row,"Liczba osób","countValue","OPTYMALNIE_OSÓB","MIN_OSÓB"),active:importBoolean(importCell(row,"Aktywna","active","AKTYWNA"),true),
-      sourceMetadata:{source:"MATRIX_WORKBOOK_IMPORT"},
+      sourceMetadata:{source:"MATRIX_WORKBOOK_IMPORT"},sourceRow:index+2,
     };
   });
   const competencyRows=functionRows.length?functionRows:rows(["Role-Obowiązki","Role Duties","Obowiązki ról"]);
@@ -609,8 +677,35 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
   const normalizedScenarioPayRuleOverrides=scenarioPayRuleOverrides.map(link=>({...link,scenarioCode:normalizeScenarioCode(String(link.scenarioCode??""))}));
   const normalizedScenarioBudgets=scenarioBudgets.map(budget=>({...budget,scenarioCode:normalizeScenarioCode(String(budget.scenarioCode??""))}));
 
+  if(workbookIdentity.mode!=="LEGACY"){
+    const issues:WorkbookValidationIssue[]=[];
+    const categoryCodes=new Set(roleCategories.map(item=>String(item.code))),roleCodesSet=new Set(roles.map(item=>String(item.code)));
+    const locationCodesSet=new Set(locations.map(item=>String(item.code))),dutyCodesSet=new Set(duties.map(item=>String(item.code))),shiftCodesSet=new Set(groupedShifts.map(item=>String(item.code)));
+    const add=(sheet:string,row:number,column:string,value:unknown,code:string,message:string,fix:string)=>issues.push({sheet,row,column,value:String(value??""),code,message,fix});
+    roles.forEach(role=>{if(role.categoryCode&&!categoryCodes.has(String(role.categoryCode)))add("Role",role.sourceRow,"Kategoria grafiku",role.categoryCode,"CATEGORY_NOT_FOUND","Rola wskazuje kategorię, której nie ma w tym pliku.","Dodaj kategorię w zakładce „Kategorie grafików” albo wybierz istniejącą wartość z listy.");});
+    employees.forEach((employee,index)=>{
+      if(employee.primaryRoleCode&&!roleCodesSet.has(String(employee.primaryRoleCode)))add("Pracownicy",index+2,"Rola podstawowa",employee.primaryRoleCode,"ROLE_NOT_FOUND","Pracownik wskazuje rolę spoza tego pliku.","Dodaj rolę w zakładce „Role” albo wybierz istniejącą rolę z listy.");
+      for(const code of (employee.locationCodes as string[]??[]))if(!locationCodesSet.has(String(code)))add("Pracownicy",index+2,"Lokal pracy",code,"LOCATION_NOT_FOUND","Pracownik wskazuje lokal spoza tego pliku.","Dodaj lokal w zakładce „Lokale” albo wybierz istniejący lokal z listy.");
+      for(const code of (employee.dutyCodes as string[]??[]))if(!dutyCodesSet.has(String(code)))add("Pracownicy",index+2,"Kompetencja dodatkowa",code,"DUTY_NOT_FOUND","Pracownik wskazuje obowiązek spoza tego pliku.","Dodaj obowiązek w zakładce „Obowiązki” albo usuń tę kompetencję.");
+    });
+    groupedShifts.forEach(shift=>{if(shift.locationCode&&!locationCodesSet.has(String(shift.locationCode)))add("Zmiany",Number(shift.sourceRow??2),"Lokal",shift.locationCode,"LOCATION_NOT_FOUND","Zmiana wskazuje lokal spoza tego pliku.","Dodaj lokal w zakładce „Lokale” albo wybierz istniejący lokal z listy.");});
+    resolvedStaffingRules.forEach(rule=>{
+      const row=Number(rule.sourceRow??2);
+      if(rule.shiftCode&&!shiftCodesSet.has(String(rule.shiftCode)))add("Obsada",row,"Zmiana",rule.shiftCode,"SHIFT_NOT_FOUND","Obsada wskazuje zmianę spoza tego pliku.","Dodaj zmianę w zakładce „Zmiany” albo wybierz istniejącą zmianę z listy.");
+      if(rule.roleCode&&!roleCodesSet.has(String(rule.roleCode)))add("Obsada",row,"Rola",rule.roleCode,"ROLE_NOT_FOUND","Obsada wskazuje rolę spoza tego pliku.","Dodaj rolę w zakładce „Role” albo wybierz istniejącą rolę z listy.");
+      if(rule.dutyCode&&!dutyCodesSet.has(String(rule.dutyCode)))add("Obsada",row,"Obowiązek (opcjonalnie)",rule.dutyCode,"DUTY_NOT_FOUND","Obsada wskazuje obowiązek spoza tego pliku.","Dodaj obowiązek w zakładce „Obowiązki” albo pozostaw pole puste.");
+    });
+    standbyGroups.forEach(group=>{
+      if(group.categoryCode&&!categoryCodes.has(String(group.categoryCode)))add("Grupy rezerwy",group.sourceRow,"Kategoria grafiku",group.categoryCode,"CATEGORY_NOT_FOUND","Grupa rezerwy wskazuje kategorię spoza tego pliku.","Wybierz kategorię z listy.");
+      if(!group.roleCodes.length)add("Role grup rezerwy",2,"Rola","","STANDBY_GROUP_WITHOUT_ROLE","Grupa rezerwy nie ma żadnej roli.","Dodaj co najmniej jeden wiersz dla tej grupy w zakładce „Role grup rezerwy”.");
+      for(const code of group.roleCodes)if(!roleCodesSet.has(String(code)))add("Role grup rezerwy",2,"Rola",code,"ROLE_NOT_FOUND","Grupa rezerwy wskazuje rolę spoza tego pliku.","Wybierz rolę z listy.");
+    });
+    adHocWorkers.forEach(worker=>{if(worker.roleCode&&!roleCodesSet.has(String(worker.roleCode)))add("Pula ad-hoc",worker.sourceRow,"Rola",worker.roleCode,"ROLE_NOT_FOUND","Osoba ad-hoc wskazuje rolę spoza tego pliku.","Dodaj rolę w zakładce „Role” albo wybierz istniejącą rolę z listy.");});
+    if(issues.length)throw new MatrixWorkbookValidationError(issues);
+  }
+
   return {settings:{...settings,standbyTiersPerRoleDay:0,standbyGroups,...DEFAULT_STRATEGY_SOLVER_CONTRACT},roleCategories,roles,locations,duties,scenarios:resolvedScenarios,strategies:resolvedStrategies,strategyObjectives:resolvedObjectives,scenarioStrategies:normalizedScenarioStrategies,
     payRules,scenarioPayRuleOverrides:normalizedScenarioPayRuleOverrides,scenarioBudgets:normalizedScenarioBudgets,employees,employeeDuties,employeeRoles,
     employeeLocationsDetailed,employeeCapabilities,timeConstraints,shifts:groupedShifts,staffingRules:resolvedStaffingRules,roleDuties,adHocWorkers,
-    _sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
+    _workbook:workbookIdentity,_sourceLayout:sourceEmployeeLayout?"APPS_SCRIPT_BASE":"GRAFIK_PRO_TEMPLATE"};
 }
