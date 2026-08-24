@@ -790,12 +790,14 @@ test("application access is configured independently from schedule employees", a
 test("full UAT reset preserves only the owner and creates an empty first-run draft", async () => {
   const [editor,migration]=await Promise.all([
     readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260812001000_uat_application_access_and_full_reset.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/migrations/20260824224431_b4f171_first_run_access_guards.sql",import.meta.url),"utf8"),
   ]);
-  assert.match(editor,/Wyczyść UAT i rozpocznij od zera/);
+  assert.match(editor,/Wyczyść UAT i pozostań przy pustej konfiguracji/);
+  assert.match(editor,/Nie czyść UAT przed importem/);
   assert.match(editor,/uat_full_business_reset_v1/);
   assert.doesNotMatch(editor,/window\.prompt\(`Ta operacja usunie/);
   assert.match(migration,/ISOLATED_UAT_DESTRUCTIVE_TOOLS/);
+  assert.match(migration,/projectRef'='nhthrtpkfpmufmrmdyjg'/);
   assert.match(migration,/delete from auth\.users u where u\.id<>v_actor/);
   assert.match(migration,/Pierwsza konfiguracja firmy/);
   assert.match(migration,/'maximumShiftsPerDay',1/);

@@ -36,6 +36,13 @@ type AppAccess = {
   } | null;
 };
 
+type WorkspaceIssue = "MISSING_CONFIGURATION" | "WORKSPACE_LOAD_FAILED" | null;
+
+function isMissingCompanyConfiguration(error: { code?: string; message?: string } | null) {
+  const value = `${error?.code ?? ""}|${error?.message ?? ""}`.toUpperCase();
+  return value.includes("MATRIX_V2_NOT_FOUND") || value.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND");
+}
+
 type AuthContextValue = {
   configured: boolean;
   connected: boolean;
@@ -73,6 +80,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<AppAccess | null>(null);
   const [summary, setSummary] = useState<LiveSummary | null>(null);
   const [error, setError] = useState("");
+  const [workspaceIssue, setWorkspaceIssue] = useState<WorkspaceIssue>(null);
   const [sessionCheckError, setSessionCheckError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   // The server and the first browser render must be identical. Modern Node.js
@@ -87,28 +95,37 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     setAccess(null);
     setSummary(null);
     setError("");
+    setWorkspaceIssue(null);
     setAuthNotice(notice);
   }, []);
 
   const loadLiveData = useCallback(async (activeUser?: User | null) => {
     if (!supabase || !activeUser) return false;
     setError("");
+    setWorkspaceIssue(null);
     try {
-      const [
-        accessResult,
-        matrixResult,
-      ] = await Promise.all([
-        supabase.rpc("current_user_access_v2"),
-        supabase.rpc("matrix_v2_workspace",{p_month:`${new Date().toISOString().slice(0,7)}-01`}),
-      ]);
+      const accessResult = await supabase.rpc("current_user_access_v2");
+      if (accessResult.error) {
+        setAccess(null);
+        setSummary(null);
+        setError("Nie udało się pobrać aktualnego zakresu dostępu. Twoja sesja pozostaje zalogowana; spróbuj ponownie.");
+        return false;
+      }
 
-      const firstError = [
-        accessResult.error,
-        matrixResult.error,
-      ].find(Boolean);
-      if (firstError) throw firstError;
+      const nextAccess=(accessResult.data || null) as AppAccess | null;
+      setAccess(nextAccess);
 
-      setAccess((accessResult.data || null) as AppAccess | null);
+      const matrixResult=await supabase.rpc("matrix_v2_workspace",{
+        p_month:`${new Date().toISOString().slice(0,7)}-01`,
+      });
+      if(matrixResult.error){
+        setSummary(null);
+        setWorkspaceIssue(isMissingCompanyConfiguration(matrixResult.error)
+          ? "MISSING_CONFIGURATION"
+          : "WORKSPACE_LOAD_FAILED");
+        return false;
+      }
+
       const matrix=(matrixResult.data??{}) as {employees?:unknown[];locations?:unknown[];shiftTemplates?:unknown[]};
       setSummary({
         employees: matrix.employees?.length || 0,
@@ -120,10 +137,24 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (cause) {
       setAccess(null);
       setSummary(null);
-      setError("Nie udało się potwierdzić Twoich uprawnień i pobrać aktualnych danych. Spróbuj ponownie.");
+      setWorkspaceIssue(null);
+      setError("Nie udało się potwierdzić aktualnego zakresu dostępu. Spróbuj ponownie.");
       return false;
     }
   }, [supabase]);
+
+  const recoverFirstRunConfiguration=useCallback(async()=>{
+    if(!supabase||!user)return;
+    setLoading(true);
+    const result=await supabase.rpc("matrix_v2_ensure_first_run_uat_v1");
+    if(result.error){
+      setLoading(false);
+      setWorkspaceIssue("WORKSPACE_LOAD_FAILED");
+      return;
+    }
+    await loadLiveData(user);
+    setLoading(false);
+  },[loadLiveData,supabase,user]);
 
   const recoverSession = useCallback(async (showLoading = true) => {
     if (!supabase) return;
@@ -246,7 +277,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     configured,
-    connected: Boolean(user && access && summary && !error && !sessionCheckError && !offline),
+    connected: Boolean(user && access && summary && !error && !workspaceIssue && !sessionCheckError && !offline),
     loading,
     user,
     access,
@@ -312,6 +343,38 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <LoginScreen notice={authNotice} />;
+  }
+
+  if (workspaceIssue === "MISSING_CONFIGURATION" && access) {
+    const canRecover=Boolean(access.roles?.some(role=>role.app_role==="OWNER"||role.app_role==="ADMIN"));
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><Database size={24} /></span>
+          <p className="eyebrow">PIERWSZA KONFIGURACJA FIRMY</p>
+          <h1>Uprawnienia są prawidłowe, ale brakuje konfiguracji firmy</h1>
+          <p>Twoje konto i rola zostały potwierdzone. To nie jest odmowa dostępu. Utwórz bezpieczną pustą konfigurację albo spróbuj ponownie po jej przywróceniu.</p>
+          {canRecover&&<button className="primary-button" onClick={() => void recoverFirstRunConfiguration()}>Utwórz bezpieczną pustą konfigurację</button>}
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+          {!canRecover&&<small>Konfigurację może odtworzyć właściciel lub administrator.</small>}
+        </section>
+      </main>
+    );
+  }
+
+  if (workspaceIssue === "WORKSPACE_LOAD_FAILED" && access) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><Database size={24} /></span>
+          <p className="eyebrow">POBIERANIE DANYCH FIRMY</p>
+          <h1>Uprawnienia potwierdzone, ale nie udało się pobrać przestrzeni roboczej</h1>
+          <p>Nie wylogowujemy Cię i nie ukrywamy poprawnie pobranej roli. Spróbuj ponownie; jeśli problem wróci, zgłoś błąd pobierania danych firmy.</p>
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+          <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
+        </section>
+      </main>
+    );
   }
 
   if (error || !access) {

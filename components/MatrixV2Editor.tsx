@@ -185,7 +185,7 @@ export function MatrixV2Editor({
   const [importOpen,setImportOpen]=useState(()=>typeof window!=="undefined"&&window.sessionStorage.getItem(importOpenStorageKey)==="true");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [uatReset,setUatReset]=useState<UatResetPreview|null>(null);
-  const [uatResetDialog,setUatResetDialog]=useState<{confirmation:string;error?:string|null}|null>(null);
+  const [uatResetDialog,setUatResetDialog]=useState<{confirmation:string;emptyStateConfirmed:boolean;error?:string|null}|null>(null);
   const settings = matrixV2Settings(data.matrixVersion);
   const canManageAccess=Boolean(access?.roles?.some(role=>role.app_role==="OWNER"||role.app_role==="ADMIN"));
   useEffect(()=>{
@@ -285,7 +285,7 @@ export function MatrixV2Editor({
 
   async function resetUatBusinessData(){
     if(!supabase||!uatReset?.enabled||!uatResetDialog)return;
-    if(uatResetDialog.confirmation!==uatReset.confirmation){setUatResetDialog({...uatResetDialog,error:`Wpisz dokładnie: ${uatReset.confirmation}`});return;}
+    if(uatResetDialog.confirmation!==uatReset.confirmation||!uatResetDialog.emptyStateConfirmed){setUatResetDialog({...uatResetDialog,error:`Potwierdź pusty stan końcowy i wpisz dokładnie: ${uatReset.confirmation}`});return;}
     setBusy(true);
     const result=await supabase.rpc("uat_full_business_reset_v1",{p_confirmation:uatResetDialog.confirmation});
     setBusy(false);
@@ -293,7 +293,7 @@ export function MatrixV2Editor({
     setUatResetDialog(null);
     setWorkforceFocusEmployeeId(null);
     selectTab("structure");
-    notify("UAT jest pusty i gotowy do pierwszej konfiguracji firmy. Zachowano wyłącznie Twoje konto właściciela.");
+    notify("UAT jest pusty i gotowy do pierwszej konfiguracji firmy. Reset został zatwierdzony osobno i nie może zostać cofnięty przez anulowanie późniejszego importu.");
     await reload();
   }
 
@@ -310,12 +310,19 @@ export function MatrixV2Editor({
 
   async function discardDraft() {
     if (!supabase || !data.editable) return;
-    if (!window.confirm("Anulować tę wersję roboczą? Wszystkie zmiany tej wersji zostaną usunięte. Opublikowana konfiguracja i istniejące grafiki pozostaną bez zmian.")) return;
+    if (!window.confirm("Anulować tę wersję roboczą? Ta operacja nie cofa wcześniej zatwierdzonego resetu ani importu. Jeżeli nie istnieje opublikowana konfiguracja, system zachowa jedyną bezpieczną wersję roboczą zamiast pozostawić firmę bez konfiguracji.")) return;
     setBusy(true);
     const result = await supabase.rpc("matrix_v2_discard_current_draft_uat_v2");
     setBusy(false);
     if (result.error) { fail(matrixV2ErrorMessage(result.error.message)); return; }
-    notify("Wersja robocza została anulowana. Ponownie używana jest ostatnia opublikowana konfiguracja.");
+    const outcome=result.data as {preservedOnlyDraft?:boolean;ensuredFirstRun?:boolean}|null;
+    if(outcome?.preservedOnlyDraft){
+      notify("Nie usunięto jedynej konfiguracji firmy. Bez aktywnej wersji ten pusty stan pierwszego uruchomienia musi pozostać dostępny.");
+    }else if(outcome?.ensuredFirstRun){
+      notify("Brakująca konfiguracja została bezpiecznie odtworzona jako pusty proces pierwszego uruchomienia.");
+    }else{
+      notify("Wersja robocza została anulowana. Ponownie używana jest ostatnia opublikowana konfiguracja.");
+    }
     await reload();
   }
 
@@ -702,7 +709,7 @@ export function MatrixV2Editor({
         </span>
         <button className="secondary-button" disabled={busy} onClick={()=>setHistoryOpen(true)}><HistoryIcon/> Historia wersji</button>
         {data.editable
-          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>setUatResetDialog({confirmation:""})}><Trash2/> Wyczyść całe UAT</button>}<button className="secondary-button danger" disabled={busy} onClick={()=>void discardDraft()}><X/> Anuluj wersję roboczą</button><button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
+          ? <>{uatReset?.enabled&&<button className="secondary-button danger" disabled={busy} onClick={()=>setUatResetDialog({confirmation:"",emptyStateConfirmed:false})}><Trash2/> Wyczyść UAT bez importu</button>}<button className="secondary-button danger" disabled={busy} onClick={()=>void discardDraft()}><X/> Anuluj wersję roboczą</button><button className="secondary-button" disabled={busy} onClick={()=>setImportOpen(true)}><FileSpreadsheet/> Import Excel</button><button className="primary-button" disabled={busy} onClick={beginPublication}><Check/> Opublikuj konfigurację</button></>
           : <button className="primary-button" disabled={busy} onClick={() => void createDraft()}><Plus/> Nowa wersja robocza</button>}
       </div>
     </header>
@@ -748,15 +755,18 @@ export function MatrixV2Editor({
     {importOpen&&<MatrixExcelImport data={data} busy={busy} setBusy={setBusy} close={()=>setImportOpen(false)} reload={reload} notify={notify} fail={fail}/>} 
     {historyOpen&&<MatrixHistoryDrawer currentVersionId={data.matrixVersion.id} close={()=>setHistoryOpen(false)} fail={fail}/>} 
     {uatResetDialog&&uatReset&&<><button className="drawer-scrim top" aria-label="Zamknij pełny reset UAT" onClick={()=>{if(!busy)setUatResetDialog(null);}}/><aside className="drawer top" aria-label="Pełny reset danych UAT">
-      <div className="drawer-head"><div><p className="eyebrow">TYLKO ŚRODOWISKO UAT</p><h2>Wyczyść całą firmę</h2><span>Przygotowanie prawdziwego testu pierwszego uruchomienia</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij pełny reset UAT" onClick={()=>setUatResetDialog(null)}><X/></button></div>
+      <div className="drawer-head"><div><p className="eyebrow">TYLKO ŚRODOWISKO UAT</p><h2>Utwórz celowo pusty UAT</h2><span>Ta ścieżka kończy się pustą konfiguracją — nie służy do przygotowania importu</span></div><button className="icon-button" disabled={busy} aria-label="Zamknij pełny reset UAT" onClick={()=>setUatResetDialog(null)}><X/></button></div>
       <div className="drawer-content">
         <div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>To usuwa wszystkie dane biznesowe UAT</strong><small>Usuniemy {uatReset.employees} pracowników, {uatReset.matrixVersions} wersji konfiguracji, {uatReset.publishedSchedules} opublikowanych grafików i {uatReset.otherUsers} innych kont. Produkcja nie jest objęta tą operacją.</small></span></div>
         <div className="impact-box"><ShieldCheck/><span><strong>Co pozostanie?</strong><small>{uatReset.preserves.join(" • ")}. Powstanie pusta wersja robocza „Pierwsza konfiguracja firmy”.</small></span></div>
+        <div className="matrix-v2-validation warning"><FileSpreadsheet/><span><strong>Masz plik do odtworzenia? Nie wykonuj resetu</strong><small>Otwórz Import Excel. System najpierw w pełni zwaliduje plik, a dopiero przy zapisie zastosuje go atomowo. Reset i import są osobnymi transakcjami; anulowanie importu nie cofa resetu.</small></span></div>
+        <button className="secondary-button full" disabled={busy} onClick={()=>{setUatResetDialog(null);setImportOpen(true);}}><FileSpreadsheet/> Mam plik — najpierw sprawdź bez resetu</button>
+        <label className="check-label"><input type="checkbox" checked={uatResetDialog.emptyStateConfirmed} onChange={event=>setUatResetDialog({...uatResetDialog,emptyStateConfirmed:event.target.checked,error:null})}/> Chcę świadomie zakończyć z pustą konfiguracją i nie traktuję tej operacji jako przygotowania importu.</label>
         <label>Wpisz dokładnie: <b>{uatReset.confirmation}</b>
-          <input value={uatResetDialog.confirmation} onChange={event=>setUatResetDialog({confirmation:event.target.value,error:null})}/>
+          <input value={uatResetDialog.confirmation} onChange={event=>setUatResetDialog({...uatResetDialog,confirmation:event.target.value,error:null})}/>
         </label>
         {uatResetDialog.error&&<div className="matrix-v2-validation warning"><AlertTriangle/><span><strong>Reset nie został wykonany</strong><small>{uatResetDialog.error}</small></span></div>}
-        <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setUatResetDialog(null)}>Anuluj</button><button className="danger-button" disabled={busy||uatResetDialog.confirmation!==uatReset.confirmation} onClick={()=>void resetUatBusinessData()}><Trash2/> Wyczyść UAT i rozpocznij od zera</button></div>
+        <div className="drawer-actions"><button className="secondary-button" disabled={busy} onClick={()=>setUatResetDialog(null)}>Anuluj</button><button className="danger-button" disabled={busy||!uatResetDialog.emptyStateConfirmed||uatResetDialog.confirmation!==uatReset.confirmation} onClick={()=>void resetUatBusinessData()}><Trash2/> Wyczyść UAT i pozostań przy pustej konfiguracji</button></div>
       </div>
     </aside></>}
     {shiftMergeDialog&&<><button className="drawer-scrim top" aria-label="Zamknij porządkowanie zmian" onClick={()=>{if(!busy)setShiftMergeDialog(null);}}/><aside className="drawer top" aria-label="Porządkowanie powtarzających się zmian">
@@ -2231,7 +2241,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     <div className="drawer-head"><div><p className="eyebrow">KONFIGURACJA • IMPORT ZBIORCZY</p><h2>Aktualizacja z pliku Excel</h2></div><button className="icon-button" onClick={close}><X/></button></div>
     <div className="drawer-content">
       <fieldset className="matrix-import-mode"><legend>Co chcesz zaktualizować?</legend><button type="button" className={scope==="TEAM"?"active":""} onClick={()=>resetImport("TEAM")}><strong>1. Struktura i zespół</strong><small>Prosty start: role, lokale, obowiązki i pracownicy. Numery GP-### nada system; finanse uzupełnisz w kroku 2.</small></button><button type="button" className={scope==="FINANCE"?"active":""} onClick={()=>resetImport("FINANCE")}><strong>2. Finanse zespołu</strong><small>Gotowy plik zawiera już pracowników i nadane numery. Uzupełniasz wyłącznie okresy i stawki.</small></button><button type="button" className={scope==="CONFIGURATION"?"active":""} onClick={()=>resetImport("CONFIGURATION")}><strong>Pełna kopia firmy</strong><small>Awaryjne odtworzenie wszystkich ustawień z kopii zapasowej. Zwykle nie edytujesz arkuszy technicznych.</small></button></fieldset>
-      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
+      <p className="matrix-v2-form-hint">{scope==="FINANCE"?"Stawki są chronione i dostępne tylko dla uprawnionych osób. Najpierw zobaczysz dokładny podgląd; jeden błędny wiersz zatrzyma cały zapis.":scope==="TEAM"?"To zalecana ścieżka pierwszego uruchomienia. W jednym widocznym arkuszu pracownika ustawisz rolę, lokale, umowę, limity i obowiązki. Brakujący numer oraz ponowne podpięcie istniejącego e-maila obsłuży system.":`To jest pełna kopia danych wejściowych firmy dla roboczej konfiguracji v${data.matrixVersion.version}. Nie czyść UAT przed importem: podgląd wykonuje próbne odtworzenie bez zapisu, a właściwy import zapisuje wszystkie arkusze w jednej transakcji.`}</p>
       <div className="matrix-import-trust"><ShieldCheck/><span><strong>Bez zgadywania danych</strong><small>{scope==="FINANCE"?"System rozpoznaje osobę po numerze pracownika i sprawdza daty zatrudnienia, walutę oraz nakładające się okresy.":scope==="TEAM"?"System najpierw tworzy nowe role, lokale i obowiązki, potem przypisuje zespół. Nowa osoba może mieć pusty numer; istniejący e-mail zostanie bezpiecznie podpięty do zachowanej historii.":"System odtwarza zależności według stabilnych kodów i numerów pracowników. Najpierw tworzy słowniki firmy, potem zespół i grafikowe reguły, a na końcu finanse oraz dostępność. Błąd w dowolnym arkuszu cofa całość."}</small></span></div>
       {scope==="CONFIGURATION"&&<details className="matrix-import-advanced-guide"><summary>Co zawiera pełna kopia i kiedy jej użyć?</summary><div><article><strong>Dane codzienne</strong><p>Firma, role, lokale, obowiązki, pracownicy, zmiany i wymagana obsada.</p></article><article><strong>Dane dodatkowe</strong><p>Scenariusze, strategie, budżety, reguły płacowe oraz dostępność.</p></article><article><strong>Kiedy użyć</strong><p>Do kopii bezpieczeństwa, migracji albo pełnego odtworzenia. Pierwszą konfigurację zacznij od kroków 1 i 2.</p></article></div></details>}
       <button className="primary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate(true)}><FileSpreadsheet/> {busy?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button>

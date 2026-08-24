@@ -487,6 +487,8 @@ export function matrixV2ErrorMessage(message: string) {
   if (value.includes("FUTURE_MATRIX_ACTIVATION_REQUIRES_SCHEDULER")) return "Przyszła wersja konfiguracji wymaga zaplanowanej aktywacji. Na tym etapie opublikuj ją najwcześniej w dniu rozpoczęcia obowiązywania.";
   if (value.includes("NO_MATRIX_V2_DRAFT")) return "Nie ma wersji roboczej do opublikowania.";
   if (value.includes("DRAFT_ALREADY_USED_BY_GENERATOR")) return "Tej wersji roboczej nie można już anulować, ponieważ uruchomiono na niej generator. Otwórz historię wersji i utwórz nową wersję roboczą z opublikowanej konfiguracji.";
+  if (value.includes("MATRIX_LAST_USABLE_VERSION_REQUIRED") || value.includes("B4F171_USABLE_MATRIX_REQUIRED_AFTER_DISCARD")) return "Nie można usunąć jedynej używalnej konfiguracji firmy. Najpierw opublikuj inną wersję albo pozostaw bezpieczny pusty proces pierwszego uruchomienia.";
+  if (value.includes("B4F171_ISOLATED_UAT_REQUIRED")) return "Odtworzenie pustej konfiguracji jest dozwolone wyłącznie w jednoznacznie oznaczonym środowisku UAT.";
   if (value.includes("ONLY_DRAFT_CAN_BE_DISCARDED")) return "Anulować można wyłącznie nieopublikowaną wersję roboczą.";
   if (value.includes("INVALID_COVERAGE_MODE")) return "Sposób liczenia obsady jest nieprawidłowy. Wybierz niezależną obsadę albo wspólną rotację między lokalami.";
   if (value.includes("ACCESS_ROWS_COUNT_OUT_OF_RANGE")) return "Plik dostępów musi zawierać od 1 do 1000 wierszy.";
