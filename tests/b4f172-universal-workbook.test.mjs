@@ -48,13 +48,21 @@ test("B4F-172: empty quick workbook has dynamic bounded lists and protected tech
   assert.doesNotMatch(String(lists.getCell("E2").value?.formula??""),/^=/);
   const roleCategory=workbook.getWorksheet("Role").getCell("C2");
   assert.equal(roleCategory.dataValidation.formulae[0],"'_LISTY'!$G$2:$G$501");
+  const reserveLevels=workbook.getWorksheet("Grupy rezerwy").getCell("D2").dataValidation;
+  assert.equal(reserveLevels.formulae[0],"'_LISTY'!$L$2:$L$3");
+  assert.notEqual(reserveLevels.showInputMessage,true);
+  assert.equal(reserveLevels.prompt,undefined);
+  assert.deepEqual([lists.getCell("L2").value,lists.getCell("L3").value],[1,2]);
   assert.doesNotMatch(JSON.stringify(workbook.model),/\$2:\$1/);
   assert.equal(workbook.getWorksheet("Role").getColumn(1).hidden,true);
   assert.notEqual(workbook.getWorksheet("Role").getCell("A2").protection?.locked,false);
   assert.equal(workbook.getWorksheet("Role").getCell("B2").protection.locked,false);
   assert.equal(workbook.getWorksheet("Role").model.sheetProtection?.sheet,true);
   assert.equal(workbook.getWorksheet("_META").state,"veryHidden");
-  assert.equal(workbook.getWorksheet("Firma").getCell("C2").dataValidation.type,"decimal");
+  const minimumRest=workbook.getWorksheet("Firma").getCell("C2").dataValidation;
+  assert.equal(minimumRest.type,"decimal");
+  assert.notEqual(minimumRest.showInputMessage,true);
+  assert.equal(minimumRest.prompt,undefined);
   assert.equal(workbook.getWorksheet("Zmiany").getCell("D2").dataValidation.type,"time");
 });
 

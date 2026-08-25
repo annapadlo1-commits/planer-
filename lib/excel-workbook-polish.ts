@@ -128,10 +128,10 @@ function listFormula(listSheet:Worksheet,column:number,count:number,fixedEnd?:nu
 function addListValidation(sheet:Worksheet,column:number,formula:string,prompt:string){
   if(!column)return;
   for(let row=2;row<=501;row++){
-    sheet.getCell(row,column).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Wybierz wartość z listy",error:"Ta wartość nie jest obsługiwana przez import.",showInputMessage:true,promptTitle:"SZAFUNEK",prompt};
+    sheet.getCell(row,column).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Wybierz wartość z listy",error:prompt,showInputMessage:false};
   }
 }
-function writeList(sheet:Worksheet,column:number,title:string,values:string[]){
+function writeList(sheet:Worksheet,column:number,title:string,values:Array<string|number>){
   sheet.getCell(1,column).value=title;
   values.forEach((value,index)=>{sheet.getCell(index+2,column).value=value;});
   sheet.getColumn(column).width=38;
@@ -245,7 +245,7 @@ function applyQuickTypedValidations(workbook:ExcelJS.Workbook){
     const sheet=workbook.getWorksheet(rule.sheet);if(!sheet)continue;
     for(const header of rule.headers){
       const column=findColumn(sheet,header);if(!column)continue;
-      for(let row=2;row<=501;row++)sheet.getCell(row,column).dataValidation={type:rule.type as never,operator:rule.operator??"between",allowBlank:true,formulae:rule.formulae??[],showErrorMessage:true,errorStyle:"stop",errorTitle:"Nieprawidłowa wartość",error:rule.prompt,showInputMessage:true,promptTitle:"SZAFUNEK",prompt:rule.prompt};
+      for(let row=2;row<=501;row++)sheet.getCell(row,column).dataValidation={type:rule.type as never,operator:rule.operator??"between",allowBlank:true,formulae:rule.formulae??[],showErrorMessage:true,errorStyle:"stop",errorTitle:"Nieprawidłowa wartość",error:rule.prompt,showInputMessage:false};
     }
   }
 }
@@ -333,7 +333,7 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind,options?:{m
   }else{
     writeList(lists,5,"Role",roleReferences);writeList(lists,6,"Lokale",locationReferences);writeList(lists,7,"Kategorie",categoryReferences);writeList(lists,10,"Obowiązki",dutyReferences);writeList(lists,11,"Zmiany",shiftReferences);
   }
-  writeList(lists,8,"Rodzaje dostępu",accessRoles);writeList(lists,9,"Zgoda na nadgodziny",OVERTIME_VALUES);writeList(lists,12,"Poziomy rezerwy",["1","2"]);
+  writeList(lists,8,"Rodzaje dostępu",accessRoles);writeList(lists,9,"Zgoda na nadgodziny",OVERTIME_VALUES);writeList(lists,12,"Poziomy rezerwy",[1,2]);
   for(const sheet of workbook.worksheets){
     if(sheet.name==="_LISTY"||sheet.name==="_META"||sheet.name==="Instrukcja")continue;
     replaceBooleanValues(sheet);replaceEmploymentStages(sheet);replaceContracts(sheet);styleSheet(sheet,kind);
