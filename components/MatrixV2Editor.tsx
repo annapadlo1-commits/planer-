@@ -27,11 +27,14 @@ import { QUICK_WORKBOOK_SHEETS, referenceLabel } from "@/lib/workbook-contract";
 import {
   authorizeGoogleDriveFile,
   beginGoogleDriveRedirectAuthorization,
+  closeGoogleSheetsTargetWindow,
   clearGoogleDriveRedirectStatus,
   googleDriveRedirectMessage,
   googleDriveRedirectStatus,
   isGoogleSheetsExportError,
+  openGoogleSheetsTargetWindow,
   preloadGoogleIdentityServices,
+  showGoogleSheetsInTargetWindow,
   uploadWorkbookToGoogleSheets,
   uploadWorkbookToGoogleSheetsViaServer,
 } from "@/lib/google-sheets-export";
@@ -934,23 +937,26 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
 
   async function exportAccessWorkbook(toGoogle=false){
     if(!directory)return;
+    let googleWindow:Window|null=null;
     setSaving(true);
     try{
       if(toGoogle){
+        googleWindow=openGoogleSheetsTargetWindow();
         if(googleServerReady){
           const artifact=await buildAccessWorkbook();
-          window.location.assign(await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
+          showGoogleSheetsInTargetWindow(googleWindow,await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
           return;
         }
         const token=await authorizeGoogleDriveFile();
         const artifact=await buildAccessWorkbook();
-        window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
+        showGoogleSheetsInTargetWindow(googleWindow,await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token));
       }else{
         const artifact=await buildAccessWorkbook();
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
     }catch(error){
+      closeGoogleSheetsTargetWindow(googleWindow);
       if(isGoogleSheetsExportError(error)){
         if(["GIS_BLOCKED","GIS_TIMEOUT","GOOGLE_POPUP_BLOCKED","GOOGLE_LOGIN_CANCELLED","GOOGLE_AUTH_REQUIRED"].includes(error.code))setGoogleFallback(true);
         if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleServerReady(false);
@@ -2167,23 +2173,26 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
   }
   async function exportTemplate(toGoogle=false,quickMode:QuickWorkbookMode="CURRENT_CONFIG_EXPORT"){
+    let googleWindow:Window|null=null;
     setBusy(true);setLocalError("");
     try{
+      if(toGoogle)googleWindow=openGoogleSheetsTargetWindow();
       const token=toGoogle&&!googleServerReady?await authorizeGoogleDriveFile():null;
       const artifact=scope==="FINANCE"
         ?await buildWorkforceFinanceTemplate(data)
         :await buildMatrixTemplate(data,scope==="TEAM"?"QUICK":"FULL",quickMode);
       if(toGoogle){
         if(googleServerReady){
-          window.location.assign(await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
+          showGoogleSheetsInTargetWindow(googleWindow!,await uploadWorkbookToGoogleSheetsViaServer(artifact.bytes,artifact.fileName));
           return;
         }
-        window.location.assign(await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token!));
+        showGoogleSheetsInTargetWindow(googleWindow!,await uploadWorkbookToGoogleSheets(artifact.bytes,artifact.fileName,token!));
       }else{
         const {downloadWorkbook}=await import("@/lib/excel-workbook-polish");
         downloadWorkbook(artifact.bytes,artifact.fileName);
       }
     }catch(error){
+      closeGoogleSheetsTargetWindow(googleWindow);
       if(isGoogleSheetsExportError(error)){
         if(["GIS_BLOCKED","GIS_TIMEOUT","GOOGLE_POPUP_BLOCKED","GOOGLE_LOGIN_CANCELLED","GOOGLE_AUTH_REQUIRED"].includes(error.code))setGoogleFallback(true);
         if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleServerReady(false);

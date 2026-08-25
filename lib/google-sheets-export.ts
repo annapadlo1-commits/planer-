@@ -24,6 +24,24 @@ export function isGoogleSheetsExportError(error: unknown): error is GoogleSheets
   return error instanceof GoogleSheetsExportError;
 }
 
+export function openGoogleSheetsTargetWindow() {
+  const target = window.open("about:blank", "_blank");
+  if (!target) throw new GoogleSheetsExportError(
+    "GOOGLE_POPUP_BLOCKED",
+    "Przeglądarka zablokowała nową kartę Arkuszy Google. Zezwól na wyskakujące okna dla SZAFUNEK i spróbuj ponownie.",
+  );
+  target.opener = null;
+  return target;
+}
+
+export function showGoogleSheetsInTargetWindow(target: Window, url: string) {
+  target.location.replace(url);
+}
+
+export function closeGoogleSheetsTargetWindow(target: Window | null) {
+  if (target && !target.closed) target.close();
+}
+
 type TokenResponse = { access_token?: string; error?: string; error_description?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
 

@@ -35,12 +35,24 @@ test("configuration and access exports retain both Google Sheets and Excel actio
   assert.match(editor, /Eksportuj obecną konfigurację/);
 });
 
-test("Google authorization happens before workbook generation and does not consume a second popup", () => {
-  assert.doesNotMatch(integration, /window\.open/);
+test("Google authorization happens before workbook generation", () => {
   assert.match(integration, /export async function authorizeGoogleDriveFile/);
   assert.match(editor, /const token=await authorizeGoogleDriveFile\(\);\s+const artifact=await buildAccessWorkbook/);
   assert.match(editor, /const token=toGoogle&&!googleServerReady\?await authorizeGoogleDriveFile\(\):null;[\s\S]{0,250}await build/);
-  assert.match(editor, /window\.location\.assign\(await uploadWorkbookToGoogleSheets/);
+});
+
+test("Google Sheets opens in a reserved new tab and leaves the application tab in place", () => {
+  assert.match(integration, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(integration, /target\.opener = null/);
+  assert.match(integration, /target\.location\.replace\(url\)/);
+  assert.doesNotMatch(editor, /window\.location\.assign\(await uploadWorkbookToGoogleSheets/);
+  assert.ok((editor.match(/googleWindow=openGoogleSheetsTargetWindow\(\)/g) ?? []).length >= 2);
+  assert.ok((editor.match(/showGoogleSheetsInTargetWindow\(googleWindow/g) ?? []).length >= 4);
+});
+
+test("a failed Google Sheets export closes the reserved empty tab", () => {
+  assert.match(integration, /if \(target && !target\.closed\) target\.close\(\)/);
+  assert.ok((editor.match(/catch\(error\)\{\s+closeGoogleSheetsTargetWindow\(googleWindow\)/g) ?? []).length >= 2);
 });
 
 test("blocked popup login has a secure authorization-code redirect fallback", () => {
