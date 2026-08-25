@@ -223,7 +223,7 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
 function writeDynamicReferenceList(sheet:Worksheet,column:number,title:string,sourceSheet:string,nameColumn:string,codeColumn:string){
   sheet.getCell(1,column).value=title;
   for(let row=2;row<=501;row++){
-    sheet.getCell(row,column).value={formula:`=IF('${sourceSheet}'!$${nameColumn}${row}="","",'${sourceSheet}'!$${nameColumn}${row}&IF('${sourceSheet}'!$${codeColumn}${row}="",""," ["&'${sourceSheet}'!$${codeColumn}${row}&"]"))`};
+    sheet.getCell(row,column).value={formula:`IF('${sourceSheet}'!$${nameColumn}${row}="","",'${sourceSheet}'!$${nameColumn}${row}&IF('${sourceSheet}'!$${codeColumn}${row}="",""," ["&'${sourceSheet}'!$${codeColumn}${row}&"]"))`};
   }
 }
 

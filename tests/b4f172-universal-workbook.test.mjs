@@ -44,6 +44,8 @@ test("B4F-172: empty quick workbook has dynamic bounded lists and protected tech
   assert.equal(lists.state,"veryHidden");
   assert.match(String(lists.getCell("G2").value?.formula??""),/'Kategorie grafików'!\$B2/);
   assert.match(String(lists.getCell("E2").value?.formula??""),/'Role'!\$B2/);
+  assert.doesNotMatch(String(lists.getCell("G2").value?.formula??""),/^=/);
+  assert.doesNotMatch(String(lists.getCell("E2").value?.formula??""),/^=/);
   const roleCategory=workbook.getWorksheet("Role").getCell("C2");
   assert.equal(roleCategory.dataValidation.formulae[0],"'_LISTY'!$G$2:$G$501");
   assert.doesNotMatch(JSON.stringify(workbook.model),/\$2:\$1/);
