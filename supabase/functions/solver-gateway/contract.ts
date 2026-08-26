@@ -16,6 +16,26 @@ export type WorkerAction = (typeof WORKER_ACTIONS)[number];
 export type AllowedAction = WorkerAction;
 export type JsonObject = Record<string, unknown>;
 
+export function resolveSupabaseSecretKey(raw: string | undefined): string {
+  let keys: unknown;
+  try {
+    keys = JSON.parse(raw ?? "");
+  } catch {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  if (!isObject(keys)) {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  const key = keys.default;
+  if (
+    typeof key !== "string" ||
+    !/^sb_secret_[A-Za-z0-9_-]{20,240}$/u.test(key)
+  ) {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  return key;
+}
+
 export type RpcResult = {
   status: number;
   body?: BodyInit | null;

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   ALLOWED_ACTIONS,
   createGatewayHandler,
+  resolveSupabaseSecretKey,
 } from "./contract.ts";
 
 const TOKEN = "solver-gateway-test-token".padEnd(64, "x");
@@ -12,6 +14,11 @@ const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
 const STRATEGY_ID = "44444444-4444-4444-8444-444444444444";
+const SUPABASE_SECRET_KEY = `sb_secret_${"test".repeat(8)}`;
+const gatewaySource = await readFile(
+  new URL("./index.ts", import.meta.url),
+  "utf8",
+);
 
 const claimArgs = {
   p_worker_id: "free-host-worker-1:42",
@@ -225,6 +232,33 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
     action: "solver_save_variant_v2",
     args: { ...args, p_gateway_version: GATEWAY_VERSION },
   }]);
+});
+
+test("uses only the named Supabase secret key and fails closed", () => {
+  assert.equal(
+    resolveSupabaseSecretKey(JSON.stringify({ default: SUPABASE_SECRET_KEY })),
+    SUPABASE_SECRET_KEY,
+  );
+  for (const raw of [
+    undefined,
+    "",
+    "not-json",
+    "{}",
+    JSON.stringify({ default: "legacy.jwt.key" }),
+    JSON.stringify({ default: "sb_publishable_not_a_secret_key" }),
+  ]) {
+    assert.throws(
+      () => resolveSupabaseSecretKey(raw),
+      /Invalid Supabase secret key configuration/,
+    );
+  }
+});
+
+test("gateway has no legacy credential fallback or bearer secret header", () => {
+  assert.match(gatewaySource, /Deno\.env\.get\("SUPABASE_SECRET_KEYS"\)/u);
+  assert.doesNotMatch(gatewaySource, /SUPABASE_SERVICE_ROLE_KEY/u);
+  assert.doesNotMatch(gatewaySource, /Authorization:\s*`Bearer/u);
+  assert.match(gatewaySource, /apikey:\s*supabaseSecretKey/u);
 });
 
 test("accepts the primary-role-before-backup diagnostic emitted by category runs", async () => {
