@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const mode = process.argv[2] ?? "EXPECT_FIXED";
-if (!new Set(["EXPECT_LEAK", "EXPECT_FIXED"]).has(mode)) throw new Error(`INVALID_MODE:${mode}`);
+if (!new Set(["EXPECT_LEAK", "EXPECT_BASELINE_DENY", "EXPECT_FIXED"]).has(mode)) throw new Error(`INVALID_MODE:${mode}`);
 
 const projectRef = "nhthrtpkfpmufmrmdyjg";
 const productionRef = "bdybebzvzapihjdauehg";
@@ -114,6 +114,15 @@ async function main() {
     } else {
       assert(shifts.rows === 0, `ANONYMOUS_SHIFT_ROWS_EXPOSED:${JSON.stringify(shifts)}`);
       for (const row of evidence) assert(row.rows === 0, `ANONYMOUS_SCHEDULE_ROWS_EXPOSED:${JSON.stringify(row)}`);
+      if (mode === "EXPECT_FIXED") {
+        const assignments = evidence.find(row => row.surface === "legacy assignments");
+        assert(shifts.errorCode === "42501" && /permission denied for table shifts/i.test(shifts.errorMessage),
+          `SHIFT_DENIAL_NOT_LOCAL_TO_TABLE_ACL:${JSON.stringify(shifts)}`);
+        assert(assignments?.errorCode === "42501" && /permission denied for table assignments/i.test(assignments.errorMessage),
+          `ASSIGNMENT_DENIAL_NOT_LOCAL_TO_TABLE_ACL:${JSON.stringify(assignments)}`);
+        assert(!/has_app_role/i.test(`${shifts.errorMessage} ${assignments?.errorMessage ?? ""}`),
+          "ANONYMOUS_DENIAL_STILL_DEPENDS_ON_HAS_APP_ROLE_FAILURE");
+      }
     }
   } catch (error) {
     primaryError = error;

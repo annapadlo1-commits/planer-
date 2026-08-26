@@ -1,16 +1,63 @@
--- TECH-AUD-2026-08-25-004: anonymous published schedule boundary.
--- This contract exercises effective ACL/RLS semantics with a real PUBLISHED
--- legacy row; it does not rely on matching migration text.
+-- TECH-AUD-2026-08-25-004 / Phase 3B: explicit anonymous schedule boundary.
+-- The invariant is local to schedule ACL/RLS and remains true even if the
+-- EXECUTE privilege of has_app_role(app_role) is changed transactionally.
 
 begin;
 
 do $$
 declare
+  v_relation regclass;
   v_schedule_function regprocedure;
 begin
-  if not (select relrowsecurity from pg_class where oid='public.shifts'::regclass) then
-    raise exception 'SHIFTS_RLS_DISABLED';
-  end if;
+  foreach v_relation in array array[
+    'public.shifts'::regclass,
+    'public.assignments'::regclass
+  ] loop
+    if not (select relrowsecurity from pg_class where oid=v_relation) then
+      raise exception 'LEGACY_SCHEDULE_RLS_DISABLED:%',v_relation;
+    end if;
+    if has_table_privilege('anon',v_relation,'SELECT') then
+      raise exception 'ANON_LEGACY_SCHEDULE_SELECT_PRIVILEGE:%',v_relation;
+    end if;
+    if not has_table_privilege('authenticated',v_relation,'SELECT') then
+      raise exception 'AUTHENTICATED_LEGACY_SCHEDULE_SELECT_REMOVED:%',v_relation;
+    end if;
+  end loop;
+
+  if exists (
+    select 1
+    from pg_policies
+    where schemaname='public'
+      and tablename=any(array[
+        'shifts','assignments','plans','published_schedules_v2',
+        'published_role_schedules_v2','published_schedule_variants_v2',
+        'published_standby_assignments_v2','plan_shifts_v2',
+        'plan_assignments_v2','plan_assignment_duties_v2'
+      ])
+      and roles && array['public','anon']::name[]
+  ) then raise exception 'ANON_TARGETED_SCHEDULE_POLICY'; end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname='public'
+      and tablename='shifts'
+      and cmd='SELECT'
+      and roles=array['authenticated']::name[]
+      and qual ~* 'plans'
+      and qual ~* 'PUBLISHED'
+  ) then raise exception 'AUTHENTICATED_PUBLISHED_SHIFT_POLICY_MISSING'; end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname='public'
+      and tablename='assignments'
+      and cmd='SELECT'
+      and roles=array['authenticated']::name[]
+      and qual ~* 'employee_id'
+      and qual ~* 'auth.uid'
+  ) then raise exception 'AUTHENTICATED_OWN_ASSIGNMENT_POLICY_MISSING'; end if;
 
   if exists (
     select 1
@@ -53,6 +100,28 @@ begin
 end;
 $$;
 
+-- Prove that schedule denial is independent of the helper privilege. This
+-- grant and its explicit revoke are also enclosed by the outer rollback.
+grant execute on function public.has_app_role(public.app_role) to anon;
+set local role anon;
+do $$
+begin
+  begin
+    perform 1 from public.shifts limit 1;
+    raise exception 'ANON_SHIFT_SELECT_EXECUTED_WITH_HELPER_GRANT';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform 1 from public.assignments limit 1;
+    raise exception 'ANON_ASSIGNMENT_SELECT_EXECUTED_WITH_HELPER_GRANT';
+  exception when insufficient_privilege then null;
+  end;
+end;
+$$;
+reset role;
+revoke execute on function public.has_app_role(public.app_role) from anon;
+
 delete from public.shifts where id='f4300000-0000-4000-8000-000000000001'::uuid;
 delete from public.plans where id='f4200000-0000-4000-8000-000000000001'::uuid;
 delete from public.locations where id='f4100000-0000-4000-8000-000000000001'::uuid;
@@ -82,12 +151,19 @@ insert into public.shifts(
 set local role anon;
 do $$
 begin
-  perform 1
-  from public.shifts
-  where id='f4300000-0000-4000-8000-000000000001'::uuid;
-  if found then raise exception 'ANONYMOUS_PUBLISHED_SHIFT_ROW_EXPOSED'; end if;
-exception
-  when insufficient_privilege then null;
+  begin
+    perform 1
+    from public.shifts
+    where id='f4300000-0000-4000-8000-000000000001'::uuid;
+    raise exception 'ANONYMOUS_PUBLISHED_SHIFT_SELECT_EXECUTED';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    perform 1 from public.assignments limit 1;
+    raise exception 'ANONYMOUS_ASSIGNMENT_SELECT_EXECUTED';
+  exception when insufficient_privilege then null;
+  end;
 end;
 $$;
 reset role;
