@@ -3,10 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   GOOGLE_DRIVE_FILE_SCOPE,
   GOOGLE_OAUTH_CLIENT_ID,
+  GOOGLE_OAUTH_ACTION_COOKIE,
+  GOOGLE_OAUTH_TARGET_COOKIE,
   GOOGLE_OAUTH_RETURN_COOKIE,
   GOOGLE_OAUTH_STATE_COOKIE,
   authenticatedAppUser,
   canonicalOAuthStartUrl,
+  googleDriveOAuthAction,
+  googleDriveImportTarget,
   googleOAuthCallbackUrl,
   returnUrlWithStatus,
   safeReturnTo,
@@ -19,6 +23,8 @@ export async function GET(request: NextRequest) {
   const canonicalStart = canonicalOAuthStartUrl(request);
   if (canonicalStart) return NextResponse.redirect(canonicalStart);
   const returnTo = safeReturnTo(request.nextUrl.searchParams.get("returnTo"));
+  const action = googleDriveOAuthAction(request.nextUrl.searchParams.get("action"));
+  const target = googleDriveImportTarget(request.nextUrl.searchParams.get("target"));
   if (!await authenticatedAppUser()) {
     return NextResponse.redirect(returnUrlWithStatus(request, returnTo, "app_auth_required"));
   }
@@ -33,9 +39,16 @@ export async function GET(request: NextRequest) {
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("scope", GOOGLE_DRIVE_FILE_SCOPE);
   authorizationUrl.searchParams.set("access_type", "online");
-  authorizationUrl.searchParams.set("include_granted_scopes", "true");
+  authorizationUrl.searchParams.set("include_granted_scopes", action === "import" ? "false" : "true");
   authorizationUrl.searchParams.set("prompt", "consent");
   authorizationUrl.searchParams.set("state", state);
+  if (action === "import") {
+    authorizationUrl.searchParams.set("trigger_onepick", "true");
+    authorizationUrl.searchParams.set(
+      "mimetypes",
+      "application/vnd.google-apps.spreadsheet,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+  }
 
   const response = NextResponse.redirect(authorizationUrl);
   const cookieOptions = {
@@ -47,5 +60,7 @@ export async function GET(request: NextRequest) {
   };
   response.cookies.set(GOOGLE_OAUTH_STATE_COOKIE, state, cookieOptions);
   response.cookies.set(GOOGLE_OAUTH_RETURN_COOKIE, returnTo, cookieOptions);
+  response.cookies.set(GOOGLE_OAUTH_ACTION_COOKIE, action, cookieOptions);
+  response.cookies.set(GOOGLE_OAUTH_TARGET_COOKIE, target, cookieOptions);
   return response;
 }

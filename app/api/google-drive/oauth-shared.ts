@@ -8,7 +8,12 @@ export const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID
 export const GOOGLE_DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const GOOGLE_OAUTH_STATE_COOKIE = "gp_google_oauth_state";
 export const GOOGLE_OAUTH_RETURN_COOKIE = "gp_google_oauth_return";
+export const GOOGLE_OAUTH_ACTION_COOKIE = "gp_google_oauth_action";
+export const GOOGLE_OAUTH_TARGET_COOKIE = "gp_google_oauth_target";
 export const GOOGLE_DRIVE_TOKEN_COOKIE = "gp_google_drive_access";
+export const GOOGLE_DRIVE_FILE_ID_COOKIE = "gp_google_drive_file_id";
+export type GoogleDriveOAuthAction = "upload" | "import";
+export type GoogleDriveImportTarget = "matrix" | "access";
 
 export async function authenticatedAppUser() {
   const supabase = await createSupabaseServerClient();
@@ -24,6 +29,19 @@ export function googleOAuthCallbackUrl(request: NextRequest) {
 
 export function safeReturnTo(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+}
+
+export function googleDriveOAuthAction(value: string | null): GoogleDriveOAuthAction {
+  return value === "import" ? "import" : "upload";
+}
+
+export function googleDriveImportTarget(value: string | null): GoogleDriveImportTarget {
+  return value === "access" ? "access" : "matrix";
+}
+
+export function safeGoogleDriveFileId(value: string | null) {
+  if (!value || !/^[A-Za-z0-9_-]{10,200}$/.test(value)) return null;
   return value;
 }
 

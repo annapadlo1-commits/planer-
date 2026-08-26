@@ -2,7 +2,7 @@
 
 import {
   AlertTriangle, Archive, Boxes, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3,
-  Download, Edit3, FileSpreadsheet, GitBranch, Layers3, Link2, MapPin, Plus,
+  CloudDownload, Download, Edit3, FileSpreadsheet, GitBranch, Layers3, Link2, MapPin, Plus,
   Save, ShieldCheck, Upload, RefreshCw, Settings, Sparkles, Target, Trash2, Users, X,
   History as HistoryIcon,
 } from "lucide-react";
@@ -26,9 +26,11 @@ import {
 import { QUICK_WORKBOOK_SHEETS, referenceLabel } from "@/lib/workbook-contract";
 import {
   authorizeGoogleDriveFile,
+  beginGoogleDriveImportAuthorization,
   beginGoogleDriveRedirectAuthorization,
   closeGoogleSheetsTargetWindow,
   clearGoogleDriveRedirectStatus,
+  downloadSelectedGoogleDriveWorkbook,
   googleDriveRedirectMessage,
   googleDriveRedirectStatus,
   isGoogleSheetsExportError,
@@ -830,8 +832,14 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
   const [googleServerReady,setGoogleServerReady]=useState(false);
   const [googleFallback,setGoogleFallback]=useState(false);
   const [googleStatusMessage,setGoogleStatusMessage]=useState("");
+  const [googleImportReady,setGoogleImportReady]=useState(false);
   useEffect(()=>{
     const status=googleDriveRedirectStatus();
+    if(status==="import_ready_access"){
+      clearGoogleDriveRedirectStatus();
+      setGoogleImportReady(true);
+      return;
+    }
     if(status==="ready"){
       setGoogleServerReady(true);setGoogleFallback(false);setGoogleStatusMessage("");
       notify("Konto Google zostało połączone. Kliknij teraz „Utwórz arkusz na Dysku Google”.");
@@ -839,7 +847,11 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
       return;
     }
     const redirectMessage=googleDriveRedirectMessage(status);
-    if(redirectMessage){setGoogleFallback(true);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();}
+    if(redirectMessage){
+      const pickerFailure=status==="picker_cancelled"||status==="picker_selection_error";
+      setGoogleFallback(!pickerFailure);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();
+      if(pickerFailure)fail(redirectMessage);
+    }
     void preloadGoogleIdentityServices().catch(error=>{
       setGoogleFallback(true);
       setGoogleStatusMessage(error instanceof Error?error.message:"Przeglądarka zablokowała moduł logowania Google.");
@@ -862,6 +874,11 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     if(!policyResult.error)setFinancePolicy(policyResult.data as FinanceAccessPolicyPayload);
   }
   useEffect(()=>{void loadDirectory();},[]);
+  useEffect(()=>{
+    if(!googleImportReady||!directory)return;
+    setGoogleImportReady(false);
+    void importAccessWorkbookFromGoogleDrive();
+  },[directory,googleImportReady]);
 
   async function saveAccess(active=true,entry?:AccessDirectoryEntry){
     if(!supabase)return;
@@ -967,8 +984,22 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
     finally{setSaving(false);}
   }
 
+  async function importAccessWorkbookFromGoogleDrive(){
+    setSaving(true);setGoogleStatusMessage("");
+    try{
+      const driveFile=await downloadSelectedGoogleDriveWorkbook();
+      if(await inspectAccessWorkbook(driveFile))notify(`Pobrano „${driveFile.name}” z Dysku Google i pokazano podgląd. Nic nie zostało jeszcze zapisane.`);
+    }catch(error){
+      if(isGoogleSheetsExportError(error)){
+        if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleFallback(true);
+        setGoogleStatusMessage(error.message);
+      }
+      fail(error instanceof Error?error.message:"Nie udało się pobrać pliku z Dysku Google.");
+    }finally{setSaving(false);}
+  }
+
   async function inspectAccessWorkbook(file:File){
-    if(!directory)return;
+    if(!directory)return false;
     try{
       const XLSX=await import("xlsx");
       const workbook=XLSX.read(await file.arrayBuffer(),{type:"array"});
@@ -1005,7 +1036,8 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
       });
       if(!rows.length)errors.push("Arkusz „Dostępy” nie zawiera żadnego wiersza do zapisania.");
       setImportPreview({rows,errors,fileName:file.name});
-    }catch(error){setImportPreview(null);fail(error instanceof Error?error.message:"Nie udało się odczytać pliku dostępów.");}
+      return true;
+    }catch(error){setImportPreview(null);fail(error instanceof Error?error.message:"Nie udało się odczytać pliku dostępów.");return false;}
   }
 
   async function applyAccessWorkbook(){
@@ -1026,7 +1058,7 @@ function AccessTab({notify,fail}:{notify:(message:string)=>void;fail:(message:st
       <div>{financePolicy.policies.map(policy=><label key={policy.appRole}><span><b>{accessRoleLabels[policy.appRole]??policy.appRole}</b><small>{accessRoleDescriptions[policy.appRole]??"Rodzaj dostępu do aplikacji"}</small></span><select disabled={saving} value={policy.visibility} onChange={event=>void saveFinanceVisibility(policy.appRole,event.target.value as FinanceVisibility)}><option value="NONE">Brak danych finansowych</option><option value="BUDGET_ONLY">Tylko status budżetu</option><option value="AGGREGATE">Koszty zbiorcze</option><option value="FULL">Pełne koszty indywidualne</option></select></label>)}</div>
       <small>Ta polityka jest wspólnym źródłem dla Studia lidera, analiz, RPC i eksportów. Sama rola aplikacyjna nie nadaje już ukrytego poziomu finansowego.</small>
     </section>}
-    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="primary-button" disabled={loading} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
+    <div className="access-bulk-actions"><span><strong>Zbiorcze nadawanie dostępów</strong><small>Przy pierwszym uruchomieniu możesz nadać lub wyłączyć nawet setki funkcji jednym arkuszem.</small></span><button type="button" className="primary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook(true)}><FileSpreadsheet/> {saving?"Przygotowuję…":googleServerReady?"Utwórz arkusz na Dysku Google":"Otwórz w Google Sheets"}</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>void exportAccessWorkbook()}><Download/> Pobierz plik Excel</button><button type="button" className="secondary-button" disabled={loading||saving||!directory} onClick={()=>beginGoogleDriveImportAuthorization("access")}><CloudDownload/> Importuj z Dysku Google</button><button type="button" className="primary-button" disabled={loading||saving} onClick={()=>accessFileRef.current?.click()}><Upload/> Importuj plik lokalny</button><input ref={accessFileRef} hidden type="file" accept=".xlsx,.xls" onChange={event=>{const file=event.target.files?.[0];if(file)void inspectAccessWorkbook(file);}}/></div>
     {googleServerReady&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Konto Google jest połączone</strong><small>Arkusz nie powstał jeszcze automatycznie. Kliknij „Utwórz arkusz na Dysku Google”, aby świadomie wysłać ten plik.</small></span></div>}
     {googleFallback&&!googleServerReady&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Użyj bezpiecznego przekierowania Google</strong><small>{googleStatusMessage||"Logowanie w małym oknie jest blokowane przez przeglądarkę. Połącz konto przez pełną stronę Google, a potem wrócisz tutaj."}</small></span><button type="button" className="secondary-button" onClick={beginGoogleDriveRedirectAuthorization}>Połącz konto Google</button></div>}
     {importPreview&&<section className={`access-import-preview ${importPreview.errors.length?"invalid":"valid"}`}><header><span><strong>{importPreview.errors.length?"Plik wymaga poprawy":"Plik gotowy do zapisu"}</strong><small>{importPreview.fileName} • {plural(importPreview.rows.length,"wiersz","wiersze","wierszy")}</small></span><button type="button" className="icon-button" onClick={()=>setImportPreview(null)}><X/></button></header>{importPreview.errors.length?<ul>{importPreview.errors.map(error=><li key={error}>{error}</li>)}</ul>:<><p>System zapisze wszystkie wiersze w jednej transakcji. Jeżeli serwer odrzuci choć jeden dostęp, żaden nie zostanie zmieniony.</p><button type="button" className="primary-button" disabled={saving} onClick={()=>void applyAccessWorkbook()}><Check/> {saving?"Zapisuję…":`Zastosuj ${plural(importPreview.rows.length,"dostęp","dostępy","dostępów")}`}</button></>}</section>}
@@ -2141,8 +2173,14 @@ function readStoredMatrixImport(matrixVersionId:string){
 function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:MatrixV2Workspace;busy:boolean;setBusy:(value:boolean)=>void;close:()=>void;reload:()=>Promise<void>;notify:(message:string)=>void;fail:(message:string)=>void}){
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const importDraftKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-draft`;
+  const importScopeKey=`grafik-pro:matrix-v2:${data.matrixVersion.id}:import-scope`;
   const restored=useMemo(()=>readStoredMatrixImport(data.matrixVersion.id),[data.matrixVersion.id]);
-  const [scope,setScope]=useState<MatrixImportScope>(restored?.scope??"TEAM");
+  const [scope,setScope]=useState<MatrixImportScope>(()=>{
+    if(restored?.scope)return restored.scope;
+    if(typeof window==="undefined")return "TEAM";
+    const saved=window.sessionStorage.getItem(importScopeKey);
+    return saved==="FINANCE"||saved==="CONFIGURATION"?saved:"TEAM";
+  });
   const [file,setFile]=useState<File|null>(null),[payload,setPayload]=useState<Record<string,unknown>|null>(restored?.payload??null),[preview,setPreview]=useState<MatrixImportPreview|FinanceImportPreview|FullImportPreview|null>(restored?.preview??null),[localError,setLocalError]=useState("");
   const [localIssues,setLocalIssues]=useState<WorkbookValidationIssue[]>([]);
   const [mode,setMode]=useState<MatrixImportMode>(restored?.mode??"UPDATE");
@@ -2151,6 +2189,11 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   const [googleStatusMessage,setGoogleStatusMessage]=useState("");
   useEffect(()=>{
     const status=googleDriveRedirectStatus();
+    if(status==="import_ready_matrix"){
+      clearGoogleDriveRedirectStatus();
+      void importMatrixWorkbookFromGoogleDrive();
+      return;
+    }
     if(status==="ready"){
       setGoogleServerReady(true);setGoogleFallback(false);setGoogleStatusMessage("");
       notify("Konto Google zostało połączone. Kliknij teraz „Utwórz arkusz na Dysku Google”.");
@@ -2158,7 +2201,11 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       return;
     }
     const redirectMessage=googleDriveRedirectMessage(status);
-    if(redirectMessage){setGoogleFallback(true);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();}
+    if(redirectMessage){
+      const pickerFailure=status==="picker_cancelled"||status==="picker_selection_error";
+      setGoogleFallback(!pickerFailure);setGoogleStatusMessage(redirectMessage);clearGoogleDriveRedirectStatus();
+      if(pickerFailure)fail(redirectMessage);
+    }
     void preloadGoogleIdentityServices().catch(error=>{
       setGoogleFallback(true);
       setGoogleStatusMessage(error instanceof Error?error.message:"Przeglądarka zablokowała moduł logowania Google.");
@@ -2167,10 +2214,15 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
   useEffect(()=>{
     if(payload&&preview)window.sessionStorage.setItem(importDraftKey,JSON.stringify({scope,mode,payload,preview}));
   },[importDraftKey,mode,payload,preview,scope]);
+  useEffect(()=>{window.sessionStorage.setItem(importScopeKey,scope);},[importScopeKey,scope]);
   function clearPersistedImport(){window.sessionStorage.removeItem(importDraftKey);}
   function resetImport(nextScope=scope){
     clearPersistedImport();
     setScope(nextScope);setFile(null);setPayload(null);setPreview(null);setLocalError("");
+  }
+  function beginMatrixGoogleDriveImport(){
+    window.sessionStorage.setItem(importScopeKey,scope);
+    beginGoogleDriveImportAuthorization("matrix");
   }
   async function exportTemplate(toGoogle=false,quickMode:QuickWorkbookMode="CURRENT_CONFIG_EXPORT"){
     let googleWindow:Window|null=null;
@@ -2202,12 +2254,12 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
     }
     finally{setBusy(false);}
   }
-  async function inspect(){
-    if(!file||!supabase)return;
+  async function inspect(selectedFile=file){
+    if(!selectedFile||!supabase)return false;
     setBusy(true);setLocalError("");setLocalIssues([]);setPreview(null);
     try{
       if(scope==="FINANCE"){
-        const parsed=await readWorkforceFinanceWorkbook(file);
+        const parsed=await readWorkforceFinanceWorkbook(selectedFile);
         const financePayload={...parsed,payRates:parsed.payRates.map(rate=>{
           const existing=rate.rateId?data.employeePayRates.find(item=>item.id===rate.rateId):undefined;
           const employee=data.employees.find(item=>item.employeeNo.toLocaleUpperCase("pl-PL")===rate.employeeNo.toLocaleUpperCase("pl-PL"));
@@ -2217,9 +2269,9 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
         const result=await supabase.rpc("matrix_v2_finance_import_preview_uat_v1",{p_payload:financePayload});
         if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
         setPayload(financePayload);setPreview(result.data as FinanceImportPreview);
-        return;
+        return true;
       }
-      const [configuration,finance]=await Promise.all([readMatrixWorkbook(file),readWorkforceFinanceWorkbook(file)]);
+      const [configuration,finance]=await Promise.all([readMatrixWorkbook(selectedFile),readWorkforceFinanceWorkbook(selectedFile)]);
       if(!configuration.employees.length)throw new Error("Plik nie zawiera żadnego pracownika. Import został zatrzymany bez zmiany danych.");
       const missingStructure=[
         !configuration.roles.length?"co najmniej jednej aktywnej roli w arkuszu „Role”":"",
@@ -2238,8 +2290,23 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       if(result.error)throw new Error(matrixV2ErrorMessage(result.error.message));
       const serverPreview=result.data as FullImportPreview;
       setPayload(parsed);setPreview({...serverPreview,structureImpact:workbookStructureImpact(configuration,data)});
-    }catch(error){if(error instanceof MatrixWorkbookValidationError)setLocalIssues(error.issues);setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");}
+      return true;
+    }catch(error){if(error instanceof MatrixWorkbookValidationError)setLocalIssues(error.issues);setLocalError(error instanceof Error?error.message:"Nie udało się odczytać pliku Excel.");return false;}
     finally{setBusy(false);}
+  }
+  async function importMatrixWorkbookFromGoogleDrive(){
+    setBusy(true);setLocalError("");setLocalIssues([]);setPreview(null);
+    try{
+      const driveFile=await downloadSelectedGoogleDriveWorkbook();
+      clearPersistedImport();setFile(driveFile);setPayload(null);
+      if(await inspect(driveFile))notify(`Pobrano „${driveFile.name}” z Dysku Google i pokazano podgląd. Nic nie zostało jeszcze zapisane.`);
+    }catch(error){
+      if(isGoogleSheetsExportError(error)){
+        if(error.code==="GOOGLE_AUTH_REQUIRED")setGoogleFallback(true);
+        setGoogleStatusMessage(error.message);
+      }
+      setLocalError(error instanceof Error?error.message:"Nie udało się pobrać pliku z Dysku Google.");
+    }finally{setBusy(false);}
   }
   async function applyImport(){
     if(!payload||!preview?.valid||!supabase)return;
@@ -2289,7 +2356,7 @@ function MatrixExcelImport({data,busy,setBusy,close,reload,notify,fail}:{data:Ma
       {scope!=="TEAM"&&<button className="secondary-button full" type="button" disabled={busy} onClick={()=>void exportTemplate()}><Download/> {scope==="FINANCE"?"Pobierz plik finansowy Excel":"Pobierz pełną bazę Excel"}</button>}
       {scope!=="FINANCE"&&<fieldset className="matrix-import-mode"><legend>Jak zastosować plik?</legend><button type="button" className={mode==="UPDATE"?"active":""} onClick={()=>{clearPersistedImport();setMode("UPDATE");setPayload(null);setPreview(null);}}><strong>Aktualizuj i dodaj</strong><small>Zmienia tylko osoby z pliku. Pozostałych nie dotyka.</small></button><button type="button" className={mode==="REPLACE"?"active danger":"danger"} onClick={()=>{clearPersistedImport();setMode("REPLACE");setPayload(null);setPreview(null);}}><strong>Zastąp aktywną bazę</strong><small>Osoby nieobecne w pliku zostaną automatycznie zarchiwizowane w wersji roboczej. Liczba osób nie jest zaszyta w kodzie.</small></button></fieldset>}
       {restored&&preview&&<div className="solver-v2-notice"><ShieldCheck/><span><strong>Przywrócono sprawdzony podgląd importu</strong><small>Możesz wrócić po przełączeniu okna i dokończyć zapis bez ponownego wybierania pliku.</small></span></div>}
-      <section className="matrix-import-preview"><h3>IMPORTUJ PLIK</h3><p>Najpierw sprawdzimy cały plik i pokażemy podgląd. Żaden rekord nie zostanie zapisany na tym etapie.</p><label>Plik .xlsx lub .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label></section>
+      <section className="matrix-import-preview"><h3>IMPORTUJ PLIK</h3><p>Najpierw sprawdzimy cały plik i pokażemy podgląd. Żaden rekord nie zostanie zapisany na tym etapie.</p><button className="secondary-button full" type="button" disabled={busy} onClick={beginMatrixGoogleDriveImport}><CloudDownload/> Importuj z Dysku Google</button><small>Wybierz dokładnie jeden Arkusz Google albo XLSX. System pobierze go do podglądu i nie zapisze danych automatycznie.</small><label>Lub wybierz plik lokalny .xlsx albo .xls<input type="file" accept=".xlsx,.xls" onChange={event=>{clearPersistedImport();setFile(event.target.files?.[0]??null);setPayload(null);setPreview(null);setLocalError("");}}/></label></section>
       <button className="primary-button full" disabled={!file||busy} onClick={()=>void inspect()}><Upload/> {busy?"Sprawdzam…":"Sprawdź plik i pokaż podgląd"}</button>
       {localError&&<div className="solver-v2-notice warning"><AlertTriangle/><span className="matrix-import-error-text">{localError}</span></div>}
       {localIssues.map((issue,index)=><div className="solver-v2-notice warning" key={`${issue.sheet}:${issue.row}:${issue.column}:${index}`}><AlertTriangle/><span><b>{issue.sheet} • wiersz {issue.row} • kolumna „{issue.column}”</b><small>{issue.value?`Wartość: „${issue.value}”. `:""}{issue.message} Jak naprawić: {issue.fix}</small></span></div>)}

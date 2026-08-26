@@ -11,6 +11,7 @@ export type GoogleSheetsExportErrorCode =
   | "GOOGLE_LOGIN_CANCELLED"
   | "GOOGLE_POPUP_BLOCKED"
   | "GOOGLE_AUTH_REQUIRED"
+  | "GOOGLE_IMPORT_FAILED"
   | "GOOGLE_UPLOAD_FAILED";
 
 export class GoogleSheetsExportError extends Error {
@@ -197,12 +198,23 @@ export function googleDriveRedirectMessage(status: string | null) {
   if (status === "denied") return "Logowanie Google zostało anulowane przed udzieleniem zgody.";
   if (status === "state_error") return "Kontrola bezpieczeństwa logowania Google nie powiodła się. Rozpocznij połączenie ponownie z tego ekranu.";
   if (status === "token_error") return "Google nie potwierdził połączenia konta. Rozpocznij logowanie ponownie.";
+  if (status === "picker_cancelled") return "Wybór pliku z Dysku Google został anulowany. Dane w SZAFUNKU nie zostały zmienione.";
+  if (status === "picker_selection_error") return "Google nie zwrócił jednego prawidłowego pliku. Wybierz dokładnie jeden Arkusz Google albo XLSX.";
   return null;
 }
 
 export function beginGoogleDriveRedirectAuthorization() {
-  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const current = new URL(window.location.href);
+  current.searchParams.delete(GOOGLE_DRIVE_AUTH_STATUS);
+  const returnTo = `${current.pathname}${current.search}${current.hash}`;
   window.location.assign(`/api/google-drive/oauth/start?returnTo=${encodeURIComponent(returnTo)}`);
+}
+
+export function beginGoogleDriveImportAuthorization(target: "matrix" | "access") {
+  const current = new URL(window.location.href);
+  current.searchParams.delete(GOOGLE_DRIVE_AUTH_STATUS);
+  const returnTo = `${current.pathname}${current.search}${current.hash}`;
+  window.location.assign(`/api/google-drive/oauth/start?action=import&target=${target}&returnTo=${encodeURIComponent(returnTo)}`);
 }
 
 export function clearGoogleDriveRedirectStatus() {
@@ -232,4 +244,27 @@ export async function uploadWorkbookToGoogleSheetsViaServer(bytes: ArrayBuffer |
   );
   clearGoogleDriveRedirectStatus();
   return payload.url;
+}
+
+export async function downloadSelectedGoogleDriveWorkbook() {
+  const response = await fetch("/api/google-drive/import", { method: "POST" });
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.ok) {
+    const payload = contentType.includes("application/json")
+      ? await response.json().catch(() => null) as { error?: string } | null
+      : null;
+    throw new GoogleSheetsExportError(
+      response.status === 401 ? "GOOGLE_AUTH_REQUIRED" : "GOOGLE_IMPORT_FAILED",
+      payload?.error || `Nie udało się pobrać pliku z Dysku Google (${response.status}).`,
+    );
+  }
+  const encodedName = response.headers.get("x-grafik-pro-file-name") ?? "szafunek-z-dysku-google.xlsx";
+  let fileName = "szafunek-z-dysku-google.xlsx";
+  try { fileName = decodeURIComponent(encodedName); } catch { /* Server already provides a safe fallback. */ }
+  const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength) throw new GoogleSheetsExportError("GOOGLE_IMPORT_FAILED", "Google zwrócił pusty plik.");
+  clearGoogleDriveRedirectStatus();
+  return new File([bytes], fileName, {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
 }

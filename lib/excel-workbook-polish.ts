@@ -184,7 +184,7 @@ function formatInstruction(sheet:Worksheet,kind:WorkbookKind){
     ["3","Wybierz rodzaj dostępu","Użyj listy wyboru. Nie wpisuj kodów technicznych z pamięci."],
     ["4","Uzupełnij zakres, jeśli jest potrzebny","Lider roli wymaga zakresu roli, a lider lokalu — zakresu lokalu. Dla pozostałych funkcji pozostaw pola puste."],
     ["5","Ustaw aktywność","☑ Tak nadaje lub utrzymuje funkcję; ☐ Nie wyłącza dokładnie ten dostęp."],
-    ["6","Zaimportuj i sprawdź podgląd","Jeden błędny wiersz zatrzyma cały zapis i wskaże zakładkę, wiersz oraz kolumnę."],
+    ["6","Zaimportuj i sprawdź podgląd","W SZAFUNKU wybierz plik lokalny albo użyj „Importuj z Dysku Google”. Jeden błędny wiersz zatrzyma cały zapis i wskaże zakładkę, wiersz oraz kolumnę."],
   ]:kind==="FINANCE"?[
     ["1","Nie zmieniaj danych pomocniczych","Numer pracownika wskazuje osobę. Imię i nazwisko oraz daty zatrudnienia służą tylko do kontroli i nie aktualizują profilu."],
     ["2","Dodaj nowy okres stawki","Dodaj wiersz, pozostaw ID stawki puste i podaj numer pracownika, datę początku, kwotę, walutę oraz aktywność."],

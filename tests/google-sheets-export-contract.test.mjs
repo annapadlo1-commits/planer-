@@ -7,6 +7,7 @@ const editor = await readFile(new URL("../components/MatrixV2Editor.tsx", import
 const oauthStart = await readFile(new URL("../app/api/google-drive/oauth/start/route.ts", import.meta.url), "utf8");
 const oauthCallback = await readFile(new URL("../app/api/google-drive/oauth/callback/route.ts", import.meta.url), "utf8");
 const serverUpload = await readFile(new URL("../app/api/google-drive/upload/route.ts", import.meta.url), "utf8");
+const serverImport = await readFile(new URL("../app/api/google-drive/import/route.ts", import.meta.url), "utf8");
 const oauthShared = await readFile(new URL("../app/api/google-drive/oauth-shared.ts", import.meta.url), "utf8");
 const canonicalOrigin = await readFile(new URL("../lib/canonical-app-origin.ts", import.meta.url), "utf8");
 const appPage = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
@@ -76,6 +77,33 @@ test("server upload is app-authenticated, one-use and least privilege", () => {
   assert.match(oauthCallback, /httpOnly: true/);
   assert.match(nextConfig, /Cross-Origin-Opener-Policy/);
   assert.match(nextConfig, /same-origin-allow-popups/);
+});
+
+test("B4F-179 Google Drive import uses one-file Picker authorization without broad Drive access", () => {
+  assert.match(integration, /beginGoogleDriveImportAuthorization/);
+  assert.match(integration, /action=import&target=\$\{target\}/);
+  assert.match(oauthStart, /searchParams\.set\("trigger_onepick", "true"\)/);
+  assert.match(oauthStart, /application\/vnd\.google-apps\.spreadsheet,application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
+  assert.match(oauthStart, /include_granted_scopes", action === "import" \? "false" : "true"/);
+  assert.match(oauthCallback, /searchParams\.get\("picked_file_ids"\)/);
+  assert.match(oauthCallback, /pickedFileIds\.length !== 1/);
+  assert.match(oauthCallback, /safeGoogleDriveFileId/);
+  assert.match(oauthCallback, /`import_ready_\$\{target\}`/);
+  assert.doesNotMatch(`${integration}\n${oauthStart}\n${oauthCallback}\n${serverImport}`, /auth\/drive(?:\.readonly)?["']/);
+});
+
+test("B4F-179 selected Drive workbook is downloaded once and passed to the existing preview", () => {
+  assert.match(serverImport, /authenticatedAppUser\(\)/);
+  assert.match(serverImport, /MAX_WORKBOOK_BYTES = 8 \* 1024 \* 1024/);
+  assert.match(serverImport, /fields=id,name,mimeType,size,capabilities\(canDownload\)/);
+  assert.match(serverImport, /\/export\?mimeType=/);
+  assert.match(serverImport, /\?alt=media&supportsAllDrives=true/);
+  assert.match(serverImport, /clearImportCookies\(request/);
+  assert.match(integration, /fetch\("\/api\/google-drive\/import", \{ method: "POST" \}\)/);
+  assert.ok((editor.match(/Importuj z Dysku Google/g) ?? []).length >= 2);
+  assert.match(editor, /inspectAccessWorkbook\(driveFile\)/);
+  assert.match(editor, /inspect\(driveFile\)/);
+  assert.match(editor, /Nic nie zostało jeszcze zapisane/);
 });
 
 test("UAT Google OAuth and application entry use one canonical host", () => {
