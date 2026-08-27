@@ -33,6 +33,9 @@ const preflight = await readFile(new URL(
 const preflightTemplate = await readFile(new URL(
   "../docs/PHASE4A1_UAT_PREFLIGHT_RESULT_TEMPLATE.md", import.meta.url,
 ), "utf8");
+const review = await readFile(new URL(
+  "../docs/PHASE4A1_SCOPED_MANAGER_SECURITY_REVIEW_2026-08-27.md", import.meta.url,
+), "utf8");
 const frontend = await Promise.all([
   "../app/page.tsx",
   "../components/ActiveModules.tsx",
@@ -52,14 +55,24 @@ function policy(name) {
   return match[0];
 }
 
+function helper(name) {
+  const match = migration.match(new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\b([\\s\\S]*?\\$\\$;)`, "iu",
+  ));
+  assert.ok(match, `missing helper ${name}`);
+  return match[0];
+}
+
 test("Phase 4A.1 is append-only policy hardening and excludes bulk-adjust", () => {
   assert.match(migration, /^-- Phase 4A\.1/mu);
   assert.doesNotMatch(migration, /matrix_v2_staffing_bulk_adjust_uat_v2/u);
   assert.doesNotMatch(migration, /\b(?:insert|update|delete|truncate)\s+(?:into|from)?\s*public\./iu);
   assert.match(migration, /set search_path\s*=\s*''/iu);
   assert.match(migration, /alter function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+owner to postgres/iu);
-  assert.match(migration, /revoke all on function[\s\S]*from public,anon,authenticated/iu);
-  assert.match(migration, /grant execute on function[\s\S]*to authenticated\s*;/iu);
+  assert.match(migration,
+    /revoke all on function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+from public,anon,authenticated,service_role/iu);
+  assert.match(migration,
+    /grant execute on function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+to authenticated\s*;/iu);
   assert.doesNotMatch(migration, /grant execute on function[\s\S]*?to\s+authenticated\s*,\s*service_role/iu);
 });
 
@@ -128,26 +141,57 @@ test("manual UAT preflight bundle is SELECT-only and complete", () => {
     assert.doesNotMatch(statement, /\b(?:call|perform)\s+|select\s+(?:public\.)?[a-z0-9_]*(?:mutate|adjust|create|update|delete|decide|propose)[a-z0-9_]*\s*\(/iu);
   }
   for (const section of "ABCDEFGHIJKLMN") assert.match(preflight, new RegExp(`-- ${section}\\.`, "u"));
+  for (const version of ["20260826200600", "20260826201603", "20260826210018",
+    "20260826210712", "20260826224321", "20260827160000"]) assert.match(preflight, new RegExp(version, "u"));
+  assert.match(preflight, /STOP — MIGRATION HISTORY REPAIR REQUIRED BEFORE NORMAL MIGRATOR/u);
+  assert.match(preflight, /CANONICAL UAT HISTORY|MIXED HISTORY|OLD-SOURCE HISTORY/u);
   for (const heading of ["UAT identity confirmed manually", "Migration ledger", "Owner pattern",
     "Active Matrix count", "Scope grant problems", "Final preflight verdict"]) {
     assert.match(preflightTemplate, new RegExp(heading, "u"));
   }
 });
 
-test("assignment, availability and event policies use resource-aware authorization", () => {
-  for (const name of [
-    "employee_reads_own_assignments",
-    "availability_read",
-    "availability_manage",
-    "managers_manage_events",
-  ]) {
+test("assignment trusted-row helper uses actual shift location with minimal ACL", () => {
+  const definition = helper("matrix_v2_can_manage_legacy_assignment_uat_v1");
+  assert.match(definition, /\(\s*p_assignment_id uuid\s*\) returns boolean/iu);
+  assert.match(definition, /stable[\s\S]*security definer[\s\S]*set search_path = ''/iu);
+  assert.match(definition, /auth\.uid\(\) is null[\s\S]*return false/iu);
+  assert.match(definition, /from public\.assignments assignment[\s\S]*join public\.shifts shift/iu);
+  assert.match(definition, /assignment\.assigned_role[\s\S]*assignment\.employee_id[\s\S]*shift\.location_id/iu);
+  assert.match(definition, /matrix_v2_can_manage_legacy_resource_uat_v1/iu);
+  assert.doesNotMatch(definition, /has_app_role\('(ROLE_MANAGER|LOCATION_MANAGER)'\)|execute format|dynamic sql/iu);
+  assert.match(migration, /alter function public\.matrix_v2_can_manage_legacy_assignment_uat_v1\(uuid\)\s+owner to postgres/iu);
+  assert.match(migration, /revoke all on function public\.matrix_v2_can_manage_legacy_assignment_uat_v1\(uuid\)\s+from public,anon,authenticated,service_role/iu);
+  assert.match(migration, /grant execute on function public\.matrix_v2_can_manage_legacy_assignment_uat_v1\(uuid\)\s+to authenticated/iu);
+  const assignmentPolicy = policy("employee_reads_own_assignments");
+  assert.match(assignmentPolicy, /matrix_v2_can_manage_legacy_assignment_uat_v1\(assignments\.id\)/iu);
+  assert.doesNotMatch(assignmentPolicy, /select\s+shift\.location_id|from public\.shifts/iu);
+});
+
+test("plan-issue sibling uses the same trusted actual-location boundary", () => {
+  const definition = helper("matrix_v2_can_manage_legacy_plan_issue_uat_v1");
+  assert.match(definition, /stable[\s\S]*security definer[\s\S]*set search_path = ''/iu);
+  assert.match(definition, /auth\.uid\(\) is null[\s\S]*return false/iu);
+  assert.match(definition, /from public\.plan_issues issue[\s\S]*join public\.shifts shift/iu);
+  assert.match(definition, /issue\.role[\s\S]*shift\.location_id/iu);
+  assert.match(definition, /matrix_v2_can_manage_legacy_resource_uat_v1/iu);
+  assert.match(migration, /alter function public\.matrix_v2_can_manage_legacy_plan_issue_uat_v1\(uuid\)\s+owner to postgres/iu);
+  assert.match(migration, /revoke all on function public\.matrix_v2_can_manage_legacy_plan_issue_uat_v1\(uuid\)\s+from public,anon,authenticated,service_role/iu);
+  assert.match(migration, /grant execute on function public\.matrix_v2_can_manage_legacy_plan_issue_uat_v1\(uuid\)\s+to authenticated/iu);
+  const issuePolicy = policy("plan_issues_read");
+  assert.match(issuePolicy, /matrix_v2_can_manage_legacy_plan_issue_uat_v1\(plan_issues\.id\)/iu);
+  assert.doesNotMatch(issuePolicy, /select\s+shift\.location_id|from public\.shifts/iu);
+});
+
+test("availability and event-write policies use resource-aware authorization", () => {
+  for (const name of ["availability_read", "availability_manage", "managers_manage_events"]) {
     const definition = policy(name);
     assert.match(definition, /to authenticated/iu);
     assert.match(definition, /matrix_v2_can_manage_(?:legacy_)?resource_uat_v1/iu);
     assert.doesNotMatch(definition, /has_app_role\('(ROLE_MANAGER|LOCATION_MANAGER)'\)/iu);
   }
   assert.match(policy("availability_manage"), /with check/iu);
-  assert.match(policy("employee_reads_own_assignments"), /assigned_role[\s\S]*shift\.location_id[\s\S]*employee_id/iu);
+  assert.doesNotMatch(migration, /drop policy if exists authenticated_reads_events/iu);
 });
 
 test("published schedule is intentionally global but non-published legacy rows are admin-only", () => {
@@ -167,7 +211,6 @@ test("legacy person reads are scoped and direct finance reads are admin/finance 
     "authenticated_reads_employee_locations",
     "authenticated_reads_employee_capabilities",
     "employee_reads_own_attendance",
-    "plan_issues_read",
     "matrix_role_categories_v2_select",
   ]) {
     const definition = policy(name);
@@ -201,8 +244,30 @@ test("SQL contract covers the required actors and denial boundaries", () => {
     "phase4a-location-a", "phase4a-location-b", "phase4a-employee-a",
     "phase4a-employee-b", "phase4a-no-role", "set local role anon",
     "CROSS_WRITE_ALLOWED", "NO_ROLE_READ_ALLOWED", "ANON_ASSIGNMENT_SELECT_ALLOWED",
+    "LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK", "LOCATION_B_DRAFT_SHIFT_VISIBLE",
+    "NO_ROLE_EVENT_UPDATE_ALLOWED", "NO_ROLE_EVENT_INSERT_ALLOWED",
   ]) assert.match(sqlContract, new RegExp(marker, "iu"));
   assert.match(sqlContract, /false,'f4a10000-0000-4000-8000-000000000001'/iu);
   assert.match(sqlContract, /'INVALID'/u);
   assert.match(sqlContract, /rollback;/iu);
+});
+
+test("zero-ACTIVE contract check rolls back its temporary archive subtransaction", () => {
+  assert.match(sqlContract,
+    /update public\.matrix_versions set status='ARCHIVED'[\s\S]*errcode='P4A11'[\s\S]*errcode='P4A10'[\s\S]*exception when sqlstate 'P4A10'/iu);
+  assert.match(sqlContract,
+    /PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK[\s\S]*status='ACTIVE'[\s\S]*PHASE4A_ACTIVE_MATRIX_NOT_RESTORED/iu);
+  assert.doesNotMatch(sqlContract,
+    /update public\.matrix_versions set status='ACTIVE',effective_to=null/iu);
+  assert.match(sqlContract, /PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK/u);
+  assert.match(sqlContract, /PHASE4A_LOCATION_B_BOUNDARY_INVALID/u);
+  assert.match(sqlContract, /PHASE4A_LOCATION_B_DRAFT_SHIFT_VISIBLE/u);
+});
+
+test("operational event read finding remains explicitly deferred", () => {
+  assert.match(review, /TECH-AUD-024 WRITE FIXED IN SOURCE/u);
+  assert.match(review, /TECH-AUD-026 GLOBAL LEGACY EVENT READ DEFERRED \/ STILL OPEN/u);
+  assert.match(review, /authenticated_reads_events[\s\S]*USING \(true\)/u);
+  assert.match(review, /plan_workspace\(date,uuid\)/u);
+  assert.doesNotMatch(sqlContract, /LOCATION_[AB]_EVENT_READ_LEAK|NO_ROLE_RESOURCE_READ_ALLOWED[^\n]*operational_events/u);
 });

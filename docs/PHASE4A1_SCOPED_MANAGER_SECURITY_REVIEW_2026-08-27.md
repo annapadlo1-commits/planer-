@@ -32,7 +32,7 @@ active frontend path.
 | published legacy `plans`/`shifts` | A — intentional global authenticated read | only `PUBLISHED`; drafts are OWNER/ADMIN |
 | `assignments` | B — resource scoped | self, OWNER/ADMIN, or exact role + location + employee scope |
 | `employee_availability` and history | B/D | employee self, OWNER/ADMIN, or employee resource scope |
-| `operational_events` | B | OWNER/ADMIN or exact location scope |
+| `operational_events` writes | B | OWNER/ADMIN or exact location scope; legacy authenticated reads remain global and deferred |
 | employees/locations/capabilities/attendance | B/D | self/administrative roles or canonical employee/location scope |
 | `plan_issues` | B | OWNER/ADMIN or exact issue role/location scope |
 | employer-cost components and incident rates | C | OWNER/ADMIN/HR_FINANCE direct read; managers use redacted RPCs |
@@ -55,6 +55,11 @@ The final policy scan permits these patterns:
 
 No global ROLE_MANAGER or LOCATION_MANAGER direct-table predicate is approved.
 
+The assignment and plan-issue policies use dedicated boolean-only trusted-row
+helpers. They resolve the actual shift location under owner `postgres` and then
+delegate to the canonical legacy adapter; authorization never depends on a
+shift row remaining visible through caller RLS.
+
 The legacy adapter also requires exactly one ACTIVE Matrix and exactly one
 active role/location code match. Zero or multiple matches return `false`; the
 helper never selects a newest/first ambiguous resource. Its explicit EXECUTE
@@ -76,6 +81,19 @@ trusted SECURITY DEFINER owner pattern, so the migration sets owner `postgres`.
   SECURITY DEFINER owner pattern confirmed by the UAT read-only preflight.
 
 ## Deliberate non-goals
+
+`TECH-AUD-024 WRITE FIXED IN SOURCE`: INSERT/UPDATE/DELETE on legacy
+`operational_events` is location-scoped for LOCATION_MANAGER, while
+OWNER/ADMIN legal writes remain available.
+
+`TECH-AUD-026 GLOBAL LEGACY EVENT READ DEFERRED / STILL OPEN`: its confirmed
+blast radius includes both `operational_events.authenticated_reads_events
+USING (true)` and the authenticated SECURITY DEFINER
+`plan_workspace(date,uuid)`, which projects legacy event payloads. The active
+operational-program UI uses a separate RPC/model with its own visibility
+contract. A later product decision must choose between a company-wide
+published/redacted legacy summary and location/participant-scoped visibility;
+the table policy and legacy RPC must then be hardened together.
 
 - no tenant-model change;
 - no business-data update;

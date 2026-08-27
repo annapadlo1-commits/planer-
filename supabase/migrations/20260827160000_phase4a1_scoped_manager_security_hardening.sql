@@ -55,8 +55,85 @@ alter function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid
   owner to postgres;
 
 revoke all on function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant execute on function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)
+  to authenticated;
+
+-- Resolve legacy assignment resources under the trusted function owner.  RLS
+-- on shifts must not be able to erase the location used for authorization.
+create or replace function public.matrix_v2_can_manage_legacy_assignment_uat_v1(
+  p_assignment_id uuid
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_role_code text;
+  v_employee_id uuid;
+  v_location_id uuid;
+begin
+  if auth.uid() is null or p_assignment_id is null then return false; end if;
+
+  select assignment.assigned_role::text,assignment.employee_id,shift.location_id
+  into v_role_code,v_employee_id,v_location_id
+  from public.assignments assignment
+  join public.shifts shift on shift.id=assignment.shift_id
+  where assignment.id=p_assignment_id;
+
+  if v_role_code is null or v_employee_id is null or v_location_id is null then
+    return false;
+  end if;
+
+  return public.matrix_v2_can_manage_legacy_resource_uat_v1(
+    v_role_code,v_location_id,v_employee_id
+  );
+end;
+$$;
+
+alter function public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)
+  owner to postgres;
+revoke all on function public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)
+  to authenticated;
+
+-- plan_issues has the same hidden-shift boundary as assignments.  Resolve the
+-- issue role and actual shift location without depending on caller-visible RLS.
+create or replace function public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(
+  p_issue_id uuid
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_role_code text;
+  v_location_id uuid;
+begin
+  if auth.uid() is null or p_issue_id is null then return false; end if;
+
+  select issue.role::text,shift.location_id
+  into v_role_code,v_location_id
+  from public.plan_issues issue
+  join public.shifts shift on shift.id=issue.shift_id
+  where issue.id=p_issue_id;
+
+  if v_role_code is null or v_location_id is null then return false; end if;
+
+  return public.matrix_v2_can_manage_legacy_resource_uat_v1(
+    v_role_code,v_location_id,null
+  );
+end;
+$$;
+
+alter function public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)
+  owner to postgres;
+revoke all on function public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)
   to authenticated;
 
 drop policy if exists employee_reads_own_assignments on public.assignments;
@@ -66,11 +143,7 @@ using (
   exists(select 1 from public.employees employee
     where employee.id=assignments.employee_id and employee.auth_user_id=auth.uid())
   or public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.matrix_v2_can_manage_legacy_resource_uat_v1(
-    assignments.assigned_role::text,
-    (select shift.location_id from public.shifts shift where shift.id=assignments.shift_id),
-    assignments.employee_id
-  )
+  or public.matrix_v2_can_manage_legacy_assignment_uat_v1(assignments.id)
 );
 
 -- Published legacy schedules remain an intentional company-wide authenticated
@@ -193,11 +266,7 @@ create policy plan_issues_read on public.plan_issues
 for select to authenticated
 using (
   public.has_app_role('OWNER') or public.has_app_role('ADMIN')
-  or public.matrix_v2_can_manage_legacy_resource_uat_v1(
-    plan_issues.role::text,
-    (select shift.location_id from public.shifts shift where shift.id=plan_issues.shift_id),
-    null
-  )
+  or public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(plan_issues.id)
 );
 
 -- Finance configuration and incident rates already have redacted, authorized
@@ -235,6 +304,10 @@ using (
 
 comment on function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid) is
   'Phase 4A fail-closed adapter from legacy role/location resources to canonical active-Matrix scoped authorization.';
+comment on function public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid) is
+  'Phase 4A trusted assignment resource resolver; reads the actual shift location before canonical scoped authorization.';
+comment on function public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid) is
+  'Phase 4A trusted plan-issue resource resolver; reads the actual shift location before canonical scoped authorization.';
 
 notify pgrst,'reload schema';
 

@@ -1,4 +1,5 @@
--- Phase 4A.1: effective RLS/ACL contract for TECH-AUD-020/023/024/025.
+-- Phase 4A.1: effective RLS/ACL contract for TECH-AUD-020/023/024-write/025.
+-- TECH-AUD-026 legacy operational-event read remains intentionally deferred.
 -- Run after all migrations. Every fixture and assertion is rolled back.
 
 begin;
@@ -65,6 +66,31 @@ begin
   if has_function_privilege('service_role',
     'public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)','execute')
   then raise exception 'PHASE4A_LEGACY_SCOPE_HELPER_EXPOSED_TO_SERVICE_ROLE'; end if;
+
+  for v_definition in
+    select pg_get_functiondef(helper.oid)
+    from unnest(array[
+      'public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)'::regprocedure,
+      'public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)'::regprocedure
+    ]) helper(oid)
+  loop
+    if v_definition !~* 'security definer' or v_definition !~* 'search_path'
+      or v_definition !~ 'matrix_v2_can_manage_legacy_resource_uat_v1'
+    then raise exception 'PHASE4A_TRUSTED_ROW_HELPER_CONTRACT_INVALID'; end if;
+  end loop;
+  if has_function_privilege('anon',
+      'public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)','execute')
+    or has_function_privilege('service_role',
+      'public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)','execute')
+    or not has_function_privilege('authenticated',
+      'public.matrix_v2_can_manage_legacy_assignment_uat_v1(uuid)','execute')
+    or has_function_privilege('anon',
+      'public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)','execute')
+    or has_function_privilege('service_role',
+      'public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)','execute')
+    or not has_function_privilege('authenticated',
+      'public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(uuid)','execute')
+  then raise exception 'PHASE4A_TRUSTED_ROW_HELPER_ACL_INVALID'; end if;
 end;
 $$;
 
@@ -153,6 +179,7 @@ insert into public.matrix_employee_roles_v2(matrix_version_id,employee_id,role_i
   ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a13000-0000-4000-8000-000000000002',true,false,true);
 insert into public.matrix_employee_locations_v2(matrix_version_id,employee_id,location_id,standard_allowed,home_location,active) values
   ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000001',true,true,true),
+  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000002',true,false,true),
   ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a14000-0000-4000-8000-000000000002',true,true,true);
 
 select solver_private.matrix_v2_seed_required_defaults_uat_v1(
@@ -179,9 +206,13 @@ insert into public.employee_availability(id,employee_id,work_date,available,note
 
 set local session_replication_role=replica;
 insert into public.plans(id,month,name,scenario_code,optimization_mode,staffing_level,status,version,
-  generated_at,published_at) values(
+  generated_at,published_at) values
+  (
   'f4a16000-0000-4000-8000-000000000001',date_trunc('month',current_date)::date,
-  'Phase 4A published plan','PHASE4A','BALANCED','AUDIT','PUBLISHED',1,now(),now());
+  'Phase 4A published plan','PHASE4A','BALANCED','AUDIT','PUBLISHED',1,now(),now()),
+  (
+  'f4a16000-0000-4000-8000-000000000002',date_trunc('month',current_date)::date,
+  'Phase 4A draft plan','PHASE4A_DRAFT','BALANCED','AUDIT','DRAFT',1,now(),null);
 set local session_replication_role=origin;
 insert into public.shifts(id,plan_id,location_id,shift_date,shift_code,starts_at,ends_at,status)
 select 'f4a16100-0000-4000-8000-000000000001','f4a16000-0000-4000-8000-000000000001',
@@ -190,10 +221,18 @@ from public.locations where code='KRUCZA'
 union all
 select 'f4a16100-0000-4000-8000-000000000002','f4a16000-0000-4000-8000-000000000001',
   id,current_date,'P4A_B',current_date+time '16:00',current_date+time '23:00','PLANNED'
+from public.locations where code='PAWILONY'
+union all
+select 'f4a16100-0000-4000-8000-000000000003','f4a16000-0000-4000-8000-000000000002',
+  id,current_date,'P4A_DRAFT_B',current_date+time '09:00',current_date+time '15:00','PLANNED'
 from public.locations where code='PAWILONY';
 insert into public.assignments(id,shift_id,employee_id,assigned_role,assignment_type) values
   ('f4a16200-0000-4000-8000-000000000001','f4a16100-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','KELNER','STANDARD'),
-  ('f4a16200-0000-4000-8000-000000000002','f4a16100-0000-4000-8000-000000000002','f4a11000-0000-4000-8000-000000000002','BARMAN','STANDARD');
+  ('f4a16200-0000-4000-8000-000000000002','f4a16100-0000-4000-8000-000000000002','f4a11000-0000-4000-8000-000000000002','BARMAN','STANDARD'),
+  ('f4a16200-0000-4000-8000-000000000003','f4a16100-0000-4000-8000-000000000003','f4a11000-0000-4000-8000-000000000001','KELNER','STANDARD');
+insert into public.plan_issues(id,plan_id,shift_id,issue_type,severity,role,message) values
+  ('f4a16400-0000-4000-8000-000000000001','f4a16000-0000-4000-8000-000000000002',
+   'f4a16100-0000-4000-8000-000000000003','SHORTAGE','WARNING','KELNER','Phase 4A draft issue B');
 insert into public.operational_events(id,location_id,event_type,title,starts_at,ends_at,status)
 select 'f4a16300-0000-4000-8000-000000000001',id,'EVENT','Phase 4A event A',
   current_date+time '10:00',current_date+time '11:00','DRAFT'
@@ -223,7 +262,7 @@ do $$ begin
   then raise exception 'PHASE4A_ROLE_X_BOUNDARY_INVALID'; end if;
   if (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_ROLE_X_AVAILABILITY_READ_LEAK'; end if;
-  if (select count(*) from public.assignments)<>1 then
+  if (select count(*) from public.assignments)<>2 then
     raise exception 'PHASE4A_ROLE_X_ASSIGNMENT_READ_LEAK'; end if;
   update public.employee_availability set note='ROLE X'
     where employee_id='f4a11000-0000-4000-8000-000000000001';
@@ -235,19 +274,35 @@ end $$;
 
 -- ZERO active Matrix must deny. The normal one-ACTIVE path is proven above.
 reset role;
-update public.matrix_versions set status='ARCHIVED',
-  effective_to=greatest(effective_from,current_date-1)
-where id='f4a12000-0000-4000-8000-000000000001';
-set local role authenticated;
-select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
-do $$ begin
-  if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
-    raise exception 'PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED'; end if;
-end $$;
-reset role;
-update public.matrix_versions set status='ACTIVE',effective_to=null,
-  activated_at=now(),published_at=now()
-where id='f4a12000-0000-4000-8000-000000000001';
+do $$
+begin
+  begin
+    update public.matrix_versions set status='ARCHIVED',
+      effective_to=greatest(effective_from,current_date-1)
+    where id='f4a12000-0000-4000-8000-000000000001';
+
+    if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
+      raise exception using
+        errcode='P4A11',message='PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED';
+    end if;
+
+    -- The expected sentinel rolls back this inner subtransaction, including
+    -- ACTIVE -> ARCHIVED, without an illegal ARCHIVED -> ACTIVE transition.
+    raise exception using
+      errcode='P4A10',message='PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK';
+  exception when sqlstate 'P4A10' then
+    null;
+  end;
+
+  if not exists(
+    select 1 from public.matrix_versions
+    where id='f4a12000-0000-4000-8000-000000000001' and status='ACTIVE'
+  ) then
+    raise exception using
+      errcode='P4A12',message='PHASE4A_ACTIVE_MATRIX_NOT_RESTORED';
+  end if;
+end;
+$$;
 set local role authenticated;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000005',true);
@@ -256,8 +311,14 @@ do $$ begin
     raise exception 'PHASE4A_LOCATION_A_AVAILABILITY_READ_LEAK'; end if;
   if (select count(*) from public.assignments)<>1 then
     raise exception 'PHASE4A_LOCATION_A_ASSIGNMENT_READ_LEAK'; end if;
-  if (select count(*) from public.operational_events)<>1 then
-    raise exception 'PHASE4A_LOCATION_A_EVENT_READ_LEAK'; end if;
+  if exists(select 1 from public.assignments
+      where id='f4a16200-0000-4000-8000-000000000003')
+    or exists(select 1 from public.plan_issues
+      where id='f4a16400-0000-4000-8000-000000000001')
+  then raise exception 'PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK'; end if;
+  if exists(select 1 from public.shifts
+      where id='f4a16100-0000-4000-8000-000000000003')
+  then raise exception 'PHASE4A_LOCATION_A_DRAFT_SHIFT_VISIBLE'; end if;
   update public.operational_events set title='Phase 4A event A updated'
     where id='f4a16300-0000-4000-8000-000000000001';
   if not found then raise exception 'PHASE4A_LOCATION_A_EVENT_WRITE_DENIED'; end if;
@@ -275,16 +336,28 @@ end $$;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000006',true);
 do $$ begin
-  if (select count(*) from public.assignments)<>1
-    or (select count(*) from public.operational_events)<>1 then
+  if (select count(*) from public.assignments)<>2
+    or not exists(select 1 from public.assignments
+      where id='f4a16200-0000-4000-8000-000000000003')
+    or not exists(select 1 from public.plan_issues
+      where id='f4a16400-0000-4000-8000-000000000001') then
     raise exception 'PHASE4A_LOCATION_B_BOUNDARY_INVALID'; end if;
+  if exists(select 1 from public.shifts
+      where id='f4a16100-0000-4000-8000-000000000003')
+  then raise exception 'PHASE4A_LOCATION_B_DRAFT_SHIFT_VISIBLE'; end if;
+  update public.operational_events set title='Phase 4A event B updated'
+    where id='f4a16300-0000-4000-8000-000000000002';
+  if not found then raise exception 'PHASE4A_LOCATION_B_EVENT_WRITE_DENIED'; end if;
+  update public.operational_events set title='LEAK B'
+    where id='f4a16300-0000-4000-8000-000000000001';
+  if found then raise exception 'PHASE4A_LOCATION_B_CROSS_EVENT_WRITE_ALLOWED'; end if;
 end $$;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000007',true);
 do $$ begin
   if (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_EMPLOYEE_SELF_READ_INVALID'; end if;
-  if (select count(*) from public.assignments)<>1 then
+  if (select count(*) from public.assignments)<>2 then
     raise exception 'PHASE4A_EMPLOYEE_SELF_ASSIGNMENT_READ_INVALID'; end if;
   update public.employee_availability set note='SELF'
     where employee_id='f4a11000-0000-4000-8000-000000000001';
@@ -300,24 +373,40 @@ end $$;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000001',true);
 do $$ begin
-  if (select count(*) from public.assignments)<>2
-    or (select count(*) from public.operational_events)<>2 then
+  if (select count(*) from public.assignments)<>3 then
     raise exception 'PHASE4A_OWNER_GLOBAL_ACCESS_DENIED'; end if;
+  update public.operational_events set title='Phase 4A owner write'
+    where id='f4a16300-0000-4000-8000-000000000001';
+  if not found then raise exception 'PHASE4A_OWNER_EVENT_WRITE_DENIED'; end if;
 end $$;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000002',true);
 do $$ begin
-  if (select count(*) from public.assignments)<>2
-    or (select count(*) from public.operational_events)<>2 then
+  if (select count(*) from public.assignments)<>3 then
     raise exception 'PHASE4A_ADMIN_GLOBAL_ACCESS_DENIED'; end if;
+  update public.operational_events set title='Phase 4A admin write'
+    where id='f4a16300-0000-4000-8000-000000000002';
+  if not found then raise exception 'PHASE4A_ADMIN_EVENT_WRITE_DENIED'; end if;
 end $$;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000009',true);
 do $$ begin
   if exists(select 1 from public.employee_availability) then
     raise exception 'PHASE4A_NO_ROLE_READ_ALLOWED'; end if;
-  if exists(select 1 from public.assignments) or exists(select 1 from public.operational_events) then
+  if exists(select 1 from public.assignments) then
     raise exception 'PHASE4A_NO_ROLE_RESOURCE_READ_ALLOWED'; end if;
+  if (select count(*) from public.operational_events)<>2 then
+    raise exception 'PHASE4A_LEGACY_GLOBAL_EVENT_READ_CONTRACT_CHANGED'; end if;
+  update public.operational_events set title='NO ROLE LEAK';
+  if found then raise exception 'PHASE4A_NO_ROLE_EVENT_UPDATE_ALLOWED'; end if;
+  delete from public.operational_events;
+  if found then raise exception 'PHASE4A_NO_ROLE_EVENT_DELETE_ALLOWED'; end if;
+  begin
+    insert into public.operational_events(location_id,event_type,title,starts_at,ends_at,status)
+    select id,'EVENT','NO ROLE INSERT',current_date,current_date+interval '1 hour','DRAFT'
+    from public.locations where code='KRUCZA';
+    raise exception 'PHASE4A_NO_ROLE_EVENT_INSERT_ALLOWED';
+  exception when insufficient_privilege then null; end;
 end $$;
 
 reset role;
