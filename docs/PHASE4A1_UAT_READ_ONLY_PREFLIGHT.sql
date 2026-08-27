@@ -12,9 +12,31 @@ order by version desc limit 30;
 select expected.version,
        exists(select 1 from supabase_migrations.schema_migrations m
               where m.version=expected.version) as applied
-from (values ('20260826140255'),('20260826201603'),('20260826210712'),
-             ('20260826224321'),('20260827160000')) expected(version)
+from (values ('20260826140255'),('20260826200600'),('20260826201603'),
+             ('20260826210018'),('20260826210712'),('20260826224321'),
+             ('20260827160000')) expected(version)
 order by expected.version;
+select history.*,
+  case
+    when (old_privacy or old_anonymous) and
+         (canonical_privacy or canonical_anonymous or restored_parity)
+      then 'STOP — MIGRATION HISTORY REPAIR REQUIRED BEFORE NORMAL MIGRATOR / MIXED HISTORY'
+    when old_privacy or old_anonymous
+      then 'STOP — MIGRATION HISTORY REPAIR REQUIRED BEFORE NORMAL MIGRATOR / OLD-SOURCE HISTORY'
+    when canonical_privacy and canonical_anonymous and restored_parity
+      then 'CANONICAL UAT HISTORY'
+    when not canonical_privacy and not canonical_anonymous and not restored_parity
+      then 'HISTORY NOT YET APPLIED'
+    else 'CONFLICT / PARTIAL CANONICAL HISTORY'
+  end as migration_history_classification
+from (select
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260826200600') as old_privacy,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260826201603') as canonical_privacy,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260826210018') as old_anonymous,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260826210712') as canonical_anonymous,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260826224321') as restored_parity,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260827160000') as phase4a1_applied
+) history;
 select version,name from supabase_migrations.schema_migrations
 where version>'20260826210712' order by version;
 
