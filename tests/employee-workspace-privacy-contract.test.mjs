@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260826200600_employee_workspace_privacy.sql",
+  "../supabase/migrations/20260826201603_employee_workspace_privacy.sql",
   import.meta.url,
 );
 
