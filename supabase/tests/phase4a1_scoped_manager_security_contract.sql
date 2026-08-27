@@ -53,8 +53,7 @@ begin
     'public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)'::regprocedure
   );
   if v_definition !~ 'count\(\*\).*array_agg\(matrix.id\)'
-    or (length(v_definition)-length(replace(v_definition,'v_match_count <> 1','')))
-      / length('v_match_count <> 1') < 3
+    or regexp_count(v_definition,'v_match_count\s*<>\s*1') < 3
   then raise exception 'PHASE4A_ZERO_OR_MULTIPLE_ACTIVE_MATRIX_GUARD_MISSING'; end if;
   if v_definition !~ 'count\(\*\).*array_agg\(role.id\)' then
     raise exception 'PHASE4A_ZERO_OR_MULTIPLE_ROLE_MAPPING_GUARD_MISSING'; end if;
@@ -157,9 +156,21 @@ $$;
 
 insert into public.matrix_roles_v2(id,matrix_version_id,logical_id,code,name,color,active) values
   ('f4a13000-0000-4000-8000-000000000001','f4a12000-0000-4000-8000-000000000001','f4a13100-0000-4000-8000-000000000001','KELNER','Role X','#111111',true),
-  ('f4a13000-0000-4000-8000-000000000002','f4a12000-0000-4000-8000-000000000001','f4a13100-0000-4000-8000-000000000002','BARMAN','Role Y','#222222',true);
+  ('f4a13000-0000-4000-8000-000000000002','f4a12000-0000-4000-8000-000000000001','f4a13100-0000-4000-8000-000000000002','BARMAN','Role Y','#222222',true),
+  ('f4a13000-0000-4000-8000-000000000003'::uuid,
+   'f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a13100-0000-4000-8000-000000000003'::uuid,
+   'PREP'::text,'Unrelated role'::text,'#333333'::text,true);
 
--- Use the two canonical legacy locations. Tests fail closed if the baseline lacks them.
+-- Supply rollback-local legacy rows when the environment has no legacy
+-- locations. Existing rows win by their unique code and are never updated.
+insert into public.locations(id,code,name,timezone,active) values
+  ('f4a14500-0000-4000-8000-000000000001'::uuid,
+   'KRUCZA'::public.location_code,'Krucza'::text,'Europe/Warsaw'::text,true),
+  ('f4a14500-0000-4000-8000-000000000002'::uuid,
+   'PAWILONY'::public.location_code,'Pawilony'::text,'Europe/Warsaw'::text,true)
+on conflict(code) do nothing;
+
 do $$
 begin
   if not exists(select 1 from public.locations where code='KRUCZA')
@@ -168,19 +179,66 @@ begin
 end;
 $$;
 
-insert into public.matrix_locations_v2(id,matrix_version_id,logical_id,code,name,timezone,active)
-select 'f4a14000-0000-4000-8000-000000000001','f4a12000-0000-4000-8000-000000000001',
-  'f4a14100-0000-4000-8000-000000000001','KRUCZA','Location A','Europe/Warsaw',true
-union all select 'f4a14000-0000-4000-8000-000000000002','f4a12000-0000-4000-8000-000000000001',
-  'f4a14100-0000-4000-8000-000000000002','PAWILONY','Location B','Europe/Warsaw',true;
+insert into public.matrix_locations_v2(id,matrix_version_id,logical_id,code,name,timezone,active) values
+  ('f4a14000-0000-4000-8000-000000000001'::uuid,
+   'f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a14100-0000-4000-8000-000000000001'::uuid,
+   'KRUCZA'::text,'Location A'::text,'Europe/Warsaw'::text,true),
+  ('f4a14000-0000-4000-8000-000000000002'::uuid,
+   'f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a14100-0000-4000-8000-000000000002'::uuid,
+   'PAWILONY'::text,'Location B'::text,'Europe/Warsaw'::text,true),
+  ('f4a14000-0000-4000-8000-000000000003'::uuid,
+   'f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a14100-0000-4000-8000-000000000003'::uuid,
+   'ISOLATED'::text,'Unrelated location'::text,'Europe/Warsaw'::text,true);
+
+-- Versioned role/location membership requires one profile in the same Matrix
+-- for every employee fixture, including unrelated and inactive employees.
+insert into public.matrix_employee_profiles_v2(
+  matrix_version_id,employee_id,employee_no,first_name,last_name,email,active,
+  employment_start,employment_end,nominal_monthly_minutes,
+  maximum_monthly_minutes,maximum_weekly_minutes,maximum_consecutive_days,
+  minimum_rest_minutes,only_morning,only_evening,no_weekends,
+  preferred_shift_code,archived_at
+) values
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000001'::uuid,
+   'P4A-A'::text,'Phase4A'::text,'Employee A'::text,null::text,true,
+   null::date,null::date,9600::integer,9600::integer,2400::integer,6::integer,
+   null::integer,false,false,false,null::text,null::timestamptz),
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000002'::uuid,
+   'P4A-B'::text,'Phase4A'::text,'Employee B'::text,null::text,true,
+   null::date,null::date,9600::integer,9600::integer,2400::integer,6::integer,
+   null::integer,false,false,false,null::text,null::timestamptz),
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000003'::uuid,
+   'P4A-N'::text,'Phase4A'::text,'Unrelated'::text,null::text,true,
+   null::date,null::date,9600::integer,9600::integer,2400::integer,6::integer,
+   null::integer,false,false,false,null::text,null::timestamptz),
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000004'::uuid,
+   'P4A-I'::text,'Phase4A'::text,'Inactive'::text,null::text,false,
+   null::date,null::date,9600::integer,9600::integer,2400::integer,6::integer,
+   null::integer,false,false,false,null::text,now()::timestamptz);
 
 insert into public.matrix_employee_roles_v2(matrix_version_id,employee_id,role_id,is_primary,can_lead,active) values
   ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a13000-0000-4000-8000-000000000001',true,false,true),
-  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a13000-0000-4000-8000-000000000002',true,false,true);
-insert into public.matrix_employee_locations_v2(matrix_version_id,employee_id,location_id,standard_allowed,home_location,active) values
-  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000001',true,true,true),
-  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000002',true,false,true),
-  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a14000-0000-4000-8000-000000000002',true,true,true);
+  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a13000-0000-4000-8000-000000000002',true,false,true),
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000003'::uuid,
+   'f4a13000-0000-4000-8000-000000000003'::uuid,true,false,true);
+insert into public.matrix_employee_locations_v2(
+  matrix_version_id,employee_id,location_id,
+  standard_allowed,overtime_allowed,home_location,active
+) values
+  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000001',true,false,true,true),
+  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','f4a14000-0000-4000-8000-000000000002',true,false,false,true),
+  ('f4a12000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000002','f4a14000-0000-4000-8000-000000000002',true,false,true,true),
+  ('f4a12000-0000-4000-8000-000000000001'::uuid,
+   'f4a11000-0000-4000-8000-000000000003'::uuid,
+   'f4a14000-0000-4000-8000-000000000003'::uuid,true,false,true,true);
 
 select solver_private.matrix_v2_seed_required_defaults_uat_v1(
   'f4a12000-0000-4000-8000-000000000001'
@@ -199,6 +257,16 @@ insert into public.matrix_scope_grants_v2(auth_user_id,app_role,location_logical
   ('f4a10000-0000-4000-8000-000000000006','LOCATION_MANAGER','f4a14100-0000-4000-8000-000000000002',true,'f4a10000-0000-4000-8000-000000000001'),
   ('f4a10000-0000-4000-8000-000000000005','LOCATION_MANAGER','f4a14100-0000-4000-8000-000000000002',false,'f4a10000-0000-4000-8000-000000000001');
 
+do $$ begin
+  if exists(
+    select 1 from public.matrix_scope_grants_v2
+    where active and (
+      role_logical_id='f4a13100-0000-4000-8000-000000000003'::uuid
+      or location_logical_id='f4a14100-0000-4000-8000-000000000003'::uuid
+    )
+  ) then raise exception 'PHASE4A_UNRELATED_RESOURCE_SCOPE_GRANTED'; end if;
+end $$;
+
 insert into public.employee_availability(id,employee_id,work_date,available,note) values
   ('f4a15000-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001',current_date,true,'A'),
   ('f4a15000-0000-4000-8000-000000000002','f4a11000-0000-4000-8000-000000000002',current_date,true,'B'),
@@ -208,23 +276,31 @@ set local session_replication_role=replica;
 insert into public.plans(id,month,name,scenario_code,optimization_mode,staffing_level,status,version,
   generated_at,published_at) values
   (
-  'f4a16000-0000-4000-8000-000000000001',date_trunc('month',current_date)::date,
-  'Phase 4A published plan','PHASE4A','BALANCED','AUDIT','PUBLISHED',1,now(),now()),
+  'f4a16000-0000-4000-8000-000000000001'::uuid,date_trunc('month',current_date)::date,
+  'Phase 4A published plan'::text,'PHASE4A'::text,'BALANCED'::text,'AUDIT'::text,
+  'PUBLISHED'::public.plan_status,1::integer,now()::timestamptz,now()::timestamptz),
   (
-  'f4a16000-0000-4000-8000-000000000002',date_trunc('month',current_date)::date,
-  'Phase 4A draft plan','PHASE4A_DRAFT','BALANCED','AUDIT','DRAFT',1,now(),null);
+  'f4a16000-0000-4000-8000-000000000002'::uuid,date_trunc('month',current_date)::date,
+  'Phase 4A draft plan'::text,'PHASE4A_DRAFT'::text,'BALANCED'::text,'AUDIT'::text,
+  'DRAFT'::public.plan_status,1::integer,now()::timestamptz,null::timestamptz);
 set local session_replication_role=origin;
 insert into public.shifts(id,plan_id,location_id,shift_date,shift_code,starts_at,ends_at,status)
-select 'f4a16100-0000-4000-8000-000000000001','f4a16000-0000-4000-8000-000000000001',
-  id,current_date,'P4A_A',current_date+time '08:00',current_date+time '16:00','PLANNED'
+select 'f4a16100-0000-4000-8000-000000000001'::uuid,
+  'f4a16000-0000-4000-8000-000000000001'::uuid,
+  id,current_date,'P4A_A'::text,(current_date+time '08:00')::timestamptz,
+  (current_date+time '16:00')::timestamptz,'PLANNED'::text
 from public.locations where code='KRUCZA'
 union all
-select 'f4a16100-0000-4000-8000-000000000002','f4a16000-0000-4000-8000-000000000001',
-  id,current_date,'P4A_B',current_date+time '16:00',current_date+time '23:00','PLANNED'
+select 'f4a16100-0000-4000-8000-000000000002'::uuid,
+  'f4a16000-0000-4000-8000-000000000001'::uuid,
+  id,current_date,'P4A_B'::text,(current_date+time '16:00')::timestamptz,
+  (current_date+time '23:00')::timestamptz,'PLANNED'::text
 from public.locations where code='PAWILONY'
 union all
-select 'f4a16100-0000-4000-8000-000000000003','f4a16000-0000-4000-8000-000000000002',
-  id,current_date,'P4A_DRAFT_B',current_date+time '09:00',current_date+time '15:00','PLANNED'
+select 'f4a16100-0000-4000-8000-000000000003'::uuid,
+  'f4a16000-0000-4000-8000-000000000002'::uuid,
+  id,current_date,'P4A_DRAFT_B'::text,(current_date+time '09:00')::timestamptz,
+  (current_date+time '15:00')::timestamptz,'PLANNED'::text
 from public.locations where code='PAWILONY';
 insert into public.assignments(id,shift_id,employee_id,assigned_role,assignment_type) values
   ('f4a16200-0000-4000-8000-000000000001','f4a16100-0000-4000-8000-000000000001','f4a11000-0000-4000-8000-000000000001','KELNER','STANDARD'),
@@ -234,12 +310,14 @@ insert into public.plan_issues(id,plan_id,shift_id,issue_type,severity,role,mess
   ('f4a16400-0000-4000-8000-000000000001','f4a16000-0000-4000-8000-000000000002',
    'f4a16100-0000-4000-8000-000000000003','SHORTAGE','WARNING','KELNER','Phase 4A draft issue B');
 insert into public.operational_events(id,location_id,event_type,title,starts_at,ends_at,status)
-select 'f4a16300-0000-4000-8000-000000000001',id,'EVENT','Phase 4A event A',
-  current_date+time '10:00',current_date+time '11:00','DRAFT'
+select 'f4a16300-0000-4000-8000-000000000001'::uuid,id,'EVENT'::text,
+  'Phase 4A event A'::text,(current_date+time '10:00')::timestamptz,
+  (current_date+time '11:00')::timestamptz,'DRAFT'::public.event_status
 from public.locations where code='KRUCZA'
 union all
-select 'f4a16300-0000-4000-8000-000000000002',id,'EVENT','Phase 4A event B',
-  current_date+time '12:00',current_date+time '13:00','DRAFT'
+select 'f4a16300-0000-4000-8000-000000000002'::uuid,id,'EVENT'::text,
+  'Phase 4A event B'::text,(current_date+time '12:00')::timestamptz,
+  (current_date+time '13:00')::timestamptz,'DRAFT'::public.event_status
 from public.locations where code='PAWILONY';
 
 -- Verify the canonical helper matrix, including inactive grants, null/invalid

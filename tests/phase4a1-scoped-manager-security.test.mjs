@@ -252,6 +252,53 @@ test("SQL contract covers the required actors and denial boundaries", () => {
   assert.match(sqlContract, /rollback;/iu);
 });
 
+test("SQL fixture source is self-contained and explicitly typed", () => {
+  assert.match(sqlContract,
+    /regexp_count\(v_definition,'v_match_count\\s\*<>\\s\*1'\)\s*<\s*3/iu);
+  assert.doesNotMatch(sqlContract,
+    /replace\(v_definition,'v_match_count <> 1'/iu);
+
+  const legacyLocations = sqlContract.indexOf("insert into public.locations");
+  const matrixLocations = sqlContract.indexOf("insert into public.matrix_locations_v2");
+  const profiles = sqlContract.indexOf("insert into public.matrix_employee_profiles_v2");
+  const employeeRoles = sqlContract.indexOf("insert into public.matrix_employee_roles_v2");
+  const employeeLocations = sqlContract.indexOf("insert into public.matrix_employee_locations_v2");
+  assert.ok(legacyLocations >= 0 && legacyLocations < matrixLocations);
+  assert.ok(profiles > matrixLocations && profiles < employeeRoles && profiles < employeeLocations);
+  assert.match(sqlContract,
+    /insert into public\.locations[\s\S]*'KRUCZA'::public\.location_code[\s\S]*'PAWILONY'::public\.location_code[\s\S]*on conflict\(code\) do nothing/iu);
+  assert.match(sqlContract,
+    /insert into public\.matrix_employee_profiles_v2[\s\S]*P4A-A[\s\S]*P4A-B[\s\S]*P4A-N[\s\S]*P4A-I/iu);
+  assert.match(sqlContract, /'DRAFT'::public\.event_status/iu);
+  assert.match(sqlContract, /null::timestamptz/iu);
+  assert.match(sqlContract, /f4a14000-0000-4000-8000-000000000001'::uuid/iu);
+});
+
+test("active unrelated employee has isolated valid Matrix memberships", () => {
+  assert.match(sqlContract, /'P4A-N'::text[\s\S]{0,120}null::text,true/iu);
+  assert.match(sqlContract,
+    /f4a11000-0000-4000-8000-000000000003'::uuid,[\s\S]{0,100}f4a13000-0000-4000-8000-000000000003'::uuid,true,false,true/iu);
+  assert.match(sqlContract,
+    /f4a11000-0000-4000-8000-000000000003'::uuid,[\s\S]{0,100}f4a14000-0000-4000-8000-000000000003'::uuid,true,false,true,true/iu);
+
+  const roleMembership = sqlContract.indexOf(
+    "'f4a13000-0000-4000-8000-000000000003'::uuid,true,false,true",
+  );
+  const locationMembership = sqlContract.indexOf(
+    "'f4a14000-0000-4000-8000-000000000003'::uuid,true,false,true,true",
+  );
+  const activation = sqlContract.indexOf("update public.matrix_versions set status='ACTIVE'");
+  assert.ok(roleMembership >= 0 && locationMembership >= 0);
+  assert.ok(roleMembership < activation && locationMembership < activation);
+
+  const grantStatements = [...sqlContract.matchAll(
+    /insert into public\.matrix_scope_grants_v2[\s\S]*?;/giu,
+  )].map(match => match[0]).join("\n");
+  assert.doesNotMatch(grantStatements,
+    /f4a13[1]00-0000-4000-8000-000000000003|f4a14[1]00-0000-4000-8000-000000000003/iu);
+  assert.match(sqlContract, /PHASE4A_UNRELATED_RESOURCE_SCOPE_GRANTED/u);
+});
+
 test("zero-ACTIVE contract check rolls back its temporary archive subtransaction", () => {
   assert.match(sqlContract,
     /update public\.matrix_versions set status='ARCHIVED'[\s\S]*errcode='P4A11'[\s\S]*errcode='P4A10'[\s\S]*exception when sqlstate 'P4A10'/iu);
