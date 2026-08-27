@@ -274,19 +274,35 @@ end $$;
 
 -- ZERO active Matrix must deny. The normal one-ACTIVE path is proven above.
 reset role;
-update public.matrix_versions set status='ARCHIVED',
-  effective_to=greatest(effective_from,current_date-1)
-where id='f4a12000-0000-4000-8000-000000000001';
-set local role authenticated;
-select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
-do $$ begin
-  if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
-    raise exception 'PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED'; end if;
-end $$;
-reset role;
-update public.matrix_versions set status='ACTIVE',effective_to=null,
-  activated_at=now(),published_at=now()
-where id='f4a12000-0000-4000-8000-000000000001';
+do $$
+begin
+  begin
+    update public.matrix_versions set status='ARCHIVED',
+      effective_to=greatest(effective_from,current_date-1)
+    where id='f4a12000-0000-4000-8000-000000000001';
+
+    if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
+      raise exception using
+        errcode='P4A11',message='PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED';
+    end if;
+
+    -- The expected sentinel rolls back this inner subtransaction, including
+    -- ACTIVE -> ARCHIVED, without an illegal ARCHIVED -> ACTIVE transition.
+    raise exception using
+      errcode='P4A10',message='PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK';
+  exception when sqlstate 'P4A10' then
+    null;
+  end;
+
+  if not exists(
+    select 1 from public.matrix_versions
+    where id='f4a12000-0000-4000-8000-000000000001' and status='ACTIVE'
+  ) then
+    raise exception using
+      errcode='P4A12',message='PHASE4A_ACTIVE_MATRIX_NOT_RESTORED';
+  end if;
+end;
+$$;
 set local role authenticated;
 
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000005',true);

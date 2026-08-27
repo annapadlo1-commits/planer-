@@ -55,7 +55,7 @@ alter function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid
   owner to postgres;
 
 revoke all on function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant execute on function public.matrix_v2_can_manage_legacy_resource_uat_v1(text,uuid,uuid)
   to authenticated;
 

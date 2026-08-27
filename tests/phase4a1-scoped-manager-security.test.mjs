@@ -69,8 +69,10 @@ test("Phase 4A.1 is append-only policy hardening and excludes bulk-adjust", () =
   assert.doesNotMatch(migration, /\b(?:insert|update|delete|truncate)\s+(?:into|from)?\s*public\./iu);
   assert.match(migration, /set search_path\s*=\s*''/iu);
   assert.match(migration, /alter function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+owner to postgres/iu);
-  assert.match(migration, /revoke all on function[\s\S]*from public,anon,authenticated/iu);
-  assert.match(migration, /grant execute on function[\s\S]*to authenticated\s*;/iu);
+  assert.match(migration,
+    /revoke all on function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+from public,anon,authenticated,service_role/iu);
+  assert.match(migration,
+    /grant execute on function public\.matrix_v2_can_manage_legacy_resource_uat_v1\(text,uuid,uuid\)\s+to authenticated\s*;/iu);
   assert.doesNotMatch(migration, /grant execute on function[\s\S]*?to\s+authenticated\s*,\s*service_role/iu);
 });
 
@@ -248,6 +250,18 @@ test("SQL contract covers the required actors and denial boundaries", () => {
   assert.match(sqlContract, /false,'f4a10000-0000-4000-8000-000000000001'/iu);
   assert.match(sqlContract, /'INVALID'/u);
   assert.match(sqlContract, /rollback;/iu);
+});
+
+test("zero-ACTIVE contract check rolls back its temporary archive subtransaction", () => {
+  assert.match(sqlContract,
+    /update public\.matrix_versions set status='ARCHIVED'[\s\S]*errcode='P4A11'[\s\S]*errcode='P4A10'[\s\S]*exception when sqlstate 'P4A10'/iu);
+  assert.match(sqlContract,
+    /PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK[\s\S]*status='ACTIVE'[\s\S]*PHASE4A_ACTIVE_MATRIX_NOT_RESTORED/iu);
+  assert.doesNotMatch(sqlContract,
+    /update public\.matrix_versions set status='ACTIVE',effective_to=null/iu);
+  assert.match(sqlContract, /PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK/u);
+  assert.match(sqlContract, /PHASE4A_LOCATION_B_BOUNDARY_INVALID/u);
+  assert.match(sqlContract, /PHASE4A_LOCATION_B_DRAFT_SHIFT_VISIBLE/u);
 });
 
 test("operational event read finding remains explicitly deferred", () => {
