@@ -1,0 +1,3619 @@
+{
+  "schema_version": 1,
+  "kind": "phase4a2_uat_migration_reconciliation",
+  "captured_at_utc": "2026-08-28T10:56:29.400Z",
+  "source": {
+    "repository": "annapadlo1-commits/planer-",
+    "branch": "codex/uat-consolidated-fixes",
+    "commit": "5565c50370cb9436a76d1e6d7013250eaad2bece",
+    "tree": "a8f6148cc0ff8960638553951972ba949b464d84",
+    "migration_file_count": 224
+  },
+  "uat": {
+    "project_ref": "nhthrtpkfpmufmrmdyjg",
+    "branch_name": "dynamic-matrix-solver-v2",
+    "parent_project_ref": "bdybebzvzapihjdauehg",
+    "preview_project_status": "ACTIVE_HEALTHY",
+    "migration_status": "MIGRATIONS_FAILED",
+    "identity_control": {
+      "config": {
+        "environment": "ISOLATED_UAT",
+        "projectRef": "nhthrtpkfpmufmrmdyjg"
+      },
+      "control_key": "ISOLATED_UAT_DESTRUCTIVE_TOOLS"
+    }
+  },
+  "ledger": {
+    "row_count": 254,
+    "fingerprint_algorithm": "md5(join(version|name|statement_count|sql_bytes|sql_md5, newline), ordered by version)",
+    "fingerprint": "04c5c2ad59937027420bd7c71b782d14",
+    "rows": [
+      {
+        "name": "core_schema",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0001"
+      },
+      {
+        "name": "demo_seed",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0002"
+      },
+      {
+        "name": "auth_and_access",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0003"
+      },
+      {
+        "name": "planning_engine",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0004"
+      },
+      {
+        "name": "dynamic_matrix_and_role_planning",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0005"
+      },
+      {
+        "name": "complete_product_modules",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0006"
+      },
+      {
+        "name": "alpha11_repair_workflows",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0007"
+      },
+      {
+        "name": "alpha12_matrix_calendar_and_access",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0008"
+      },
+      {
+        "name": "optimizer_engine",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0009"
+      },
+      {
+        "name": "optimizer_profile_names",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0010"
+      },
+      {
+        "name": "optimizer_v2_checkpointed",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0011"
+      },
+      {
+        "name": "optimizer_v3_chunked_initialization",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0012"
+      },
+      {
+        "name": "optimizer_v3_quality_and_variants",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0013"
+      },
+      {
+        "name": "optimizer_v3_finalize_ambiguity",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0014"
+      },
+      {
+        "name": "optimizer_v4_resumable_materialization",
+        "sql_bytes": 32,
+        "sql_md5": "a055e4d4c00258d406e07cd039c8c72f",
+        "statement_count": 1,
+        "version": "0015"
+      },
+      {
+        "name": "restrict_security_definer_from_anonymous",
+        "sql_bytes": 487,
+        "sql_md5": "0d36936871e0b2747099813b52b56820",
+        "statement_count": 2,
+        "version": "20260801113020"
+      },
+      {
+        "name": "alpha16_replay_0001_core_schema",
+        "sql_bytes": 11897,
+        "sql_md5": "02caf2e31be37a7fcf25df3bbe9b84a4",
+        "statement_count": 1,
+        "version": "20260802073800"
+      },
+      {
+        "name": "alpha16_replay_0002_demo_seed",
+        "sql_bytes": 11022,
+        "sql_md5": "04c2c802dcb6da9edfef66a965ebba2e",
+        "statement_count": 1,
+        "version": "20260802073807"
+      },
+      {
+        "name": "alpha16_replay_0003_auth_and_access",
+        "sql_bytes": 6061,
+        "sql_md5": "999827d13956511483ee5a5fd22346b4",
+        "statement_count": 1,
+        "version": "20260802073815"
+      },
+      {
+        "name": "alpha16_replay_0004_planning_engine",
+        "sql_bytes": 32548,
+        "sql_md5": "0d32c9216475bbccdd5bb1c884e86e0d",
+        "statement_count": 1,
+        "version": "20260802073822"
+      },
+      {
+        "name": "alpha16_replay_0005_dynamic_matrix_and_role_planning",
+        "sql_bytes": 15281,
+        "sql_md5": "4bdf40c3bec43f9b9bc7bb47071705fc",
+        "statement_count": 1,
+        "version": "20260802073833"
+      },
+      {
+        "name": "alpha16_replay_0006_complete_product_modules",
+        "sql_bytes": 25943,
+        "sql_md5": "09a48d9fd52cbd42b77b3e346e205df7",
+        "statement_count": 1,
+        "version": "20260802073849"
+      },
+      {
+        "name": "alpha16_replay_0007_alpha11_repair_workflows",
+        "sql_bytes": 12096,
+        "sql_md5": "4d8e9790c6d710fa92e3d5dd0651c123",
+        "statement_count": 1,
+        "version": "20260802073856"
+      },
+      {
+        "name": "alpha16_replay_0008_alpha12_matrix_calendar_and_access",
+        "sql_bytes": 27086,
+        "sql_md5": "a1db6a610f70d4e3069d87c13cd1e453",
+        "statement_count": 1,
+        "version": "20260802073903"
+      },
+      {
+        "name": "alpha16_replay_0009_optimizer_engine",
+        "sql_bytes": 19155,
+        "sql_md5": "3e470eabee0cf3ed072b57a1e82237d0",
+        "statement_count": 1,
+        "version": "20260802073912"
+      },
+      {
+        "name": "alpha16_replay_0010_optimizer_profile_names",
+        "sql_bytes": 263,
+        "sql_md5": "a7b1abd57720b5456bfefac84e221d25",
+        "statement_count": 1,
+        "version": "20260802073918"
+      },
+      {
+        "name": "alpha16_replay_0011_optimizer_v2_checkpointed",
+        "sql_bytes": 8231,
+        "sql_md5": "e23df96d424bc86c141bb98f9750d51c",
+        "statement_count": 1,
+        "version": "20260802073931"
+      },
+      {
+        "name": "alpha16_replay_0012_optimizer_v3_chunked_initialization",
+        "sql_bytes": 2036,
+        "sql_md5": "09eee1f05268a3656b0680e9f384e835",
+        "statement_count": 1,
+        "version": "20260802073937"
+      },
+      {
+        "name": "alpha16_replay_0013_optimizer_v3_quality_and_variants",
+        "sql_bytes": 23682,
+        "sql_md5": "eff5a85efb92249ce154b22d1034d722",
+        "statement_count": 1,
+        "version": "20260802073947"
+      },
+      {
+        "name": "alpha16_replay_0014_optimizer_v3_finalize_ambiguity",
+        "sql_bytes": 11769,
+        "sql_md5": "a63ae127bfbcd0bf22d2f13e27a45bc7",
+        "statement_count": 1,
+        "version": "20260802073959"
+      },
+      {
+        "name": "alpha16_replay_0015_optimizer_v4_resumable_materialization",
+        "sql_bytes": 22737,
+        "sql_md5": "30554915191bc6b552f41ce27983e07e",
+        "statement_count": 1,
+        "version": "20260802074009"
+      },
+      {
+        "name": "alpha16_replay_legacy_security_repairs",
+        "sql_bytes": 769,
+        "sql_md5": "c32248bf10a3ba80a44c45349e1b8b6d",
+        "statement_count": 1,
+        "version": "20260802074026"
+      },
+      {
+        "name": "alpha16_replay_20260802011712_dynamic_matrix_v2",
+        "sql_bytes": 203046,
+        "sql_md5": "256597c41c8bad134a97801dbcd05d64",
+        "statement_count": 1,
+        "version": "20260802074045"
+      },
+      {
+        "name": "alpha16_replay_20260802011741_solver_runtime_v2",
+        "sql_bytes": 18696,
+        "sql_md5": "0130b61bd0ec1ff04726d414daa12711",
+        "statement_count": 1,
+        "version": "20260802074052"
+      },
+      {
+        "name": "alpha16_replay_20260802011747_planning_revision_foundation_v2",
+        "sql_bytes": 4454,
+        "sql_md5": "6e59b747ec399b61d29f36bebb923895",
+        "statement_count": 1,
+        "version": "20260802074058"
+      },
+      {
+        "name": "alpha16_replay_20260802011756_solver_api_v2",
+        "sql_bytes": 135216,
+        "sql_md5": "62ab3ea2a0f3ef53569ffb6184aea2e4",
+        "statement_count": 1,
+        "version": "20260802074109"
+      },
+      {
+        "name": "alpha16_replay_20260802011805_solver_dispatch_v2",
+        "sql_bytes": 10586,
+        "sql_md5": "ffa40660629660e874341874798d4a1c",
+        "statement_count": 1,
+        "version": "20260802074126"
+      },
+      {
+        "name": "alpha16_replay_20260802011811_solver_dispatch_private_v2",
+        "sql_bytes": 12847,
+        "sql_md5": "331b4528656daef34b63f2589242828f",
+        "statement_count": 1,
+        "version": "20260802074135"
+      },
+      {
+        "name": "alpha16_replay_20260802011826_solver_claim_dispatch_token_v2",
+        "sql_bytes": 4532,
+        "sql_md5": "abc5b3253c883f95ec3d28c38fe6fbdf",
+        "statement_count": 1,
+        "version": "20260802074141"
+      },
+      {
+        "name": "alpha16_replay_20260802011833_solver_finance_currency_v2",
+        "sql_bytes": 2635,
+        "sql_md5": "3695ef9660e31259082836912af88d67",
+        "statement_count": 1,
+        "version": "20260802074154"
+      },
+      {
+        "name": "alpha16_replay_20260802011841_optimizer_publication_v2",
+        "sql_bytes": 74838,
+        "sql_md5": "958b0a4f639f5166d5274cb2e99acabf",
+        "statement_count": 1,
+        "version": "20260802074202"
+      },
+      {
+        "name": "alpha16_replay_20260802011848_planning_revision_publication_v2",
+        "sql_bytes": 967,
+        "sql_md5": "d79f8a538be8668e12f3f0e6f5523a7d",
+        "statement_count": 1,
+        "version": "20260802074221"
+      },
+      {
+        "name": "alpha16_replay_20260802011855_matrix_employee_lifecycle_v2",
+        "sql_bytes": 39454,
+        "sql_md5": "dece3fe79c1117f42ac9bdd7b47be4b6",
+        "statement_count": 1,
+        "version": "20260802074232"
+      },
+      {
+        "name": "alpha16_replay_20260802011902_solver_pull_worker_recovery_v2",
+        "sql_bytes": 11456,
+        "sql_md5": "45c587007ab3dc58964b506f2b1a189b",
+        "statement_count": 1,
+        "version": "20260802074239"
+      },
+      {
+        "name": "alpha16_replay_20260802011920_matrix_v2_draft_legacy_scope_fix",
+        "sql_bytes": 2537,
+        "sql_md5": "100e1d09d400268be9c3a8d8fdee21a6",
+        "statement_count": 1,
+        "version": "20260802074250"
+      },
+      {
+        "name": "alpha16_replay_20260802011926_matrix_v2_draft_solver_options_fix",
+        "sql_bytes": 831,
+        "sql_md5": "1f0c6bffea2fbaecfda943d5f4578271",
+        "statement_count": 1,
+        "version": "20260802074256"
+      },
+      {
+        "name": "alpha16_replay_20260802011932_matrix_role_duties_active_sync",
+        "sql_bytes": 253,
+        "sql_md5": "7f69194212a48ad8bd9758af95c7ed97",
+        "statement_count": 1,
+        "version": "20260802074314"
+      },
+      {
+        "name": "alpha16_replay_20260802011940_matrix_v2_create_draft_sync",
+        "sql_bytes": 19020,
+        "sql_md5": "83721dae7c48d85dedf98fbb480dffab",
+        "statement_count": 1,
+        "version": "20260802074324"
+      },
+      {
+        "name": "alpha16_replay_20260802011948_matrix_v2_publication_helper_sync",
+        "sql_bytes": 7428,
+        "sql_md5": "fc523c8ea0027ea85cc5fca00064d537",
+        "statement_count": 1,
+        "version": "20260802074331"
+      },
+      {
+        "name": "alpha16_replay_20260802011955_matrix_v2_publication_validation_sync",
+        "sql_bytes": 34856,
+        "sql_md5": "047905111aec3fe5dba4b9926d8770ca",
+        "statement_count": 1,
+        "version": "20260802074339"
+      },
+      {
+        "name": "alpha16_replay_20260802012011_solver_run_provenance_sync",
+        "sql_bytes": 1791,
+        "sql_md5": "6de5134c53433b94b18024aa5b0bd459",
+        "statement_count": 1,
+        "version": "20260802074346"
+      },
+      {
+        "name": "alpha16_replay_20260802012019_solver_snapshot_request_sync",
+        "sql_bytes": 51623,
+        "sql_md5": "39fd4f8670ce50cc24b7b8f0e719072d",
+        "statement_count": 1,
+        "version": "20260802074401"
+      },
+      {
+        "name": "alpha16_replay_20260802012026_solver_dispatch_recovery_reconciler_v2",
+        "sql_bytes": 39733,
+        "sql_md5": "c09f15b947572e06d027d49271826636",
+        "statement_count": 1,
+        "version": "20260802074427"
+      },
+      {
+        "name": "alpha16_replay_20260802012033_solver_cutover_provenance_guards_v2",
+        "sql_bytes": 4889,
+        "sql_md5": "e6a26ae1aa20e9f25c5531a0dbcf7e40",
+        "statement_count": 1,
+        "version": "20260802074435"
+      },
+      {
+        "name": "alpha16_replay_20260802012040_matrix_v2_legacy_dml_security",
+        "sql_bytes": 1114,
+        "sql_md5": "0bc99f9fba456acfdba4398e2443c121",
+        "statement_count": 1,
+        "version": "20260802074441"
+      },
+      {
+        "name": "alpha16_replay_20260802012049_matrix_v2_legacy_read_boundary",
+        "sql_bytes": 4141,
+        "sql_md5": "d58f386c94d41d1f3ac8ecbee0c7f36d",
+        "statement_count": 1,
+        "version": "20260802074451"
+      },
+      {
+        "name": "alpha16_replay_20260802012106_active_solver_version_publication_fence_v2",
+        "sql_bytes": 22466,
+        "sql_md5": "8284270eb872646480c15760e59d742f",
+        "statement_count": 1,
+        "version": "20260802074506"
+      },
+      {
+        "name": "alpha16_replay_20260802012112_solver_pay_window_helper_sync",
+        "sql_bytes": 2586,
+        "sql_md5": "bfbf3517cb805d3fc4ee8354834db6e0",
+        "statement_count": 1,
+        "version": "20260802074512"
+      },
+      {
+        "name": "alpha16_replay_20260802012120_planning_revision_legacy_trigger_sync",
+        "sql_bytes": 806,
+        "sql_md5": "b691089255704c4594a7a1e4047bd11a",
+        "statement_count": 1,
+        "version": "20260802074519"
+      },
+      {
+        "name": "alpha16_replay_20260802012126_active_publication_boundary_sync",
+        "sql_bytes": 4068,
+        "sql_md5": "668e6a6003ca1f248d840307148b1356",
+        "statement_count": 1,
+        "version": "20260802074525"
+      },
+      {
+        "name": "alpha16_replay_20260802012132_active_variant_selection_sync",
+        "sql_bytes": 1388,
+        "sql_md5": "e1cf3e12d92a2fc2d348b9a3121874ba",
+        "statement_count": 1,
+        "version": "20260802074530"
+      },
+      {
+        "name": "alpha16_replay_20260802012140_solver_provider_neutral_pull_v2",
+        "sql_bytes": 20101,
+        "sql_md5": "6de3d256b5697d2de56813f4cd5e7bcf",
+        "statement_count": 1,
+        "version": "20260802074551"
+      },
+      {
+        "name": "alpha16_replay_20260802012204_solver_provider_neutral_executor_v2",
+        "sql_bytes": 332,
+        "sql_md5": "fe0931c5eb380bddec3cf13a0ded6496",
+        "statement_count": 1,
+        "version": "20260802074557"
+      },
+      {
+        "name": "alpha16_replay_20260802012210_solver_pull_claim_convergence_v2",
+        "sql_bytes": 7323,
+        "sql_md5": "f0e7b53878e05d95a71d1d70e44c97d9",
+        "statement_count": 1,
+        "version": "20260802074603"
+      },
+      {
+        "name": "alpha16_replay_20260802012218_public_api_security_hardening",
+        "sql_bytes": 2287,
+        "sql_md5": "536d13d015e3ff49c616c88b0d36e2e7",
+        "statement_count": 1,
+        "version": "20260802074613"
+      },
+      {
+        "name": "alpha16_workforce_and_operational_contracts",
+        "sql_bytes": 58792,
+        "sql_md5": "021fe1e98758c95fb0d88ed77b1a3569",
+        "statement_count": 1,
+        "version": "20260802074630"
+      },
+      {
+        "name": "alpha16_operational_diagnostics_and_overrides",
+        "sql_bytes": 29133,
+        "sql_md5": "57ff478129b51478c8ab1d8f41d58ed6",
+        "statement_count": 1,
+        "version": "20260802074642"
+      },
+      {
+        "name": "dev_alpha16_role_duty_trigger_repair",
+        "sql_bytes": 1306,
+        "sql_md5": "40793dfa2bd604c547d101595c66c3b1",
+        "statement_count": 1,
+        "version": "20260802075538"
+      },
+      {
+        "name": "alpha16_retire_alpha15_runtime_writes",
+        "sql_bytes": 3402,
+        "sql_md5": "31366647cce1962251c1ddcfc099352d",
+        "statement_count": 1,
+        "version": "20260802080812"
+      },
+      {
+        "name": "dev_validate_replay_safe_20260801113137",
+        "sql_bytes": 771,
+        "sql_md5": "a240319b248d7e42a74e296ee6c0a1e1",
+        "statement_count": 1,
+        "version": "20260802081142"
+      },
+      {
+        "name": "dev_alpha16_operational_indexes_and_deny_policy",
+        "sql_bytes": 986,
+        "sql_md5": "bd2b7090284056bf0e21c7909714806e",
+        "statement_count": 1,
+        "version": "20260802081523"
+      },
+      {
+        "name": "dev_alpha16_import_identity_validation",
+        "sql_bytes": 14436,
+        "sql_md5": "35890ea2ce6b64141f2bd60689fde787",
+        "statement_count": 1,
+        "version": "20260802081735"
+      },
+      {
+        "name": "alpha16_candidate_diagnostics_final",
+        "sql_bytes": 17159,
+        "sql_md5": "6a30c1dbb5412346ea5c9e88905af484",
+        "statement_count": 1,
+        "version": "20260802082252"
+      },
+      {
+        "name": "alpha16_operational_contracts_final",
+        "sql_bytes": 40366,
+        "sql_md5": "379aad6914412e61778da3a25f506a54",
+        "statement_count": 1,
+        "version": "20260802083949"
+      },
+      {
+        "name": "alpha16_publication_boundary_final",
+        "sql_bytes": 3690,
+        "sql_md5": "8c9402c823af7faec5946dd3d9ba6922",
+        "statement_count": 1,
+        "version": "20260802084006"
+      },
+      {
+        "name": "uat_data_integrity_and_availability",
+        "sql_bytes": 101296,
+        "sql_md5": "57ec821a030fb615eef93779e09517c3",
+        "statement_count": 1,
+        "version": "20260804091704"
+      },
+      {
+        "name": "reassert_canonical_slot_contract",
+        "sql_bytes": 3138,
+        "sql_md5": "4a13562d0d464162d981cf51d881a1ef",
+        "statement_count": 1,
+        "version": "20260804104415"
+      },
+      {
+        "name": "restore_role_publication_contract",
+        "sql_bytes": 7256,
+        "sql_md5": "3e9cbd52d9da871ab5c1bb97ee01b1c7",
+        "statement_count": 1,
+        "version": "20260804112144"
+      },
+      {
+        "name": "restore_employee_role_schedule_contract",
+        "sql_bytes": 5354,
+        "sql_md5": "8dee24d694960d19fc77865f24b8d3bb",
+        "statement_count": 1,
+        "version": "20260804112256"
+      },
+      {
+        "name": "runtime_contract_guard_v2",
+        "sql_bytes": 3005,
+        "sql_md5": "827edbf5e610d8f19b6015e9ba330036",
+        "statement_count": 1,
+        "version": "20260804114146"
+      },
+      {
+        "name": "role_schedule_fk_indexes",
+        "sql_bytes": 761,
+        "sql_md5": "467654e14d8e18eec736c8d50a32fab0",
+        "statement_count": 1,
+        "version": "20260804114325"
+      },
+      {
+        "name": "uat_import_contract_repair",
+        "sql_bytes": 10713,
+        "sql_md5": "217cfa62854f3effdde475dcd87132f2",
+        "statement_count": 1,
+        "version": "20260804144603"
+      },
+      {
+        "name": "uat_import_contract_repair_v2",
+        "sql_bytes": 10810,
+        "sql_md5": "ca0c5af33f1f38cfbd2ea8a13bba0f44",
+        "statement_count": 1,
+        "version": "20260804145000"
+      },
+      {
+        "name": "uat_import_identity_repair",
+        "sql_bytes": 11818,
+        "sql_md5": "d3f41350f79c91cf608ef441c9d70148",
+        "statement_count": 1,
+        "version": "20260804145316"
+      },
+      {
+        "name": "uat_import_identity_repair_v2",
+        "sql_bytes": 11937,
+        "sql_md5": "c7e337e437a7199054de3f33ad74b85a",
+        "statement_count": 1,
+        "version": "20260804145407"
+      },
+      {
+        "name": "schedule_publication_authority",
+        "sql_bytes": 8706,
+        "sql_md5": "24d7f9371a8edd981c0bd4faba1ceec6",
+        "statement_count": 1,
+        "version": "20260804145534"
+      },
+      {
+        "name": "schedule_publication_resolution",
+        "sql_bytes": 11312,
+        "sql_md5": "92d4634d5fbcba4875b6f8a42fcec032",
+        "statement_count": 1,
+        "version": "20260804145630"
+      },
+      {
+        "name": "standby_tiers_and_activation",
+        "sql_bytes": 27465,
+        "sql_md5": "5cfcbf8ee4b6b9fa55167854f92fd588",
+        "statement_count": 1,
+        "version": "20260804150008"
+      },
+      {
+        "name": "standby_eligibility_repair",
+        "sql_bytes": 14021,
+        "sql_md5": "5784539438e96e35ee8523152e5c8bf5",
+        "statement_count": 1,
+        "version": "20260804150554"
+      },
+      {
+        "name": "solver_standby_reserve_setting_v2",
+        "sql_bytes": 39703,
+        "sql_md5": "6117f6a8728ffe7a01a92edcc53f84ab",
+        "statement_count": 1,
+        "version": "20260804150649"
+      },
+      {
+        "name": "operational_events_hot_days",
+        "sql_bytes": 25139,
+        "sql_md5": "da125704f2c105aa9610787e48d3ce6a",
+        "statement_count": 1,
+        "version": "20260804151716"
+      },
+      {
+        "name": "shift_swap_board",
+        "sql_bytes": 27727,
+        "sql_md5": "b3ed7d13eae080a6a214cb5eef7a8317",
+        "statement_count": 1,
+        "version": "20260804151730"
+      },
+      {
+        "name": "uat_portal_operational_context",
+        "sql_bytes": 7340,
+        "sql_md5": "9c75b1dbb4ff56bf2cecca4b30d57a9b",
+        "statement_count": 1,
+        "version": "20260804152610"
+      },
+      {
+        "name": "employment_date_guardrails",
+        "sql_bytes": 2899,
+        "sql_md5": "c3cb697a68905edc27841b4785b07787",
+        "statement_count": 1,
+        "version": "20260804153841"
+      },
+      {
+        "name": "business_strategy_priorities",
+        "sql_bytes": 4160,
+        "sql_md5": "af5d110a8af282d1a8665ae099b42662",
+        "statement_count": 1,
+        "version": "20260804153920"
+      },
+      {
+        "name": "availability_leader_summary",
+        "sql_bytes": 5005,
+        "sql_md5": "f42a30d244480df6b9d650e09b6fd142",
+        "statement_count": 1,
+        "version": "20260804154224"
+      },
+      {
+        "name": "isolated_uat_workforce_reset",
+        "sql_bytes": 4809,
+        "sql_md5": "454b8020c2859742d8e92a6eae2bf960",
+        "statement_count": 1,
+        "version": "20260804154441"
+      },
+      {
+        "name": "isolated_uat_master_persona",
+        "sql_bytes": 23615,
+        "sql_md5": "8225153dd23d1b414e209a7ae268e4b7",
+        "statement_count": 1,
+        "version": "20260804160432"
+      },
+      {
+        "name": "uat_master_publication_conflict_context",
+        "sql_bytes": 5923,
+        "sql_md5": "924dfb704f0ca8fa2091347afc53bd61",
+        "statement_count": 1,
+        "version": "20260804160605"
+      },
+      {
+        "name": "uat_master_availability_review_fix",
+        "sql_bytes": 4881,
+        "sql_md5": "7a0b3790f80fd3a31a4bf3663d55228c",
+        "statement_count": 1,
+        "version": "20260804160745"
+      },
+      {
+        "name": "reassert_final_canonical_slot_contract",
+        "sql_bytes": 3429,
+        "sql_md5": "87915529fec86212fff0987cd4e4a40b",
+        "statement_count": 1,
+        "version": "20260804164900"
+      },
+      {
+        "name": "import_rate_activation_contract",
+        "sql_bytes": 5221,
+        "sql_md5": "dbf63f7f944ab6bd595677bd83a382c2",
+        "statement_count": 1,
+        "version": "20260804171112"
+      },
+      {
+        "name": "inactive_location_grant_contract",
+        "sql_bytes": 760,
+        "sql_md5": "695572958f154d0a8bea92d87a079cca",
+        "statement_count": 1,
+        "version": "20260804171215"
+      },
+      {
+        "name": "reassert_contract_snapshot_and_validator",
+        "sql_bytes": 5553,
+        "sql_md5": "9453853ad0a6e25b09ad84710ab5d4c2",
+        "statement_count": 1,
+        "version": "20260804172551"
+      },
+      {
+        "name": "primary_shift_sequence_invariants",
+        "sql_bytes": 7669,
+        "sql_md5": "3e5e16e503af2b7ae0c3aad6416d0ab9",
+        "statement_count": 1,
+        "version": "20260804214347"
+      },
+      {
+        "name": "canonical_shift_occurrence_id",
+        "sql_bytes": 1810,
+        "sql_md5": "05e43e69a8d217c6077382bf8c676030",
+        "statement_count": 1,
+        "version": "20260804215508"
+      },
+      {
+        "name": "sequence_validator_template_count",
+        "sql_bytes": 570,
+        "sql_md5": "1e06b2fdc04ae445f557fe68844840e8",
+        "statement_count": 1,
+        "version": "20260804215956"
+      },
+      {
+        "name": "manager_standby_workspace",
+        "sql_bytes": 1646,
+        "sql_md5": "fe487679e700915e1a7ca9d26ed91a34",
+        "statement_count": 1,
+        "version": "20260804222536"
+      },
+      {
+        "name": "diagnostic_hard_rules_and_actions",
+        "sql_bytes": 17700,
+        "sql_md5": "b91d282b7abb403823ea9b3b7711ef34",
+        "statement_count": 1,
+        "version": "20260804224245"
+      },
+      {
+        "name": "diagnostic_role_scope",
+        "sql_bytes": 4773,
+        "sql_md5": "050bcec05a5e7249dfa1e5e6d7c4b18f",
+        "statement_count": 1,
+        "version": "20260804224712"
+      },
+      {
+        "name": "uat006_critical_workflow_repairs",
+        "sql_bytes": 33690,
+        "sql_md5": "aed4ba9e67ce665c10b60b2aecb26249",
+        "statement_count": 1,
+        "version": "20260805012710"
+      },
+      {
+        "name": "uat006_merge_preview_uuid_fix",
+        "sql_bytes": 6953,
+        "sql_md5": "48f9045faf572d369fa22cc6389db019",
+        "statement_count": 1,
+        "version": "20260805013348"
+      },
+      {
+        "name": "uat006_operational_empty_workspace_contract",
+        "sql_bytes": 3244,
+        "sql_md5": "71a9bfd841c2182fa168803d42709c06",
+        "statement_count": 1,
+        "version": "20260805044217"
+      },
+      {
+        "name": "atomic_company_publication_resolution",
+        "sql_bytes": 3328,
+        "sql_md5": "41033acc9134a30dbe2c9e3ef3b9b17f",
+        "statement_count": 1,
+        "version": "20260805095913"
+      },
+      {
+        "name": "uat006_required_role_duty_minimum_repair",
+        "sql_bytes": 1657,
+        "sql_md5": "2c49c97f040b374f60f5f5cf365f774d",
+        "statement_count": 1,
+        "version": "20260805101322"
+      },
+      {
+        "name": "uat006_atomic_duty_archive_and_shift_period",
+        "sql_bytes": 5910,
+        "sql_md5": "a3d846a396b5bedaa85e595b1dc6296c",
+        "statement_count": 1,
+        "version": "20260805101821"
+      },
+      {
+        "name": "uat006_unified_shift_staffing_workflow",
+        "sql_bytes": 6609,
+        "sql_md5": "098cccde071f8514a46f4650c1d7b463",
+        "statement_count": 1,
+        "version": "20260805143837"
+      },
+      {
+        "name": "uat_finance_import_and_variant_preview",
+        "sql_bytes": 46803,
+        "sql_md5": "e2a9622d8fc187a9349ddcd7d32e33dd",
+        "statement_count": 1,
+        "version": "20260806005217"
+      },
+      {
+        "name": "b4_role_overview_repair",
+        "sql_bytes": 3662,
+        "sql_md5": "fb9e922664f8223b33ad58a0f23a8e3a",
+        "statement_count": 1,
+        "version": "20260806012212"
+      },
+      {
+        "name": "b4_full_company_roundtrip",
+        "sql_bytes": 22607,
+        "sql_md5": "950b7a79ec96a3d85ee92dd6d5800e43",
+        "statement_count": 1,
+        "version": "20260806020526"
+      },
+      {
+        "name": "b4_full_import_preview_rate_warning_fix",
+        "sql_bytes": 6965,
+        "sql_md5": "022b1937f00a0a635ecc55687fd7d103",
+        "statement_count": 1,
+        "version": "20260806084726"
+      },
+      {
+        "name": "b4_configurable_daily_shift_limit_uat",
+        "sql_bytes": 13456,
+        "sql_md5": "f413785dfd7c011d4e7d00149a43d1f8",
+        "statement_count": 1,
+        "version": "20260806141757"
+      },
+      {
+        "name": "b4_leader_variant_and_demand_profiles",
+        "sql_bytes": 31516,
+        "sql_md5": "a00cb3ba0cad8b4945e37858cb214d69",
+        "statement_count": 1,
+        "version": "20260806161654"
+      },
+      {
+        "name": "b4_full_import_idempotency",
+        "sql_bytes": 3301,
+        "sql_md5": "3bd98fa912cb6ab6667a03d453e3429b",
+        "statement_count": 1,
+        "version": "20260806173216"
+      },
+      {
+        "name": "b4_diagnostics_and_role_publication_fix",
+        "sql_bytes": 4959,
+        "sql_md5": "5b8f75053f1f7875741ed6eb3ddf0c5a",
+        "statement_count": 1,
+        "version": "20260806193814"
+      },
+      {
+        "name": "b4_workload_distribution",
+        "sql_bytes": 7035,
+        "sql_md5": "2d04d856ff620d8ae03c9ae3077f35ba",
+        "statement_count": 1,
+        "version": "20260806194325"
+      },
+      {
+        "name": "b4_workload_distribution_interval_fix",
+        "sql_bytes": 645,
+        "sql_md5": "2158c272ec45c9ddc81000ed85e2361a",
+        "statement_count": 1,
+        "version": "20260806194426"
+      },
+      {
+        "name": "b4_standby_runtime_semantics",
+        "sql_bytes": 8662,
+        "sql_md5": "7eb8c7d5b8cda7b20eddd83c72ac0ba1",
+        "statement_count": 1,
+        "version": "20260806222517"
+      },
+      {
+        "name": "b4_leader_search_and_diagnostic_details",
+        "sql_bytes": 5189,
+        "sql_md5": "f33661bd738e3e08ed2498051365ebea",
+        "statement_count": 1,
+        "version": "20260806222631"
+      },
+      {
+        "name": "b4_availability_publication_conflicts",
+        "sql_bytes": 1877,
+        "sql_md5": "50f2a3bab66e7719b34b5caa58d1e57e",
+        "statement_count": 1,
+        "version": "20260806222649"
+      },
+      {
+        "name": "b4_preserve_explicit_work_time_targets",
+        "sql_bytes": 2008,
+        "sql_md5": "7afeb4296ab6b1240b55e488dbb7e37e",
+        "statement_count": 1,
+        "version": "20260806222818"
+      },
+      {
+        "name": "b4_standby_preview_original_variants",
+        "sql_bytes": 5722,
+        "sql_md5": "14f1a3305d766d151972f652716f572e",
+        "statement_count": 1,
+        "version": "20260806223027"
+      },
+      {
+        "name": "b4_fair_distribution_priority",
+        "sql_bytes": 2215,
+        "sql_md5": "d82856c961fa3ee103747ec9c1430779",
+        "statement_count": 1,
+        "version": "20260806232101"
+      },
+      {
+        "name": "b4_strategy_compute_budget",
+        "sql_bytes": 804,
+        "sql_md5": "9688b24b55498c3b6134f852ee98b1f0",
+        "statement_count": 1,
+        "version": "20260807001217"
+      },
+      {
+        "name": "b4_leader_limit_override_and_candidate_context",
+        "sql_bytes": 18345,
+        "sql_md5": "8165c2594253d1c141a61079a2004c52",
+        "statement_count": 1,
+        "version": "20260807012758"
+      },
+      {
+        "name": "b4_strategy_contract_repair_v2",
+        "sql_bytes": 4097,
+        "sql_md5": "e9fc19635ebb7f345ba93b5d555a24ce",
+        "statement_count": 1,
+        "version": "20260807024153"
+      },
+      {
+        "name": "b4_standby_fairness_v3",
+        "sql_bytes": 15281,
+        "sql_md5": "1a520b219fc17e64395028c91e57d950",
+        "statement_count": 1,
+        "version": "20260807024200"
+      },
+      {
+        "name": "b4_swap_suggestions_and_duty_transfer_v2",
+        "sql_bytes": 25424,
+        "sql_md5": "9d39298313d6c632e2c0b40cc82ceaee",
+        "statement_count": 1,
+        "version": "20260807024231"
+      },
+      {
+        "name": "b4_swap_suggestions_date_contract",
+        "sql_bytes": 25430,
+        "sql_md5": "75789724496a2493b3241f938f88344e",
+        "statement_count": 1,
+        "version": "20260808213327"
+      },
+      {
+        "name": "b4_swap_daily_limit_suggestions",
+        "sql_bytes": 2442,
+        "sql_md5": "a6b1e7afac7a99f1b7c50e9115890342",
+        "statement_count": 1,
+        "version": "20260808223136"
+      },
+      {
+        "name": "b4_standby_matrix_setting",
+        "sql_bytes": 1476,
+        "sql_md5": "b8348f69ace2f05466c14efef6830eac",
+        "statement_count": 1,
+        "version": "20260808224450"
+      },
+      {
+        "name": "b4_deduplicate_published_company_calendar",
+        "sql_bytes": 3996,
+        "sql_md5": "e274c89b3660499a9209e9286e585a70",
+        "statement_count": 1,
+        "version": "20260808231648"
+      },
+      {
+        "name": "b4_deduplicate_company_calendar_logical_locations",
+        "sql_bytes": 3811,
+        "sql_md5": "64cbcc360a1d16402cd14ae24a3bcd30",
+        "statement_count": 1,
+        "version": "20260808231808"
+      },
+      {
+        "name": "b4_company_publication_preflight_and_event_ranges",
+        "sql_bytes": 8288,
+        "sql_md5": "2ba1fd209c4fad10d5a8930381480a77",
+        "statement_count": 1,
+        "version": "20260809022138"
+      },
+      {
+        "name": "b4_company_preflight_grouped_severity",
+        "sql_bytes": 4108,
+        "sql_md5": "f47c11797a628b0f55d4c5afcb8ecd2f",
+        "statement_count": 1,
+        "version": "20260809022302"
+      },
+      {
+        "name": "b4_role_composite_demanded_role_guard",
+        "sql_bytes": 1570,
+        "sql_md5": "fdc92235822911699147cb6127e4d0dc",
+        "statement_count": 1,
+        "version": "20260809135329"
+      },
+      {
+        "name": "b4plus_b5_recovery_center",
+        "sql_bytes": 52289,
+        "sql_md5": "a10fd81b66e5d362a7e6203d8670a6c9",
+        "statement_count": 1,
+        "version": "20260810015217"
+      },
+      {
+        "name": "b5_recovery_draft_application",
+        "sql_bytes": 15444,
+        "sql_md5": "777303d5080babf3a4341400fa1303bc",
+        "statement_count": 1,
+        "version": "20260810015226"
+      },
+      {
+        "name": "b5_recovery_draft_selection_fix",
+        "sql_bytes": 6724,
+        "sql_md5": "005fb84dc9c8c73402e89cafb2bcfac7",
+        "statement_count": 1,
+        "version": "20260810092654"
+      },
+      {
+        "name": "b5_recovery_candidate_parity_fix",
+        "sql_bytes": 8196,
+        "sql_md5": "93dad85762c44f6e9e85732bd70a8f65",
+        "statement_count": 1,
+        "version": "20260810093019"
+      },
+      {
+        "name": "b4_b5_published_role_composite_selection_continuity",
+        "sql_bytes": 5585,
+        "sql_md5": "f99c0282b6a62e708358d160ab7f4b41",
+        "statement_count": 1,
+        "version": "20260810150416"
+      },
+      {
+        "name": "uat_quick_start_import_identity_reconnect",
+        "sql_bytes": 16855,
+        "sql_md5": "6f1e7fb23777da294dfb536d9644087d",
+        "statement_count": 1,
+        "version": "20260810170347"
+      },
+      {
+        "name": "uat_import_reconnect_preserved_profiles",
+        "sql_bytes": 4980,
+        "sql_md5": "3e88351480680dad749a7975b347723c",
+        "statement_count": 1,
+        "version": "20260810170625"
+      },
+      {
+        "name": "uat_team_import_relation_and_timeout_fix",
+        "sql_bytes": 5425,
+        "sql_md5": "dded4ca7022e97e02e9b0eaf5448d4b1",
+        "statement_count": 1,
+        "version": "20260810200728"
+      },
+      {
+        "name": "uat_guided_onboarding_import_order_fix",
+        "sql_bytes": 10548,
+        "sql_md5": "3704adee34a74a9365e4124fc3d2a82d",
+        "statement_count": 1,
+        "version": "20260810214634"
+      },
+      {
+        "name": "uat_publication_company_timezone_fix",
+        "sql_bytes": 1684,
+        "sql_md5": "7a0e798247b285686c62f49b0574b9c9",
+        "statement_count": 1,
+        "version": "20260810235635"
+      },
+      {
+        "name": "uat_application_access_and_full_reset",
+        "sql_bytes": 15078,
+        "sql_md5": "18875ec76f7b7bdd8855c74e63ac3e0f",
+        "statement_count": 1,
+        "version": "20260811001227"
+      },
+      {
+        "name": "b4f_publication_overnight_diagnostics",
+        "sql_bytes": 4352,
+        "sql_md5": "0bcd3969d02464b79f7081fda76f93e3",
+        "statement_count": 1,
+        "version": "20260812145147"
+      },
+      {
+        "name": "b4f_duty_only_shift_demand_fix",
+        "sql_bytes": 7419,
+        "sql_md5": "6ccd7bd0742a95c0732cd051588531ef",
+        "statement_count": 1,
+        "version": "20260812151521"
+      },
+      {
+        "name": "b4f_shift_scoped_role_duty_minima",
+        "sql_bytes": 7412,
+        "sql_md5": "e08dc996c4501dbd14329ddc963c9623",
+        "statement_count": 1,
+        "version": "20260812151838"
+      },
+      {
+        "name": "team_communication_uat",
+        "sql_bytes": 10807,
+        "sql_md5": "cc1fd43fef28e66c5cb9b6f2b4f3fb97",
+        "statement_count": 1,
+        "version": "20260812230958"
+      },
+      {
+        "name": "role_categories_workforce_semantics_receipt",
+        "sql_bytes": 604,
+        "sql_md5": "179a32b09011c7edc550a54889e34f1b",
+        "statement_count": 1,
+        "version": "20260812231031"
+      },
+      {
+        "name": "next_batch_rpc_security_hardening",
+        "sql_bytes": 1129,
+        "sql_md5": "d4f13601cddb78d66e4efb0d8baf60c7",
+        "statement_count": 1,
+        "version": "20260812231114"
+      },
+      {
+        "name": "b6_operational_programs_inventory_bridge",
+        "sql_bytes": 34208,
+        "sql_md5": "4a22f95bf683a2b1ed1d95c137064d97",
+        "statement_count": 1,
+        "version": "20260813150956"
+      },
+      {
+        "name": "b6_operational_programs_deny_direct_access",
+        "sql_bytes": 1083,
+        "sql_md5": "ef83e1953a8ccfa840ca3b40249c7bb7",
+        "statement_count": 1,
+        "version": "20260813151524"
+      },
+      {
+        "name": "uat_quick_start_self_import_defaults",
+        "sql_bytes": 10988,
+        "sql_md5": "205188c63162646be9febb8b2288d5e4",
+        "statement_count": 1,
+        "version": "20260813174335"
+      },
+      {
+        "name": "uat_team_import_category_order_fix",
+        "sql_bytes": 7527,
+        "sql_md5": "be3b41e36610a2aa991ae477d2998192",
+        "statement_count": 1,
+        "version": "20260813180504"
+      },
+      {
+        "name": "uat_role_category_code_resolution",
+        "sql_bytes": 2671,
+        "sql_md5": "e34c54559277e1f58fbf071264028605",
+        "statement_count": 1,
+        "version": "20260813181147"
+      },
+      {
+        "name": "uat_quick_start_preview_safe_delete",
+        "sql_bytes": 7516,
+        "sql_md5": "b9956d20df1d600cd69b44e15f72ac81",
+        "statement_count": 1,
+        "version": "20260813185432"
+      },
+      {
+        "name": "uat_employee_role_audit_columns",
+        "sql_bytes": 681,
+        "sql_md5": "a0809e7befc315d2daa45acb9df7e527",
+        "statement_count": 1,
+        "version": "20260813192428"
+      },
+      {
+        "name": "uat_initial_matrix_month_boundary",
+        "sql_bytes": 3492,
+        "sql_md5": "7f777363a90dcabb4c4bfe32180df21f",
+        "statement_count": 1,
+        "version": "20260813200850"
+      },
+      {
+        "name": "uat_role_category_month_boundary",
+        "sql_bytes": 1980,
+        "sql_md5": "538ff9f1bc47333259452a3816f29163",
+        "statement_count": 1,
+        "version": "20260813201309"
+      },
+      {
+        "name": "uat_optimizer_queue_transparency",
+        "sql_bytes": 2129,
+        "sql_md5": "4bcdccc714829c08ca1a320be6661bb8",
+        "statement_count": 1,
+        "version": "20260813214307"
+      },
+      {
+        "name": "uat_global_category_workload_and_import_diagnostics",
+        "sql_bytes": 9093,
+        "sql_md5": "6d26881c8f3ff29effbb582743957301",
+        "statement_count": 1,
+        "version": "20260813231018"
+      },
+      {
+        "name": "uat_access_draft_shared_coverage_and_solver_release",
+        "sql_bytes": 15554,
+        "sql_md5": "621540fa06d63cb1b7b6cf4fbe76ded2",
+        "statement_count": 1,
+        "version": "20260815014944"
+      },
+      {
+        "name": "uat_idempotent_current_draft_discard",
+        "sql_bytes": 2599,
+        "sql_md5": "af03540dce9731b68296665c7b2d7fcc",
+        "statement_count": 1,
+        "version": "20260815073123"
+      },
+      {
+        "name": "uat_revert_unapproved_shared_coverage",
+        "sql_bytes": 7716,
+        "sql_md5": "368702ce3797d97cff6aac6701e11397",
+        "statement_count": 1,
+        "version": "20260815073142"
+      },
+      {
+        "name": "uat_full_import_explicit_role_order",
+        "sql_bytes": 3718,
+        "sql_md5": "93239f1b2232a437b235b683461d6674",
+        "statement_count": 1,
+        "version": "20260815073155"
+      },
+      {
+        "name": "uat_role_composite_category_fallback",
+        "sql_bytes": 2057,
+        "sql_md5": "645490655a6c4a40d0124c8c48d00dee",
+        "statement_count": 1,
+        "version": "20260815073204"
+      },
+      {
+        "name": "uat_matrix_draft_cascade_guard_fix",
+        "sql_bytes": 1561,
+        "sql_md5": "7cf2e3d697a03b4c6c39c0ec848484a5",
+        "statement_count": 1,
+        "version": "20260815074020"
+      },
+      {
+        "name": "uat_matrix_workforce_draft_cascade_guard_fix",
+        "sql_bytes": 1430,
+        "sql_md5": "2be50511eb5f95c392b2794412cb824b",
+        "statement_count": 1,
+        "version": "20260815074504"
+      },
+      {
+        "name": "uat_full_import_empty_dictionary_rows",
+        "sql_bytes": 2630,
+        "sql_md5": "5f1dfadabd3bae732ba8299322a5382c",
+        "statement_count": 6,
+        "version": "20260815133914"
+      },
+      {
+        "name": "uat_discard_draft_ad_hoc_fk_fix",
+        "sql_bytes": 3151,
+        "sql_md5": "f1a683399643904b26e65ee55fad0775",
+        "statement_count": 1,
+        "version": "20260815212844"
+      },
+      {
+        "name": "consolidated_uat_overtime_budget_and_composite",
+        "sql_bytes": 32369,
+        "sql_md5": "cf95aad2f205dbd5e09913237d232346",
+        "statement_count": 54,
+        "version": "20260816001553"
+      },
+      {
+        "name": "leader_overtime_approval_uat",
+        "sql_bytes": 11317,
+        "sql_md5": "c908057567de7aa2e4054dde37376283",
+        "statement_count": 9,
+        "version": "20260816004500"
+      },
+      {
+        "name": "configurable_category_standby_groups_uat",
+        "sql_bytes": 24661,
+        "sql_md5": "6b8781216e0a849cf6c269c707bf2f8f",
+        "statement_count": 17,
+        "version": "20260816010000"
+      },
+      {
+        "name": "uat_ad_hoc_export_role_projection",
+        "sql_bytes": 1790,
+        "sql_md5": "6e01ebf80c5efba56a7b227ffbe87b33",
+        "statement_count": 1,
+        "version": "20260816040829"
+      },
+      {
+        "name": "b4f_category_composite_publication",
+        "sql_bytes": 12818,
+        "sql_md5": "93171f23713e028bf0f2a780bf5e9988",
+        "statement_count": 1,
+        "version": "20260816055152"
+      },
+      {
+        "name": "b4f_category_composite_consistency_guard",
+        "sql_bytes": 2608,
+        "sql_md5": "9869f400db17e1db2699931f6f08ca5d",
+        "statement_count": 1,
+        "version": "20260816060123"
+      },
+      {
+        "name": "uat_category_snapshot_employee_reference_guard",
+        "sql_bytes": 2315,
+        "sql_md5": "c25339cf55caeefdc261d6e7aed051f9",
+        "statement_count": 1,
+        "version": "20260816070417"
+      },
+      {
+        "name": "uat_variant_daily_limit_period_guard",
+        "sql_bytes": 5059,
+        "sql_md5": "9438ea47848969481a1176554e427d0f",
+        "statement_count": 1,
+        "version": "20260816072455"
+      },
+      {
+        "name": "simplified_workbook_role_semantics_uat",
+        "sql_bytes": 4645,
+        "sql_md5": "58a5eac003e6d631c90fc3b68aeddc49",
+        "statement_count": 1,
+        "version": "20260816164645"
+      },
+      {
+        "name": "explicit_employee_roles_only_uat",
+        "sql_bytes": 2468,
+        "sql_md5": "1d4d2bb85c4bb38a2493f6913baccefe",
+        "statement_count": 1,
+        "version": "20260816170754"
+      },
+      {
+        "name": "uat052_availability_local_date_contract",
+        "sql_bytes": 5305,
+        "sql_md5": "853bb6a87e3c53a4156d7de1ec1c0a66",
+        "statement_count": 1,
+        "version": "20260817152017"
+      },
+      {
+        "name": "b4f79_local_date_workload_diagnostics",
+        "sql_bytes": 7724,
+        "sql_md5": "8ca52d9b393bf5eaafad84bf6b13f7ee",
+        "statement_count": 4,
+        "version": "20260817202257"
+      },
+      {
+        "name": "b4f79_local_date_workload_diagnostics",
+        "sql_bytes": 7731,
+        "sql_md5": "b097a03b109c34d05f888211ed6242f4",
+        "statement_count": 1,
+        "version": "20260818081240"
+      },
+      {
+        "name": "b4f95_leader_assignment_dry_run",
+        "sql_bytes": 1734,
+        "sql_md5": "eaef8c2e83ae95766179c634c84aedd3",
+        "statement_count": 1,
+        "version": "20260818081253"
+      },
+      {
+        "name": "b4f91_weekly_work_patterns",
+        "sql_bytes": 15756,
+        "sql_md5": "991c7b548d00051a264760c3ee81f508",
+        "statement_count": 1,
+        "version": "20260818081308"
+      },
+      {
+        "name": "b4f88_full_employer_cost_engine",
+        "sql_bytes": 15132,
+        "sql_md5": "0c029c35ac7ad1601121cd642703c700",
+        "statement_count": 1,
+        "version": "20260818081410"
+      },
+      {
+        "name": "b4f93_manual_leader_studio",
+        "sql_bytes": 7499,
+        "sql_md5": "148a900ab11be05f671e91ff79783d87",
+        "statement_count": 1,
+        "version": "20260818082747"
+      },
+      {
+        "name": "b4f93_authoritative_external_assignments",
+        "sql_bytes": 3742,
+        "sql_md5": "7784fec194761ac554e3b061af732a13",
+        "statement_count": 1,
+        "version": "20260818183559"
+      },
+      {
+        "name": "studio_finance_visibility_policy",
+        "sql_bytes": 4395,
+        "sql_md5": "dd740b202f5f0c61c875ab063772983f",
+        "statement_count": 1,
+        "version": "20260818191340"
+      },
+      {
+        "name": "leader_studio_atomic_batch",
+        "sql_bytes": 3303,
+        "sql_md5": "a0a85d31c713aef2d04728867aadb204",
+        "statement_count": 1,
+        "version": "20260818193909"
+      },
+      {
+        "name": "rollback_rejected_leader_studio_batch",
+        "sql_bytes": 219,
+        "sql_md5": "50088c3ed28d73422b00b3da0c17db27",
+        "statement_count": 1,
+        "version": "20260818195212"
+      },
+      {
+        "name": "leader_studio_history",
+        "sql_bytes": 9287,
+        "sql_md5": "88845178c9ade2883cf04876971ac55f",
+        "statement_count": 1,
+        "version": "20260818201913"
+      },
+      {
+        "name": "leader_studio_history_backfill",
+        "sql_bytes": 713,
+        "sql_md5": "e4492719398d1346bfaa84470226f8c9",
+        "statement_count": 1,
+        "version": "20260818202005"
+      },
+      {
+        "name": "leader_studio_atomic_drag_operations",
+        "sql_bytes": 6770,
+        "sql_md5": "9233341107088ddf6c0e0da4d0bec1f2",
+        "statement_count": 1,
+        "version": "20260818203236"
+      },
+      {
+        "name": "leader_studio_assignment_lock",
+        "sql_bytes": 1858,
+        "sql_md5": "6139a22c851ea403c0ec2eb581912510",
+        "statement_count": 1,
+        "version": "20260818203919"
+      },
+      {
+        "name": "leader_studio_drag_preflight",
+        "sql_bytes": 1274,
+        "sql_md5": "598b16a0982065af728cfae9ca16ea23",
+        "statement_count": 1,
+        "version": "20260818204714"
+      },
+      {
+        "name": "leader_studio_workflow",
+        "sql_bytes": 4748,
+        "sql_md5": "5debc741a7c691d00545c8e13f3b080d",
+        "statement_count": 1,
+        "version": "20260818205724"
+      },
+      {
+        "name": "leader_studio_bulk_assignments",
+        "sql_bytes": 3723,
+        "sql_md5": "8b4d35549b2bcbd780ac3cda45927b71",
+        "statement_count": 1,
+        "version": "20260818210623"
+      },
+      {
+        "name": "b4f83_scoped_availability_summary",
+        "sql_bytes": 7329,
+        "sql_md5": "5dbac506628e18cc439faf6758f52237",
+        "statement_count": 1,
+        "version": "20260818214442"
+      },
+      {
+        "name": "b4f100_leader_refill_remaining",
+        "sql_bytes": 7638,
+        "sql_md5": "00e302fb0931f736b150a7fac62efa74",
+        "statement_count": 1,
+        "version": "20260818220459"
+      },
+      {
+        "name": "b4f89_role_aware_event_shifts",
+        "sql_bytes": 5795,
+        "sql_md5": "af066fef89c0de10f8ebe20972cfea99",
+        "statement_count": 10,
+        "version": "20260818231501"
+      },
+      {
+        "name": "b4f101_server_finance_redaction",
+        "sql_bytes": 13703,
+        "sql_md5": "f9de4f74b9f86d7f90bf4323d26a986e",
+        "statement_count": 1,
+        "version": "20260818234847"
+      },
+      {
+        "name": "b4f95_final_draft_validation",
+        "sql_bytes": 4717,
+        "sql_md5": "fe98d40208058d0a1c25b81a7cfab1ac",
+        "statement_count": 1,
+        "version": "20260818235432"
+      },
+      {
+        "name": "b4f101_close_legacy_finance_routes",
+        "sql_bytes": 5836,
+        "sql_md5": "a2955a8c1432874732e97eb422d37c05",
+        "statement_count": 1,
+        "version": "20260819000047"
+      },
+      {
+        "name": "b4f100_leader_named_checkpoints",
+        "sql_bytes": 6804,
+        "sql_md5": "87221586ad0b45e9bfbbd2ea8afd45fe",
+        "statement_count": 9,
+        "version": "20260819065501"
+      },
+      {
+        "name": "b4f100_leader_refill_run_contract",
+        "sql_bytes": 4108,
+        "sql_md5": "978e96ebde826f6ca7835d8da0f387ed",
+        "statement_count": 5,
+        "version": "20260819070912"
+      },
+      {
+        "name": "b4f100_leader_reoptimization_modes",
+        "sql_bytes": 13059,
+        "sql_md5": "1b9c949e180e19c7bed050ac3424cc35",
+        "statement_count": 7,
+        "version": "20260819072223"
+      },
+      {
+        "name": "b4f100_leader_history_identity_restore",
+        "sql_bytes": 7090,
+        "sql_md5": "1f4a7d7fa40825e4fa981d5c9b41bf09",
+        "statement_count": 7,
+        "version": "20260819074736"
+      },
+      {
+        "name": "b4f100_leader_optimizer_input_hash",
+        "sql_bytes": 9222,
+        "sql_md5": "bb6ecb852d5bb23fdf5a431d31f2b344",
+        "statement_count": 1,
+        "version": "20260819082931"
+      },
+      {
+        "name": "b4f101_enforce_ready_to_merge_publication",
+        "sql_bytes": 19360,
+        "sql_md5": "c9013c47ff885574b6b6a4a3feeedd17",
+        "statement_count": 18,
+        "version": "20260819130000"
+      },
+      {
+        "name": "b4f100_standby_preview_contract_cleanup",
+        "sql_bytes": 6244,
+        "sql_md5": "d0073179546d676ba397c53d89cb9ee6",
+        "statement_count": 5,
+        "version": "20260819132000"
+      },
+      {
+        "name": "b4f52_close_remaining_finance_routes",
+        "sql_bytes": 7984,
+        "sql_md5": "b1cec1389c48d7b8c5f26c03cca0c882",
+        "statement_count": 17,
+        "version": "20260819150415"
+      },
+      {
+        "name": "b4f74_leader_impact_summary",
+        "sql_bytes": 14859,
+        "sql_md5": "2aa81d8e5c63d18a6884cd4ee4138b2f",
+        "statement_count": 4,
+        "version": "20260819183425"
+      },
+      {
+        "name": "b4f87_employee_category_calendar",
+        "sql_bytes": 6880,
+        "sql_md5": "22f8dedc31efb0c6d2d8b678066c338f",
+        "statement_count": 6,
+        "version": "20260819200000"
+      },
+      {
+        "name": "mx_k10_exact_shift_demand_only",
+        "sql_bytes": 16066,
+        "sql_md5": "74f28e423358ed71b1cabfcf6e799cef",
+        "statement_count": 1,
+        "version": "20260820170619"
+      },
+      {
+        "name": "f4_employment_pay_rate_bidirectional_invariant",
+        "sql_bytes": 8003,
+        "sql_md5": "b1d7aac306046502769f05c5b715c113",
+        "statement_count": 1,
+        "version": "20260820170629"
+      },
+      {
+        "name": "b4f115_b4f118_configuration_guidance_and_shift_colors",
+        "sql_bytes": 4975,
+        "sql_md5": "4beaa1ca54010b038024ca2b52a28151",
+        "statement_count": 1,
+        "version": "20260820192755"
+      },
+      {
+        "name": "b4f121_atomic_leader_publication",
+        "sql_bytes": 3560,
+        "sql_md5": "23dda2d90e2bec25e3e4954ee1600875",
+        "statement_count": 1,
+        "version": "20260820192806"
+      },
+      {
+        "name": "b4f131_b4f138_profiles_requests_notifications",
+        "sql_bytes": 42724,
+        "sql_md5": "8b1d25ffb267c06379957e3e31adb476",
+        "statement_count": 1,
+        "version": "20260821013310"
+      },
+      {
+        "name": "employee_action_center_swap_notifications",
+        "sql_bytes": 17509,
+        "sql_md5": "6b36e00024a5c649c54990e99e84a838",
+        "statement_count": 1,
+        "version": "20260821023310"
+      },
+      {
+        "name": "b4f146_expand_cat_avatar_catalog",
+        "sql_bytes": 2861,
+        "sql_md5": "485010ae9d794b571ba4d26ceea92f35",
+        "statement_count": 1,
+        "version": "20260821025820"
+      },
+      {
+        "name": "b4f164_overtime_policy_validation",
+        "sql_bytes": 12758,
+        "sql_md5": "b22251b318dee43aa2d191ef0cdc096a",
+        "statement_count": 11,
+        "version": "20260822083354"
+      },
+      {
+        "name": "b4f166_stage_proof_version_stamp",
+        "sql_bytes": 12437,
+        "sql_md5": "7e99e385d6788fbf505015107a8bc704",
+        "statement_count": 1,
+        "version": "20260822165134"
+      },
+      {
+        "name": "b4f166_postgres_version_stamp_regex_fix",
+        "sql_bytes": 2431,
+        "sql_md5": "318681fbcd9053a8e92c7a91a228cf5d",
+        "statement_count": 1,
+        "version": "20260822165913"
+      },
+      {
+        "name": "b4f168_remove_obsolete_solver_metadata",
+        "sql_bytes": 8816,
+        "sql_md5": "994f389cc4eb4292563314ea436859c9",
+        "statement_count": 11,
+        "version": "20260822200000"
+      },
+      {
+        "name": "b4f168_database_stamp",
+        "sql_bytes": 3273,
+        "sql_md5": "247d362da48c86a094a6bf5fde4dc402",
+        "statement_count": 9,
+        "version": "20260822203000"
+      },
+      {
+        "name": "b4f170_fairness_target_best_valid_fallback",
+        "sql_bytes": 14990,
+        "sql_md5": "c9e4cc7f5e1c3582aeed2ad61b35aae2",
+        "statement_count": 21,
+        "version": "20260824160525"
+      },
+      {
+        "name": "uat_northflank_job_runtime",
+        "sql_bytes": 72740,
+        "sql_md5": "b62070eb2f8fbdd71d2e3abe18cd8b95",
+        "statement_count": 103,
+        "version": "20260824182754"
+      },
+      {
+        "name": "uat_northflank_job_gateway_regex_fix",
+        "sql_bytes": 881,
+        "sql_md5": "31721f7da10dff2a8bef038f4c52a6e0",
+        "statement_count": 1,
+        "version": "20260824183338"
+      },
+      {
+        "name": "uat_northflank_job_contract_probe_hash_fix",
+        "sql_bytes": 2062,
+        "sql_md5": "97230fde4712ffd2b72c7a261e8f1c3b",
+        "statement_count": 1,
+        "version": "20260824183525"
+      },
+      {
+        "name": "uat_northflank_job_stamp_schema_immutable",
+        "sql_bytes": 1782,
+        "sql_md5": "3bc532cfa64f598de13a39c56a20e776",
+        "statement_count": 1,
+        "version": "20260824183905"
+      },
+      {
+        "name": "uat_northflank_job_gate_b_probe",
+        "sql_bytes": 11286,
+        "sql_md5": "f9d4f4fe0c1e554c4c4d71198597c93b",
+        "statement_count": 1,
+        "version": "20260824184140"
+      },
+      {
+        "name": "uat_northflank_job_outbox_scope_index",
+        "sql_bytes": 330,
+        "sql_md5": "092d87742b0c0da0f4c620fd75d443fa",
+        "statement_count": 1,
+        "version": "20260824190050"
+      },
+      {
+        "name": "uat_northflank_job_mode_provenance",
+        "sql_bytes": 8756,
+        "sql_md5": "f92ca8622eb94de5b152ebe59131623f",
+        "statement_count": 1,
+        "version": "20260824215911"
+      },
+      {
+        "name": "b4f171_first_run_access_guards",
+        "sql_bytes": 14384,
+        "sql_md5": "09673f9a8073281b038126292fcd6299",
+        "statement_count": 1,
+        "version": "20260824225120"
+      },
+      {
+        "name": "b4f173_workbook_identity_guard",
+        "sql_bytes": 4796,
+        "sql_md5": "2f773de547dd31d88755613910906a0d",
+        "statement_count": 1,
+        "version": "20260824233055"
+      },
+      {
+        "name": "resource_scoped_manager_authorization",
+        "sql_bytes": 28727,
+        "sql_md5": "9f849f26a64d7387d0a0db8dac873b0f",
+        "statement_count": 47,
+        "version": "20260826140255"
+      },
+      {
+        "name": "employee_workspace_privacy",
+        "sql_bytes": 7186,
+        "sql_md5": "ef5af6cf509c3a5c30f4b45a18c96456",
+        "statement_count": 1,
+        "version": "20260826201603"
+      },
+      {
+        "name": "explicit_anonymous_schedule_hardening",
+        "sql_bytes": 1307,
+        "sql_md5": "7514a3362c33743bddd4947d07d5562e",
+        "statement_count": 1,
+        "version": "20260826210712"
+      },
+      {
+        "name": "restore_frontend_rpc_parity",
+        "sql_bytes": 5771,
+        "sql_md5": "210a5e84e48a83e08fa957c0da680755",
+        "statement_count": 1,
+        "version": "20260826224321"
+      },
+      {
+        "name": "phase4a1_scoped_manager_security_hardening",
+        "sql_bytes": 12741,
+        "sql_md5": "5b3314f037f2c3bff2b9b04a869f910b",
+        "statement_count": 1,
+        "version": "20260827160000"
+      }
+    ]
+  },
+  "comparison": {
+    "counts": {
+      "source_migrations": 224,
+      "live_ledger_rows": 254,
+      "same_version_and_name": 45,
+      "same_name_different_version": 131,
+      "same_name_different_version_content_equal": 90,
+      "same_name_different_version_content_drift": 41,
+      "source_only_names": 48,
+      "live_only_names": 82,
+      "source_version_conflicts": 0,
+      "live_version_conflicts": 0
+    },
+    "same_name_different_version": [
+      {
+        "name": "optimizer_engine",
+        "source_version": "20260801125729",
+        "live_version": "0009",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 129,
+        "live_bytes": 32
+      },
+      {
+        "name": "optimizer_profile_names",
+        "source_version": "20260801125849",
+        "live_version": "0010",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 129,
+        "live_bytes": 32
+      },
+      {
+        "name": "optimizer_v3_quality_and_variants",
+        "source_version": "20260801181321",
+        "live_version": "0013",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 129,
+        "live_bytes": 32
+      },
+      {
+        "name": "optimizer_v3_finalize_ambiguity",
+        "source_version": "20260801181939",
+        "live_version": "0014",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 129,
+        "live_bytes": 32
+      },
+      {
+        "name": "optimizer_v4_resumable_materialization",
+        "source_version": "20260801182800",
+        "live_version": "0015",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 129,
+        "live_bytes": 32
+      },
+      {
+        "name": "alpha16_workforce_and_operational_contracts",
+        "source_version": "20260802064028",
+        "live_version": "20260802074630",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 61518,
+        "live_bytes": 58757
+      },
+      {
+        "name": "alpha16_operational_diagnostics_and_overrides",
+        "source_version": "20260802064826",
+        "live_version": "20260802074642",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 40355,
+        "live_bytes": 29124
+      },
+      {
+        "name": "alpha16_retire_alpha15_runtime_writes",
+        "source_version": "20260802065600",
+        "live_version": "20260802080812",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 3690,
+        "live_bytes": 3402
+      },
+      {
+        "name": "role_schedule_fk_indexes",
+        "source_version": "20260804090000",
+        "live_version": "20260804114325",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 761,
+        "live_bytes": 761
+      },
+      {
+        "name": "uat_data_integrity_and_availability",
+        "source_version": "20260804120000",
+        "live_version": "20260804091704",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 101201,
+        "live_bytes": 101201
+      },
+      {
+        "name": "reassert_canonical_slot_contract",
+        "source_version": "20260804153000",
+        "live_version": "20260804104415",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 3792,
+        "live_bytes": 3138
+      },
+      {
+        "name": "runtime_contract_guard_v2",
+        "source_version": "20260804154500",
+        "live_version": "20260804114146",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3005,
+        "live_bytes": 3005
+      },
+      {
+        "name": "uat_import_contract_repair",
+        "source_version": "20260804170000",
+        "live_version": "20260804144603",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 10793,
+        "live_bytes": 10696
+      },
+      {
+        "name": "uat_import_identity_repair",
+        "source_version": "20260804170500",
+        "live_version": "20260804145316",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 11932,
+        "live_bytes": 11813
+      },
+      {
+        "name": "schedule_publication_authority",
+        "source_version": "20260804171000",
+        "live_version": "20260804145534",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 11310,
+        "live_bytes": 8704
+      },
+      {
+        "name": "standby_tiers_and_activation",
+        "source_version": "20260804172000",
+        "live_version": "20260804150008",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 29093,
+        "live_bytes": 27463
+      },
+      {
+        "name": "standby_eligibility_repair",
+        "source_version": "20260804172500",
+        "live_version": "20260804150554",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 14020,
+        "live_bytes": 14021
+      },
+      {
+        "name": "operational_events_hot_days",
+        "source_version": "20260804173000",
+        "live_version": "20260804151716",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 25115,
+        "live_bytes": 25115
+      },
+      {
+        "name": "shift_swap_board",
+        "source_version": "20260804173500",
+        "live_version": "20260804151730",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 27718,
+        "live_bytes": 27718
+      },
+      {
+        "name": "uat_portal_operational_context",
+        "source_version": "20260804174000",
+        "live_version": "20260804152610",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 7340,
+        "live_bytes": 7340
+      },
+      {
+        "name": "business_strategy_priorities",
+        "source_version": "20260804174500",
+        "live_version": "20260804153920",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4139,
+        "live_bytes": 4139
+      },
+      {
+        "name": "employment_date_guardrails",
+        "source_version": "20260804175000",
+        "live_version": "20260804153841",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2899,
+        "live_bytes": 2899
+      },
+      {
+        "name": "availability_leader_summary",
+        "source_version": "20260804175500",
+        "live_version": "20260804154224",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5005,
+        "live_bytes": 5005
+      },
+      {
+        "name": "isolated_uat_workforce_reset",
+        "source_version": "20260804180000",
+        "live_version": "20260804154441",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4804,
+        "live_bytes": 4804
+      },
+      {
+        "name": "isolated_uat_master_persona",
+        "source_version": "20260804180500",
+        "live_version": "20260804160432",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 23613,
+        "live_bytes": 23613
+      },
+      {
+        "name": "uat_master_publication_conflict_context",
+        "source_version": "20260804181000",
+        "live_version": "20260804160605",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5921,
+        "live_bytes": 5921
+      },
+      {
+        "name": "uat_master_availability_review_fix",
+        "source_version": "20260804181500",
+        "live_version": "20260804160745",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4881,
+        "live_bytes": 4881
+      },
+      {
+        "name": "reassert_final_canonical_slot_contract",
+        "source_version": "20260804182000",
+        "live_version": "20260804164900",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 3701,
+        "live_bytes": 3429
+      },
+      {
+        "name": "import_rate_activation_contract",
+        "source_version": "20260804182500",
+        "live_version": "20260804171112",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5221,
+        "live_bytes": 5221
+      },
+      {
+        "name": "inactive_location_grant_contract",
+        "source_version": "20260804183000",
+        "live_version": "20260804171215",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 760,
+        "live_bytes": 760
+      },
+      {
+        "name": "reassert_contract_snapshot_and_validator",
+        "source_version": "20260804183500",
+        "live_version": "20260804172551",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5553,
+        "live_bytes": 5553
+      },
+      {
+        "name": "primary_shift_sequence_invariants",
+        "source_version": "20260804210000",
+        "live_version": "20260804214347",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 7239,
+        "live_bytes": 7669
+      },
+      {
+        "name": "canonical_shift_occurrence_id",
+        "source_version": "20260804223000",
+        "live_version": "20260804215508",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1810,
+        "live_bytes": 1810
+      },
+      {
+        "name": "sequence_validator_template_count",
+        "source_version": "20260804224500",
+        "live_version": "20260804215956",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 570,
+        "live_bytes": 570
+      },
+      {
+        "name": "manager_standby_workspace",
+        "source_version": "20260805003000",
+        "live_version": "20260804222536",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1646,
+        "live_bytes": 1646
+      },
+      {
+        "name": "diagnostic_hard_rules_and_actions",
+        "source_version": "20260805010000",
+        "live_version": "20260804224245",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 18337,
+        "live_bytes": 17700
+      },
+      {
+        "name": "diagnostic_role_scope",
+        "source_version": "20260805010500",
+        "live_version": "20260804224712",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4773,
+        "live_bytes": 4773
+      },
+      {
+        "name": "uat006_critical_workflow_repairs",
+        "source_version": "20260805100000",
+        "live_version": "20260805012710",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 33670,
+        "live_bytes": 33670
+      },
+      {
+        "name": "uat006_merge_preview_uuid_fix",
+        "source_version": "20260805113000",
+        "live_version": "20260805013348",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 6948,
+        "live_bytes": 6948
+      },
+      {
+        "name": "uat006_operational_empty_workspace_contract",
+        "source_version": "20260805124500",
+        "live_version": "20260805044217",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3244,
+        "live_bytes": 3244
+      },
+      {
+        "name": "atomic_company_publication_resolution",
+        "source_version": "20260805133000",
+        "live_version": "20260805095913",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3328,
+        "live_bytes": 3328
+      },
+      {
+        "name": "uat006_required_role_duty_minimum_repair",
+        "source_version": "20260805142000",
+        "live_version": "20260805101322",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1657,
+        "live_bytes": 1657
+      },
+      {
+        "name": "uat006_atomic_duty_archive_and_shift_period",
+        "source_version": "20260805150000",
+        "live_version": "20260805101821",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5910,
+        "live_bytes": 5910
+      },
+      {
+        "name": "uat006_unified_shift_staffing_workflow",
+        "source_version": "20260805170000",
+        "live_version": "20260805143837",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 6607,
+        "live_bytes": 6609
+      },
+      {
+        "name": "uat_finance_import_and_variant_preview",
+        "source_version": "20260806100000",
+        "live_version": "20260806005217",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 46708,
+        "live_bytes": 46708
+      },
+      {
+        "name": "b4_role_overview_repair",
+        "source_version": "20260806113000",
+        "live_version": "20260806012212",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 3904,
+        "live_bytes": 3662
+      },
+      {
+        "name": "b4_full_company_roundtrip",
+        "source_version": "20260806133000",
+        "live_version": "20260806020526",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 24181,
+        "live_bytes": 22607
+      },
+      {
+        "name": "b4_full_import_preview_rate_warning_fix",
+        "source_version": "20260806150000",
+        "live_version": "20260806084726",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 6961,
+        "live_bytes": 6961
+      },
+      {
+        "name": "b4_leader_variant_and_demand_profiles",
+        "source_version": "20260806173000",
+        "live_version": "20260806161654",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 31515,
+        "live_bytes": 31515
+      },
+      {
+        "name": "b4_full_import_idempotency",
+        "source_version": "20260806190000",
+        "live_version": "20260806173216",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3300,
+        "live_bytes": 3300
+      },
+      {
+        "name": "b4_diagnostics_and_role_publication_fix",
+        "source_version": "20260806213000",
+        "live_version": "20260806193814",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4960,
+        "live_bytes": 4959
+      },
+      {
+        "name": "b4_workload_distribution",
+        "source_version": "20260806220000",
+        "live_version": "20260806194325",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 7046,
+        "live_bytes": 7035
+      },
+      {
+        "name": "b4_workload_distribution_interval_fix",
+        "source_version": "20260806221500",
+        "live_version": "20260806194426",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 645,
+        "live_bytes": 645
+      },
+      {
+        "name": "b4_fair_distribution_priority",
+        "source_version": "20260806233000",
+        "live_version": "20260806232101",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2203,
+        "live_bytes": 2202
+      },
+      {
+        "name": "b4_strategy_compute_budget",
+        "source_version": "20260807001500",
+        "live_version": "20260807001217",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 805,
+        "live_bytes": 804
+      },
+      {
+        "name": "b4_leader_limit_override_and_candidate_context",
+        "source_version": "20260807090000",
+        "live_version": "20260807012758",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 18342,
+        "live_bytes": 18342
+      },
+      {
+        "name": "b4_standby_fairness_v3",
+        "source_version": "20260807151000",
+        "live_version": "20260807024200",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 15281,
+        "live_bytes": 15281
+      },
+      {
+        "name": "b4_swap_daily_limit_suggestions",
+        "source_version": "20260809150000",
+        "live_version": "20260808223136",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2443,
+        "live_bytes": 2442
+      },
+      {
+        "name": "b4_standby_matrix_setting",
+        "source_version": "20260809151000",
+        "live_version": "20260808224450",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 1705,
+        "live_bytes": 1476
+      },
+      {
+        "name": "b4_deduplicate_published_company_calendar",
+        "source_version": "20260809152000",
+        "live_version": "20260808231648",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 3996,
+        "live_bytes": 3996
+      },
+      {
+        "name": "b4_company_publication_preflight_and_event_ranges",
+        "source_version": "20260809160000",
+        "live_version": "20260809022138",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 8288,
+        "live_bytes": 8288
+      },
+      {
+        "name": "b4_company_preflight_grouped_severity",
+        "source_version": "20260809162000",
+        "live_version": "20260809022302",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4108,
+        "live_bytes": 4108
+      },
+      {
+        "name": "b4_role_composite_demanded_role_guard",
+        "source_version": "20260809173000",
+        "live_version": "20260809135329",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 1717,
+        "live_bytes": 1570
+      },
+      {
+        "name": "b4plus_b5_recovery_center",
+        "source_version": "20260809210000",
+        "live_version": "20260810015217",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 52227,
+        "live_bytes": 52227
+      },
+      {
+        "name": "b5_recovery_draft_application",
+        "source_version": "20260809223000",
+        "live_version": "20260810015226",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 15755,
+        "live_bytes": 15440
+      },
+      {
+        "name": "b5_recovery_draft_selection_fix",
+        "source_version": "20260810103000",
+        "live_version": "20260810092654",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 6724,
+        "live_bytes": 6724
+      },
+      {
+        "name": "b5_recovery_candidate_parity_fix",
+        "source_version": "20260810111500",
+        "live_version": "20260810093019",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 8157,
+        "live_bytes": 8157
+      },
+      {
+        "name": "uat_quick_start_import_identity_reconnect",
+        "source_version": "20260810200000",
+        "live_version": "20260810170347",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 16838,
+        "live_bytes": 16844
+      },
+      {
+        "name": "uat_import_reconnect_preserved_profiles",
+        "source_version": "20260810201500",
+        "live_version": "20260810170625",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4977,
+        "live_bytes": 4980
+      },
+      {
+        "name": "uat_team_import_relation_and_timeout_fix",
+        "source_version": "20260810223000",
+        "live_version": "20260810200728",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5425,
+        "live_bytes": 5425
+      },
+      {
+        "name": "uat_guided_onboarding_import_order_fix",
+        "source_version": "20260810234500",
+        "live_version": "20260810214634",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 10544,
+        "live_bytes": 10544
+      },
+      {
+        "name": "uat_publication_company_timezone_fix",
+        "source_version": "20260811235500",
+        "live_version": "20260810235635",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1685,
+        "live_bytes": 1684
+      },
+      {
+        "name": "uat_application_access_and_full_reset",
+        "source_version": "20260812001000",
+        "live_version": "20260811001227",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 15065,
+        "live_bytes": 15065
+      },
+      {
+        "name": "b4f_publication_overnight_diagnostics",
+        "source_version": "20260812173000",
+        "live_version": "20260812145147",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4439,
+        "live_bytes": 4326
+      },
+      {
+        "name": "b4f_duty_only_shift_demand_fix",
+        "source_version": "20260812194000",
+        "live_version": "20260812151521",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 7412,
+        "live_bytes": 7419
+      },
+      {
+        "name": "team_communication_uat",
+        "source_version": "20260812233000",
+        "live_version": "20260812230958",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 10837,
+        "live_bytes": 10805
+      },
+      {
+        "name": "next_batch_rpc_security_hardening",
+        "source_version": "20260813001000",
+        "live_version": "20260812231114",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 1360,
+        "live_bytes": 1129
+      },
+      {
+        "name": "b6_operational_programs_inventory_bridge",
+        "source_version": "20260813120000",
+        "live_version": "20260813150956",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 34201,
+        "live_bytes": 34201
+      },
+      {
+        "name": "b6_operational_programs_deny_direct_access",
+        "source_version": "20260813121000",
+        "live_version": "20260813151524",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 1310,
+        "live_bytes": 1083
+      },
+      {
+        "name": "uat_quick_start_self_import_defaults",
+        "source_version": "20260813143000",
+        "live_version": "20260813174335",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 10955,
+        "live_bytes": 10955
+      },
+      {
+        "name": "uat_team_import_category_order_fix",
+        "source_version": "20260813150000",
+        "live_version": "20260813180504",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 7528,
+        "live_bytes": 7527
+      },
+      {
+        "name": "uat_role_category_code_resolution",
+        "source_version": "20260813151000",
+        "live_version": "20260813181147",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2672,
+        "live_bytes": 2671
+      },
+      {
+        "name": "uat_quick_start_preview_safe_delete",
+        "source_version": "20260813170000",
+        "live_version": "20260813185432",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 7516,
+        "live_bytes": 7516
+      },
+      {
+        "name": "uat_employee_role_audit_columns",
+        "source_version": "20260813173000",
+        "live_version": "20260813192428",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 913,
+        "live_bytes": 681
+      },
+      {
+        "name": "uat_initial_matrix_month_boundary",
+        "source_version": "20260813221000",
+        "live_version": "20260813200850",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4389,
+        "live_bytes": 3492
+      },
+      {
+        "name": "uat_role_category_month_boundary",
+        "source_version": "20260813222000",
+        "live_version": "20260813201309",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 2208,
+        "live_bytes": 1980
+      },
+      {
+        "name": "uat_optimizer_queue_transparency",
+        "source_version": "20260813234500",
+        "live_version": "20260813214307",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2130,
+        "live_bytes": 2129
+      },
+      {
+        "name": "uat_global_category_workload_and_import_diagnostics",
+        "source_version": "20260814013000",
+        "live_version": "20260813231018",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 9093,
+        "live_bytes": 9093
+      },
+      {
+        "name": "uat_access_draft_shared_coverage_and_solver_release",
+        "source_version": "20260815170000",
+        "live_version": "20260815014944",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 15554,
+        "live_bytes": 15554
+      },
+      {
+        "name": "uat_idempotent_current_draft_discard",
+        "source_version": "20260815183000",
+        "live_version": "20260815073123",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2599,
+        "live_bytes": 2599
+      },
+      {
+        "name": "uat_revert_unapproved_shared_coverage",
+        "source_version": "20260815190000",
+        "live_version": "20260815073142",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 7716,
+        "live_bytes": 7716
+      },
+      {
+        "name": "uat_full_import_explicit_role_order",
+        "source_version": "20260815191000",
+        "live_version": "20260815073155",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 5072,
+        "live_bytes": 3718
+      },
+      {
+        "name": "uat_role_composite_category_fallback",
+        "source_version": "20260815192000",
+        "live_version": "20260815073204",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2057,
+        "live_bytes": 2057
+      },
+      {
+        "name": "uat_matrix_draft_cascade_guard_fix",
+        "source_version": "20260815193000",
+        "live_version": "20260815074020",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1561,
+        "live_bytes": 1561
+      },
+      {
+        "name": "uat_matrix_workforce_draft_cascade_guard_fix",
+        "source_version": "20260815194000",
+        "live_version": "20260815074504",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1431,
+        "live_bytes": 1430
+      },
+      {
+        "name": "uat_discard_draft_ad_hoc_fk_fix",
+        "source_version": "20260815212630",
+        "live_version": "20260815212844",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3152,
+        "live_bytes": 3151
+      },
+      {
+        "name": "uat_ad_hoc_export_role_projection",
+        "source_version": "20260816013000",
+        "live_version": "20260816040829",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1790,
+        "live_bytes": 1790
+      },
+      {
+        "name": "b4f_category_composite_publication",
+        "source_version": "20260816065000",
+        "live_version": "20260816055152",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 12818,
+        "live_bytes": 12818
+      },
+      {
+        "name": "b4f_category_composite_consistency_guard",
+        "source_version": "20260816070500",
+        "live_version": "20260816060123",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2608,
+        "live_bytes": 2608
+      },
+      {
+        "name": "uat_category_snapshot_employee_reference_guard",
+        "source_version": "20260816080000",
+        "live_version": "20260816070417",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2315,
+        "live_bytes": 2315
+      },
+      {
+        "name": "uat_variant_daily_limit_period_guard",
+        "source_version": "20260816083000",
+        "live_version": "20260816072455",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 5371,
+        "live_bytes": 5059
+      },
+      {
+        "name": "simplified_workbook_role_semantics_uat",
+        "source_version": "20260816143413",
+        "live_version": "20260816164645",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4779,
+        "live_bytes": 4637
+      },
+      {
+        "name": "explicit_employee_roles_only_uat",
+        "source_version": "20260816183000",
+        "live_version": "20260816170754",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2469,
+        "live_bytes": 2468
+      },
+      {
+        "name": "uat052_availability_local_date_contract",
+        "source_version": "20260817150626",
+        "live_version": "20260817152017",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5298,
+        "live_bytes": 5298
+      },
+      {
+        "name": "b4f95_leader_assignment_dry_run",
+        "source_version": "20260817204500",
+        "live_version": "20260818081253",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1734,
+        "live_bytes": 1734
+      },
+      {
+        "name": "b4f91_weekly_work_patterns",
+        "source_version": "20260818074124",
+        "live_version": "20260818081308",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 15755,
+        "live_bytes": 15755
+      },
+      {
+        "name": "b4f88_full_employer_cost_engine",
+        "source_version": "20260818093000",
+        "live_version": "20260818081410",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 15132,
+        "live_bytes": 15132
+      },
+      {
+        "name": "b4f93_manual_leader_studio",
+        "source_version": "20260818143000",
+        "live_version": "20260818082747",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 8017,
+        "live_bytes": 7496
+      },
+      {
+        "name": "b4f93_authoritative_external_assignments",
+        "source_version": "20260818183433",
+        "live_version": "20260818183559",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4872,
+        "live_bytes": 3742
+      },
+      {
+        "name": "studio_finance_visibility_policy",
+        "source_version": "20260818190421",
+        "live_version": "20260818191340",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4520,
+        "live_bytes": 4395
+      },
+      {
+        "name": "leader_studio_history",
+        "source_version": "20260818201340",
+        "live_version": "20260818201913",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 9286,
+        "live_bytes": 9286
+      },
+      {
+        "name": "leader_studio_history_backfill",
+        "source_version": "20260818201946",
+        "live_version": "20260818202005",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 712,
+        "live_bytes": 712
+      },
+      {
+        "name": "leader_studio_atomic_drag_operations",
+        "source_version": "20260818202834",
+        "live_version": "20260818203236",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 6768,
+        "live_bytes": 6768
+      },
+      {
+        "name": "leader_studio_assignment_lock",
+        "source_version": "20260818203634",
+        "live_version": "20260818203919",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 1858,
+        "live_bytes": 1858
+      },
+      {
+        "name": "leader_studio_drag_preflight",
+        "source_version": "20260818210100",
+        "live_version": "20260818204714",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 1273,
+        "live_bytes": 1271
+      },
+      {
+        "name": "rollback_rejected_leader_studio_batch",
+        "source_version": "20260818215100",
+        "live_version": "20260818195212",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 378,
+        "live_bytes": 219
+      },
+      {
+        "name": "leader_studio_workflow",
+        "source_version": "20260818215500",
+        "live_version": "20260818205724",
+        "content_equal_after_crlf_and_edge_trim_normalization": false,
+        "source_bytes": 4755,
+        "live_bytes": 4748
+      },
+      {
+        "name": "leader_studio_bulk_assignments",
+        "source_version": "20260818223000",
+        "live_version": "20260818210623",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3722,
+        "live_bytes": 3721
+      },
+      {
+        "name": "b4f101_server_finance_redaction",
+        "source_version": "20260819103000",
+        "live_version": "20260818234847",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 13703,
+        "live_bytes": 13703
+      },
+      {
+        "name": "b4f95_final_draft_validation",
+        "source_version": "20260819110000",
+        "live_version": "20260818235432",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4717,
+        "live_bytes": 4717
+      },
+      {
+        "name": "b4f101_close_legacy_finance_routes",
+        "source_version": "20260819123000",
+        "live_version": "20260819000047",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 5837,
+        "live_bytes": 5836
+      },
+      {
+        "name": "mx_k10_exact_shift_demand_only",
+        "source_version": "20260820081631",
+        "live_version": "20260820170619",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 16056,
+        "live_bytes": 16056
+      },
+      {
+        "name": "f4_employment_pay_rate_bidirectional_invariant",
+        "source_version": "20260820081703",
+        "live_version": "20260820170629",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 8003,
+        "live_bytes": 8003
+      },
+      {
+        "name": "b4f115_b4f118_configuration_guidance_and_shift_colors",
+        "source_version": "20260820185559",
+        "live_version": "20260820192755",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4964,
+        "live_bytes": 4964
+      },
+      {
+        "name": "b4f121_atomic_leader_publication",
+        "source_version": "20260820191910",
+        "live_version": "20260820192806",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 3560,
+        "live_bytes": 3560
+      },
+      {
+        "name": "b4f131_b4f138_profiles_requests_notifications",
+        "source_version": "20260820225128",
+        "live_version": "20260821013310",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 42668,
+        "live_bytes": 42668
+      },
+      {
+        "name": "employee_action_center_swap_notifications",
+        "source_version": "20260821021738",
+        "live_version": "20260821023310",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 17451,
+        "live_bytes": 17451
+      },
+      {
+        "name": "b4f166_stage_proof_version_stamp",
+        "source_version": "20260822173000",
+        "live_version": "20260822165134",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 12437,
+        "live_bytes": 12437
+      },
+      {
+        "name": "b4f166_postgres_version_stamp_regex_fix",
+        "source_version": "20260822180000",
+        "live_version": "20260822165913",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 2431,
+        "live_bytes": 2431
+      },
+      {
+        "name": "b4f171_first_run_access_guards",
+        "source_version": "20260824224431",
+        "live_version": "20260824225120",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 14372,
+        "live_bytes": 14372
+      },
+      {
+        "name": "b4f173_workbook_identity_guard",
+        "source_version": "20260824231701",
+        "live_version": "20260824233055",
+        "content_equal_after_crlf_and_edge_trim_normalization": true,
+        "source_bytes": 4796,
+        "live_bytes": 4796
+      }
+    ],
+    "source_only_names": [
+      {
+        "name": "disable_demo_owner_claim_and_pin_search_path",
+        "path": "supabase/migrations/20260801113137_disable_demo_owner_claim_and_pin_search_path.sql",
+        "version": "20260801113137"
+      },
+      {
+        "name": "fix_scenario_generation_and_latest_plan_access",
+        "path": "supabase/migrations/20260801114621_fix_scenario_generation_and_latest_plan_access.sql",
+        "version": "20260801114621"
+      },
+      {
+        "name": "make_scenario_multipliers_affect_staffing",
+        "path": "supabase/migrations/20260801114727_make_scenario_multipliers_affect_staffing.sql",
+        "version": "20260801114727"
+      },
+      {
+        "name": "widen_plan_optimizer_score",
+        "path": "supabase/migrations/20260801141500_widen_plan_optimizer_score.sql",
+        "version": "20260801141500"
+      },
+      {
+        "name": "disambiguate_optimizer_plan_id",
+        "path": "supabase/migrations/20260801141543_disambiguate_optimizer_plan_id.sql",
+        "version": "20260801141543"
+      },
+      {
+        "name": "optimizer_v3_chunked_initialization_safe",
+        "path": "supabase/migrations/20260801173210_optimizer_v3_chunked_initialization_safe.sql",
+        "version": "20260801173210"
+      },
+      {
+        "name": "dynamic_matrix_v2",
+        "path": "supabase/migrations/20260802011712_dynamic_matrix_v2.sql",
+        "version": "20260802011712"
+      },
+      {
+        "name": "solver_runtime_v2",
+        "path": "supabase/migrations/20260802011741_solver_runtime_v2.sql",
+        "version": "20260802011741"
+      },
+      {
+        "name": "planning_revision_foundation_v2",
+        "path": "supabase/migrations/20260802011747_planning_revision_foundation_v2.sql",
+        "version": "20260802011747"
+      },
+      {
+        "name": "solver_api_v2",
+        "path": "supabase/migrations/20260802011756_solver_api_v2.sql",
+        "version": "20260802011756"
+      },
+      {
+        "name": "solver_dispatch_v2",
+        "path": "supabase/migrations/20260802011805_solver_dispatch_v2.sql",
+        "version": "20260802011805"
+      },
+      {
+        "name": "solver_dispatch_private_v2",
+        "path": "supabase/migrations/20260802011811_solver_dispatch_private_v2.sql",
+        "version": "20260802011811"
+      },
+      {
+        "name": "solver_claim_dispatch_token_v2",
+        "path": "supabase/migrations/20260802011826_solver_claim_dispatch_token_v2.sql",
+        "version": "20260802011826"
+      },
+      {
+        "name": "solver_finance_currency_v2",
+        "path": "supabase/migrations/20260802011833_solver_finance_currency_v2.sql",
+        "version": "20260802011833"
+      },
+      {
+        "name": "optimizer_publication_v2",
+        "path": "supabase/migrations/20260802011841_optimizer_publication_v2.sql",
+        "version": "20260802011841"
+      },
+      {
+        "name": "planning_revision_publication_v2",
+        "path": "supabase/migrations/20260802011848_planning_revision_publication_v2.sql",
+        "version": "20260802011848"
+      },
+      {
+        "name": "matrix_employee_lifecycle_v2",
+        "path": "supabase/migrations/20260802011855_matrix_employee_lifecycle_v2.sql",
+        "version": "20260802011855"
+      },
+      {
+        "name": "solver_pull_worker_recovery_v2",
+        "path": "supabase/migrations/20260802011902_solver_pull_worker_recovery_v2.sql",
+        "version": "20260802011902"
+      },
+      {
+        "name": "matrix_v2_draft_legacy_scope_fix",
+        "path": "supabase/migrations/20260802011920_matrix_v2_draft_legacy_scope_fix.sql",
+        "version": "20260802011920"
+      },
+      {
+        "name": "matrix_v2_draft_solver_options_fix",
+        "path": "supabase/migrations/20260802011926_matrix_v2_draft_solver_options_fix.sql",
+        "version": "20260802011926"
+      },
+      {
+        "name": "matrix_role_duties_active_sync",
+        "path": "supabase/migrations/20260802011932_matrix_role_duties_active_sync.sql",
+        "version": "20260802011932"
+      },
+      {
+        "name": "matrix_v2_create_draft_sync",
+        "path": "supabase/migrations/20260802011940_matrix_v2_create_draft_sync.sql",
+        "version": "20260802011940"
+      },
+      {
+        "name": "matrix_v2_publication_helper_sync",
+        "path": "supabase/migrations/20260802011948_matrix_v2_publication_helper_sync.sql",
+        "version": "20260802011948"
+      },
+      {
+        "name": "matrix_v2_publication_validation_sync",
+        "path": "supabase/migrations/20260802011955_matrix_v2_publication_validation_sync.sql",
+        "version": "20260802011955"
+      },
+      {
+        "name": "solver_run_provenance_sync",
+        "path": "supabase/migrations/20260802012011_solver_run_provenance_sync.sql",
+        "version": "20260802012011"
+      },
+      {
+        "name": "solver_snapshot_request_sync",
+        "path": "supabase/migrations/20260802012019_solver_snapshot_request_sync.sql",
+        "version": "20260802012019"
+      },
+      {
+        "name": "solver_dispatch_recovery_reconciler_v2",
+        "path": "supabase/migrations/20260802012026_solver_dispatch_recovery_reconciler_v2.sql",
+        "version": "20260802012026"
+      },
+      {
+        "name": "solver_cutover_provenance_guards_v2",
+        "path": "supabase/migrations/20260802012033_solver_cutover_provenance_guards_v2.sql",
+        "version": "20260802012033"
+      },
+      {
+        "name": "matrix_v2_legacy_dml_security",
+        "path": "supabase/migrations/20260802012040_matrix_v2_legacy_dml_security.sql",
+        "version": "20260802012040"
+      },
+      {
+        "name": "matrix_v2_legacy_read_boundary",
+        "path": "supabase/migrations/20260802012049_matrix_v2_legacy_read_boundary.sql",
+        "version": "20260802012049"
+      },
+      {
+        "name": "active_solver_version_publication_fence_v2",
+        "path": "supabase/migrations/20260802012106_active_solver_version_publication_fence_v2.sql",
+        "version": "20260802012106"
+      },
+      {
+        "name": "solver_pay_window_helper_sync",
+        "path": "supabase/migrations/20260802012112_solver_pay_window_helper_sync.sql",
+        "version": "20260802012112"
+      },
+      {
+        "name": "planning_revision_legacy_trigger_sync",
+        "path": "supabase/migrations/20260802012120_planning_revision_legacy_trigger_sync.sql",
+        "version": "20260802012120"
+      },
+      {
+        "name": "active_publication_boundary_sync",
+        "path": "supabase/migrations/20260802012126_active_publication_boundary_sync.sql",
+        "version": "20260802012126"
+      },
+      {
+        "name": "active_variant_selection_sync",
+        "path": "supabase/migrations/20260802012132_active_variant_selection_sync.sql",
+        "version": "20260802012132"
+      },
+      {
+        "name": "solver_provider_neutral_pull_v2",
+        "path": "supabase/migrations/20260802012140_solver_provider_neutral_pull_v2.sql",
+        "version": "20260802012140"
+      },
+      {
+        "name": "solver_provider_neutral_executor_v2",
+        "path": "supabase/migrations/20260802012204_solver_provider_neutral_executor_v2.sql",
+        "version": "20260802012204"
+      },
+      {
+        "name": "solver_pull_claim_convergence_v2",
+        "path": "supabase/migrations/20260802012210_solver_pull_claim_convergence_v2.sql",
+        "version": "20260802012210"
+      },
+      {
+        "name": "public_api_security_hardening",
+        "path": "supabase/migrations/20260802012218_public_api_security_hardening.sql",
+        "version": "20260802012218"
+      },
+      {
+        "name": "canonical_empty_duty_slot_ids",
+        "path": "supabase/migrations/20260802210241_canonical_empty_duty_slot_ids.sql",
+        "version": "20260802210241"
+      },
+      {
+        "name": "contract_aware_availability_v2",
+        "path": "supabase/migrations/20260803120000_contract_aware_availability_v2.sql",
+        "version": "20260803120000"
+      },
+      {
+        "name": "solver_standby_reserve_setting",
+        "path": "supabase/migrations/20260804171500_solver_standby_reserve_setting.sql",
+        "version": "20260804171500"
+      },
+      {
+        "name": "b4_solver_semantics_standby_and_diagnostics",
+        "path": "supabase/migrations/20260806230000_b4_solver_semantics_standby_and_diagnostics.sql",
+        "version": "20260806230000"
+      },
+      {
+        "name": "b4_strategy_contract_repair",
+        "path": "supabase/migrations/20260807150000_b4_strategy_contract_repair.sql",
+        "version": "20260807150000"
+      },
+      {
+        "name": "b4_swap_suggestions_and_duty_transfer",
+        "path": "supabase/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",
+        "version": "20260807152000"
+      },
+      {
+        "name": "role_categories_workforce_semantics",
+        "path": "supabase/migrations/20260812213000_role_categories_workforce_semantics.sql",
+        "version": "20260812213000"
+      },
+      {
+        "name": "b4f165_strategy_source_of_truth",
+        "path": "supabase/migrations/20260822160000_b4f165_strategy_source_of_truth.sql",
+        "version": "20260822160000"
+      },
+      {
+        "name": "b4f169_deterministic_fairness_quality_gate",
+        "path": "supabase/migrations/20260822220000_b4f169_deterministic_fairness_quality_gate.sql",
+        "version": "20260822220000"
+      }
+    ],
+    "live_only_names": [
+      {
+        "name": "alpha16_replay_0001_core_schema",
+        "version": "20260802073800"
+      },
+      {
+        "name": "alpha16_replay_0002_demo_seed",
+        "version": "20260802073807"
+      },
+      {
+        "name": "alpha16_replay_0003_auth_and_access",
+        "version": "20260802073815"
+      },
+      {
+        "name": "alpha16_replay_0004_planning_engine",
+        "version": "20260802073822"
+      },
+      {
+        "name": "alpha16_replay_0005_dynamic_matrix_and_role_planning",
+        "version": "20260802073833"
+      },
+      {
+        "name": "alpha16_replay_0006_complete_product_modules",
+        "version": "20260802073849"
+      },
+      {
+        "name": "alpha16_replay_0007_alpha11_repair_workflows",
+        "version": "20260802073856"
+      },
+      {
+        "name": "alpha16_replay_0008_alpha12_matrix_calendar_and_access",
+        "version": "20260802073903"
+      },
+      {
+        "name": "alpha16_replay_0009_optimizer_engine",
+        "version": "20260802073912"
+      },
+      {
+        "name": "alpha16_replay_0010_optimizer_profile_names",
+        "version": "20260802073918"
+      },
+      {
+        "name": "alpha16_replay_0011_optimizer_v2_checkpointed",
+        "version": "20260802073931"
+      },
+      {
+        "name": "alpha16_replay_0012_optimizer_v3_chunked_initialization",
+        "version": "20260802073937"
+      },
+      {
+        "name": "alpha16_replay_0013_optimizer_v3_quality_and_variants",
+        "version": "20260802073947"
+      },
+      {
+        "name": "alpha16_replay_0014_optimizer_v3_finalize_ambiguity",
+        "version": "20260802073959"
+      },
+      {
+        "name": "alpha16_replay_0015_optimizer_v4_resumable_materialization",
+        "version": "20260802074009"
+      },
+      {
+        "name": "alpha16_replay_legacy_security_repairs",
+        "version": "20260802074026"
+      },
+      {
+        "name": "alpha16_replay_20260802011712_dynamic_matrix_v2",
+        "version": "20260802074045"
+      },
+      {
+        "name": "alpha16_replay_20260802011741_solver_runtime_v2",
+        "version": "20260802074052"
+      },
+      {
+        "name": "alpha16_replay_20260802011747_planning_revision_foundation_v2",
+        "version": "20260802074058"
+      },
+      {
+        "name": "alpha16_replay_20260802011756_solver_api_v2",
+        "version": "20260802074109"
+      },
+      {
+        "name": "alpha16_replay_20260802011805_solver_dispatch_v2",
+        "version": "20260802074126"
+      },
+      {
+        "name": "alpha16_replay_20260802011811_solver_dispatch_private_v2",
+        "version": "20260802074135"
+      },
+      {
+        "name": "alpha16_replay_20260802011826_solver_claim_dispatch_token_v2",
+        "version": "20260802074141"
+      },
+      {
+        "name": "alpha16_replay_20260802011833_solver_finance_currency_v2",
+        "version": "20260802074154"
+      },
+      {
+        "name": "alpha16_replay_20260802011841_optimizer_publication_v2",
+        "version": "20260802074202"
+      },
+      {
+        "name": "alpha16_replay_20260802011848_planning_revision_publication_v2",
+        "version": "20260802074221"
+      },
+      {
+        "name": "alpha16_replay_20260802011855_matrix_employee_lifecycle_v2",
+        "version": "20260802074232"
+      },
+      {
+        "name": "alpha16_replay_20260802011902_solver_pull_worker_recovery_v2",
+        "version": "20260802074239"
+      },
+      {
+        "name": "alpha16_replay_20260802011920_matrix_v2_draft_legacy_scope_fix",
+        "version": "20260802074250"
+      },
+      {
+        "name": "alpha16_replay_20260802011926_matrix_v2_draft_solver_options_fix",
+        "version": "20260802074256"
+      },
+      {
+        "name": "alpha16_replay_20260802011932_matrix_role_duties_active_sync",
+        "version": "20260802074314"
+      },
+      {
+        "name": "alpha16_replay_20260802011940_matrix_v2_create_draft_sync",
+        "version": "20260802074324"
+      },
+      {
+        "name": "alpha16_replay_20260802011948_matrix_v2_publication_helper_sync",
+        "version": "20260802074331"
+      },
+      {
+        "name": "alpha16_replay_20260802011955_matrix_v2_publication_validation_sync",
+        "version": "20260802074339"
+      },
+      {
+        "name": "alpha16_replay_20260802012011_solver_run_provenance_sync",
+        "version": "20260802074346"
+      },
+      {
+        "name": "alpha16_replay_20260802012019_solver_snapshot_request_sync",
+        "version": "20260802074401"
+      },
+      {
+        "name": "alpha16_replay_20260802012026_solver_dispatch_recovery_reconciler_v2",
+        "version": "20260802074427"
+      },
+      {
+        "name": "alpha16_replay_20260802012033_solver_cutover_provenance_guards_v2",
+        "version": "20260802074435"
+      },
+      {
+        "name": "alpha16_replay_20260802012040_matrix_v2_legacy_dml_security",
+        "version": "20260802074441"
+      },
+      {
+        "name": "alpha16_replay_20260802012049_matrix_v2_legacy_read_boundary",
+        "version": "20260802074451"
+      },
+      {
+        "name": "alpha16_replay_20260802012106_active_solver_version_publication_fence_v2",
+        "version": "20260802074506"
+      },
+      {
+        "name": "alpha16_replay_20260802012112_solver_pay_window_helper_sync",
+        "version": "20260802074512"
+      },
+      {
+        "name": "alpha16_replay_20260802012120_planning_revision_legacy_trigger_sync",
+        "version": "20260802074519"
+      },
+      {
+        "name": "alpha16_replay_20260802012126_active_publication_boundary_sync",
+        "version": "20260802074525"
+      },
+      {
+        "name": "alpha16_replay_20260802012132_active_variant_selection_sync",
+        "version": "20260802074530"
+      },
+      {
+        "name": "alpha16_replay_20260802012140_solver_provider_neutral_pull_v2",
+        "version": "20260802074551"
+      },
+      {
+        "name": "alpha16_replay_20260802012204_solver_provider_neutral_executor_v2",
+        "version": "20260802074557"
+      },
+      {
+        "name": "alpha16_replay_20260802012210_solver_pull_claim_convergence_v2",
+        "version": "20260802074603"
+      },
+      {
+        "name": "alpha16_replay_20260802012218_public_api_security_hardening",
+        "version": "20260802074613"
+      },
+      {
+        "name": "dev_alpha16_role_duty_trigger_repair",
+        "version": "20260802075538"
+      },
+      {
+        "name": "dev_validate_replay_safe_20260801113137",
+        "version": "20260802081142"
+      },
+      {
+        "name": "dev_alpha16_operational_indexes_and_deny_policy",
+        "version": "20260802081523"
+      },
+      {
+        "name": "dev_alpha16_import_identity_validation",
+        "version": "20260802081735"
+      },
+      {
+        "name": "alpha16_candidate_diagnostics_final",
+        "version": "20260802082252"
+      },
+      {
+        "name": "alpha16_operational_contracts_final",
+        "version": "20260802083949"
+      },
+      {
+        "name": "alpha16_publication_boundary_final",
+        "version": "20260802084006"
+      },
+      {
+        "name": "restore_role_publication_contract",
+        "version": "20260804112144"
+      },
+      {
+        "name": "restore_employee_role_schedule_contract",
+        "version": "20260804112256"
+      },
+      {
+        "name": "uat_import_contract_repair_v2",
+        "version": "20260804145000"
+      },
+      {
+        "name": "uat_import_identity_repair_v2",
+        "version": "20260804145407"
+      },
+      {
+        "name": "schedule_publication_resolution",
+        "version": "20260804145630"
+      },
+      {
+        "name": "solver_standby_reserve_setting_v2",
+        "version": "20260804150649"
+      },
+      {
+        "name": "b4_configurable_daily_shift_limit_uat",
+        "version": "20260806141757"
+      },
+      {
+        "name": "b4_standby_runtime_semantics",
+        "version": "20260806222517"
+      },
+      {
+        "name": "b4_leader_search_and_diagnostic_details",
+        "version": "20260806222631"
+      },
+      {
+        "name": "b4_availability_publication_conflicts",
+        "version": "20260806222649"
+      },
+      {
+        "name": "b4_preserve_explicit_work_time_targets",
+        "version": "20260806222818"
+      },
+      {
+        "name": "b4_standby_preview_original_variants",
+        "version": "20260806223027"
+      },
+      {
+        "name": "b4_strategy_contract_repair_v2",
+        "version": "20260807024153"
+      },
+      {
+        "name": "b4_swap_suggestions_and_duty_transfer_v2",
+        "version": "20260807024231"
+      },
+      {
+        "name": "b4_swap_suggestions_date_contract",
+        "version": "20260808213327"
+      },
+      {
+        "name": "b4_deduplicate_company_calendar_logical_locations",
+        "version": "20260808231808"
+      },
+      {
+        "name": "b4f_shift_scoped_role_duty_minima",
+        "version": "20260812151838"
+      },
+      {
+        "name": "role_categories_workforce_semantics_receipt",
+        "version": "20260812231031"
+      },
+      {
+        "name": "leader_studio_atomic_batch",
+        "version": "20260818193909"
+      },
+      {
+        "name": "uat_northflank_job_runtime",
+        "version": "20260824182754"
+      },
+      {
+        "name": "uat_northflank_job_gateway_regex_fix",
+        "version": "20260824183338"
+      },
+      {
+        "name": "uat_northflank_job_contract_probe_hash_fix",
+        "version": "20260824183525"
+      },
+      {
+        "name": "uat_northflank_job_stamp_schema_immutable",
+        "version": "20260824183905"
+      },
+      {
+        "name": "uat_northflank_job_gate_b_probe",
+        "version": "20260824184140"
+      },
+      {
+        "name": "uat_northflank_job_outbox_scope_index",
+        "version": "20260824190050"
+      },
+      {
+        "name": "uat_northflank_job_mode_provenance",
+        "version": "20260824215911"
+      }
+    ],
+    "live_only_categories": {
+      "alpha16_replay": 49,
+      "dev_manual_repair": 4,
+      "northflank_runtime": 7,
+      "other_repair_final_receipt": 22
+    },
+    "source_version_conflicts": [],
+    "live_version_conflicts": []
+  },
+  "schema_capture_inventory": {
+    "user_schemas": [
+      "authorization_private",
+      "cron",
+      "public",
+      "solver_private"
+    ],
+    "managed_schema_policies": [
+      {
+        "command": "DELETE",
+        "policy": "profile_avatars_self_delete_v1",
+        "roles": [
+          "authenticated"
+        ],
+        "schema": "storage",
+        "table": "objects"
+      },
+      {
+        "command": "INSERT",
+        "policy": "profile_avatars_self_insert_v1",
+        "roles": [
+          "authenticated"
+        ],
+        "schema": "storage",
+        "table": "objects"
+      },
+      {
+        "command": "SELECT",
+        "policy": "profile_avatars_self_select_v1",
+        "roles": [
+          "authenticated"
+        ],
+        "schema": "storage",
+        "table": "objects"
+      },
+      {
+        "command": "UPDATE",
+        "policy": "profile_avatars_self_update_v1",
+        "roles": [
+          "authenticated"
+        ],
+        "schema": "storage",
+        "table": "objects"
+      }
+    ],
+    "realtime_publication_members": [
+      {
+        "publication": "supabase_realtime",
+        "schema": "public",
+        "table": "optimization_run_strategies_v2"
+      },
+      {
+        "publication": "supabase_realtime",
+        "schema": "public",
+        "table": "optimization_runs_v2"
+      }
+    ],
+    "event_triggers": [
+      {
+        "enabled": "O",
+        "event": "sql_drop",
+        "name": "issue_graphql_placeholder"
+      },
+      {
+        "enabled": "O",
+        "event": "ddl_command_end",
+        "name": "issue_pg_cron_access"
+      },
+      {
+        "enabled": "O",
+        "event": "ddl_command_end",
+        "name": "issue_pg_graphql_access"
+      },
+      {
+        "enabled": "O",
+        "event": "ddl_command_end",
+        "name": "issue_pg_net_access"
+      },
+      {
+        "enabled": "O",
+        "event": "ddl_command_end",
+        "name": "pgrst_ddl_watch"
+      },
+      {
+        "enabled": "O",
+        "event": "sql_drop",
+        "name": "pgrst_drop_watch"
+      }
+    ],
+    "extensions": [
+      {
+        "name": "pg_cron",
+        "schema": "pg_catalog",
+        "version": "1.6.4"
+      },
+      {
+        "name": "pg_stat_statements",
+        "schema": "extensions",
+        "version": "1.11"
+      },
+      {
+        "name": "pgcrypto",
+        "schema": "extensions",
+        "version": "1.3"
+      },
+      {
+        "name": "pgmq",
+        "schema": "pgmq",
+        "version": "1.5.1"
+      },
+      {
+        "name": "plpgsql",
+        "schema": "pg_catalog",
+        "version": "1.0"
+      },
+      {
+        "name": "supabase_vault",
+        "schema": "vault",
+        "version": "0.3.1"
+      },
+      {
+        "name": "uuid-ossp",
+        "schema": "extensions",
+        "version": "1.1"
+      }
+    ],
+    "storage_buckets": [
+      {
+        "allowed_mime_types": [
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ],
+        "file_size_limit": 5242880,
+        "id": "profile-avatars",
+        "name": "profile-avatars",
+        "public": false
+      }
+    ],
+    "cron_jobs": [
+      {
+        "active": true,
+        "command_bytes": 57,
+        "command_md5": "b7fd6127d5addd3ed945f227129d1c59",
+        "jobid": 1,
+        "jobname": "grafik-pro-solver-v2-recovery",
+        "schedule": "* * * * *"
+      }
+    ],
+    "default_acl_count": 29
+  },
+  "safety_decision": {
+    "normal_migrator": "STOP",
+    "strategy": "CAPTURE_SINGLE_SCHEMA_BASELINE_FROM_LIVE_UAT",
+    "baseline_sql_in_this_change": false,
+    "ledger_repair_in_this_change": false,
+    "uat_mutation_in_this_change": false,
+    "production_access_in_this_change": false,
+    "do_not_rerun_source_versions": [
+      "20260822160000_b4f165_strategy_source_of_truth",
+      "20260822220000_b4f169_deterministic_fairness_quality_gate"
+    ],
+    "reason": "Timestamp drift is not cosmetic: 41 same-name migrations have different SQL, and UAT contains 82 live-only migrations. Replaying or mass-renaming source migrations is unsafe."
+  }
+}
