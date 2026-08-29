@@ -28,11 +28,12 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: db059b87c40a95810de93b0f4cd79e7f0c6a39ab
+      EXPECTED_WORKFLOW_PARENT: 9e2426e74d0f6c7f393fe690fccbe5f6016bd3ba
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
       EXPECTED_PREFLIGHT_SHA256: 52b9412dbaa71c9cebafaf1cbf9baef74d029deff2e7672a606c438297c690e9
+      EXPECTED_UAT_REF_OCCURRENCES: 5
       PATCHED_PG_IMAGE: postgres@sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28
       CAPTURE_RECIPIENT_CERT_SHA256: 33241ddfba5a9251d782710f8d5c58ba30f01bcb131910eab019ead6d651668f
 
@@ -354,8 +355,14 @@ jobs:
                   for match in pattern.finditer(text):
                       add_match(rule, filename, text, match)
 
-          for match in re.finditer(re.escape(os.environ['UAT_REF']), schema):
-              add_match('uat_project_ref_in_schema', schema_name, schema, match)
+          uat_ref_matches = list(re.finditer(re.escape(os.environ['UAT_REF']), schema))
+          expected_uat_ref_occurrences = int(os.environ['EXPECTED_UAT_REF_OCCURRENCES'])
+          if len(uat_ref_matches) != expected_uat_ref_occurrences:
+              record(
+                  'uat_project_ref_occurrence_count_changed',
+                  schema_name,
+                  f'expected:{expected_uat_ref_occurrences},actual:{len(uat_ref_matches)}',
+              )
           for filename, text in texts.items():
               for match in re.finditer(re.escape(os.environ['PROD_REF']), text):
                   add_match('production_project_ref', filename, text, match)
@@ -547,7 +554,8 @@ jobs:
               'top_level_data_statements=0\n'
               'credential_candidates=0\n'
               'psql_meta_commands=2_matched_restore_guards\n'
-              'environment_project_refs=0\n'
+              'forbidden_environment_project_refs=0\n'
+              f'uat_project_ref_occurrences={len(uat_ref_matches)}_encrypted_raw_evidence_only\n'
               'scanned_text_artifacts=3\n'
               'verdict=PASS\n',
               encoding='utf-8',
@@ -580,6 +588,8 @@ jobs:
               'uat_project_ref': os.environ['EXPECTED_UAT_PROJECT_REF'],
               'uat_branch': os.environ['TARGET_BRANCH_NAME'],
               'uat_environment': 'ISOLATED_UAT',
+              'uat_project_ref_occurrences': int(os.environ['EXPECTED_UAT_REF_OCCURRENCES']),
+              'uat_project_ref_baseline_policy': 'must be removed or parameterized before baseline SQL PR',
               'ledger': {'rows': 254, 'fingerprint_md5': '04c5c2ad59937027420bd7c71b782d14'},
               'companion': {'records': 56, 'fingerprint_sha256': 'e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c913725cb559e4c074d'},
               'active_matrix_count': 1,
