@@ -28,6 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
+      EXPECTED_WORKFLOW_PARENT: 64b678342957f584aa1ab04a3e8e894720ec9355
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -47,11 +48,13 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE_COMMIT"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_WORKFLOW_PARENT"
+          git merge-base --is-ancestor "$EXPECTED_BASE_COMMIT" HEAD
           test "$(git rev-parse "$FROZEN_SOURCE_COMMIT^{tree}")" = "$FROZEN_SOURCE_TREE"
           git merge-base --is-ancestor "$FROZEN_SOURCE_COMMIT" HEAD
           git diff --exit-code "$FROZEN_SOURCE_COMMIT" HEAD -- supabase/migrations
           test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/phase4a2-uat-schema-capture.yml"
+          test "$(git diff --name-only "$EXPECTED_BASE_COMMIT"..HEAD)" = ".github/workflows/phase4a2-uat-schema-capture.yml"
           test "$(git hash-object docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql)" = "$EXPECTED_PREFLIGHT_BLOB"
           test "$(sha256sum docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql | cut -d' ' -f1)" = "$EXPECTED_PREFLIGHT_SHA256"
 
@@ -104,15 +107,15 @@ jobs:
           }
 
           api_url="$(read_env_value SUPABASE_URL)"
-          db_url="$(read_env_value POSTGRES_URL_NON_POOLING)"
+          db_url_source="$(read_env_value POSTGRES_URL_NON_POOLING)"
           test "$api_url" = "https://${EXPECTED_UAT_PROJECT_REF}.supabase.co"
-          test -n "$db_url"
+          test -n "$db_url_source"
 
           mapfile -t db_parts < <(
-            DB_URL="$db_url" python3 - <<'PY'
+            DB_URL="$db_url_source" python3 - <<'PY'
           import os
           import re
-          from urllib.parse import parse_qs, unquote, urlsplit
+          from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 
           parsed = urlsplit(os.environ["DB_URL"])
           expected_ref = os.environ["EXPECTED_UAT_PROJECT_REF"]
@@ -122,10 +125,15 @@ jobs:
           if parsed.path != "/postgres" or parsed.port != 5432:
               raise SystemExit("unexpected database name or port")
           query = parse_qs(parsed.query, keep_blank_values=True)
-          if set(query) - {"sslmode"}:
+          if set(query) - {"sslmode", "supa"}:
               raise SystemExit("unexpected database URL query parameter")
           if "sslmode" in query and query["sslmode"] not in (["require"], ["verify-ca"], ["verify-full"]):
               raise SystemExit("database URL does not require TLS")
+          if "supa" in query and (
+              len(query["supa"]) != 1
+              or re.fullmatch(r"base-pooler\.[A-Za-z0-9_-]{1,32}", query["supa"][0]) is None
+          ):
+              raise SystemExit("unexpected Supabase pooler routing marker")
           host = parsed.hostname or ""
           user = parsed.username or ""
           direct = host == f"db.{expected_ref}.supabase.co" and user == "postgres"
@@ -141,18 +149,30 @@ jobs:
           decoded_password = unquote(raw_password)
           if any(char in decoded_password for char in "\r\n\x00"):
               raise SystemExit("database password contains unsupported control bytes")
+          connection_query = {key: values for key, values in query.items() if key != "supa"}
+          sanitized_url = urlunsplit((
+              parsed.scheme,
+              parsed.netloc,
+              parsed.path,
+              urlencode(connection_query, doseq=True),
+              '',
+          ))
           print("direct" if direct else "session-pooler")
           print(raw_password)
           print(decoded_password)
+          print(sanitized_url)
           PY
           )
           connection_mode="${db_parts[0]:-}"
           db_password_raw="${db_parts[1]:-}"
           db_password="${db_parts[2]:-}"
+          db_url="${db_parts[3]:-}"
           test "$connection_mode" = 'direct' || test "$connection_mode" = 'session-pooler'
+          test -n "$db_url"
 
           echo "::add-mask::$api_url"
           echo "::add-mask::$db_url"
+          echo "::add-mask::$db_url_source"
           if [[ -n "$db_password_raw" ]]; then
             echo "::add-mask::$db_password_raw"
           fi
@@ -212,7 +232,7 @@ jobs:
 
           run_preflight capture/preflight-and-companion-after.txt
 
-          DB_URL="$db_url" DB_PASSWORD="$db_password" DB_PASSWORD_RAW="$db_password_raw" API_URL="$api_url" \
+          DB_URL="$db_url" DB_URL_SOURCE="$db_url_source" DB_PASSWORD="$db_password" DB_PASSWORD_RAW="$db_password_raw" API_URL="$api_url" \
           ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN" UAT_REF="$EXPECTED_UAT_PROJECT_REF" \
           PROD_REF="$PARENT_PROJECT_REF" python3 - <<'PY'
           import os
@@ -253,6 +273,7 @@ jobs:
 
           exact_secrets = {
               'exact_db_url': os.environ.get('DB_URL', ''),
+              'exact_db_url_source': os.environ.get('DB_URL_SOURCE', ''),
               'exact_db_password': os.environ.get('DB_PASSWORD', ''),
               'exact_db_password_encoded': os.environ.get('DB_PASSWORD_RAW', ''),
               'exact_api_url': os.environ.get('API_URL', ''),
@@ -611,8 +632,37 @@ jobs:
           chmod 600 "$recipient_cert"
           actual_cert_sha256="$(openssl x509 -in "$recipient_cert" -outform DER | sha256sum | cut -d' ' -f1)"
           test "$actual_cert_sha256" = "$CAPTURE_RECIPIENT_CERT_SHA256"
+          actual_capture_members="$(find capture -mindepth 1 -maxdepth 1 -printf '%y %f\n' | LC_ALL=C sort)"
+          expected_capture_members="$(printf '%s\n' \
+            'f SHA256SUMS' \
+            'f companion-attestation.json' \
+            'f phase4a2-uat-schema-raw.sql' \
+            'f preflight-and-companion-after.txt' \
+            'f preflight-and-companion-before.txt' \
+            'f receipt.json' \
+            'f scan-report.txt' \
+            | LC_ALL=C sort)"
+          test "$actual_capture_members" = "$expected_capture_members"
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
-            -C capture -czf "$package_file" .
+            -C capture -czf "$package_file" \
+            SHA256SUMS \
+            companion-attestation.json \
+            phase4a2-uat-schema-raw.sql \
+            preflight-and-companion-after.txt \
+            preflight-and-companion-before.txt \
+            receipt.json \
+            scan-report.txt
+          actual_tar_members="$(tar -tzf "$package_file" | LC_ALL=C sort)"
+          expected_tar_members="$(printf '%s\n' \
+            'SHA256SUMS' \
+            'companion-attestation.json' \
+            'phase4a2-uat-schema-raw.sql' \
+            'preflight-and-companion-after.txt' \
+            'preflight-and-companion-before.txt' \
+            'receipt.json' \
+            'scan-report.txt' \
+            | LC_ALL=C sort)"
+          test "$actual_tar_members" = "$expected_tar_members"
           mkdir -p encrypted-capture
           openssl cms -encrypt -binary -aes-256-gcm \
             -in "$package_file" \
