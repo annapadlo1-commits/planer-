@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
+      EXPECTED_WORKFLOW_PARENT: 3a27a06d15663772f494def6a3b303acfd1c49d7
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -49,6 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD^)" = "$EXPECTED_WORKFLOW_PARENT"
           git merge-base --is-ancestor "$EXPECTED_BASE_COMMIT" HEAD
           test "$(git rev-parse "$FROZEN_SOURCE_COMMIT^{tree}")" = "$FROZEN_SOURCE_TREE"
@@ -68,21 +69,27 @@ jobs:
         shell: bash
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_CA_CERT: ${{ secrets.SUPABASE_DB_CA_CERT }}
         run: |
           set -euo pipefail
           umask 077
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_DB_CA_CERT:-}"
           echo "::add-mask::$SUPABASE_ACCESS_TOKEN"
 
           credential_file="$RUNNER_TEMP/phase4a2-branch.env"
           credential_error_log="$RUNNER_TEMP/phase4a2-branch.err"
+          db_ca_file="$RUNNER_TEMP/supabase-db-ca.crt"
           recipient_cert=''
           package_file=''
           : > "$credential_file"
           : > "$credential_error_log"
-          chmod 600 "$credential_file" "$credential_error_log"
+          printf '%s\n' "$SUPABASE_DB_CA_CERT" > "$db_ca_file"
+          chmod 600 "$credential_file" "$credential_error_log" "$db_ca_file"
+          openssl x509 -in "$db_ca_file" -noout -checkend 0 >/dev/null
+          db_ca_sha256="$(openssl x509 -in "$db_ca_file" -outform DER | sha256sum | cut -d' ' -f1)"
           cleanup_sensitive_files() {
-            rm -f "$credential_file" "$credential_error_log"
+            rm -f "$credential_file" "$credential_error_log" "$db_ca_file"
             if [[ -n "${recipient_cert:-}" ]]; then rm -f "$recipient_cert"; fi
             if [[ -n "${package_file:-}" ]]; then rm -f "$package_file"; fi
           }
@@ -133,7 +140,7 @@ jobs:
               raise SystemExit("unexpected database name")
           query = parse_qs(parsed.query, keep_blank_values=True)
           unknown_query_keys = set(query) - {
-              "sslmode", "supa", "connect_timeout", "pgbouncer", "connection_limit"
+              "sslmode", "sslrootcert", "supa", "connect_timeout", "pgbouncer", "connection_limit"
           }
           if unknown_query_keys:
               raise SystemExit(
@@ -178,8 +185,10 @@ jobs:
           connection_query = {
               key: values
               for key, values in query.items()
-              if key not in {"supa", "pgbouncer", "connection_limit"}
+              if key not in {"sslmode", "sslrootcert", "supa", "pgbouncer", "connection_limit"}
           }
+          connection_query["sslmode"] = ["verify-full"]
+          connection_query["sslrootcert"] = ["/run/secrets/supabase-db-ca.crt"]
           userinfo = parsed.netloc.rsplit('@', 1)[0]
           session_netloc = f"{userinfo}@{host}:5432"
           sanitized_url = urlunsplit((
@@ -225,10 +234,12 @@ jobs:
 
           export DATABASE_URL="$db_url"
           export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000'
-          export PGSSLMODE='require'
+          export PGSSLMODE='verify-full'
+          export PGSSLROOTCERT='/run/secrets/supabase-db-ca.crt'
           readonly_state="$(
             docker run --rm --network host \
-              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE \
+              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e PGSSLROOTCERT \
+              -v "$db_ca_file:/run/secrets/supabase-db-ca.crt:ro" \
               "$PATCHED_PG_IMAGE" \
               sh -ceu 'psql "$DATABASE_URL" -X -A -t -q -v ON_ERROR_STOP=1 \
                 -c "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" \
@@ -244,8 +255,9 @@ jobs:
           run_preflight() {
             local output="$1"
             docker run --rm --network host \
-              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE \
+              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e PGSSLROOTCERT \
               -v "$GITHUB_WORKSPACE:/work:ro" \
+              -v "$db_ca_file:/run/secrets/supabase-db-ca.crt:ro" \
               "$PATCHED_PG_IMAGE" \
               sh -ceu 'psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
                 -c "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" \
@@ -260,23 +272,85 @@ jobs:
           echo 'capture-stage=preflight-before-ok'
 
           export EXCLUDED_SCHEMAS='information_schema|pg_*|_analytics|_realtime|_supavisor|auth|etl|extensions|pgbouncer|realtime|storage|supabase_functions|supabase_migrations|cron|dbdev|graphql|graphql_public|net|pgmq|pgsodium|pgsodium_masks|pgtle|repack|tiger|tiger_data|timescaledb_*|_timescaledb_*|topology|vault'
-          docker run --rm --network host \
-            -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e EXCLUDED_SCHEMAS \
-            "$PATCHED_PG_IMAGE" \
-            bash -euo pipefail -c 'pg_dump \
-              --dbname="$DATABASE_URL" \
-              --schema-only \
-              --quote-all-identifiers \
-              --role "postgres" \
-              --lock-wait-timeout "5s" \
-              --exclude-schema "$EXCLUDED_SCHEMAS" \
-              --no-password' \
-            > capture/phase4a2-uat-schema-raw.sql
+          run_schema_dump() {
+            local output="$1"
+            docker run --rm --network host \
+              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e PGSSLROOTCERT -e EXCLUDED_SCHEMAS \
+              -v "$db_ca_file:/run/secrets/supabase-db-ca.crt:ro" \
+              "$PATCHED_PG_IMAGE" \
+              bash -euo pipefail -c 'pg_dump \
+                --dbname="$DATABASE_URL" \
+                --schema-only \
+                --quote-all-identifiers \
+                --role "postgres" \
+                --lock-wait-timeout "5s" \
+                --exclude-schema "$EXCLUDED_SCHEMAS" \
+                --no-publications \
+                --no-subscriptions \
+                --no-password' \
+              > "$output"
+          }
+          run_schema_dump capture/phase4a2-uat-schema-raw.sql
           test -s capture/phase4a2-uat-schema-raw.sql
           echo 'capture-stage=schema-dump-ok'
 
+          run_schema_dump capture/phase4a2-uat-schema-confirm.sql
+          test -s capture/phase4a2-uat-schema-confirm.sql
+          echo 'capture-stage=schema-confirm-dump-ok'
+
           run_preflight capture/preflight-and-companion-after.txt
           echo 'capture-stage=preflight-after-ok'
+
+          python3 - <<'PY'
+          import hashlib
+          import re
+          from pathlib import Path
+
+          preflight_timestamp = re.compile(
+              rb'(?<!\d)\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?!\d)'
+          )
+          restore_guard = re.compile(
+              rb'(?m)^\\(restrict|unrestrict) ([A-Za-z0-9]{32,128})\r?$'
+          )
+
+          def normalized_preflight(path):
+              data = Path(path).read_bytes()
+              matches = list(preflight_timestamp.finditer(data))
+              if len(matches) != 1:
+                  raise SystemExit(f'{path}: expected exactly one volatile checked_at_utc value')
+              return preflight_timestamp.sub(b'<CHECKED_AT_UTC>', data)
+
+          def normalized_dump(path):
+              data = Path(path).read_bytes()
+              matches = list(restore_guard.finditer(data))
+              if len(matches) != 2:
+                  raise SystemExit(f'{path}: expected exactly one restore guard pair')
+              if matches[0].group(1) != b'restrict' or matches[1].group(1) != b'unrestrict':
+                  raise SystemExit(f'{path}: restore guard order changed')
+              if matches[0].group(2) != matches[1].group(2):
+                  raise SystemExit(f'{path}: restore guard token mismatch')
+              return restore_guard.sub(lambda m: b'\\' + m.group(1) + b' <RESTORE_GUARD>', data)
+
+          before = normalized_preflight('capture/preflight-and-companion-before.txt')
+          after = normalized_preflight('capture/preflight-and-companion-after.txt')
+          if before != after:
+              raise SystemExit('Preflight inventory changed during schema capture.')
+
+          primary = normalized_dump('capture/phase4a2-uat-schema-raw.sql')
+          confirm = normalized_dump('capture/phase4a2-uat-schema-confirm.sql')
+          if primary != confirm:
+              raise SystemExit('Schema dump changed between two read-only snapshots.')
+
+          Path('capture/stability-report.txt').write_text(
+              'preflight_normalized_sha256=' + hashlib.sha256(before).hexdigest() + '\n'
+              'schema_normalized_sha256=' + hashlib.sha256(primary).hexdigest() + '\n'
+              'preflight_volatile_fields=checked_at_utc_exactly_one\n'
+              'schema_volatile_fields=restore_guard_token_exactly_one_pair\n'
+              'verdict=PASS\n',
+              encoding='utf-8',
+          )
+          PY
+          rm -f capture/phase4a2-uat-schema-confirm.sql
 
           DB_URL="$db_url" DB_URL_SOURCE="$db_url_source" DB_PASSWORD="$db_password" DB_PASSWORD_RAW="$db_password_raw" API_URL="$api_url" \
           ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN" UAT_REF="$EXPECTED_UAT_PROJECT_REF" \
@@ -347,7 +421,17 @@ jobs:
                   r'(?i)(?:[\'\"]?(?:password|passwd|client[_-]?secret|secret|access[_-]?token|token|'
                   r'api[_-]?key|access[_-]?key)[\'\"]?)\s*(?::=|:|=)\s*[\'\"][^\'\"]{8,}[\'\"]'
               ),
-              'password_option': re.compile(r'(?is)\bOPTIONS\s*\([^)]*\bpassword\s+[\'\"][^\'\"]+[\'\"]'),
+              'password_option': re.compile(
+                  r'(?is)\bOPTIONS\s*\([^)]*\b(?:password|passfile|sslkey|sslpassword)\s+'
+                  r'[\'\"][^\'\"]+[\'\"]'
+              ),
+              'libpq_secret_keyword': re.compile(
+                  r'(?is)\b(?:CONNECTION\s+[\'\"][^\'\"]*|OPTIONS\s*\([^)]*)'
+                  r'\b(?:password|passfile|sslkey|sslpassword)\s*='
+              ),
+              'subscription_connection_string': re.compile(
+                  r'(?is)\bCREATE\s+SUBSCRIPTION\b.*?\bCONNECTION\s+[\'\"][^\'\"]+[\'\"]'
+              ),
               'email_like_pii': re.compile(r'(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'),
           }
           for rule, pattern in raw_rules.items():
@@ -486,11 +570,58 @@ jobs:
               record('sql_tokenizer_error', schema_name, 'statement:unknown')
               statements = []
 
+          expected_uat_routines = {
+              ('public', 'uat_full_business_reset_preview_v1'): 1,
+              ('public', 'uat_full_business_reset_v1'): 2,
+              ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1'): 2,
+          }
+          actual_uat_routines = {key: 0 for key in expected_uat_routines}
+          function_header = re.compile(
+              r'^\s*CREATE\s+FUNCTION\s+"([^"]+)"\."([^"]+)"\s*\(([^)]*)\)',
+              re.I,
+          )
+          expected_uat_types = {
+              ('public', 'uat_full_business_reset_preview_v1'): None,
+              ('public', 'uat_full_business_reset_v1'): 'text',
+              ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1'): 'uuid',
+          }
+          for index, (clean_statement, _safe_statement) in enumerate(statements, 1):
+              ref_count = clean_statement.count(os.environ['UAT_REF'])
+              if not ref_count:
+                  continue
+              header = function_header.match(clean_statement)
+              routine = header.group(1, 2) if header else None
+              if routine not in expected_uat_routines:
+                  record('uat_project_ref_outside_allowlisted_routine', schema_name, f'statement:{index}')
+                  continue
+              args = header.group(3).strip()
+              expected_type = expected_uat_types[routine]
+              if expected_type is None:
+                  signature_matches = args == ''
+              else:
+                  signature_matches = re.fullmatch(
+                      rf'(?:(?:IN\s+)?"[^"]+"\s+)?(?:"pg_catalog"\.)?"{expected_type}"',
+                      args,
+                      re.I,
+                  ) is not None
+              if not signature_matches:
+                  record('uat_project_ref_allowlisted_routine_signature_changed', schema_name, f'statement:{index}')
+                  continue
+              actual_uat_routines[routine] += ref_count
+          for routine, expected_count in expected_uat_routines.items():
+              actual_count = actual_uat_routines[routine]
+              if actual_count != expected_count:
+                  record(
+                      'uat_project_ref_routine_distribution_changed',
+                      schema_name,
+                      f'{routine[0]}.{routine[1]}:expected:{expected_count},actual:{actual_count}',
+                  )
+
           banned_start = re.compile(
               r'^\s*(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|REFRESH\s+MATERIALIZED\s+VIEW|'
               r'DO|CALL|PREPARE|EXECUTE|EXPLAIN|LOAD|VACUUM|ANALYZE|CLUSTER|REINDEX|ALTER\s+SYSTEM|'
-              r'CREATE\s+(?:DATABASE|SUBSCRIPTION|USER\s+MAPPING|ROLE|USER)|'
-              r'ALTER\s+(?:SUBSCRIPTION|ROLE|USER))\b',
+              r'CREATE\s+(?:DATABASE|SUBSCRIPTION|PUBLICATION|SERVER|EVENT\s+TRIGGER|USER\s+MAPPING|ROLE|USER)|'
+              r'ALTER\s+(?:SUBSCRIPTION|PUBLICATION|SERVER|ROLE|USER))\b',
               re.I,
           )
           allowed_schema_start = re.compile(
@@ -570,7 +701,7 @@ jobs:
           captured_at_utc="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           pg_dump_image_id="$(docker image inspect --format '{{.Id}}' "$PATCHED_PG_IMAGE")"
           export schema_sha256 schema_bytes preflight_before_sha256 preflight_after_sha256
-          export supabase_cli_version captured_at_utc pg_dump_version pg_dump_image_id connection_mode
+          export supabase_cli_version captured_at_utc pg_dump_version pg_dump_image_id connection_mode db_ca_sha256
 
           python3 - <<'PY'
           import json
@@ -581,6 +712,10 @@ jobs:
               'capture_format': 'phase4a2b-uat-baseline-capture-v1',
               'gate_head': os.environ['EXPECTED_BASE_COMMIT'],
               'workflow_commit': os.environ['GITHUB_SHA'],
+              'workflow_repository': os.environ['GITHUB_REPOSITORY'],
+              'workflow_ref': os.environ['GITHUB_REF'],
+              'workflow_run_id': int(os.environ['GITHUB_RUN_ID']),
+              'workflow_run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
               'frozen_source_commit': os.environ['FROZEN_SOURCE_COMMIT'],
               'frozen_source_tree': os.environ['FROZEN_SOURCE_TREE'],
               'preflight_blob': os.environ['EXPECTED_PREFLIGHT_BLOB'],
@@ -601,6 +736,8 @@ jobs:
               'dump_transformations_applied': False,
               'restore_guard_pair_preserved': True,
               'connection_mode': os.environ['connection_mode'],
+              'tls_mode': 'verify-full',
+              'tls_ca_certificate_sha256': os.environ['db_ca_sha256'],
               'pg_dump_image': os.environ['PATCHED_PG_IMAGE'],
               'pg_dump_image_id': os.environ['pg_dump_image_id'],
               'pg_dump_version': os.environ['pg_dump_version'],
@@ -654,6 +791,7 @@ jobs:
               receipt.json \
               companion-attestation.json \
               scan-report.txt \
+              stability-report.txt \
               > SHA256SUMS
           )
           recipient_cert="$RUNNER_TEMP/phase4a2-capture-recipient.pem"
@@ -690,13 +828,14 @@ jobs:
           test "$actual_cert_sha256" = "$CAPTURE_RECIPIENT_CERT_SHA256"
           actual_capture_members="$(find capture -mindepth 1 -maxdepth 1 -printf '%y %f\n' | LC_ALL=C sort)"
           expected_capture_members="$(printf '%s\n' \
-            'f SHA256SUMS' \
-            'f companion-attestation.json' \
-            'f phase4a2-uat-schema-raw.sql' \
-            'f preflight-and-companion-after.txt' \
-            'f preflight-and-companion-before.txt' \
-            'f receipt.json' \
-            'f scan-report.txt' \
+              'f SHA256SUMS' \
+              'f companion-attestation.json' \
+              'f phase4a2-uat-schema-raw.sql' \
+              'f preflight-and-companion-after.txt' \
+              'f preflight-and-companion-before.txt' \
+              'f receipt.json' \
+              'f scan-report.txt' \
+              'f stability-report.txt' \
             | LC_ALL=C sort)"
           test "$actual_capture_members" = "$expected_capture_members"
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
@@ -707,7 +846,8 @@ jobs:
             preflight-and-companion-after.txt \
             preflight-and-companion-before.txt \
             receipt.json \
-            scan-report.txt
+            scan-report.txt \
+            stability-report.txt
           actual_tar_members="$(tar -tzf "$package_file" | LC_ALL=C sort)"
           expected_tar_members="$(printf '%s\n' \
             'SHA256SUMS' \
@@ -717,6 +857,7 @@ jobs:
             'preflight-and-companion-before.txt' \
             'receipt.json' \
             'scan-report.txt' \
+            'stability-report.txt' \
             | LC_ALL=C sort)"
           test "$actual_tar_members" = "$expected_tar_members"
           mkdir -p encrypted-capture
@@ -740,14 +881,22 @@ jobs:
             '?? capture/preflight-and-companion-before.txt' \
             '?? capture/receipt.json' \
             '?? capture/scan-report.txt' \
+            '?? capture/stability-report.txt' \
             '?? encrypted-capture/phase4a2-uat-schema-capture.cms' \
             | LC_ALL=C sort)"
           test "$actual_status" = "$expected_status"
+          rm -f "$package_file"
+          package_file=''
+          find capture -mindepth 1 -maxdepth 1 -type f -delete
+          rmdir capture
+          test ! -e capture
+          test "$(git status --porcelain=v1 --untracked-files=all)" = \
+            '?? encrypted-capture/phase4a2-uat-schema-capture.cms'
 
       - name: Upload private short-lived capture artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: phase4a2b-uat-baseline-capture-${{ github.sha }}
+          name: phase4a2b-uat-baseline-capture-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: encrypted-capture/phase4a2-uat-schema-capture.cms
           if-no-files-found: error
           retention-days: 1
