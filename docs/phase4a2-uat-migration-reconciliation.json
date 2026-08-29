@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "phase4a2_uat_migration_reconciliation",
-  "captured_at_utc": "2026-08-28T10:56:29.400Z",
+  "captured_at_utc": "2026-08-29T17:22:50Z",
   "source": {
     "repository": "annapadlo1-commits/planer-",
     "branch": "codex/uat-consolidated-fixes",
@@ -20,7 +20,8 @@
         "environment": "ISOLATED_UAT",
         "projectRef": "nhthrtpkfpmufmrmdyjg"
       },
-      "control_key": "ISOLATED_UAT_DESTRUCTIVE_TOOLS"
+      "control_key": "ISOLATED_UAT_DESTRUCTIVE_TOOLS",
+      "enabled": true
     }
   },
   "ledger": {
@@ -3459,149 +3460,549 @@
       "public",
       "solver_private"
     ],
+    "user_schema_details": [
+      {
+        "owner": "postgres",
+        "schema": "authorization_private",
+        "acl_items": [
+          "postgres=UC/postgres"
+        ]
+      },
+      {
+        "owner": "supabase_admin",
+        "schema": "cron",
+        "acl_items": [
+          "postgres=U*/supabase_admin",
+          "supabase_admin=UC/supabase_admin"
+        ]
+      },
+      {
+        "owner": "pg_database_owner",
+        "schema": "public",
+        "acl_items": [
+          "=U/pg_database_owner",
+          "anon=U/pg_database_owner",
+          "authenticated=U/pg_database_owner",
+          "pg_database_owner=UC/pg_database_owner",
+          "postgres=U/pg_database_owner",
+          "service_role=U/pg_database_owner"
+        ]
+      },
+      {
+        "owner": "postgres",
+        "schema": "solver_private",
+        "acl_items": [
+          "postgres=UC/postgres",
+          "service_role=U/postgres"
+        ]
+      }
+    ],
     "managed_schema_policies": [
       {
-        "command": "DELETE",
+        "roles": [
+          "authenticated"
+        ],
+        "table": "objects",
         "policy": "profile_avatars_self_delete_v1",
+        "schema": "storage",
+        "command": "DELETE",
+        "permissive": "PERMISSIVE",
+        "using_expression": "((bucket_id = 'profile-avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+        "with_check_expression": null
+      },
+      {
         "roles": [
           "authenticated"
         ],
-        "schema": "storage",
-        "table": "objects"
-      },
-      {
-        "command": "INSERT",
+        "table": "objects",
         "policy": "profile_avatars_self_insert_v1",
+        "schema": "storage",
+        "command": "INSERT",
+        "permissive": "PERMISSIVE",
+        "using_expression": null,
+        "with_check_expression": "((bucket_id = 'profile-avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+      },
+      {
         "roles": [
           "authenticated"
         ],
-        "schema": "storage",
-        "table": "objects"
-      },
-      {
-        "command": "SELECT",
+        "table": "objects",
         "policy": "profile_avatars_self_select_v1",
-        "roles": [
-          "authenticated"
-        ],
         "schema": "storage",
-        "table": "objects"
+        "command": "SELECT",
+        "permissive": "PERMISSIVE",
+        "using_expression": "((bucket_id = 'profile-avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+        "with_check_expression": null
       },
       {
-        "command": "UPDATE",
-        "policy": "profile_avatars_self_update_v1",
         "roles": [
           "authenticated"
         ],
+        "table": "objects",
+        "policy": "profile_avatars_self_update_v1",
         "schema": "storage",
-        "table": "objects"
+        "command": "UPDATE",
+        "permissive": "PERMISSIVE",
+        "using_expression": "((bucket_id = 'profile-avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))",
+        "with_check_expression": "((bucket_id = 'profile-avatars'::text) AND ((storage.foldername(name))[1] = (( SELECT auth.uid() AS uid))::text))"
+      }
+    ],
+    "managed_policy_tables": [
+      {
+        "table": "objects",
+        "schema": "storage",
+        "force_rls": false,
+        "rls_enabled": true
+      }
+    ],
+    "realtime_publications": [
+      {
+        "owner": "postgres",
+        "all_tables": false,
+        "publication": "supabase_realtime",
+        "publish_delete": true,
+        "publish_insert": true,
+        "publish_update": true,
+        "publish_truncate": true,
+        "publish_via_root": false
       }
     ],
     "realtime_publication_members": [
       {
-        "publication": "supabase_realtime",
+        "table": "optimization_run_strategies_v2",
         "schema": "public",
-        "table": "optimization_run_strategies_v2"
+        "columns": null,
+        "row_filter": null,
+        "all_columns": true,
+        "publication": "supabase_realtime"
       },
       {
-        "publication": "supabase_realtime",
+        "table": "optimization_runs_v2",
         "schema": "public",
-        "table": "optimization_runs_v2"
+        "columns": null,
+        "row_filter": null,
+        "all_columns": true,
+        "publication": "supabase_realtime"
       }
     ],
+    "realtime_publication_schemas": [],
     "event_triggers": [
       {
-        "enabled": "O",
+        "name": "issue_graphql_placeholder",
+        "tags": [
+          "DROP EXTENSION"
+        ],
         "event": "sql_drop",
-        "name": "issue_graphql_placeholder"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "set_graphql_placeholder()"
       },
       {
-        "enabled": "O",
+        "name": "issue_pg_cron_access",
+        "tags": [
+          "CREATE EXTENSION"
+        ],
         "event": "ddl_command_end",
-        "name": "issue_pg_cron_access"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "grant_pg_cron_access()"
       },
       {
-        "enabled": "O",
+        "name": "issue_pg_graphql_access",
+        "tags": [
+          "CREATE EXTENSION"
+        ],
         "event": "ddl_command_end",
-        "name": "issue_pg_graphql_access"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "grant_pg_graphql_access()"
       },
       {
-        "enabled": "O",
+        "name": "issue_pg_net_access",
+        "tags": [
+          "CREATE EXTENSION"
+        ],
         "event": "ddl_command_end",
-        "name": "issue_pg_net_access"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "grant_pg_net_access()"
       },
       {
-        "enabled": "O",
+        "name": "pgrst_ddl_watch",
+        "tags": null,
         "event": "ddl_command_end",
-        "name": "pgrst_ddl_watch"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "pgrst_ddl_watch()"
       },
       {
-        "enabled": "O",
+        "name": "pgrst_drop_watch",
+        "tags": null,
         "event": "sql_drop",
-        "name": "pgrst_drop_watch"
+        "owner": "supabase_admin",
+        "enabled": "O",
+        "function": "pgrst_drop_watch()"
       }
     ],
     "extensions": [
       {
         "name": "pg_cron",
         "schema": "pg_catalog",
-        "version": "1.6.4"
+        "version": "1.6.4",
+        "relocatable": false
       },
       {
         "name": "pg_stat_statements",
         "schema": "extensions",
-        "version": "1.11"
+        "version": "1.11",
+        "relocatable": true
       },
       {
         "name": "pgcrypto",
         "schema": "extensions",
-        "version": "1.3"
+        "version": "1.3",
+        "relocatable": true
       },
       {
         "name": "pgmq",
         "schema": "pgmq",
-        "version": "1.5.1"
+        "version": "1.5.1",
+        "relocatable": false
       },
       {
         "name": "plpgsql",
         "schema": "pg_catalog",
-        "version": "1.0"
+        "version": "1.0",
+        "relocatable": false
       },
       {
         "name": "supabase_vault",
         "schema": "vault",
-        "version": "0.3.1"
+        "version": "0.3.1",
+        "relocatable": false
       },
       {
         "name": "uuid-ossp",
         "schema": "extensions",
-        "version": "1.1"
+        "version": "1.1",
+        "relocatable": true
       }
     ],
     "storage_buckets": [
       {
+        "id": "profile-avatars",
+        "name": "profile-avatars",
+        "type": "STANDARD",
+        "public": false,
+        "file_size_limit": 5242880,
+        "versioning_status": "DISABLED",
         "allowed_mime_types": [
           "image/jpeg",
           "image/png",
           "image/webp"
         ],
-        "file_size_limit": 5242880,
-        "id": "profile-avatars",
-        "name": "profile-avatars",
-        "public": false
+        "avif_autodetection": false
       }
     ],
     "cron_jobs": [
       {
         "active": true,
-        "command_bytes": 57,
-        "command_md5": "b7fd6127d5addd3ed945f227129d1c59",
-        "jobid": 1,
         "jobname": "grafik-pro-solver-v2-recovery",
-        "schedule": "* * * * *"
+        "database": "postgres",
+        "nodename": "localhost",
+        "nodeport": 5432,
+        "schedule": "* * * * *",
+        "username": "postgres",
+        "command_md5": "b7fd6127d5addd3ed945f227129d1c59",
+        "command_bytes": 57,
+        "command_sha256": "bcc3a7aec4daf8ce6cf981bfae60cd4de011b1b1d8a44f7f2879b18f47c893d4"
       }
     ],
-    "default_acl_count": 29
+    "default_acl_count": 29,
+    "default_acls": [
+      {
+        "schema": "pgmq",
+        "grantor": "postgres",
+        "acl_items": [
+          "pg_monitor=r/postgres"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "pgmq",
+        "grantor": "postgres",
+        "acl_items": [
+          "pg_monitor=r/postgres"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "public",
+        "grantor": "postgres",
+        "acl_items": [
+          "authenticated=X/postgres",
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "public",
+        "grantor": "postgres",
+        "acl_items": [
+          "anon=arwdDxtm/postgres",
+          "authenticated=arwdDxtm/postgres",
+          "postgres=arwdDxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "public",
+        "grantor": "postgres",
+        "acl_items": [
+          "anon=rwU/postgres",
+          "authenticated=rwU/postgres",
+          "postgres=rwU/postgres",
+          "service_role=rwU/postgres"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "storage",
+        "grantor": "postgres",
+        "acl_items": [
+          "anon=X/postgres",
+          "authenticated=X/postgres",
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "storage",
+        "grantor": "postgres",
+        "acl_items": [
+          "anon=arwdDxtm/postgres",
+          "authenticated=arwdDxtm/postgres",
+          "postgres=arwdDxtm/postgres",
+          "service_role=arwdDxtm/postgres"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "storage",
+        "grantor": "postgres",
+        "acl_items": [
+          "anon=rwU/postgres",
+          "authenticated=rwU/postgres",
+          "postgres=rwU/postgres",
+          "service_role=rwU/postgres"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "cron",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=X*/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "cron",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=a*r*w*d*D*x*t*m*/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "cron",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=r*w*U*/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "extensions",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=X*/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "extensions",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=a*r*w*d*D*x*t*m*/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "extensions",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "postgres=r*w*U*/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "graphql",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=X/supabase_admin",
+          "authenticated=X/supabase_admin",
+          "postgres=X/supabase_admin",
+          "service_role=X/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "graphql",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=arwdDxtm/supabase_admin",
+          "authenticated=arwdDxtm/supabase_admin",
+          "postgres=arwdDxtm/supabase_admin",
+          "service_role=arwdDxtm/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "graphql",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=rwU/supabase_admin",
+          "authenticated=rwU/supabase_admin",
+          "postgres=rwU/supabase_admin",
+          "service_role=rwU/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "graphql_public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=X/supabase_admin",
+          "authenticated=X/supabase_admin",
+          "postgres=X/supabase_admin",
+          "service_role=X/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "graphql_public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=arwdDxtm/supabase_admin",
+          "authenticated=arwdDxtm/supabase_admin",
+          "postgres=arwdDxtm/supabase_admin",
+          "service_role=arwdDxtm/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "graphql_public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=rwU/supabase_admin",
+          "authenticated=rwU/supabase_admin",
+          "postgres=rwU/supabase_admin",
+          "service_role=rwU/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=X/supabase_admin",
+          "authenticated=X/supabase_admin",
+          "postgres=X/supabase_admin",
+          "service_role=X/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=arwdDxtm/supabase_admin",
+          "authenticated=arwdDxtm/supabase_admin",
+          "postgres=arwdDxtm/supabase_admin",
+          "service_role=arwdDxtm/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "public",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "anon=rwU/supabase_admin",
+          "authenticated=rwU/supabase_admin",
+          "postgres=rwU/supabase_admin",
+          "service_role=rwU/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "realtime",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "dashboard_user=X/supabase_admin",
+          "postgres=X/supabase_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "realtime",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "dashboard_user=arwdDxtm/supabase_admin",
+          "postgres=arwdDxtm/supabase_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "realtime",
+        "grantor": "supabase_admin",
+        "acl_items": [
+          "dashboard_user=rwU/supabase_admin",
+          "postgres=rwU/supabase_admin"
+        ],
+        "object_type": "S"
+      },
+      {
+        "schema": "auth",
+        "grantor": "supabase_auth_admin",
+        "acl_items": [
+          "dashboard_user=X/supabase_auth_admin",
+          "postgres=X/supabase_auth_admin"
+        ],
+        "object_type": "f"
+      },
+      {
+        "schema": "auth",
+        "grantor": "supabase_auth_admin",
+        "acl_items": [
+          "dashboard_user=arwdDxtm/supabase_auth_admin",
+          "postgres=arwdDxtm/supabase_auth_admin"
+        ],
+        "object_type": "r"
+      },
+      {
+        "schema": "auth",
+        "grantor": "supabase_auth_admin",
+        "acl_items": [
+          "dashboard_user=rwU/supabase_auth_admin",
+          "postgres=rwU/supabase_auth_admin"
+        ],
+        "object_type": "S"
+      }
+    ]
   },
   "safety_decision": {
     "normal_migrator": "STOP",
@@ -3615,5 +4016,37 @@
       "20260822220000_b4f169_deterministic_fairness_quality_gate"
     ],
     "reason": "Timestamp drift is not cosmetic: 41 same-name migrations have different SQL, and UAT contains 82 live-only migrations. Replaying or mass-renaming source migrations is unsafe."
+  },
+  "catalog_rendering_context": {
+    "search_path": "\"\\$user\", public, extensions",
+    "capture_role": "postgres",
+    "server_version_num": "170006",
+    "quote_all_identifiers": "off",
+    "capture_role_bypasses_rls": true
+  },
+  "preflight_artifact": {
+    "path": "docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql",
+    "bytes": 21156,
+    "git_blob_sha1": "9d43a89a0e533b336e8d071832f321fcc0774972",
+    "file_sha256": "52b9412dbaa71c9cebafaf1cbf9baef74d029deff2e7672a606c438297c690e9"
+  },
+  "companion_snapshot": {
+    "serialization_version": "phase4a2-companion-v2",
+    "record_count": 56,
+    "fingerprint_algorithm": "SHA-256 over newline-joined tagged UTF-8 hex records ordered by kind, object key, and record text under C collation",
+    "fingerprint_sha256": "e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c913725cb559e4c074d",
+    "category_counts": {
+      "managed_policy": 4,
+      "managed_policy_table": 1,
+      "storage_bucket": 1,
+      "realtime_publication": 1,
+      "realtime_publication_member": 2,
+      "realtime_publication_schema": 0,
+      "event_trigger": 6,
+      "cron_job": 1,
+      "extension": 7,
+      "user_schema": 4,
+      "default_acl": 29
+    }
   }
 }
