@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 7b6bd1a4975bae857ad5779df102c7a9215d137a
+      EXPECTED_WORKFLOW_PARENT: 6aed305111f14d3cdfac2197556f4a16ee0acb5f
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -125,13 +125,19 @@ jobs:
           if parsed.path != "/postgres" or parsed.port != 5432:
               raise SystemExit("unexpected database name or port")
           query = parse_qs(parsed.query, keep_blank_values=True)
-          unknown_query_keys = set(query) - {"sslmode", "supa"}
+          unknown_query_keys = set(query) - {"sslmode", "supa", "connect_timeout"}
           if unknown_query_keys:
               raise SystemExit(
                   "unexpected database URL query keys: " + ",".join(sorted(unknown_query_keys))
               )
           if "sslmode" in query and query["sslmode"] not in (["require"], ["verify-ca"], ["verify-full"]):
               raise SystemExit("database URL does not require TLS")
+          if "connect_timeout" in query and (
+              len(query["connect_timeout"]) != 1
+              or not query["connect_timeout"][0].isdigit()
+              or not 1 <= int(query["connect_timeout"][0]) <= 60
+          ):
+              raise SystemExit("unexpected database connection timeout")
           if "supa" in query and (
               len(query["supa"]) != 1
               or re.fullmatch(r"base-pooler\.[A-Za-z0-9_-]{1,32}", query["supa"][0]) is None
