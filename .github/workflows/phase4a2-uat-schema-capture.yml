@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 8f9054afc2c4a8bd39570f8e9bcb4e0d9e1b4ef2
+      EXPECTED_WORKFLOW_PARENT: b0f9318a008a8e91b21680abc0fed1d951e1fb04
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -92,9 +92,14 @@ jobs:
             echo 'Supabase branch credential lookup failed; diagnostic output was suppressed.' >&2
             exit 1
           fi
-          test "$(grep -c '^SUPABASE_URL=' "$credential_file")" -eq 1
-          test "$(grep -c '^POSTGRES_URL=' "$credential_file")" -eq 1
-          test "$(grep -c '^POSTGRES_URL_NON_POOLING=' "$credential_file")" -eq 1
+          supabase_url_count="$(grep -c '^SUPABASE_URL=' "$credential_file" || true)"
+          pooled_url_count="$(grep -c '^POSTGRES_URL=' "$credential_file" || true)"
+          direct_url_count="$(grep -c '^POSTGRES_URL_NON_POOLING=' "$credential_file" || true)"
+          printf 'credential-key-counts: supabase=%s pooled=%s direct=%s\n' \
+            "$supabase_url_count" "$pooled_url_count" "$direct_url_count"
+          test "$supabase_url_count" -eq 1
+          test "$pooled_url_count" -eq 1
+          test "$direct_url_count" -eq 1
 
           read_env_value() {
             local key="$1" line value
@@ -193,6 +198,7 @@ jobs:
           db_password_raw="${db_parts[1]:-}"
           db_password="${db_parts[2]:-}"
           db_url="${db_parts[3]:-}"
+          printf 'database-url-parser-lines=%s\n' "${#db_parts[@]}"
           test "$connection_mode" = 'session-pooler'
           test -n "$db_url"
 
