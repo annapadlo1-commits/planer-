@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 6aed305111f14d3cdfac2197556f4a16ee0acb5f
+      EXPECTED_WORKFLOW_PARENT: 8f9054afc2c4a8bd39570f8e9bcb4e0d9e1b4ef2
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -93,6 +93,7 @@ jobs:
             exit 1
           fi
           test "$(grep -c '^SUPABASE_URL=' "$credential_file")" -eq 1
+          test "$(grep -c '^POSTGRES_URL=' "$credential_file")" -eq 1
           test "$(grep -c '^POSTGRES_URL_NON_POOLING=' "$credential_file")" -eq 1
 
           read_env_value() {
@@ -107,7 +108,7 @@ jobs:
           }
 
           api_url="$(read_env_value SUPABASE_URL)"
-          db_url_source="$(read_env_value POSTGRES_URL_NON_POOLING)"
+          db_url_source="$(read_env_value POSTGRES_URL)"
           test "$api_url" = "https://${EXPECTED_UAT_PROJECT_REF}.supabase.co"
           test -n "$db_url_source"
 
@@ -122,10 +123,12 @@ jobs:
           parent_ref = os.environ["PARENT_PROJECT_REF"]
           if parsed.scheme not in {"postgres", "postgresql"}:
               raise SystemExit("unexpected database URL scheme")
-          if parsed.path != "/postgres" or parsed.port != 5432:
-              raise SystemExit("unexpected database name or port")
+          if parsed.path != "/postgres":
+              raise SystemExit("unexpected database name")
           query = parse_qs(parsed.query, keep_blank_values=True)
-          unknown_query_keys = set(query) - {"sslmode", "supa", "connect_timeout"}
+          unknown_query_keys = set(query) - {
+              "sslmode", "supa", "connect_timeout", "pgbouncer", "connection_limit"
+          }
           if unknown_query_keys:
               raise SystemExit(
                   "unexpected database URL query keys: " + ",".join(sorted(unknown_query_keys))
@@ -143,30 +146,44 @@ jobs:
               or re.fullmatch(r"base-pooler\.[A-Za-z0-9_-]{1,32}", query["supa"][0]) is None
           ):
               raise SystemExit("unexpected Supabase pooler routing marker")
+          if "pgbouncer" in query and query["pgbouncer"] != ["true"]:
+              raise SystemExit("unexpected pgbouncer marker")
+          if "connection_limit" in query and (
+              len(query["connection_limit"]) != 1
+              or not query["connection_limit"][0].isdigit()
+              or not 1 <= int(query["connection_limit"][0]) <= 100
+          ):
+              raise SystemExit("unexpected pooler connection limit")
           host = parsed.hostname or ""
           user = parsed.username or ""
-          direct = host == f"db.{expected_ref}.supabase.co" and user == "postgres"
           session_pooler = (
               re.fullmatch(r"aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com", host) is not None
               and user == f"postgres.{expected_ref}"
+              and parsed.port in {5432, 6543}
           )
-          if not (direct or session_pooler):
-              raise SystemExit("database URL is not an exact allowed UAT endpoint")
+          if not session_pooler:
+              raise SystemExit("database URL is not an exact allowed UAT session-pooler endpoint")
           if parent_ref in host or parent_ref in user:
               raise SystemExit("production database target is forbidden")
           raw_password = parsed.password or ""
           decoded_password = unquote(raw_password)
           if any(char in decoded_password for char in "\r\n\x00"):
               raise SystemExit("database password contains unsupported control bytes")
-          connection_query = {key: values for key, values in query.items() if key != "supa"}
+          connection_query = {
+              key: values
+              for key, values in query.items()
+              if key not in {"supa", "pgbouncer", "connection_limit"}
+          }
+          userinfo = parsed.netloc.rsplit('@', 1)[0]
+          session_netloc = f"{userinfo}@{host}:5432"
           sanitized_url = urlunsplit((
               parsed.scheme,
-              parsed.netloc,
+              session_netloc,
               parsed.path,
               urlencode(connection_query, doseq=True),
               '',
           ))
-          print("direct" if direct else "session-pooler")
+          print("session-pooler")
           print(raw_password)
           print(decoded_password)
           print(sanitized_url)
@@ -176,7 +193,7 @@ jobs:
           db_password_raw="${db_parts[1]:-}"
           db_password="${db_parts[2]:-}"
           db_url="${db_parts[3]:-}"
-          test "$connection_mode" = 'direct' || test "$connection_mode" = 'session-pooler'
+          test "$connection_mode" = 'session-pooler'
           test -n "$db_url"
 
           echo "::add-mask::$api_url"
