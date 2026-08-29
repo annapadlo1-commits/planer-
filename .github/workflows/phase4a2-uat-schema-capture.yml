@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: f7e0c310920a395a6dff687f598f3d0b19c901b5
+      EXPECTED_WORKFLOW_PARENT: db059b87c40a95810de93b0f4cd79e7f0c6a39ab
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -229,13 +229,16 @@ jobs:
             docker run --rm --network host \
               -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE \
               "$PATCHED_PG_IMAGE" \
-              sh -ceu 'psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c "show transaction_read_only"'
+              sh -ceu 'psql "$DATABASE_URL" -X -A -t -q -v ON_ERROR_STOP=1 \
+                -c "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" \
+                -c "SHOW transaction_read_only" \
+                -c "ROLLBACK"'
           )"
           if [[ "$readonly_state" != 'on' ]]; then
-            echo 'capture-stage=readonly-session-unexpected' >&2
+            echo 'capture-stage=readonly-transaction-unexpected' >&2
             exit 1
           fi
-          echo 'capture-stage=readonly-session-ok'
+          echo 'capture-stage=readonly-transaction-ok'
 
           run_preflight() {
             local output="$1"
@@ -264,6 +267,7 @@ jobs:
               --schema-only \
               --quote-all-identifiers \
               --role "postgres" \
+              --lock-wait-timeout "5s" \
               --exclude-schema "$EXCLUDED_SCHEMAS" \
               --no-password' \
             > capture/phase4a2-uat-schema-raw.sql
@@ -583,6 +587,7 @@ jobs:
               'preflight_after': 'GO — READ-ONLY SCHEMA CAPTURE ONLY',
               'supabase_cli_version': os.environ['supabase_cli_version'],
               'dump_semantics': 'patched-pg-dump-17.11-schema-only-with-supabase-2.116.0-exclusions',
+              'pg_dump_transaction_mode': 'REPEATABLE READ, READ ONLY (PostgreSQL REL_17_11)',
               'dump_transformations_applied': False,
               'restore_guard_pair_preserved': True,
               'connection_mode': os.environ['connection_mode'],
