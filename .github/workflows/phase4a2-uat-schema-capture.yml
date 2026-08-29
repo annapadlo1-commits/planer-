@@ -1,0 +1,648 @@
+name: Phase 4A.2 UAT schema capture (one-time)
+
+on:
+  push:
+    branches:
+      - ops/phase4a2-uat-schema-capture-20260829
+    paths:
+      - .github/workflows/phase4a2-uat-schema-capture.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase4a2-uat-schema-capture-once
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: Read-only UAT schema capture
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/ops/phase4a2-uat-schema-capture-20260829' &&
+      github.event.head_commit.message == 'ops: run phase4a2 UAT schema capture once'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PARENT_PROJECT_REF: bdybebzvzapihjdauehg
+      TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
+      EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
+      EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
+      FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
+      FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
+      EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
+      EXPECTED_PREFLIGHT_SHA256: 52b9412dbaa71c9cebafaf1cbf9baef74d029deff2e7672a606c438297c690e9
+      PATCHED_PG_IMAGE: postgres@sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28
+      CAPTURE_RECIPIENT_CERT_SHA256: 33241ddfba5a9251d782710f8d5c58ba30f01bcb131910eab019ead6d651668f
+
+    steps:
+      - name: Check out the exact capture commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Git and preflight identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE_COMMIT"
+          test "$(git rev-parse "$FROZEN_SOURCE_COMMIT^{tree}")" = "$FROZEN_SOURCE_TREE"
+          git merge-base --is-ancestor "$FROZEN_SOURCE_COMMIT" HEAD
+          git diff --exit-code "$FROZEN_SOURCE_COMMIT" HEAD -- supabase/migrations
+          test "$(git diff --name-only HEAD^..HEAD)" = ".github/workflows/phase4a2-uat-schema-capture.yml"
+          test "$(git hash-object docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql)" = "$EXPECTED_PREFLIGHT_BLOB"
+          test "$(sha256sum docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql | cut -d' ' -f1)" = "$EXPECTED_PREFLIGHT_SHA256"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520
+        with:
+          version: 2.116.0
+
+      - name: Capture and validate the exact UAT schema
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          echo "::add-mask::$SUPABASE_ACCESS_TOKEN"
+
+          credential_file="$RUNNER_TEMP/phase4a2-branch.env"
+          credential_error_log="$RUNNER_TEMP/phase4a2-branch.err"
+          recipient_cert=''
+          package_file=''
+          : > "$credential_file"
+          : > "$credential_error_log"
+          chmod 600 "$credential_file" "$credential_error_log"
+          cleanup_sensitive_files() {
+            rm -f "$credential_file" "$credential_error_log"
+            if [[ -n "${recipient_cert:-}" ]]; then rm -f "$recipient_cert"; fi
+            if [[ -n "${package_file:-}" ]]; then rm -f "$package_file"; fi
+          }
+          trap cleanup_sensitive_files EXIT
+          if ! supabase --experimental branches get "$TARGET_BRANCH_NAME" \
+            --project-ref "$PARENT_PROJECT_REF" \
+            -o env > "$credential_file" 2> "$credential_error_log"; then
+            echo 'Supabase branch credential lookup failed; diagnostic output was suppressed.' >&2
+            exit 1
+          fi
+          test "$(grep -c '^SUPABASE_URL=' "$credential_file")" -eq 1
+          test "$(grep -c '^POSTGRES_URL_NON_POOLING=' "$credential_file")" -eq 1
+
+          read_env_value() {
+            local key="$1" line value
+            line="$(grep -m1 "^${key}=" "$credential_file")"
+            value="${line#*=}"
+            value="${value%$'\r'}"
+            if [[ "${#value}" -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+              value="${value:1:${#value}-2}"
+            fi
+            printf '%s' "$value"
+          }
+
+          api_url="$(read_env_value SUPABASE_URL)"
+          db_url="$(read_env_value POSTGRES_URL_NON_POOLING)"
+          test "$api_url" = "https://${EXPECTED_UAT_PROJECT_REF}.supabase.co"
+          test -n "$db_url"
+
+          mapfile -t db_parts < <(
+            DB_URL="$db_url" python3 - <<'PY'
+          import os
+          import re
+          from urllib.parse import parse_qs, unquote, urlsplit
+
+          parsed = urlsplit(os.environ["DB_URL"])
+          expected_ref = os.environ["EXPECTED_UAT_PROJECT_REF"]
+          parent_ref = os.environ["PARENT_PROJECT_REF"]
+          if parsed.scheme not in {"postgres", "postgresql"}:
+              raise SystemExit("unexpected database URL scheme")
+          if parsed.path != "/postgres" or parsed.port != 5432:
+              raise SystemExit("unexpected database name or port")
+          query = parse_qs(parsed.query, keep_blank_values=True)
+          if set(query) - {"sslmode"}:
+              raise SystemExit("unexpected database URL query parameter")
+          if "sslmode" in query and query["sslmode"] not in (["require"], ["verify-ca"], ["verify-full"]):
+              raise SystemExit("database URL does not require TLS")
+          host = parsed.hostname or ""
+          user = parsed.username or ""
+          direct = host == f"db.{expected_ref}.supabase.co" and user == "postgres"
+          session_pooler = (
+              re.fullmatch(r"aws-[0-9]+-[a-z0-9-]+\.pooler\.supabase\.com", host) is not None
+              and user == f"postgres.{expected_ref}"
+          )
+          if not (direct or session_pooler):
+              raise SystemExit("database URL is not an exact allowed UAT endpoint")
+          if parent_ref in host or parent_ref in user:
+              raise SystemExit("production database target is forbidden")
+          raw_password = parsed.password or ""
+          decoded_password = unquote(raw_password)
+          if any(char in decoded_password for char in "\r\n\x00"):
+              raise SystemExit("database password contains unsupported control bytes")
+          print("direct" if direct else "session-pooler")
+          print(raw_password)
+          print(decoded_password)
+          PY
+          )
+          connection_mode="${db_parts[0]:-}"
+          db_password_raw="${db_parts[1]:-}"
+          db_password="${db_parts[2]:-}"
+          test "$connection_mode" = 'direct' || test "$connection_mode" = 'session-pooler'
+
+          echo "::add-mask::$api_url"
+          echo "::add-mask::$db_url"
+          if [[ -n "$db_password_raw" ]]; then
+            echo "::add-mask::$db_password_raw"
+          fi
+          if [[ -n "$db_password" ]]; then
+            echo "::add-mask::$db_password"
+          fi
+
+          mkdir -p capture
+          docker pull "$PATCHED_PG_IMAGE" >/dev/null
+          pg_dump_version="$(docker run --rm "$PATCHED_PG_IMAGE" pg_dump --version)"
+          if [[ ! "$pg_dump_version" =~ ^pg_dump\ \(PostgreSQL\)\ 17\.11([[:space:]].*)?$ ]]; then
+            echo 'Patched pg_dump 17.11 was not resolved.' >&2
+            exit 1
+          fi
+
+          export DATABASE_URL="$db_url"
+          export PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000'
+          export PGSSLMODE='require'
+          readonly_state="$(
+            docker run --rm --network host \
+              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE \
+              "$PATCHED_PG_IMAGE" \
+              sh -ceu 'psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c "show transaction_read_only"'
+          )"
+          test "$readonly_state" = 'on'
+
+          run_preflight() {
+            local output="$1"
+            docker run --rm --network host \
+              -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE \
+              -v "$GITHUB_WORKSPACE:/work:ro" \
+              "$PATCHED_PG_IMAGE" \
+              sh -ceu 'psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+                -c "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" \
+                -f /work/docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql \
+                -c "COMMIT"' \
+              > "$output"
+            test "$(grep -Fc 'GO — READ-ONLY SCHEMA CAPTURE ONLY' "$output")" -eq 1
+            ! grep -Fq 'STOP —' "$output"
+          }
+
+          run_preflight capture/preflight-and-companion-before.txt
+
+          export EXCLUDED_SCHEMAS='information_schema|pg_*|_analytics|_realtime|_supavisor|auth|etl|extensions|pgbouncer|realtime|storage|supabase_functions|supabase_migrations|cron|dbdev|graphql|graphql_public|net|pgmq|pgsodium|pgsodium_masks|pgtle|repack|tiger|tiger_data|timescaledb_*|_timescaledb_*|topology|vault'
+          docker run --rm --network host \
+            -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e EXCLUDED_SCHEMAS \
+            "$PATCHED_PG_IMAGE" \
+            bash -euo pipefail -c 'pg_dump \
+              --dbname="$DATABASE_URL" \
+              --schema-only \
+              --quote-all-identifiers \
+              --role "postgres" \
+              --exclude-schema "$EXCLUDED_SCHEMAS" \
+              --no-password' \
+            > capture/phase4a2-uat-schema-raw.sql
+          test -s capture/phase4a2-uat-schema-raw.sql
+
+          run_preflight capture/preflight-and-companion-after.txt
+
+          DB_URL="$db_url" DB_PASSWORD="$db_password" DB_PASSWORD_RAW="$db_password_raw" API_URL="$api_url" \
+          ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN" UAT_REF="$EXPECTED_UAT_PROJECT_REF" \
+          PROD_REF="$PARENT_PROJECT_REF" python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          findings = []
+
+          def record(rule, filename, location):
+              findings.append((rule, filename, str(location)))
+
+          def load_text(filename, byte_ceiling):
+              path = Path('capture') / filename
+              data = path.read_bytes()
+              if not data:
+                  record('empty_artifact', filename, 'byte:0')
+              if len(data) > byte_ceiling:
+                  record('artifact_size_limit', filename, f'bytes:{len(data)}')
+              if b'\x00' in data:
+                  record('nul_byte', filename, f'byte:{data.index(bytes([0]))}')
+              try:
+                  return data.decode('utf-8', errors='strict')
+              except UnicodeDecodeError as error:
+                  record('invalid_utf8', filename, f'byte:{error.start}')
+                  return ''
+
+          texts = {
+              'phase4a2-uat-schema-raw.sql': load_text('phase4a2-uat-schema-raw.sql', 50 * 1024 * 1024),
+              'preflight-and-companion-before.txt': load_text('preflight-and-companion-before.txt', 5 * 1024 * 1024),
+              'preflight-and-companion-after.txt': load_text('preflight-and-companion-after.txt', 5 * 1024 * 1024),
+          }
+          schema_name = 'phase4a2-uat-schema-raw.sql'
+          schema = texts[schema_name]
+
+          def add_match(rule, filename, text, match):
+              line = text.count('\n', 0, match.start()) + 1
+              record(rule, filename, f'line:{line}')
+
+          exact_secrets = {
+              'exact_db_url': os.environ.get('DB_URL', ''),
+              'exact_db_password': os.environ.get('DB_PASSWORD', ''),
+              'exact_db_password_encoded': os.environ.get('DB_PASSWORD_RAW', ''),
+              'exact_api_url': os.environ.get('API_URL', ''),
+              'exact_access_token': os.environ.get('ACCESS_TOKEN', ''),
+          }
+          for rule, value in exact_secrets.items():
+              if not value:
+                  continue
+              for filename, text in texts.items():
+                  start = text.find(value)
+                  if start >= 0:
+                      record(rule, filename, f'line:{text.count(chr(10), 0, start) + 1}')
+
+          raw_rules = {
+              'database_url': re.compile(r'postgres(?:ql)?://', re.I),
+              'private_key': re.compile(r'-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----'),
+              'jwt': re.compile(r'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}'),
+              'supabase_personal_token': re.compile(r'\bsbp_[A-Za-z0-9_-]{20,}\b'),
+              'supabase_secret_key': re.compile(r'\bsb_secret_[A-Za-z0-9_-]{20,}\b'),
+              'bearer_token': re.compile(r'(?i)\bBearer\s+[A-Za-z0-9._~+/-]{16,}={0,2}'),
+              'github_token': re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b'),
+              'aws_access_key': re.compile(r'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b'),
+              'webhook_url': re.compile(r'(?i)https://(?:hooks\.slack\.com/services/|discord(?:app)?\.com/api/webhooks/|[^\s\"\']*webhook[^\s\"\']*)[^\s\"\']+'),
+              'literal_secret': re.compile(
+                  r'(?i)(?:[\'\"]?(?:password|passwd|client[_-]?secret|secret|access[_-]?token|token|'
+                  r'api[_-]?key|access[_-]?key)[\'\"]?)\s*(?::=|:|=)\s*[\'\"][^\'\"]{8,}[\'\"]'
+              ),
+              'password_option': re.compile(r'(?is)\bOPTIONS\s*\([^)]*\bpassword\s+[\'\"][^\'\"]+[\'\"]'),
+              'email_like_pii': re.compile(r'(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b'),
+          }
+          for rule, pattern in raw_rules.items():
+              for filename, text in texts.items():
+                  for match in pattern.finditer(text):
+                      add_match(rule, filename, text, match)
+
+          for match in re.finditer(re.escape(os.environ['UAT_REF']), schema):
+              add_match('uat_project_ref_in_schema', schema_name, schema, match)
+          for filename, text in texts.items():
+              for match in re.finditer(re.escape(os.environ['PROD_REF']), text):
+                  add_match('production_project_ref', filename, text, match)
+
+          if '-- Dumped by pg_dump version 17.11' not in schema:
+              record('unexpected_pg_dump_header', schema_name, 'line:1')
+
+          meta = []
+          for line_number, line in enumerate(schema.splitlines(), 1):
+              if line.lstrip(' \t').startswith('\\'):
+                  meta.append((line_number, line))
+          meta_pattern = re.compile(r'^\\(restrict|unrestrict)\s+([A-Za-z0-9]{32,128})$')
+          meta_matches = [(line, meta_pattern.fullmatch(value)) for line, value in meta]
+          if len(meta_matches) != 2 or any(match is None for _, match in meta_matches):
+              for line, match in meta_matches:
+                  if match is None:
+                      record('unexpected_psql_meta_command', schema_name, f'line:{line}')
+              record('restore_guard_pair_count', schema_name, f'count:{len(meta_matches)}')
+              valid_meta_lines = set()
+          else:
+              first_line, first = meta_matches[0]
+              second_line, second = meta_matches[1]
+              if first.group(1) != 'restrict' or second.group(1) != 'unrestrict':
+                  record('restore_guard_order', schema_name, f'lines:{first_line},{second_line}')
+              if first.group(2) != second.group(2):
+                  record('restore_guard_token_mismatch', schema_name, f'lines:{first_line},{second_line}')
+              lines = schema.splitlines()
+              if any(line.strip() and not line.lstrip().startswith('--') for line in lines[:first_line - 1]):
+                  record('content_before_restore_guard', schema_name, f'line:{first_line}')
+              if any(line.strip() and not line.lstrip().startswith('--') for line in lines[second_line:]):
+                  record('content_after_restore_guard', schema_name, f'line:{second_line}')
+              valid_meta_lines = {first_line, second_line}
+
+          sql_for_lexer = ''.join(
+              '\n' if line_number in valid_meta_lines else line
+              for line_number, line in enumerate(schema.splitlines(keepends=True), 1)
+          )
+
+          def outside_statements(sql):
+              statements = []
+              clean = []
+              safe = []
+              i = 0
+              state = 'normal'
+              dollar_tag = None
+              block_depth = 0
+              escape_string = False
+
+              def whitespace():
+                  clean.append(' ')
+                  safe.append(' ')
+
+              def flush():
+                  clean_sql = ''.join(clean).strip()
+                  safe_sql = ''.join(safe).strip()
+                  if clean_sql:
+                      statements.append((clean_sql, safe_sql))
+                  clean.clear()
+                  safe.clear()
+
+              while i < len(sql):
+                  if state == 'normal':
+                      if sql.startswith('--', i):
+                          state = 'line_comment'; whitespace(); i += 2; continue
+                      if sql.startswith('/*', i):
+                          state = 'block_comment'; block_depth = 1; whitespace(); i += 2; continue
+                      if sql[i] == "'":
+                          escape_string = (
+                              i > 0 and sql[i - 1] in 'Ee'
+                              and (i < 2 or not (sql[i - 2].isalnum() or sql[i - 2] == '_'))
+                          )
+                          state = 'single'; clean.append(sql[i]); safe.append(' '); i += 1; continue
+                      if sql[i] == '"':
+                          state = 'double'; clean.append(sql[i]); safe.append(sql[i]); i += 1; continue
+                      if sql[i] == '$':
+                          match = re.match(r'\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$', sql[i:])
+                          if match:
+                              dollar_tag = match.group(0); state = 'dollar'
+                              clean.append(dollar_tag); safe.append(' '); i += len(dollar_tag); continue
+                      if sql[i] == ';':
+                          flush(); i += 1; continue
+                      clean.append(sql[i]); safe.append(sql[i]); i += 1; continue
+                  if state == 'line_comment':
+                      if sql[i] == '\n': state = 'normal'; clean.append('\n'); safe.append('\n')
+                      i += 1; continue
+                  if state == 'block_comment':
+                      if sql.startswith('/*', i): block_depth += 1; i += 2; continue
+                      if sql.startswith('*/', i):
+                          block_depth -= 1; i += 2
+                          if block_depth == 0: state = 'normal'
+                          continue
+                      if sql[i] == '\n': clean.append('\n'); safe.append('\n')
+                      i += 1; continue
+                  if state == 'single':
+                      if escape_string and sql[i] == '\\' and i + 1 < len(sql):
+                          clean.extend((sql[i], sql[i + 1])); safe.extend((' ', ' ')); i += 2; continue
+                      if sql.startswith("''", i):
+                          clean.extend(("'", "'")); safe.extend((' ', ' ')); i += 2; continue
+                      clean.append(sql[i]); safe.append(' ')
+                      if sql[i] == "'": state = 'normal'
+                      i += 1; continue
+                  if state == 'double':
+                      if sql.startswith('""', i):
+                          clean.extend(('"', '"')); safe.extend(('"', '"')); i += 2; continue
+                      clean.append(sql[i]); safe.append(sql[i])
+                      if sql[i] == '"': state = 'normal'
+                      i += 1; continue
+                  if state == 'dollar':
+                      if sql.startswith(dollar_tag, i):
+                          clean.append(dollar_tag); safe.append(' ')
+                          state = 'normal'; i += len(dollar_tag); continue
+                      clean.append(sql[i]); safe.append(' '); i += 1; continue
+              if state not in ('normal', 'line_comment') or block_depth:
+                  raise ValueError('unterminated SQL lexical construct')
+              flush()
+              return statements
+
+          try:
+              statements = outside_statements(sql_for_lexer)
+          except ValueError:
+              record('sql_tokenizer_error', schema_name, 'statement:unknown')
+              statements = []
+
+          banned_start = re.compile(
+              r'^\s*(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|REFRESH\s+MATERIALIZED\s+VIEW|'
+              r'DO|CALL|PREPARE|EXECUTE|EXPLAIN|LOAD|VACUUM|ANALYZE|CLUSTER|REINDEX|ALTER\s+SYSTEM|'
+              r'CREATE\s+(?:DATABASE|SUBSCRIPTION|USER\s+MAPPING|ROLE|USER)|'
+              r'ALTER\s+(?:SUBSCRIPTION|ROLE|USER))\b',
+              re.I,
+          )
+          allowed_schema_start = re.compile(
+              r'^\s*(?:SET|SELECT|CREATE|ALTER|COMMENT|GRANT|REVOKE|SECURITY\s+LABEL)\b',
+              re.I,
+          )
+          allowed_set_config = re.compile(
+              r'^\s*SELECT\s+(?:pg_catalog|"pg_catalog")\.(?:set_config|"set_config")\s*'
+              r"\(\s*'search_path'\s*,\s*''\s*,\s*false\s*\)\s*$",
+              re.I | re.S,
+          )
+          for index, (clean_statement, safe_statement) in enumerate(statements, 1):
+              location = f'statement:{index}'
+              if re.match(r'^\s*\(', safe_statement):
+                  record('parenthesized_top_level_statement', schema_name, location)
+              if not allowed_schema_start.search(safe_statement):
+                  record('unexpected_top_level_statement_class', schema_name, location)
+              if banned_start.search(safe_statement):
+                  record('forbidden_top_level_statement', schema_name, location)
+              if re.match(r'^\s*WITH\b', safe_statement, re.I):
+                  record('top_level_cte', schema_name, location)
+              if re.match(r'^\s*SELECT\b', safe_statement, re.I) and not allowed_set_config.fullmatch(clean_statement):
+                  record('unexpected_top_level_select', schema_name, location)
+              if '\\' in safe_statement:
+                  record('unexpected_psql_meta_escape', schema_name, location)
+              if re.match(
+                  r'^\s*CREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP(?:ORARY)?\s+)?(?:UNLOGGED\s+)?TABLE\b',
+                  safe_statement,
+                  re.I,
+              ) and re.search(r'\bAS\s*(?:\(\s*)*(?:SELECT|WITH|TABLE|EXECUTE|VALUES)\b', safe_statement, re.I):
+                  record('create_table_as_data', schema_name, location)
+              if re.search(r'\bpg_catalog\.setval\s*\(', safe_statement, re.I):
+                  record('sequence_data_setval', schema_name, location)
+              if re.search(r'\b(?:lo_create|lo_put|lo_import|lo_from_bytea)\s*\(', safe_statement, re.I):
+                  record('large_object_data', schema_name, location)
+              if re.match(r'^\s*CREATE\s+MATERIALIZED\s+VIEW\b', safe_statement, re.I) and not re.search(
+                  r'\bWITH\s+NO\s+DATA\s*$', safe_statement, re.I
+              ):
+                  record('materialized_view_with_data', schema_name, location)
+              if re.match(r'^\s*(?:CREATE|ALTER)\s+(?:ROLE|USER)\b', safe_statement, re.I) and re.search(
+                  r'\bPASSWORD\b', safe_statement, re.I
+              ):
+                  record('role_password_clause', schema_name, location)
+              if re.search(r'\bOPTIONS\s*\([^)]*\b(?:password|secret|token|api[_-]?key)\b', safe_statement, re.I | re.S):
+                  record('credential_option_clause', schema_name, location)
+
+          report = Path('capture/scan-report.txt')
+          if findings:
+              grouped = {}
+              for rule, filename, location in findings:
+                  grouped.setdefault(rule, []).append(f'{filename}:{location}')
+              report.write_text('\n'.join(
+                  f'{rule}: count={len(locations)} locations={",".join(sorted(set(locations)))}'
+                  for rule, locations in sorted(grouped.items())
+              ) + '\nverdict=STOP\n', encoding='utf-8')
+              for rule, locations in sorted(grouped.items()):
+                  print(f'{rule}: count={len(locations)} locations={",".join(sorted(set(locations)))}')
+              raise SystemExit('Schema capture scan failed without printing matched content.')
+          report.write_text(
+              f'statement_count={len(statements)}\n'
+              'top_level_data_statements=0\n'
+              'credential_candidates=0\n'
+              'psql_meta_commands=2_matched_restore_guards\n'
+              'environment_project_refs=0\n'
+              'scanned_text_artifacts=3\n'
+              'verdict=PASS\n',
+              encoding='utf-8',
+          )
+          PY
+
+          schema_sha256="$(sha256sum capture/phase4a2-uat-schema-raw.sql | cut -d' ' -f1)"
+          schema_bytes="$(wc -c < capture/phase4a2-uat-schema-raw.sql | tr -d ' ')"
+          preflight_before_sha256="$(sha256sum capture/preflight-and-companion-before.txt | cut -d' ' -f1)"
+          preflight_after_sha256="$(sha256sum capture/preflight-and-companion-after.txt | cut -d' ' -f1)"
+          supabase_cli_version="$(supabase --version)"
+          captured_at_utc="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          pg_dump_image_id="$(docker image inspect --format '{{.Id}}' "$PATCHED_PG_IMAGE")"
+          export schema_sha256 schema_bytes preflight_before_sha256 preflight_after_sha256
+          export supabase_cli_version captured_at_utc pg_dump_version pg_dump_image_id connection_mode
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              'capture_format': 'phase4a2-uat-schema-capture-v1',
+              'gate_head': os.environ['EXPECTED_BASE_COMMIT'],
+              'workflow_commit': os.environ['GITHUB_SHA'],
+              'frozen_source_commit': os.environ['FROZEN_SOURCE_COMMIT'],
+              'frozen_source_tree': os.environ['FROZEN_SOURCE_TREE'],
+              'preflight_blob': os.environ['EXPECTED_PREFLIGHT_BLOB'],
+              'preflight_sha256': os.environ['EXPECTED_PREFLIGHT_SHA256'],
+              'uat_project_ref': os.environ['EXPECTED_UAT_PROJECT_REF'],
+              'uat_branch': os.environ['TARGET_BRANCH_NAME'],
+              'uat_environment': 'ISOLATED_UAT',
+              'ledger': {'rows': 254, 'fingerprint_md5': '04c5c2ad59937027420bd7c71b782d14'},
+              'companion': {'records': 56, 'fingerprint_sha256': 'e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c913725cb559e4c074d'},
+              'active_matrix_count': 1,
+              'preflight_before': 'GO — READ-ONLY SCHEMA CAPTURE ONLY',
+              'preflight_after': 'GO — READ-ONLY SCHEMA CAPTURE ONLY',
+              'supabase_cli_version': os.environ['supabase_cli_version'],
+              'dump_semantics': 'patched-pg-dump-17.11-schema-only-with-supabase-2.116.0-exclusions',
+              'dump_transformations_applied': False,
+              'restore_guard_pair_preserved': True,
+              'connection_mode': os.environ['connection_mode'],
+              'pg_dump_image': os.environ['PATCHED_PG_IMAGE'],
+              'pg_dump_image_id': os.environ['pg_dump_image_id'],
+              'pg_dump_version': os.environ['pg_dump_version'],
+              'captured_at_utc': os.environ['captured_at_utc'],
+              'schema_bytes': int(os.environ['schema_bytes']),
+              'schema_sha256': os.environ['schema_sha256'],
+              'artifact_encryption': 'CMS EnvelopedData / AES-256-GCM / ephemeral RSA-3072 recipient',
+              'recipient_certificate_sha256': os.environ['CAPTURE_RECIPIENT_CERT_SHA256'],
+              'verdict': 'PASS',
+          }
+          Path('capture/receipt.json').write_text(json.dumps(receipt, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+          companion = {
+              'serialization': 'phase4a2-companion-v2',
+              'record_count': 56,
+              'fingerprint_sha256': 'e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c913725cb559e4c074d',
+              'categories': {
+                  'managed_policy': 4,
+                  'managed_policy_table': 1,
+                  'storage_bucket': 1,
+                  'realtime_publication': 1,
+                  'realtime_publication_member': 2,
+                  'realtime_publication_schema': 0,
+                  'event_trigger': 6,
+                  'cron_job': 1,
+                  'extension': 7,
+                  'user_schema': 4,
+                  'default_acl': 29,
+              },
+              'actual_inventory': {
+                  'before_file': 'preflight-and-companion-before.txt',
+                  'before_sha256': os.environ['preflight_before_sha256'],
+                  'after_file': 'preflight-and-companion-after.txt',
+                  'after_sha256': os.environ['preflight_after_sha256'],
+                  'sections': list('HIJKLMNOPQR'),
+                  'description': 'Full read-only companion inventories and verdict emitted by the pinned preflight SQL.',
+              },
+              'cron_command_text_captured': False,
+              'business_rows_captured': False,
+              'verdict': 'PASS',
+          }
+          Path('capture/companion-attestation.json').write_text(json.dumps(companion, indent=2) + '\n', encoding='utf-8')
+          PY
+
+          (
+            cd capture
+            sha256sum \
+              phase4a2-uat-schema-raw.sql \
+              preflight-and-companion-before.txt \
+              preflight-and-companion-after.txt \
+              receipt.json \
+              companion-attestation.json \
+              scan-report.txt \
+              > SHA256SUMS
+          )
+          recipient_cert="$RUNNER_TEMP/phase4a2-capture-recipient.pem"
+          package_file="$RUNNER_TEMP/phase4a2-uat-schema-capture.tar.gz"
+          cat > "$recipient_cert" <<'CERT'
+          -----BEGIN CERTIFICATE-----
+          MIIEKzCCApOgAwIBAgIUcKLdfmTzCZyDaal54cXIzlXv/G4wDQYJKoZIhvcNAQEL
+          BQAwJTEjMCEGA1UEAwwaUGhhc2U0QTIgRXBoZW1lcmFsIENhcHR1cmUwHhcNMjYw
+          ODI5MTkwMjQ4WhcNMjYwODMwMTkwMjQ4WjAlMSMwIQYDVQQDDBpQaGFzZTRBMiBF
+          cGhlbWVyYWwgQ2FwdHVyZTCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGB
+          AMSRVUeh69hFmH4WLyamiFOz52HDL5Z7xvbt8yu4rlBOGV0GwLYFdJdP0Wk4B/Z/
+          Fk9zlKOhgnLEhDsMlv8h3l7+/rkzO+932/27nrJD+rxb/y10JjhuRgBwhgCUyh1H
+          skrkY3uRQDGtMhFYHDUKsQJK5eq6ZDNJ7DvIEXBKDtwxmUL1xyvqubpRGz0e3Qd/
+          rdPISuuKMVx/aO3quWkSsEvqedy9dfaJYyu0LguM1KlN5M0SdLhlJa8B8IIzzkBC
+          X5JJsso63SItGUXBLNuwtKcQi3L1QPeh4g6MYmZEsItFwDsfpgFSBpZyJmA7e7li
+          D/Y2daKbTvd4hSjDohlcQ5sdvnV4TA93oqKIFkTBe6i0A8Hx94pbOqVB+1FrFjo7
+          hcCbtGNSpgGNBizi4bV5rGaGMSenBJb6zCRrPRdjEQYsbwXw9uvPYLMEc+KGH5g0
+          r+RGtcSADG9qIhNmOHanOlYnbSEr2eqn5002vZ5XjlJmDDLQcVElnAA+3pmcYH5g
+          VwIDAQABo1MwUTAdBgNVHQ4EFgQU1fM9352dkqFlddq/J0RWuuJ24FcwHwYDVR0j
+          BBgwFoAU1fM9352dkqFlddq/J0RWuuJ24FcwDwYDVR0TAQH/BAUwAwEB/zANBgkq
+          hkiG9w0BAQsFAAOCAYEANvT8WsyCgkYzHUDjcjZEl+DWIdj1H9GQlHbU3dgBF1sn
+          FyWq5EcYQS8mpr2cvNCX7LD2vjJKWRn0kojRTVBDHZn72dUC4wAFbw4dLjQ/eIRe
+          6mEXZxMIjpmirNaRLLwxF9kAoO/ByL3175i6WaRSWqaNsgYahbzEuEikx2OWSfG9
+          cFlHsBMcC89kf/4n0i/bEw0T9cSURTUDDnZALVAVHtSg5SRINY2LDkrmaNYlC0bb
+          u82TloOCF4GIkOe4a0T+gfGEqik0AjHC704OUchur6GQB1ciUCC+yH2r9ruLROhb
+          L75P4rQe8q0wDLSu9NNA/LsouBsJ/QQDrS3MH7oQhn+5wbMe1psCO1FkhrXMKZO4
+          TyQcmH7ZgdWL9PNcrsYr5kFtX6Lb7jl8DKEaYNZ/3+n02kR95sb0gi8qhwM3YozT
+          8l7BtDf30RChG7ChMJQXuCD4M04Wu4+DUXzrl4fxDiSEMMs1kkyqio0hgx1wMqtw
+          KSgQD6ZHrpeVDSLqEVlC
+          -----END CERTIFICATE-----
+          CERT
+          chmod 600 "$recipient_cert"
+          actual_cert_sha256="$(openssl x509 -in "$recipient_cert" -outform DER | sha256sum | cut -d' ' -f1)"
+          test "$actual_cert_sha256" = "$CAPTURE_RECIPIENT_CERT_SHA256"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -C capture -czf "$package_file" .
+          mkdir -p encrypted-capture
+          openssl cms -encrypt -binary -aes-256-gcm \
+            -in "$package_file" \
+            -outform DER \
+            -out encrypted-capture/phase4a2-uat-schema-capture.cms \
+            "$recipient_cert"
+          test -s encrypted-capture/phase4a2-uat-schema-capture.cms
+          openssl cms -cmsout -inform DER \
+            -in encrypted-capture/phase4a2-uat-schema-capture.cms -print \
+            | grep -Fq 'algorithm: aes-256-gcm'
+          git diff --exit-code
+          git diff --cached --exit-code
+          actual_status="$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)"
+          expected_status="$(printf '%s\n' \
+            '?? capture/SHA256SUMS' \
+            '?? capture/companion-attestation.json' \
+            '?? capture/phase4a2-uat-schema-raw.sql' \
+            '?? capture/preflight-and-companion-after.txt' \
+            '?? capture/preflight-and-companion-before.txt' \
+            '?? capture/receipt.json' \
+            '?? capture/scan-report.txt' \
+            '?? encrypted-capture/phase4a2-uat-schema-capture.cms' \
+            | LC_ALL=C sort)"
+          test "$actual_status" = "$expected_status"
+
+      - name: Upload private short-lived capture artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase4a2-uat-schema-capture-${{ github.sha }}
+          path: encrypted-capture/phase4a2-uat-schema-capture.cms
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
