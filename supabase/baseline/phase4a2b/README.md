@@ -18,6 +18,12 @@ migration-ledger repair, UAT reset/rebase, or production access.
   default ACLs are observed and asserted on a compatible fresh platform; they
   are not replayed. The three application-owned `postgres/public` default-ACL
   sections are restored last to preserve the captured UAT behavior.
+- The pinned fresh local platform contributes exactly three managed
+  `supabase_admin/supabase_functions` default-ACL records. The source UAT has
+  neither that schema nor those records. This platform compatibility delta is
+  not rewritten: the restore contract asserts its exact 470-byte fingerprint
+  separately, then verifies the remaining 29 records against the exact UAT
+  fingerprint.
 - The source companion attestation remains pinned at 56 records. Restore
   expects its only deliberate delta: the one cron job is absent because its
   command text was never captured. The 67 omitted ACL dump sections and the

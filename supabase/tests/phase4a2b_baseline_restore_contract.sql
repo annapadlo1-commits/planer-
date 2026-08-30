@@ -443,10 +443,51 @@ begin
     raise exception 'PHASE4A2B_ENVIRONMENT_CONTROL_DATA_LEAK:%', v_actual;
   end if;
 
+  -- The pinned fresh local platform adds three managed default ACL records in
+  -- supabase_functions. That schema is absent on source UAT. Preserve this
+  -- platform-owned state, assert it exactly, then exclude only this known
+  -- compatibility delta from the canonical 29-record UAT comparison.
+  select
+    count(*),
+    string_agg(
+      format(
+        '%s|%s|%s|%s',
+        namespace_row.nspname,
+        pg_get_userbyid(default_acl.defaclrole),
+        default_acl.defaclobjtype::text,
+        coalesce((
+          select string_agg(
+            acl_item::text, ',' order by acl_item::text collate "C"
+          )
+          from unnest(default_acl.defaclacl) acl_item
+        ), '')
+      ),
+      E'\n'
+      order by
+        namespace_row.nspname collate "C",
+        pg_get_userbyid(default_acl.defaclrole) collate "C",
+        default_acl.defaclobjtype::text collate "C"
+    )
+    into v_actual_two, v_definitions
+  from pg_catalog.pg_default_acl default_acl
+  join pg_catalog.pg_namespace namespace_row
+    on namespace_row.oid = default_acl.defaclnamespace
+  where namespace_row.nspname = 'supabase_functions'
+    and pg_get_userbyid(default_acl.defaclrole) = 'supabase_admin';
+  if v_actual_two <> 3
+    or octet_length(v_definitions) <> 470
+    or encode(
+      pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
+    ) <> '4e48afbadff3c1f4a2bf8d07c492872b05ba062c59161f708e5a615e04434efe'
+  then
+    raise exception 'PHASE4A2B_PLATFORM_DEFAULT_ACL_COMPAT_INVALID:%',
+      v_actual_two;
+  end if;
+
   -- The three postgres/public default-ACL records are application-owned
   -- capture state: 3 function grants, 4 table grants and 4 sequence grants.
-  -- Managed supabase_admin default ACLs are supplied by platform bootstrap;
-  -- the baseline deliberately neither replays nor rewrites them.
+  -- All other managed default ACLs come from platform bootstrap; the baseline
+  -- deliberately neither replays nor rewrites them.
   select
     count(*),
     array_agg(
@@ -465,7 +506,9 @@ begin
     into v_actual, v_names
   from pg_catalog.pg_default_acl default_acl
   left join pg_catalog.pg_namespace namespace_row
-    on namespace_row.oid = default_acl.defaclnamespace;
+    on namespace_row.oid = default_acl.defaclnamespace
+  where namespace_row.nspname is distinct from 'supabase_functions'
+    or pg_get_userbyid(default_acl.defaclrole) is distinct from 'supabase_admin';
   if v_actual <> 29 then
     raise exception 'PHASE4A2B_DEFAULT_ACL_TOTAL_COUNT_INVALID:%:%',
       v_actual, v_names;
@@ -500,6 +543,8 @@ begin
     from pg_catalog.pg_default_acl default_acl
     left join pg_catalog.pg_namespace namespace_row
       on namespace_row.oid = default_acl.defaclnamespace
+    where namespace_row.nspname is distinct from 'supabase_functions'
+      or pg_get_userbyid(default_acl.defaclrole) is distinct from 'supabase_admin'
   ) acl_record;
   if octet_length(v_definitions) <> 3005
     or encode(

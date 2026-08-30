@@ -39,6 +39,9 @@ COMPANION_FINGERPRINT_SHA256 = "e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c91
 DEFAULT_ACL_RECORD_COUNT = 29
 DEFAULT_ACL_CANONICAL_BYTES = 3_005
 DEFAULT_ACL_CANONICAL_SHA256 = "c86785623e746bdaf24fabcb75b2a6019385b230830284d851ec27ad030933a3"
+LOCAL_PLATFORM_DEFAULT_ACL_RECORD_COUNT = 3
+LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_BYTES = 470
+LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_SHA256 = "4e48afbadff3c1f4a2bf8d07c492872b05ba062c59161f708e5a615e04434efe"
 PROJECT_REF_TOKEN = "__PHASE4A2B_PROJECT_REF__"
 MAX_CORE_CHUNK_BYTES = 420_000
 
@@ -455,6 +458,16 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
             "restore_expectation": {
                 "cron_job": 0,
                 "cron_status": "deferred-no-command-text-captured",
+                "platform_default_acl_compatibility": {
+                    "schema": "supabase_functions",
+                    "grantor": "supabase_admin",
+                    "source_uat_schema_exists": False,
+                    "source_uat_records": 0,
+                    "restore_records": LOCAL_PLATFORM_DEFAULT_ACL_RECORD_COUNT,
+                    "canonical_bytes": LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_BYTES,
+                    "canonical_sha256": LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_SHA256,
+                    "treatment": "observe-and-assert-only",
+                },
                 "all_other_source_attestation_categories": "exact",
             },
             "extensions": [
@@ -494,6 +507,10 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
                 "order": "last",
                 "supabase_admin_and_extension_managed": "observe-only",
                 "observed_total_records": DEFAULT_ACL_RECORD_COUNT,
+                "restore_total_records": (
+                    DEFAULT_ACL_RECORD_COUNT
+                    + LOCAL_PLATFORM_DEFAULT_ACL_RECORD_COUNT
+                ),
                 "canonical_bytes": DEFAULT_ACL_CANONICAL_BYTES,
                 "canonical_sha256": DEFAULT_ACL_CANONICAL_SHA256,
             },

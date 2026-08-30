@@ -418,6 +418,7 @@ test("platform companion restores only reviewed app-owned state", async () => {
     order: "last",
     supabase_admin_and_extension_managed: "observe-only",
     observed_total_records: 29,
+    restore_total_records: 32,
     canonical_bytes: 3005,
     canonical_sha256: "c86785623e746bdaf24fabcb75b2a6019385b230830284d851ec27ad030933a3",
   });
@@ -449,6 +450,10 @@ test("platform companion restores only reviewed app-owned state", async () => {
     restoreContract,
     new RegExp(manifest.platform_companion.default_acl_replay.canonical_sha256, "u"),
   );
+  assert.match(
+    restoreContract,
+    new RegExp(manifest.platform_companion.restore_expectation.platform_default_acl_compatibility.canonical_sha256, "u"),
+  );
   assert.deepEqual(manifest.platform_companion.source_attestation, {
     serialization: "phase4a2-companion-v2",
     record_count: 56,
@@ -470,6 +475,16 @@ test("platform companion restores only reviewed app-owned state", async () => {
   assert.deepEqual(manifest.platform_companion.restore_expectation, {
     cron_job: 0,
     cron_status: "deferred-no-command-text-captured",
+    platform_default_acl_compatibility: {
+      schema: "supabase_functions",
+      grantor: "supabase_admin",
+      source_uat_schema_exists: false,
+      source_uat_records: 0,
+      restore_records: 3,
+      canonical_bytes: 470,
+      canonical_sha256: "4e48afbadff3c1f4a2bf8d07c492872b05ba062c59161f708e5a615e04434efe",
+      treatment: "observe-and-assert-only",
+    },
     all_other_source_attestation_categories: "exact",
   });
 
