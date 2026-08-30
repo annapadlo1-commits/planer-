@@ -28,7 +28,7 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 33d856f160b35294cc0aed1117b1751becec888c
+      EXPECTED_WORKFLOW_PARENT: bf577d2df7fdcb9bdd8840117c5c34a601d573b4
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
@@ -84,6 +84,8 @@ jobs:
           db_ca_file="$RUNNER_TEMP/supabase-db-ca.crt"
           recipient_cert=''
           package_file=''
+          managed_acl_query=''
+          managed_acl_json=''
           : > "$credential_file"
           : > "$credential_error_log"
           printf '%s\n' "$SUPABASE_DB_CA_CERT" > "$db_ca_input"
@@ -99,6 +101,8 @@ jobs:
             rm -f "$credential_file" "$credential_error_log" "$db_ca_input" "$db_ca_file"
             if [[ -n "${recipient_cert:-}" ]]; then rm -f "$recipient_cert"; fi
             if [[ -n "${package_file:-}" ]]; then rm -f "$package_file"; fi
+            if [[ -n "${managed_acl_query:-}" ]]; then rm -f "$managed_acl_query"; fi
+            if [[ -n "${managed_acl_json:-}" ]]; then rm -f "$managed_acl_json"; fi
           }
           trap cleanup_sensitive_files EXIT
           if ! supabase --experimental branches get "$TARGET_BRANCH_NAME" \
@@ -277,6 +281,159 @@ jobs:
 
           run_preflight capture/preflight-and-companion-before.txt
           echo 'capture-stage=preflight-before-ok'
+
+          managed_acl_query="$RUNNER_TEMP/phase4a2b-managed-acl-v2.sql"
+          managed_acl_json="$RUNNER_TEMP/phase4a2b-managed-acl-v2.json"
+          cat > "$managed_acl_query" <<'SQL'
+          with acl_record as (
+            select
+              'schema'::text as object_kind,
+              namespace_row.nspname::text as schema_name,
+              namespace_row.nspname::text as object_identity,
+              ''::text as object_subkind,
+              pg_get_userbyid(namespace_row.nspowner)::text as owner_name,
+              coalesce((
+                select string_agg(
+                  acl_item::text, ',' order by acl_item::text collate "C"
+                )
+                from unnest(namespace_row.nspacl) acl_item
+              ), ''::text) as acl_items
+            from pg_catalog.pg_namespace namespace_row
+            where namespace_row.nspname in ('cron', 'public')
+              and namespace_row.nspacl is not null
+
+            union all
+
+            select
+              'function'::text,
+              namespace_row.nspname::text,
+              format(
+                '%I.%I(%s)',
+                namespace_row.nspname,
+                procedure_row.proname,
+                pg_get_function_identity_arguments(procedure_row.oid)
+              )::text,
+              procedure_row.prokind::text,
+              pg_get_userbyid(procedure_row.proowner)::text,
+              coalesce((
+                select string_agg(
+                  acl_item::text, ',' order by acl_item::text collate "C"
+                )
+                from unnest(procedure_row.proacl) acl_item
+              ), ''::text)
+            from pg_catalog.pg_proc procedure_row
+            join pg_catalog.pg_namespace namespace_row
+              on namespace_row.oid = procedure_row.pronamespace
+            where namespace_row.nspname in ('cron', 'extensions', 'vault')
+              and procedure_row.proacl is not null
+
+            union all
+
+            select
+              'relation'::text,
+              namespace_row.nspname::text,
+              format('%I.%I', namespace_row.nspname, relation_row.relname)::text,
+              relation_row.relkind::text,
+              pg_get_userbyid(relation_row.relowner)::text,
+              coalesce((
+                select string_agg(
+                  acl_item::text, ',' order by acl_item::text collate "C"
+                )
+                from unnest(relation_row.relacl) acl_item
+              ), ''::text)
+            from pg_catalog.pg_class relation_row
+            join pg_catalog.pg_namespace namespace_row
+              on namespace_row.oid = relation_row.relnamespace
+            where namespace_row.nspname in ('cron', 'extensions', 'vault')
+              and relation_row.relacl is not null
+          ),
+          catalog as (
+            select format(
+              '%s|%s|%s|%s|%s|%s',
+              object_kind,
+              schema_name,
+              object_identity,
+              object_subkind,
+              owner_name,
+              acl_items
+            )::text as canonical_line
+            from acl_record
+          ),
+          payload as (
+            select
+              count(*)::bigint as record_count,
+              string_agg(canonical_line, E'\n' order by canonical_line collate "C")::text
+                as canonical_payload
+            from catalog
+          )
+          select jsonb_build_object(
+            'serialization', 'phase4a2b-managed-acl-v2',
+            'source', 'uat-read-only',
+            'record_count', record_count,
+            'canonical_bytes', octet_length(canonical_payload),
+            'canonical_sha256', encode(
+              pg_catalog.sha256(pg_catalog.convert_to(canonical_payload, 'UTF8')),
+              'hex'
+            ),
+            'canonical_lines', string_to_array(canonical_payload, E'\n')
+          )::text
+          from payload;
+          SQL
+          chmod 600 "$managed_acl_query"
+          docker run --rm --network host \
+            -e DATABASE_URL -e PGOPTIONS -e PGSSLMODE -e PGSSLROOTCERT \
+            -v "$managed_acl_query:/run/phase4a2b-managed-acl-v2.sql:ro" \
+            -v "$db_ca_file:/run/secrets/supabase-db-ca.crt:ro" \
+            "$PATCHED_PG_IMAGE" \
+            sh -ceu 'psql "$DATABASE_URL" -X -A -t -q -v ON_ERROR_STOP=1 \
+              -c "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" \
+              -f /run/phase4a2b-managed-acl-v2.sql \
+              -c "ROLLBACK"' \
+            > "$managed_acl_json"
+          MANAGED_ACL_JSON="$managed_acl_json" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["MANAGED_ACL_JSON"])
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          lines = payload["canonical_lines"]
+          canonical = "\n".join(lines).encode("utf-8")
+          if payload["serialization"] != "phase4a2b-managed-acl-v2":
+              raise SystemExit("managed ACL serialization version changed")
+          if payload["source"] != "uat-read-only":
+              raise SystemExit("managed ACL source marker changed")
+          if payload["record_count"] != 75 or len(lines) != 75:
+              raise SystemExit("managed ACL record count changed")
+          if lines != sorted(lines) or len(lines) != len(set(lines)):
+              raise SystemExit("managed ACL lines are not sorted and unique")
+          if payload["canonical_bytes"] != len(canonical):
+              raise SystemExit("managed ACL byte count mismatch")
+          if payload["canonical_sha256"] != hashlib.sha256(canonical).hexdigest():
+              raise SystemExit("managed ACL SHA-256 mismatch")
+          for line in lines:
+              parts = line.split("|", 5)
+              if len(parts) != 6:
+                  raise SystemExit("managed ACL line shape changed")
+              if parts[0] == "function" and not parts[2].endswith(")"):
+                  raise SystemExit("managed ACL function identity was truncated")
+          print(
+              "managed-acl-v2-summary="
+              + str(payload["record_count"])
+              + "/"
+              + str(payload["canonical_bytes"])
+              + "/"
+              + payload["canonical_sha256"]
+          )
+          PY
+          echo 'PHASE4A2B_MANAGED_ACL_V2_BASE64_BEGIN'
+          base64 --wrap=0 "$managed_acl_json"
+          echo
+          echo 'PHASE4A2B_MANAGED_ACL_V2_BASE64_END'
+          rm -f "$managed_acl_query" "$managed_acl_json"
+          managed_acl_query=''
+          managed_acl_json=''
 
           export EXCLUDED_SCHEMAS='information_schema|pg_*|_analytics|_realtime|_supavisor|auth|etl|extensions|pgbouncer|realtime|storage|supabase_functions|supabase_migrations|cron|dbdev|graphql|graphql_public|net|pgmq|pgsodium|pgsodium_masks|pgtle|repack|tiger|tiger_data|timescaledb_*|_timescaledb_*|topology|vault'
           run_schema_dump() {
