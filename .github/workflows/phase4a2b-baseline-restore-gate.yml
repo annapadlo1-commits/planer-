@@ -496,6 +496,57 @@ jobs:
                 test "$(db_psql "$db_container" --tuples-only --no-align \
                   --command "select count(*) from public.uat_environment_controls;" \
                   | sed '/^[[:space:]]*$/d')" = '0'
+              elif test "$contract" = 'supabase/tests/resource_scoped_manager_authorization_contract.sql'; then
+                local resource_scope_output="$gate_dir/resource-scope-${ledger_mode}.out"
+                test "$(git hash-object "$contract")" = '176f4a41712949cf28e9bbd6ecaf69092e6c4206'
+                test "$(grep -Fxc 'begin;' "$contract")" = '1'
+                test "$(grep -Fxc 'rollback;' "$contract")" = '1'
+                ! grep -Fqx 'commit;' "$contract"
+                ! grep -Eni '^[[:space:]]*set[[:space:]]+transaction' "$contract"
+                ! grep -Eni '\\(connect|copy|include|ir)([[:space:]]|$)' "$contract"
+                ! grep -Eni '(^|[^[:alnum:]_])(dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron[.]schedule)([^[:alnum:]_]|$)' "$contract"
+                {
+                  echo 'begin;'
+                  printf '%s\n' \
+                    'do $phase4a2b_resource_scope_guard$' \
+                    'declare v_definitions text;' \
+                    'begin' \
+                    "  if inet_client_addr() is null or not (inet_client_addr() <<= inet '127.0.0.0/8' or inet_client_addr() = inet '::1') then" \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_REMOTE_DATABASE_REFUSED';" \
+                    '  end if;' \
+                    '  select string_agg(pg_get_functiondef(procedure_row.oid), chr(10) order by namespace_row.nspname, procedure_row.proname)' \
+                    '    into v_definitions' \
+                    '  from pg_catalog.pg_proc procedure_row' \
+                    '  join pg_catalog.pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace' \
+                    '  where (namespace_row.nspname, procedure_row.proname) in (' \
+                    "    ('public', 'uat_full_business_reset_preview_v1')," \
+                    "    ('public', 'uat_full_business_reset_v1')," \
+                    "    ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1')" \
+                    '  );' \
+                    "  if regexp_count(v_definitions, 'localphasegateabcdef') <> 5" \
+                    "    or v_definitions like '%__PHASE4A2B_PROJECT_REF__%'" \
+                    '  then' \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_IDENTITY_REQUIRED';" \
+                    '  end if;' \
+                    '  if exists (select 1 from public.uat_environment_controls) then' \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_CONTROL_PREEXISTS';" \
+                    '  end if;' \
+                    'end;' \
+                    '$phase4a2b_resource_scope_guard$;' \
+                    "insert into public.uat_environment_controls(control_key,enabled,config)" \
+                    "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-resource-scope-local-contract\"}'::jsonb);"
+                  cat "$contract"
+                  echo "select 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_CONTRACT_COMPLETE';"
+                } | db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file - | tee "$resource_scope_output"
+                test "$(grep -Fc 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_CONTRACT_COMPLETE' "$resource_scope_output")" = '1'
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from public.uat_environment_controls;" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from auth.users where id in ('f1000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000002','f1000000-0000-4000-8000-000000000003','f1000000-0000-4000-8000-000000000004','f1000000-0000-4000-8000-000000000005');" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
               else
                 db_psql_stdin "$db_container" \
                   --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
