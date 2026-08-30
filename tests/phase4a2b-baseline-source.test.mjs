@@ -474,6 +474,10 @@ test("Storage helper rejects URL confusion before invoking curl", () => {
 });
 
 test("restore contract is read-only and validates both ledger paths", () => {
+  assert.match(
+    restoreContract,
+    /'information_schema', '_realtime', 'auth', 'extensions', 'graphql', 'graphql_public'/u,
+  );
   const statements = tokenizeStatements(restoreContract);
   assert.deepEqual(
     statements.map(({ safe }) => safe.match(/^\s*([A-Z]+)/iu)?.[1]?.toUpperCase()),

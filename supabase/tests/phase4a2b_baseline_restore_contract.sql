@@ -87,7 +87,7 @@ begin
   from pg_catalog.pg_namespace namespace_row
   where namespace_row.nspname !~ '^pg_'
     and namespace_row.nspname not in (
-      'information_schema', 'auth', 'extensions', 'graphql', 'graphql_public',
+      'information_schema', '_realtime', 'auth', 'extensions', 'graphql', 'graphql_public',
       'net', 'pgbouncer', 'pgmq', 'realtime', 'storage',
       'supabase_functions', 'supabase_migrations', 'vault'
     );
