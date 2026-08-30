@@ -661,9 +661,13 @@ test("restore contract is read-only and validates both ledger paths", () => {
   assert.match(restoreContract, /PHASE4A2B_STORAGE_BUCKET_SET_INVALID/u);
   assert.match(restoreContract, /PHASE4A2B_MANAGED_POLICY_SHAPE_INVALID/u);
   assert.match(restoreContract, /PHASE4A2B_PUBLICATION_SET_INVALID/u);
-  assert.match(
+  assert.doesNotMatch(
     restoreContract,
     /c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc/u,
+  );
+  assert.match(
+    restoreContract,
+    /9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5/u,
   );
   assert.match(restoreContract, /PHASE4A2B_MANAGED_ACL_CATALOG_INVALID/u);
   assert.match(restoreContract, /PHASE4A2B_SECURITY_DEFINER_SEARCH_PATH_DRIFT/u);
