@@ -154,8 +154,8 @@
   "files": [
     {
       "path": "00_platform_extensions.sql",
-      "bytes": 2195,
-      "sha256": "c7e0f429b52b6cb9b5cc5f945c705dedfde8883e49ae66df86ea3fd1fcdd3e27"
+      "bytes": 2431,
+      "sha256": "e4a51920d9e143092559ffbc2c36e53a205982754cc02a4d7bd85164b76d2da4"
     },
     {
       "path": "10_core_01.sql",

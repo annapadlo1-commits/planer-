@@ -106,19 +106,21 @@ GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 # PostgreSQL's built-in creation defaults, so normalize to that base before any
 # application function is created. The final UAT default ACL is replayed only
 # after all restored objects exist.
-APP_FUNCTION_DEFAULT_ACL_PRELUDE = '''-- Normalize function defaults to PostgreSQL's built-in creation base.
+APP_OBJECT_DEFAULT_ACL_PRELUDE = '''-- Normalize object defaults to PostgreSQL's built-in creation base.
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "service_role";
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   GRANT ALL ON FUNCTIONS TO PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON TABLES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON TABLES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON SEQUENCES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON SEQUENCES TO "postgres";
 
 '''
 
@@ -360,7 +362,7 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
     extension_text = (
         PROLOGUE
         + PGMQ_SCHEMA_BOOTSTRAP
-        + APP_FUNCTION_DEFAULT_ACL_PRELUDE
+        + APP_OBJECT_DEFAULT_ACL_PRELUDE
         + "".join(section.text for section in extensions)
     )
     environment_text = PROLOGUE + "".join(section.text for section in environment)

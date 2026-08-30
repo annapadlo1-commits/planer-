@@ -17,19 +17,21 @@ SET row_security = off;
 CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";
 GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
--- Normalize function defaults to PostgreSQL's built-in creation base.
+-- Normalize object defaults to PostgreSQL's built-in creation base.
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  REVOKE ALL ON FUNCTIONS FROM "service_role";
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   GRANT ALL ON FUNCTIONS TO PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON TABLES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON TABLES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON SEQUENCES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON SEQUENCES TO "postgres";
 
 --
 -- Name: pg_cron; Type: EXTENSION; Schema: -; Owner: -

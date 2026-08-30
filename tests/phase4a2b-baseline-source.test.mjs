@@ -306,12 +306,35 @@ test("neutral SQL contains no remote identity, data load, or managed replay", as
     /CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";\nGRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";[\s\S]*CREATE EXTENSION IF NOT EXISTS "pgmq" WITH SCHEMA "pgmq";/u,
   );
   assert.equal((extensions.text.match(/CREATE SCHEMA IF NOT EXISTS "pgmq"/gu) ?? []).length, 1);
-  assert.match(
-    extensions.text,
-    /REVOKE ALL ON FUNCTIONS FROM PUBLIC;[\s\S]*REVOKE ALL ON FUNCTIONS FROM "postgres";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "anon";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "authenticated";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "service_role";[\s\S]*GRANT ALL ON FUNCTIONS TO PUBLIC;/u,
+  const creationDefaultAcl = tokenizeStatements(extensions.text)
+    .filter(({ safe }) => /^ALTER DEFAULT PRIVILEGES\b/iu.test(safe));
+  assert.equal(creationDefaultAcl.length, 7);
+  const creationRevokes = creationDefaultAcl.filter(({ safe }) => /\bREVOKE ALL ON\b/iu.test(safe));
+  const creationGrants = creationDefaultAcl.filter(({ safe }) => /\bGRANT ALL ON\b/iu.test(safe));
+  assert.deepEqual(
+    creationRevokes.map(({ safe }) => safe.match(/REVOKE ALL ON (FUNCTIONS|TABLES|SEQUENCES)/iu)?.[1]).sort(),
+    ["FUNCTIONS", "SEQUENCES", "TABLES"],
   );
-  assert.equal((extensions.text.match(/REVOKE ALL ON FUNCTIONS FROM /gu) ?? []).length, 5);
-  assert.equal((extensions.text.match(/GRANT ALL ON FUNCTIONS TO /gu) ?? []).length, 1);
+  for (const { safe } of creationRevokes) {
+    assert.match(
+      safe,
+      /REVOKE\s+ALL\s+ON\s+(?:FUNCTIONS|TABLES|SEQUENCES)\s+FROM\s+PUBLIC,\s*"postgres",\s*"anon",\s*"authenticated",\s*"service_role"$/iu,
+    );
+  }
+  assert.deepEqual(
+    creationGrants.map(({ safe }) => safe.match(/GRANT ALL ON (FUNCTIONS|TABLES|SEQUENCES) TO (PUBLIC|"postgres")$/iu)?.slice(1)).sort(),
+    [
+      ["FUNCTIONS", '"postgres"'],
+      ["FUNCTIONS", "PUBLIC"],
+      ["SEQUENCES", '"postgres"'],
+      ["TABLES", '"postgres"'],
+    ].sort(),
+  );
+  assert.ok(
+    manifest.files.findIndex(entry => entry.path === "00_platform_extensions.sql")
+      < manifest.files.findIndex(entry => entry.path.startsWith("10_core_")),
+    "creation defaults must precede application objects",
+  );
   assert.doesNotMatch(neutralText, /nhthrtpkfpmufmrmdyjg|bdybebzvzapihjdauehg/u);
   assert.doesNotMatch(neutralText, /__PHASE4A2B_PROJECT_REF__/u);
   assert.doesNotMatch(neutralText, /^\s*(?:CREATE|ALTER|DROP)\s+EVENT\s+TRIGGER\b/imu);
@@ -385,6 +408,11 @@ test("platform companion restores only reviewed app-owned state", async () => {
     assert.match(safe, /^ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON (?:SEQUENCES|FUNCTIONS|TABLES) TO /iu);
     assert.doesNotMatch(safe, /supabase_admin/iu);
   }
+  assert.ok(
+    companion.indexOf("-- Normalize application defaults before replaying captured UAT grants.")
+      < companion.indexOf("-- Name: DEFAULT PRIVILEGES FOR SEQUENCES"),
+    "final default-ACL normalization must precede captured grants",
+  );
   assert.deepEqual(manifest.platform_companion.default_acl_replay, {
     postgres_public_sections: 3,
     order: "last",
