@@ -269,6 +269,24 @@ test("SQL fixture source is self-contained and explicitly typed", () => {
     /insert into public\.locations[\s\S]*'KRUCZA'::public\.location_code[\s\S]*'PAWILONY'::public\.location_code[\s\S]*on conflict\(code\) do nothing/iu);
   assert.match(sqlContract,
     /insert into public\.matrix_employee_profiles_v2[\s\S]*P4A-A[\s\S]*P4A-B[\s\S]*P4A-N[\s\S]*P4A-I/iu);
+  const matrixBootstrapStart = sqlContract.indexOf("do $$\ndeclare v_version integer;v_settings jsonb;");
+  const matrixBootstrapEnd = sqlContract.indexOf("\ninsert into public.matrix_roles_v2", matrixBootstrapStart);
+  assert.ok(matrixBootstrapStart >= 0 && matrixBootstrapEnd > matrixBootstrapStart);
+  const matrixBootstrap = sqlContract.slice(matrixBootstrapStart, matrixBootstrapEnd);
+  assert.match(matrixBootstrap,
+    /jsonb_build_object\([\s\S]*\)\s*\|\|\s*coalesce\(\([\s\S]*select settings from public\.matrix_versions/iu);
+  assert.match(matrixBootstrap, /'currency','PLN'/iu);
+  assert.match(matrixBootstrap, /'timezone','Europe\/Warsaw'/iu);
+  assert.match(matrixBootstrap, /'minimumRestMinutes',660/iu);
+  assert.match(matrixBootstrap, /'maximumShiftsPerDay',1/iu);
+  assert.match(matrixBootstrap, /'missingAvailabilityMeansAvailable',true/iu);
+  assert.match(matrixBootstrap, /'requireOptimal',false/iu);
+  assert.match(matrixBootstrap, /'maxShiftsPerDay',1/iu);
+  assert.match(matrixBootstrap, /'standbyTiersPerRoleDay',2/iu);
+  assert.ok(matrixBootstrap.indexOf("jsonb_build_object(")
+    < matrixBootstrap.indexOf("select settings from public.matrix_versions"));
+  assert.doesNotMatch(matrixBootstrap,
+    /v_settings:=coalesce\(v_settings,'\{\}'::jsonb\)|\|\|jsonb_build_object\('timezone'/iu);
   assert.match(sqlContract, /'DRAFT'::public\.event_status/iu);
   assert.match(sqlContract, /null::timestamptz/iu);
   assert.match(sqlContract, /f4a14000-0000-4000-8000-000000000001'::uuid/iu);

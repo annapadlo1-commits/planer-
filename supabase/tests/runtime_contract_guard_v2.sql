@@ -6,6 +6,7 @@ do $$
 declare
   v_role_table_rls boolean;
   v_role_publish_definition text;
+  v_role_publish_delegate_definition text;
   v_employee_schedule_definition text;
 begin
   select relrowsecurity into v_role_table_rls
@@ -18,8 +19,21 @@ begin
   v_role_publish_definition:=pg_get_functiondef(
     'public.optimizer_publish_role_variant_uat_v2(uuid,uuid,text,text)'::regprocedure
   );
-  if position('ROLE_PUBLICATION_FORBIDDEN' in v_role_publish_definition)=0
-    or position('revalidate_materialized_variant_v2' in v_role_publish_definition)=0 then
+  if position(
+      'public.optimizer_publish_role_variant_before_b4f121_uat_v2'
+      in v_role_publish_definition
+    )=0 then
+    raise exception 'ROLE_PUBLICATION_SECURED_DELEGATE_MISSING';
+  end if;
+
+  v_role_publish_delegate_definition:=pg_get_functiondef(
+    'public.optimizer_publish_role_variant_before_b4f121_uat_v2(uuid,uuid,text,text)'::regprocedure
+  );
+  if position('ROLE_PUBLICATION_FORBIDDEN' in v_role_publish_delegate_definition)=0
+    or position(
+      'solver_private.revalidate_materialized_variant_v2'
+      in v_role_publish_delegate_definition
+    )=0 then
     raise exception 'ROLE_PUBLICATION_AUTH_OR_REVALIDATION_MISSING';
   end if;
 
