@@ -403,16 +403,50 @@ jobs:
             do
               test -f "$contract"
               if test "$contract" = 'supabase/tests/phase4a1_scoped_manager_security_contract.sql'; then
+                local phase4a1_output="$gate_dir/phase4a1-${ledger_mode}.out"
+                test "$(git hash-object "$contract")" = '3c45f1acaf3bc46de57fc4b6e7a4f5512cc80d42'
+                test "$(grep -Fxc 'begin;' "$contract")" = '1'
+                test "$(grep -Fxc 'rollback;' "$contract")" = '1'
+                ! grep -Fqx 'commit;' "$contract"
+                ! rg -n -i '^[[:space:]]*set[[:space:]]+transaction|\\(?:connect|copy|include|ir)\\b|\\b(?:dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron\\.schedule)\\b' "$contract"
                 {
                   echo 'begin;'
-                  echo "insert into public.uat_environment_controls(control_key,enabled,config)"
-                  echo "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-local-contract\"}'::jsonb);"
+                  printf '%s\n' \
+                    'do $phase4a2b_local_guard$' \
+                    'declare v_definitions text;' \
+                    'begin' \
+                    "  if inet_client_addr() is null or not (inet_client_addr() <<= inet '127.0.0.0/8' or inet_client_addr() = inet '::1') then" \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_REMOTE_DATABASE_REFUSED';" \
+                    '  end if;' \
+                    '  select string_agg(pg_get_functiondef(procedure_row.oid), chr(10) order by namespace_row.nspname, procedure_row.proname)' \
+                    '    into v_definitions' \
+                    '  from pg_catalog.pg_proc procedure_row' \
+                    '  join pg_catalog.pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace' \
+                    '  where (namespace_row.nspname, procedure_row.proname) in (' \
+                    "    ('public', 'uat_full_business_reset_preview_v1')," \
+                    "    ('public', 'uat_full_business_reset_v1')," \
+                    "    ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1')" \
+                    '  );' \
+                    "  if regexp_count(v_definitions, 'localphasegateabcdef') <> 5" \
+                    "    or v_definitions like '%__PHASE4A2B_PROJECT_REF__%'" \
+                    '  then' \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_LOCAL_IDENTITY_REQUIRED';" \
+                    '  end if;' \
+                    '  if exists (select 1 from public.uat_environment_controls) then' \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_CONTROL_PREEXISTS';" \
+                    '  end if;' \
+                    'end;' \
+                    '$phase4a2b_local_guard$;' \
+                    "insert into public.uat_environment_controls(control_key,enabled,config)" \
+                    "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-local-contract\"}'::jsonb);"
                   cat "$contract"
+                  echo "select 'PHASE4A2B_PHASE4A1_LOCAL_CONTRACT_COMPLETE';"
                 } | db_psql_stdin "$db_container" \
                   --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
-                  --file -
+                  --file - | tee "$phase4a1_output"
+                test "$(grep -Fc 'PHASE4A2B_PHASE4A1_LOCAL_CONTRACT_COMPLETE' "$phase4a1_output")" = '1'
                 test "$(db_psql "$db_container" --tuples-only --no-align \
-                  --command "select count(*) from public.uat_environment_controls where control_key='ISOLATED_UAT_DESTRUCTIVE_TOOLS';" \
+                  --command "select count(*) from public.uat_environment_controls;" \
                   | sed '/^[[:space:]]*$/d')" = '0'
               else
                 db_psql_stdin "$db_container" \

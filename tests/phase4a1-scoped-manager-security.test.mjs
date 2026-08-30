@@ -269,6 +269,8 @@ test("SQL fixture source is self-contained and explicitly typed", () => {
     /insert into public\.locations[\s\S]*'KRUCZA'::public\.location_code[\s\S]*'PAWILONY'::public\.location_code[\s\S]*on conflict\(code\) do nothing/iu);
   assert.match(sqlContract,
     /insert into public\.matrix_employee_profiles_v2[\s\S]*P4A-A[\s\S]*P4A-B[\s\S]*P4A-N[\s\S]*P4A-I/iu);
+  assert.match(sqlContract,
+    /v_settings:=coalesce\(v_settings,'\{\}'::jsonb\)\s*\|\|jsonb_build_object\('timezone','Europe\/Warsaw'\)/iu);
   assert.match(sqlContract, /'DRAFT'::public\.event_status/iu);
   assert.match(sqlContract, /null::timestamptz/iu);
   assert.match(sqlContract, /f4a14000-0000-4000-8000-000000000001'::uuid/iu);
