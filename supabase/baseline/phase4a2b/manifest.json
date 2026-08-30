@@ -1,0 +1,206 @@
+{
+  "format": "phase4a2b-neutral-baseline-v1",
+  "capture": {
+    "run_id": 33301678124,
+    "workflow_commit": "bf577d2df7fdcb9bdd8840117c5c34a601d573b4",
+    "base_commit": "9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc",
+    "frozen_source_commit": "5565c50370cb9436a76d1e6d7013250eaad2bece",
+    "frozen_source_tree": "a8f6148cc0ff8960638553951972ba949b464d84",
+    "raw_schema_bytes": 2679643,
+    "raw_schema_sha256": "7628c7732e0dbc8402cab65fd1f34d3779c7407b0988a0344bb8914891786870",
+    "raw_statement_count": 4218
+  },
+  "routing": {
+    "section_counts": {
+      "core": 2505,
+      "extensions": 6,
+      "extension_comments": 6,
+      "environment": 6,
+      "app_default_acl": 3,
+      "managed_default_acl": 3,
+      "platform_managed_acl": 67,
+      "event_triggers": 6
+    },
+    "restore_guard_pairs_removed": 1,
+    "source_project_ref_occurrences_tokenized": 5,
+    "environment_function_count": 3,
+    "environment_function_names": [
+      "matrix_v2_create_safe_first_run_uat_v1",
+      "uat_full_business_reset_preview_v1",
+      "uat_full_business_reset_v1"
+    ],
+    "event_triggers_observe_only": [
+      "issue_graphql_placeholder",
+      "issue_pg_cron_access",
+      "issue_pg_graphql_access",
+      "issue_pg_net_access",
+      "pgrst_ddl_watch",
+      "pgrst_drop_watch"
+    ],
+    "app_default_acl_sections_replayed_last": 3,
+    "managed_default_acl_sections_observe_only": 3,
+    "platform_managed_acl_sections_observe_only": 67,
+    "platform_managed_acl_section_bytes": 31793,
+    "platform_managed_acl_section_sha256": "4aeb80754c981402c5eba9b052ee312305113496c354c1e19ec40245b99e3b45",
+    "extension_comment_sections_observe_only": 6,
+    "cron_jobs_replayed": 0,
+    "cron_reason": "command text was intentionally not captured; replay requires separate authorization"
+  },
+  "platform_companion": {
+    "source_attestation": {
+      "serialization": "phase4a2-companion-v2",
+      "record_count": 56,
+      "fingerprint_sha256": "e7f678581129e4f5669c668095e076c9e4e62e10f2fd7c913725cb559e4c074d",
+      "category_counts": {
+        "managed_policy": 4,
+        "managed_policy_table": 1,
+        "storage_bucket": 1,
+        "realtime_publication": 1,
+        "realtime_publication_member": 2,
+        "realtime_publication_schema": 0,
+        "event_trigger": 6,
+        "cron_job": 1,
+        "extension": 7,
+        "user_schema": 4,
+        "default_acl": 29
+      }
+    },
+    "restore_expectation": {
+      "cron_job": 0,
+      "cron_status": "deferred-no-command-text-captured",
+      "all_other_source_attestation_categories": "exact"
+    },
+    "extensions": [
+      "pg_cron",
+      "pg_stat_statements",
+      "pgcrypto",
+      "pgmq",
+      "plpgsql",
+      "supabase_vault",
+      "uuid-ossp"
+    ],
+    "storage_policies": [
+      "profile_avatars_self_delete_v1",
+      "profile_avatars_self_insert_v1",
+      "profile_avatars_self_select_v1",
+      "profile_avatars_self_update_v1"
+    ],
+    "storage_bucket": "profile-avatars",
+    "realtime_publication": "supabase_realtime",
+    "realtime_members": [
+      "public.optimization_run_strategies_v2",
+      "public.optimization_runs_v2"
+    ],
+    "pgmq_queues": [
+      {
+        "queue_name": "schedule_optimizer_v2",
+        "is_partitioned": false,
+        "is_unlogged": false,
+        "queue_table_persistence": "permanent",
+        "archive_table_persistence": "permanent",
+        "rls_enabled": false
+      }
+    ],
+    "storage_bucket_provisioning": "Storage API",
+    "default_acl_replay": {
+      "postgres_public_sections": 3,
+      "order": "last",
+      "supabase_admin_and_extension_managed": "observe-only",
+      "observed_total_records": 29,
+      "canonical_bytes": 3005,
+      "canonical_sha256": "c86785623e746bdaf24fabcb75b2a6019385b230830284d851ec27ad030933a3"
+    }
+  },
+  "supplemental_read_only_inventory": {
+    "pgmq_recorded_at_utc": "2026-08-30T08:50:37Z",
+    "pgmq_canonical_json_bytes": 664,
+    "pgmq_canonical_json_sha256": "e57a3b17aa2be4432b8820168e9d20156a148e338d03654c2e15a82908c7d656",
+    "message_rows_read": 0,
+    "uat_mutations": 0,
+    "managed_acl_catalog": {
+      "serialization": "phase4a2b-managed-acl-v1",
+      "recorded_at_utc": "2026-08-30T09:12:39Z",
+      "uat_identity_verified": true,
+      "record_count": 75,
+      "canonical_bytes": 10311,
+      "canonical_sha256": "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc",
+      "business_rows_read": 0,
+      "uat_mutations": 0
+    },
+    "publication_catalog": {
+      "recorded_at_utc": "2026-08-30T09:18:00Z",
+      "uat_identity_verified": true,
+      "record_count": 1,
+      "names": [
+        "supabase_realtime"
+      ],
+      "business_rows_read": 0,
+      "uat_mutations": 0
+    },
+    "security_definer_search_paths": {
+      "recorded_at_utc": "2026-08-30T09:23:23Z",
+      "uat_identity_verified": true,
+      "routine_count": 519,
+      "distribution": {
+        "search_path=\"\"": 458,
+        "search_path=public": 55,
+        "search_path=public, pg_temp": 5,
+        "search_path=public, solver_private, pg_temp": 1
+      },
+      "business_rows_read": 0,
+      "uat_mutations": 0
+    }
+  },
+  "files": [
+    {
+      "path": "00_platform_extensions.sql",
+      "bytes": 1310,
+      "sha256": "9e0c0b704926ed69f5b2c3b0a9fb3fe78b1a16ba215d37c6a907e06ddcab330e"
+    },
+    {
+      "path": "10_core_01.sql",
+      "bytes": 419274,
+      "sha256": "5698053867969e2ebd808ff9367618bcd38f474f5f26b1ddaf1562773d006cec"
+    },
+    {
+      "path": "10_core_02.sql",
+      "bytes": 416808,
+      "sha256": "aeea226b7cc91dfa6edf8e458ab3ae9a60b11347a9fe2f6a019f7c28e1fc6ea8"
+    },
+    {
+      "path": "10_core_03.sql",
+      "bytes": 419678,
+      "sha256": "99fbce06524fbd5d6fa893c06f5fe9c3891c4101fa81c7e2c2809b5ead3331e3"
+    },
+    {
+      "path": "10_core_04.sql",
+      "bytes": 418809,
+      "sha256": "f7f41d2dc1e98de98576267a1bb7baf35b43180dc25be465046fdcb7922dfe0e"
+    },
+    {
+      "path": "10_core_05.sql",
+      "bytes": 419978,
+      "sha256": "11fc27833f3ba46c74fc06cc899a0d86bef76f1cc6047fd61bdf8fb4facb85db"
+    },
+    {
+      "path": "10_core_06.sql",
+      "bytes": 419628,
+      "sha256": "977688756ea596cb6c76e594d803ee782f700353229003f419ce8fd5d28bb7f6"
+    },
+    {
+      "path": "10_core_07.sql",
+      "bytes": 121423,
+      "sha256": "aa681585303cc023ae9d4e21f25de72efa6fc5b43b2e6870f8bdcad60b482ecc"
+    },
+    {
+      "path": "90_environment_uat_functions.sql.tmpl",
+      "bytes": 8866,
+      "sha256": "41725a5c8e16d0753051616fca0e29a416fa54fbc0bbc117369643a1519a1359"
+    },
+    {
+      "path": "99_platform_companion.sql",
+      "bytes": 3769,
+      "sha256": "22ed0b5e5a67021f0884678ff4d2afbce50592e655ece429d95b178ac6955091"
+    }
+  ]
+}
