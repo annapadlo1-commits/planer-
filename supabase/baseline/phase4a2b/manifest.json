@@ -154,8 +154,8 @@
   "files": [
     {
       "path": "00_platform_extensions.sql",
-      "bytes": 2305,
-      "sha256": "f310e09d59809e11aef158b2e8b0a287d422c3fbfefb1e8b959c5cf6f364686f"
+      "bytes": 2195,
+      "sha256": "c7e0f429b52b6cb9b5cc5f945c705dedfde8883e49ae66df86ea3fd1fcdd3e27"
     },
     {
       "path": "10_core_01.sql",
@@ -199,8 +199,8 @@
     },
     {
       "path": "99_platform_companion.sql",
-      "bytes": 4008,
-      "sha256": "260f12ec73c13cc18440d0f401a71c231e01fcc25cd5b8a340cb20b4de4301d7"
+      "bytes": 4546,
+      "sha256": "8aef851d7cf3fd5af1b8bc52d45cfe70630ad878e0d2a245bfb29d65ad018a9e"
     }
   ]
 }

@@ -101,13 +101,16 @@ GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
 '''
 
-# Supabase's fresh local platform can install an ambient postgres/public
-# function default ACL that includes anon. Normalize it to the exact UAT
-# application-owned default before any public functions are created, so the
-# per-function ACL statements from pg_dump are replayed against the same base.
-APP_FUNCTION_DEFAULT_ACL_PRELUDE = '''-- Normalize application function defaults before object creation.
+# Supabase's fresh local platform can install ambient postgres/public function
+# defaults that include API roles. pg_dump emits each object's ACL relative to
+# PostgreSQL's built-in creation defaults, so normalize to that base before any
+# application function is created. The final UAT default ACL is replayed only
+# after all restored objects exist.
+APP_FUNCTION_DEFAULT_ACL_PRELUDE = '''-- Normalize function defaults to PostgreSQL's built-in creation base.
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   REVOKE ALL ON FUNCTIONS FROM "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
@@ -115,11 +118,20 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   REVOKE ALL ON FUNCTIONS FROM "service_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  GRANT ALL ON FUNCTIONS TO "postgres";
+  GRANT ALL ON FUNCTIONS TO PUBLIC;
+
+'''
+
+# Restore the captured application-owned default ACL from a deterministic empty
+# base. These statements run after every restored object, immediately before
+# the eleven pg_dump GRANT statements captured from UAT.
+APP_DEFAULT_ACL_FINALIZE = '''-- Normalize application defaults before replaying captured UAT grants.
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  GRANT ALL ON FUNCTIONS TO "authenticated";
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
-  GRANT ALL ON FUNCTIONS TO "service_role";
+  REVOKE ALL ON TABLES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON SEQUENCES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
 
 '''
 
@@ -382,6 +394,7 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
         PROLOGUE
         + PLATFORM_POSTLUDE
         + "\n"
+        + APP_DEFAULT_ACL_FINALIZE
         + "".join(section.text for section in app_default_acl)
     )
     files.append(write_text(output_dir / "99_platform_companion.sql", platform_text))

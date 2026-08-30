@@ -68,6 +68,14 @@ GRANT SELECT ON SEQUENCE
   "pgmq"."q_schedule_optimizer_v2_msg_id_seq"
 TO "pg_monitor";
 
+-- Normalize application defaults before replaying captured UAT grants.
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON TABLES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON SEQUENCES FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
+
 --
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: postgres
 --

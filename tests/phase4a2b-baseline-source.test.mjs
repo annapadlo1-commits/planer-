@@ -308,10 +308,10 @@ test("neutral SQL contains no remote identity, data load, or managed replay", as
   assert.equal((extensions.text.match(/CREATE SCHEMA IF NOT EXISTS "pgmq"/gu) ?? []).length, 1);
   assert.match(
     extensions.text,
-    /REVOKE ALL ON FUNCTIONS FROM PUBLIC;[\s\S]*REVOKE ALL ON FUNCTIONS FROM "anon";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "authenticated";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "service_role";[\s\S]*GRANT ALL ON FUNCTIONS TO "postgres";[\s\S]*GRANT ALL ON FUNCTIONS TO "authenticated";[\s\S]*GRANT ALL ON FUNCTIONS TO "service_role";/u,
+    /REVOKE ALL ON FUNCTIONS FROM PUBLIC;[\s\S]*REVOKE ALL ON FUNCTIONS FROM "postgres";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "anon";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "authenticated";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "service_role";[\s\S]*GRANT ALL ON FUNCTIONS TO PUBLIC;/u,
   );
-  assert.equal((extensions.text.match(/REVOKE ALL ON FUNCTIONS FROM /gu) ?? []).length, 4);
-  assert.equal((extensions.text.match(/GRANT ALL ON FUNCTIONS TO /gu) ?? []).length, 3);
+  assert.equal((extensions.text.match(/REVOKE ALL ON FUNCTIONS FROM /gu) ?? []).length, 5);
+  assert.equal((extensions.text.match(/GRANT ALL ON FUNCTIONS TO /gu) ?? []).length, 1);
   assert.doesNotMatch(neutralText, /nhthrtpkfpmufmrmdyjg|bdybebzvzapihjdauehg/u);
   assert.doesNotMatch(neutralText, /__PHASE4A2B_PROJECT_REF__/u);
   assert.doesNotMatch(neutralText, /^\s*(?:CREATE|ALTER|DROP)\s+EVENT\s+TRIGGER\b/imu);
@@ -366,8 +366,22 @@ test("platform companion restores only reviewed app-owned state", async () => {
   assert.equal(manifest.platform_companion.storage_bucket_provisioning, "Storage API");
   const defaultAclStatements = tokenizeStatements(companion)
     .filter(({ safe }) => /^ALTER DEFAULT PRIVILEGES\b/iu.test(safe));
-  assert.equal(defaultAclStatements.length, 11);
-  for (const { safe } of defaultAclStatements) {
+  assert.equal(defaultAclStatements.length, 14);
+  const defaultAclRevokes = defaultAclStatements.filter(({ safe }) => /\bREVOKE ALL ON\b/iu.test(safe));
+  const defaultAclGrants = defaultAclStatements.filter(({ safe }) => /\bGRANT ALL ON\b/iu.test(safe));
+  assert.equal(defaultAclRevokes.length, 3);
+  assert.equal(defaultAclGrants.length, 11);
+  assert.deepEqual(
+    defaultAclRevokes.map(({ safe }) => safe.match(/REVOKE ALL ON (FUNCTIONS|TABLES|SEQUENCES)/iu)?.[1]).sort(),
+    ["FUNCTIONS", "SEQUENCES", "TABLES"],
+  );
+  for (const { safe } of defaultAclRevokes) {
+    assert.match(
+      safe,
+      /^ALTER\s+DEFAULT\s+PRIVILEGES\s+FOR\s+ROLE\s+"postgres"\s+IN\s+SCHEMA\s+"public"\s+REVOKE\s+ALL\s+ON\s+(?:FUNCTIONS|TABLES|SEQUENCES)\s+FROM\s+PUBLIC,\s*"postgres",\s*"anon",\s*"authenticated",\s*"service_role"$/iu,
+    );
+  }
+  for (const { safe } of defaultAclGrants) {
     assert.match(safe, /^ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON (?:SEQUENCES|FUNCTIONS|TABLES) TO /iu);
     assert.doesNotMatch(safe, /supabase_admin/iu);
   }
