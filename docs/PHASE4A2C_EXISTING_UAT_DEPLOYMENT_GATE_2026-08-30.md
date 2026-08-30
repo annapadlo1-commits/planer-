@@ -22,6 +22,8 @@ other than `nhthrtpkfpmufmrmdyjg`.
   `29 / 3005 bytes / c86785623e746bdaf24fabcb75b2a6019385b230830284d851ec27ad030933a3`
 - post-migration application/default-ACL fingerprint:
   `27 / 2708 bytes / 1f690d52941e6a5865cb59919ded58fa087f2e594215836bd33a78a1141ae9ff`
+- existing public-object ACL/RLS/policy snapshot:
+  `3623 / 337074 bytes / 5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185`
 - active Matrix: exactly one, workforce count `86`
 - active Matrix content hash:
   `32dac23aea267e87c037a47dd796f06da03f9ab17e01da94c21603b301681187`
@@ -35,7 +37,9 @@ change requires recapture and review rather than weakening a predicate.
 
 1. Run `docs/PHASE4A2C_UAT_READ_ONLY_PREFLIGHT.sql` through a read-only execution
    path. The sole acceptable final verdict is `GO — PHASE4A2C UAT PREFLIGHT`.
-2. Record Security and Performance Advisor results before migration.
+2. Run `docs/PHASE4A2C_UAT_EXISTING_SECURITY_SNAPSHOT.sql` and record
+   `3623 / 337074 / 5166ef...10185`. Record Security and Performance Advisor
+   results before migration.
 3. Obtain explicit user authorization for the persistent UAT migration.
 4. Apply only migration `20260830180000_phase4a2c_default_privileges_hardening`.
    Do not push or replay the migration directory.
@@ -43,8 +47,9 @@ change requires recapture and review rather than weakening a predicate.
    name once.
 6. Run `supabase/tests/phase4a2c_existing_uat_hosted_contract.sql`. It creates
    canary objects only inside a transaction and ends with `ROLLBACK`.
-7. Re-run the read-only security snapshot and confirm existing object ACL, RLS,
-   policy, active Matrix, and business-data control counts are unchanged.
+7. Re-run the canonical read-only security snapshot and require the exact same
+   record count, byte count and SHA-256. Confirm active Matrix and business-data
+   control counts are unchanged.
 8. Re-run Security and Performance Advisors and compare with the recorded
    baseline.
 9. Confirm no object whose name begins `phase4a2c_uat_probe_` exists.
@@ -72,4 +77,3 @@ The default-privilege migration is persistent. If postflight fails:
 - existing object ACL/RLS/policies: **OBSERVE ONLY**
 - migration-ledger repair: **PROHIBITED**
 - probe residue after rollback: **ZERO REQUIRED**
-

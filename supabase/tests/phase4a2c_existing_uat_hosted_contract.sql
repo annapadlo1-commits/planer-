@@ -12,13 +12,15 @@ begin
     raise exception 'PHASE4A2C_UAT_CREATOR_INVALID:%', current_user;
   end if;
 
-  if not exists (
-    select 1 from public.uat_environment_controls
-    where control_key = 'ISOLATED_UAT_DESTRUCTIVE_TOOLS'
-      and enabled is true
+  if (
+    select count(*) = 1 and bool_and(
+      enabled is true
       and config->>'projectRef' = 'nhthrtpkfpmufmrmdyjg'
       and config->>'environment' = 'ISOLATED_UAT'
-  ) then
+    )
+    from public.uat_environment_controls
+    where control_key = 'ISOLATED_UAT_DESTRUCTIVE_TOOLS'
+  ) is not true then
     raise exception 'PHASE4A2C_UAT_IDENTITY_INVALID';
   end if;
 
@@ -106,6 +108,64 @@ begin
 end;
 $catalog$;
 
+do $existing_security$
+declare
+  v_count integer;
+  v_payload text;
+begin
+  with records as (
+    select 'relation_acl|' || n.nspname || '|' || c.relname || '|' ||
+           c.relkind::text || '|' ||
+           case when x.grantee = 0 then 'PUBLIC'
+                else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
+           x.privilege_type || '|' || x.is_grantable::text as record
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    cross join lateral pg_catalog.aclexplode(coalesce(
+      c.relacl, pg_catalog.acldefault(
+        case when c.relkind = 'S' then 'S'::"char" else 'r'::"char" end,
+        c.relowner
+      )
+    )) x
+    where n.nspname = 'public' and c.relkind in ('r','p','v','m','S')
+    union all
+    select 'routine_acl|' || n.nspname || '|' || p.proname || '|' ||
+           pg_catalog.pg_get_function_identity_arguments(p.oid) || '|' ||
+           case when x.grantee = 0 then 'PUBLIC'
+                else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
+           x.privilege_type || '|' || x.is_grantable::text
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    cross join lateral pg_catalog.aclexplode(coalesce(
+      p.proacl, pg_catalog.acldefault('f', p.proowner)
+    )) x
+    where n.nspname = 'public'
+    union all
+    select 'rls|' || n.nspname || '|' || c.relname || '|' ||
+           c.relrowsecurity::text || '|' || c.relforcerowsecurity::text
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r','p')
+    union all
+    select 'policy|' || schemaname || '|' || tablename || '|' || policyname ||
+           '|' || permissive || '|' || coalesce(array_to_string(roles, ','), '') ||
+           '|' || cmd || '|' || coalesce(qual, '<null>') || '|' ||
+           coalesce(with_check, '<null>')
+    from pg_catalog.pg_policies where schemaname = 'public'
+  )
+  select count(*)::int, string_agg(record, E'\n' order by record collate "C")
+  into v_count, v_payload from records;
+
+  if v_count <> 3623 or octet_length(v_payload) <> 337074
+    or pg_catalog.encode(
+      pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex'
+    ) <> '5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185'
+  then
+    raise exception 'PHASE4A2C_UAT_EXISTING_SECURITY_STATE_CHANGED:%', v_count;
+  end if;
+end;
+$existing_security$;
+
 create table public.phase4a2c_uat_probe_table (id bigint primary key);
 create sequence public.phase4a2c_uat_probe_sequence;
 create function public.phase4a2c_uat_probe_invoker() returns integer
@@ -146,4 +206,3 @@ end;
 $canaries$;
 
 rollback;
-
