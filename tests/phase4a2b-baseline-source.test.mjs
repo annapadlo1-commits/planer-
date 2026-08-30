@@ -346,6 +346,9 @@ test("environment routines are isolated behind exactly five tokens", async () =>
 
 test("platform companion restores only reviewed app-owned state", async () => {
   const companion = await readFile(new URL("99_platform_companion.sql", baselineUrl), "utf8");
+  assert.match(companion, /^GRANT ALL ON SCHEMA "authorization_private" TO "postgres";$/mu);
+  assert.match(companion, /^GRANT ALL ON SCHEMA "solver_private" TO "postgres";$/mu);
+  assert.equal((companion.match(/^GRANT ALL ON SCHEMA /gmu) ?? []).length, 2);
   assert.match(companion, /^SELECT "pgmq"\."create"\('schedule_optimizer_v2'\);$/mu);
   assert.equal((companion.match(/^CREATE POLICY /gmu) ?? []).length, 4);
   for (const policy of manifest.platform_companion.storage_policies) {

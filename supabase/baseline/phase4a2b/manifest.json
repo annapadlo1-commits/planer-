@@ -199,8 +199,8 @@
     },
     {
       "path": "99_platform_companion.sql",
-      "bytes": 3769,
-      "sha256": "22ed0b5e5a67021f0884678ff4d2afbce50592e655ece429d95b178ac6955091"
+      "bytes": 4008,
+      "sha256": "260f12ec73c13cc18440d0f401a71c231e01fcc25cd5b8a340cb20b4de4301d7"
     }
   ]
 }

@@ -101,7 +101,12 @@ GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
 '''
 
-PLATFORM_POSTLUDE = r'''-- The bucket itself is provisioned through the Storage API by the restore runner.
+PLATFORM_POSTLUDE = r'''-- pg_dump omits owner-equivalent schema ACL entries. Restore the explicit
+-- application-owned catalog state observed on UAT.
+GRANT ALL ON SCHEMA "authorization_private" TO "postgres";
+GRANT ALL ON SCHEMA "solver_private" TO "postgres";
+
+-- The bucket itself is provisioned through the Storage API by the restore runner.
 -- Direct writes to storage.buckets are intentionally forbidden.
 CREATE POLICY "profile_avatars_self_delete_v1"
 ON "storage"."objects" AS PERMISSIVE FOR DELETE TO "authenticated"
