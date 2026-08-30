@@ -8,12 +8,15 @@ set transaction isolation level repeatable read;
 set local statement_timeout = '30s';
 set local lock_timeout = '5s';
 
+-- Acquire the ledger table lock before the first snapshot-taking SELECT.
+-- Under REPEATABLE READ this ensures a concurrent ledger writer that commits
+-- while we wait is included in every subsequent fingerprint.
+lock table supabase_migrations.schema_migrations
+  in share row exclusive mode;
+
 select pg_catalog.pg_advisory_xact_lock(
   pg_catalog.hashtextextended('phase4a2c_uat_atomic_apply', 0)
 );
-
-lock table supabase_migrations.schema_migrations
-  in share row exclusive mode;
 
 do $apply$
 declare
