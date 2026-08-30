@@ -11,6 +11,10 @@ const phase4a2Inventory = JSON.parse(await readFile(new URL(
   "../docs/phase4a2-uat-migration-reconciliation.json",
   import.meta.url,
 ), "utf8"));
+const managedAclEvidence = JSON.parse(await readFile(new URL(
+  "../docs/phase4a2b-managed-acl-catalogs.json",
+  import.meta.url,
+), "utf8"));
 const builder = await readFile(new URL(
   "../scripts/phase4a2b/build_baseline.py",
   import.meta.url,
@@ -256,6 +260,29 @@ test("manifest pins the approved capture and deterministic routing", async () =>
     business_rows_read: 0,
     uat_mutations: 0,
   });
+  assert.deepEqual(managedAclEvidence.comparison, {
+    exact_identity_and_acl_records: 23,
+    extension_object_owner_grantor_or_owner_acl_representation_deltas: 51,
+    same_identity_acl_only_deltas: 1,
+    unmatched_identity_records: 0,
+    acl_only_identity: "relation|cron|cron.job_run_details|r",
+    mutation_or_normalization: "prohibited",
+    treatment: "observe-and-assert-only",
+  });
+  for (const [label, expected] of [
+    ["source_uat", manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.source_uat],
+    ["fresh_restore_compatibility", manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.fresh_restore],
+  ]) {
+    const catalog = managedAclEvidence[label];
+    const payload = catalog.canonical_lines.join("\n");
+    assert.equal(catalog.canonical_lines.length, expected.record_count);
+    assert.equal(Buffer.byteLength(payload), expected.canonical_bytes);
+    assert.equal(sha256(payload), expected.canonical_sha256);
+  }
+  assert.notEqual(
+    manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.source_uat.canonical_sha256,
+    manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.fresh_restore.canonical_sha256,
+  );
   assert.deepEqual(manifest.supplemental_read_only_inventory.publication_catalog, {
     recorded_at_utc: "2026-08-30T09:18:00Z",
     uat_identity_verified: true,
@@ -341,6 +368,26 @@ test("neutral SQL contains no remote identity, data load, or managed replay", as
   assert.doesNotMatch(neutralText, /^\s*CREATE\s+(?:PUBLICATION|SUBSCRIPTION)\b/imu);
 
   const statements = files.flatMap(file => tokenizeStatements(file.text));
+  const managedAclRewrites = statements.filter(({ safe }) => (
+    /^ALTER\s+EXTENSION\b/iu.test(safe)
+    || (
+      /^ALTER\s+(?:FUNCTION|TABLE|VIEW|SEQUENCE)\b/iu.test(safe)
+      && /"(?:cron|extensions|vault)"/iu.test(safe)
+      && /\bOWNER\s+TO\b/iu.test(safe)
+    )
+    || (
+      /^(?:GRANT|REVOKE)\b/iu.test(safe)
+      && (
+        /\bON\s+(?:FUNCTION|TABLE|SEQUENCE|SCHEMA)\s+"(?:cron|extensions|vault)"/iu.test(safe)
+        || /(?:\bTO|\bFROM)\s+"supabase_admin"/iu.test(safe)
+      )
+    )
+  ));
+  assert.deepEqual(managedAclRewrites, []);
+  const defaultPrivilegeMutations = statements.filter(({ safe }) => /^ALTER DEFAULT PRIVILEGES\b/iu.test(safe));
+  for (const { safe } of defaultPrivilegeMutations) {
+    assert.doesNotMatch(safe, /(?:ROLE|TO|FROM)\s+"supabase_admin"/iu);
+  }
   const forbidden = statements.filter(({ safe }) => /^\s*(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|CALL|DO|BEGIN|COMMIT|ROLLBACK|ALTER\s+SYSTEM|VACUUM|ANALYZE|CLUSTER|REINDEX)\b/iu.test(safe));
   assert.deepEqual(forbidden, []);
   assert.equal(statements.filter(({ safe }) => /^CREATE\s+INDEX\s+CONCURRENTLY\b/iu.test(safe)).length, 0);
@@ -454,6 +501,23 @@ test("platform companion restores only reviewed app-owned state", async () => {
     restoreContract,
     new RegExp(manifest.platform_companion.restore_expectation.platform_default_acl_compatibility.canonical_sha256, "u"),
   );
+  const localPlatformDefaultAclRows = [
+    { schema: "supabase_functions", grantor: "supabase_admin", object_type: "S", acl_items: ["postgres=rwU/supabase_admin", "anon=rwU/supabase_admin", "authenticated=rwU/supabase_admin", "service_role=rwU/supabase_admin"] },
+    { schema: "supabase_functions", grantor: "supabase_admin", object_type: "f", acl_items: ["postgres=X/supabase_admin", "anon=X/supabase_admin", "authenticated=X/supabase_admin", "service_role=X/supabase_admin"] },
+    { schema: "supabase_functions", grantor: "supabase_admin", object_type: "r", acl_items: ["postgres=arwdDxtm/supabase_admin", "anon=arwdDxtm/supabase_admin", "authenticated=arwdDxtm/supabase_admin", "service_role=arwdDxtm/supabase_admin"] },
+  ];
+  const localPlatformDefaultAclPayload = localPlatformDefaultAclRows
+    .sort((left, right) => Buffer.compare(Buffer.from(left.object_type), Buffer.from(right.object_type)))
+    .map(entry => [entry.schema, entry.grantor, entry.object_type, [...entry.acl_items].sort().join(",")].join("|"))
+    .join("\n");
+  assert.equal(Buffer.byteLength(localPlatformDefaultAclPayload), 470);
+  assert.equal(
+    sha256(localPlatformDefaultAclPayload),
+    manifest.platform_companion.restore_expectation.platform_default_acl_compatibility.canonical_sha256,
+  );
+  const managedCompatibility = manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility;
+  assert.match(restoreContract, new RegExp(managedCompatibility.fresh_restore.canonical_sha256, "u"));
+  assert.doesNotMatch(restoreContract, new RegExp(managedCompatibility.source_uat.canonical_sha256, "u"));
   assert.deepEqual(manifest.platform_companion.source_attestation, {
     serialization: "phase4a2-companion-v2",
     record_count: 56,
@@ -478,12 +542,35 @@ test("platform companion restores only reviewed app-owned state", async () => {
     platform_default_acl_compatibility: {
       schema: "supabase_functions",
       grantor: "supabase_admin",
+      object_types: ["S", "f", "r"],
       source_uat_schema_exists: false,
       source_uat_records: 0,
       restore_records: 3,
       canonical_bytes: 470,
       canonical_sha256: "4e48afbadff3c1f4a2bf8d07c492872b05ba062c59161f708e5a615e04434efe",
+      treatment: "assert-exact-then-exclude-from-uat-comparable-payload",
+    },
+    default_acl_source_comparison: "exact-after-asserted-local-delta-exclusion",
+    platform_managed_acl_compatibility: {
+      serialization: "phase4a2b-managed-acl-v1",
+      evidence_path: "docs/phase4a2b-managed-acl-catalogs.json",
+      source_uat: {
+        record_count: 75,
+        canonical_bytes: 10311,
+        canonical_sha256: "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc",
+      },
+      fresh_restore: {
+        runtime_scope: "pinned-fresh-local-supabase",
+        record_count: 75,
+        canonical_bytes: 12999,
+        canonical_sha256: "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5",
+      },
+      difference_classes: [
+        "extension-object-owner-grantor-and-owner-acl-representation",
+        "cron.job_run_details-postgres-trigger-privilege",
+      ],
       treatment: "observe-and-assert-only",
+      mutation_or_normalization: "prohibited",
     },
     all_other_source_attestation_categories: "exact",
   });

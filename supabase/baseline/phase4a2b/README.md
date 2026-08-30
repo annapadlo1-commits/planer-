@@ -24,10 +24,21 @@ migration-ledger repair, UAT reset/rebase, or production access.
   not rewritten: the restore contract asserts its exact 470-byte fingerprint
   separately, then verifies the remaining 29 records against the exact UAT
   fingerprint.
-- The source companion attestation remains pinned at 56 records. Restore
-  expects its only deliberate delta: the one cron job is absent because its
-  command text was never captured. The 67 omitted ACL dump sections and the
-  supplemental 75-record live managed-ACL catalog are independently hashed.
+- The source companion attestation remains pinned at 56 records. Restore has
+  three explicitly isolated differences: the cron job is absent because its
+  command text was never captured; the exact three-record default-ACL platform
+  compatibility set is asserted separately; and the 75-record managed ACL
+  catalog is checked against the pinned fresh-platform fingerprint below.
+- Managed extension, cron, and vault objects remain platform-owned. UAT source
+  attestation is 75 records / 10,311 bytes / SHA-256 `c3278105...`; the pinned
+  fresh local restore is independently 75 records / 12,999 bytes / SHA-256
+  `9055de51...`. Their reviewed differences are extension owner/grantor/owner
+  ACL representation plus the `cron.job_run_details` postgres TRIGGER
+  privilege. Neither catalog authorizes owner or ACL replay. Full canonical
+  evidence is in `docs/phase4a2b-managed-acl-catalogs.json`.
+- The 67 omitted ACL dump sections and supplemental source and restore catalogs
+  remain independently hashed; mutating or normalizing platform ACLs is
+  prohibited.
 - The recovery cron job remains deferred because its command text was
   intentionally excluded from the capture.
 - The `profile-avatars` bucket is created through the Storage API. Direct writes
@@ -66,6 +77,8 @@ restore work directory.
    fresh work directory through the Supabase local migration runner. The direct
    restore must leave zero migration rows; the migrator pass must create exactly
    one synthetic candidate row and must never import the UAT ledger.
+
+The normalized Pass A/Pass B dump excludes platform-managed `supabase_functions`; the SQL restore contract is the authoritative exact gate for its three-record compatibility ACL set and the 75-record managed ACL catalog.
 
 `manifest.json` is the authority for file order, byte counts, and SHA-256
 digests. The assembler stops if any listed byte changes, if the file set changes,

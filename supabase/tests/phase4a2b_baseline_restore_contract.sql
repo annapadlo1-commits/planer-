@@ -608,10 +608,12 @@ begin
     end if;
   end loop;
 
-  -- Platform/extension ACL sections are observe-only. The canonical catalog
-  -- fingerprint below was captured by a supplemental SELECT-only UAT query;
-  -- it covers the two managed schemas plus every explicit routine/relation
-  -- ACL in cron, extensions and vault. No ACL is rewritten by this baseline.
+  -- Platform/extension ACL sections are observe-only and are never rewritten.
+  -- Source UAT attestation remains separately pinned at 75 records / 10311
+  -- bytes / c3278105... . The executable expectation below is the exact
+  -- platform-native catalog produced by the pinned fresh local Supabase stack;
+  -- owner/grantor representation and the reviewed cron privilege differ from
+  -- UAT by platform bootstrap design.
   select
     count(*),
     string_agg(
@@ -697,21 +699,16 @@ begin
       and relation_row.relacl is not null
   ) acl_record;
   if v_actual <> 75
-    or octet_length(v_definitions) <> 10311
+    or octet_length(v_definitions) <> 12999
     or encode(
       pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
-    ) <> 'c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc'
+    ) <> '9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5'
   then
-    raise exception 'PHASE4A2B_MANAGED_ACL_CATALOG_INVALID:%:%:%:%',
+    raise exception 'PHASE4A2B_MANAGED_ACL_CATALOG_INVALID:%:%:%',
       v_actual,
       octet_length(v_definitions),
       encode(
         pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
-      ),
-      replace(
-        encode(pg_catalog.convert_to(v_definitions, 'UTF8'), 'base64'),
-        E'\\n',
-        ''
       );
   end if;
 

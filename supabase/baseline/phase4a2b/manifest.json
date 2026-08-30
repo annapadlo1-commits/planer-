@@ -71,12 +71,39 @@
       "platform_default_acl_compatibility": {
         "schema": "supabase_functions",
         "grantor": "supabase_admin",
+        "object_types": [
+          "S",
+          "f",
+          "r"
+        ],
         "source_uat_schema_exists": false,
         "source_uat_records": 0,
         "restore_records": 3,
         "canonical_bytes": 470,
         "canonical_sha256": "4e48afbadff3c1f4a2bf8d07c492872b05ba062c59161f708e5a615e04434efe",
-        "treatment": "observe-and-assert-only"
+        "treatment": "assert-exact-then-exclude-from-uat-comparable-payload"
+      },
+      "default_acl_source_comparison": "exact-after-asserted-local-delta-exclusion",
+      "platform_managed_acl_compatibility": {
+        "serialization": "phase4a2b-managed-acl-v1",
+        "evidence_path": "docs/phase4a2b-managed-acl-catalogs.json",
+        "source_uat": {
+          "record_count": 75,
+          "canonical_bytes": 10311,
+          "canonical_sha256": "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc"
+        },
+        "fresh_restore": {
+          "runtime_scope": "pinned-fresh-local-supabase",
+          "record_count": 75,
+          "canonical_bytes": 12999,
+          "canonical_sha256": "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5"
+        },
+        "difference_classes": [
+          "extension-object-owner-grantor-and-owner-acl-representation",
+          "cron.job_run_details-postgres-trigger-privilege"
+        ],
+        "treatment": "observe-and-assert-only",
+        "mutation_or_normalization": "prohibited"
       },
       "all_other_source_attestation_categories": "exact"
     },

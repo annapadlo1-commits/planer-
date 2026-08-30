@@ -31,6 +31,9 @@ MANAGED_ACL_INVENTORY_RECORDED_AT_UTC = "2026-08-30T09:12:39Z"
 MANAGED_ACL_RECORD_COUNT = 75
 MANAGED_ACL_CANONICAL_BYTES = 10_311
 MANAGED_ACL_CANONICAL_SHA256 = "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc"
+RESTORE_MANAGED_ACL_RECORD_COUNT = 75
+RESTORE_MANAGED_ACL_CANONICAL_BYTES = 12_999
+RESTORE_MANAGED_ACL_CANONICAL_SHA256 = "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5"
 MANAGED_ACL_SECTION_BYTES = 31_793
 MANAGED_ACL_SECTION_SHA256 = "4aeb80754c981402c5eba9b052ee312305113496c354c1e19ec40245b99e3b45"
 COMPANION_SERIALIZATION = "phase4a2-companion-v2"
@@ -461,12 +464,35 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
                 "platform_default_acl_compatibility": {
                     "schema": "supabase_functions",
                     "grantor": "supabase_admin",
+                    "object_types": ["S", "f", "r"],
                     "source_uat_schema_exists": False,
                     "source_uat_records": 0,
                     "restore_records": LOCAL_PLATFORM_DEFAULT_ACL_RECORD_COUNT,
                     "canonical_bytes": LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_BYTES,
                     "canonical_sha256": LOCAL_PLATFORM_DEFAULT_ACL_CANONICAL_SHA256,
+                    "treatment": "assert-exact-then-exclude-from-uat-comparable-payload",
+                },
+                "default_acl_source_comparison": "exact-after-asserted-local-delta-exclusion",
+                "platform_managed_acl_compatibility": {
+                    "serialization": "phase4a2b-managed-acl-v1",
+                    "evidence_path": "docs/phase4a2b-managed-acl-catalogs.json",
+                    "source_uat": {
+                        "record_count": MANAGED_ACL_RECORD_COUNT,
+                        "canonical_bytes": MANAGED_ACL_CANONICAL_BYTES,
+                        "canonical_sha256": MANAGED_ACL_CANONICAL_SHA256,
+                    },
+                    "fresh_restore": {
+                        "runtime_scope": "pinned-fresh-local-supabase",
+                        "record_count": RESTORE_MANAGED_ACL_RECORD_COUNT,
+                        "canonical_bytes": RESTORE_MANAGED_ACL_CANONICAL_BYTES,
+                        "canonical_sha256": RESTORE_MANAGED_ACL_CANONICAL_SHA256,
+                    },
+                    "difference_classes": [
+                        "extension-object-owner-grantor-and-owner-acl-representation",
+                        "cron.job_run_details-postgres-trigger-privilege",
+                    ],
                     "treatment": "observe-and-assert-only",
+                    "mutation_or_normalization": "prohibited",
                 },
                 "all_other_source_attestation_categories": "exact",
             },
