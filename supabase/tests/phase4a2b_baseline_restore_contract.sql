@@ -451,10 +451,11 @@ begin
     count(*),
     array_agg(
       format(
-        '%s:%s:%s',
+        '%s:%s:%s:%s',
         coalesce(namespace_row.nspname, '<global>'),
         pg_get_userbyid(default_acl.defaclrole),
-        default_acl.defaclobjtype::text
+        default_acl.defaclobjtype::text,
+        array_to_string(default_acl.defaclacl, ',')
       )
       order by
         coalesce(namespace_row.nspname, '') collate "C",
