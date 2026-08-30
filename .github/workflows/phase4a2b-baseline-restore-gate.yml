@@ -70,6 +70,7 @@ jobs:
           test -z "${DATABASE_URL:-}"
           test -f scripts/phase4a2b/assemble_baseline.py
           test -x scripts/phase4a2b/provision_local_storage_bucket.sh
+          test -f scripts/phase4a2b/managed_acl_catalog_v2.sql
           test -f "$BASELINE_DIR/manifest.json"
           test -f supabase/tests/phase4a2b_baseline_restore_contract.sql
 
@@ -389,6 +390,51 @@ jobs:
             assert_bucket "$db_container"
           }
 
+          capture_managed_acl_v2() {
+            local db_container="$1" output="$2" label="$3"
+            local raw="${output}.raw"
+            test -f scripts/phase4a2b/managed_acl_catalog_v2.sql
+            db_psql_stdin "$db_container" \
+              --tuples-only --no-align --quiet --file - \
+              < scripts/phase4a2b/managed_acl_catalog_v2.sql > "$raw"
+            python3 - "$raw" "$output" "$label" <<'PY'
+          import base64
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          raw_path = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          label = sys.argv[3]
+          rows = [line.strip() for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+          if len(rows) != 1:
+              raise SystemExit(f"managed ACL query returned {len(rows)} non-empty rows")
+          data = json.loads(rows[0])
+          lines = data.get("canonical_lines")
+          if data.get("serialization") != "phase4a2b-managed-acl-v2":
+              raise SystemExit("managed ACL serialization changed")
+          if not isinstance(lines, list) or data.get("record_count") != len(lines) or len(lines) != 75:
+              raise SystemExit("managed ACL record count changed")
+          if lines != sorted(lines, key=lambda value: value.encode("utf-8")) or len(lines) != len(set(lines)):
+              raise SystemExit("managed ACL lines are not C-sorted and unique")
+          payload = "\n".join(lines).encode("utf-8")
+          if data.get("canonical_bytes") != len(payload):
+              raise SystemExit("managed ACL byte count mismatch")
+          if data.get("canonical_sha256") != hashlib.sha256(payload).hexdigest():
+              raise SystemExit("managed ACL SHA-256 mismatch")
+          functions = [line for line in lines if line.startswith("function|")]
+          if len(functions) != 67 or any(not line.split("|", 5)[2].endswith(")") for line in functions):
+              raise SystemExit("managed ACL function identities are incomplete")
+          encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+          output_path.write_bytes(encoded)
+          print(f"PHASE4A2B_MANAGED_ACL_V2_{label}_BASE64_BEGIN")
+          print(base64.b64encode(encoded).decode("ascii"))
+          print(f"PHASE4A2B_MANAGED_ACL_V2_{label}_BASE64_END")
+          PY
+            rm -f "$raw"
+          }
+
           run_contracts() {
             local db_container="$1" ledger_mode="$2"
             local contract
@@ -404,11 +450,13 @@ jobs:
               test -f "$contract"
               if test "$contract" = 'supabase/tests/phase4a1_scoped_manager_security_contract.sql'; then
                 local phase4a1_output="$gate_dir/phase4a1-${ledger_mode}.out"
-                test "$(git hash-object "$contract")" = '3c45f1acaf3bc46de57fc4b6e7a4f5512cc80d42'
+                test "$(git hash-object "$contract")" = 'a6f890fc3668ad14a120d1b80d0d40a8082caee3'
                 test "$(grep -Fxc 'begin;' "$contract")" = '1'
                 test "$(grep -Fxc 'rollback;' "$contract")" = '1'
                 ! grep -Fqx 'commit;' "$contract"
-                ! rg -n -i '^[[:space:]]*set[[:space:]]+transaction|\\(?:connect|copy|include|ir)\\b|\\b(?:dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron\\.schedule)\\b' "$contract"
+                ! grep -Eni '^[[:space:]]*set[[:space:]]+transaction' "$contract"
+                ! grep -Eni '\\(connect|copy|include|ir)([[:space:]]|$)' "$contract"
+                ! grep -Eni '(^|[^[:alnum:]_])(dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron[.]schedule)([^[:alnum:]_]|$)' "$contract"
                 {
                   echo 'begin;'
                   printf '%s\n' \
@@ -511,6 +559,7 @@ jobs:
             db_psql_stdin "$db_container" --single-transaction --file - < "$ASSEMBLED_SQL"
             test "$(ledger_count "$db_container")" = '0'
 
+            capture_managed_acl_v2 "$db_container" "$gate_dir/pass-a.managed-acl-v2.json" PASS_A
             start_storage_and_create_bucket "$project_id" 55329 "$pass_a_storage" "$db_container"
             run_contracts "$db_container" empty
             test "$(ledger_count "$db_container")" = '0'
@@ -558,6 +607,7 @@ jobs:
               | sed '/^[[:space:]]*$/d')"
             test "$ledger_row" = "${SYNTHETIC_MIGRATION_VERSION}|${SYNTHETIC_MIGRATION_NAME}"
 
+            capture_managed_acl_v2 "$db_container" "$gate_dir/pass-b.managed-acl-v2.json" PASS_B
             start_storage_and_create_bucket "$project_id" 56329 "$pass_b_storage" "$db_container"
             run_contracts "$db_container" synthetic-baseline
             test "$(ledger_count "$db_container")" = '1'
@@ -573,6 +623,8 @@ jobs:
           run_pass_b
 
           cmp --silent "$gate_dir/pass-a.normalized.sql" "$gate_dir/pass-b.normalized.sql"
+          cmp --silent "$gate_dir/pass-a.managed-acl-v2.json" "$gate_dir/pass-b.managed-acl-v2.json"
+          local_managed_acl_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["canonical_sha256"])' "$gate_dir/pass-a.managed-acl-v2.json")"
           pass_a_sha="$(sha256sum "$gate_dir/pass-a.normalized.sql" | cut -d' ' -f1)"
           pass_b_sha="$(sha256sum "$gate_dir/pass-b.normalized.sql" | cut -d' ' -f1)"
           test "$pass_a_sha" = "$pass_b_sha"
@@ -584,10 +636,14 @@ jobs:
             echo '- Result: PASS'
             echo "- Assembled SQL SHA-256: \`$assembled_sha\`"
             echo "- Normalized Pass A/Pass B schema SHA-256: \`$pass_a_sha\`"
+            echo "- Managed ACL v2 Pass A/Pass B SHA-256: \`$local_managed_acl_sha\`"
             echo '- Pass A: direct psql, single transaction, migration ledger 0'
             echo "- Pass B: one synthetic migration \`${SYNTHETIC_MIGRATION_VERSION}\`, migration ledger 1"
             echo '- Storage bucket: provisioned through an ephemeral local Storage API'
             echo '- Remote credentials, project refs, database URLs, UAT and production: not used'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          rm -f "$gate_dir/pass-a.normalized.sql" "$gate_dir/pass-b.normalized.sql" "$ASSEMBLED_SQL"
+          rm -f \
+            "$gate_dir/pass-a.normalized.sql" "$gate_dir/pass-b.normalized.sql" \
+            "$gate_dir/pass-a.managed-acl-v2.json" "$gate_dir/pass-b.managed-acl-v2.json" \
+            "$ASSEMBLED_SQL"

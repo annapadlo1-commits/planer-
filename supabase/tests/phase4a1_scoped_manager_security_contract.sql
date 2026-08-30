@@ -145,16 +145,25 @@ do $$
 declare v_version integer;v_settings jsonb;
 begin
   select coalesce(max(version),0)+1 into v_version from public.matrix_versions;
-  select coalesce(settings,'{}'::jsonb) into v_settings from public.matrix_versions
+  select settings into v_settings from public.matrix_versions
     where status='ACTIVE' order by version desc limit 1;
   -- A schema-only restore has no prior ACTIVE Matrix. Keep this rollback-local
-  -- fixture independent of business data while satisfying timezone consumers.
-  v_settings:=coalesce(v_settings,'{}'::jsonb)
-    ||jsonb_build_object('timezone','Europe/Warsaw');
+  -- fixture independent of business data while satisfying the canonical
+  -- Matrix settings validator. Preserve existing ACTIVE settings byte-for-byte.
+  if v_settings is null then
+    v_settings:=jsonb_build_object(
+      'currency','PLN',
+      'timezone','Europe/Warsaw',
+      'minimumRestMinutes',660,
+      'maximumShiftsPerDay',1,
+      'missingAvailabilityMeansAvailable',true,
+      'requireOptimal',false
+    );
+  end if;
   insert into public.matrix_versions(id,version,name,status,effective_from,settings,schema_version,
     activated_at,published_at) values(
       'f4a12000-0000-4000-8000-000000000001',v_version,'Phase 4A contract','DRAFT',
-      current_date,coalesce(v_settings,'{}'::jsonb),2,null,null);
+      current_date,v_settings,2,null,null);
 end;
 $$;
 

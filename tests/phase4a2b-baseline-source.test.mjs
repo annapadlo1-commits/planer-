@@ -35,6 +35,10 @@ const restoreContract = await readFile(new URL(
   "../supabase/tests/phase4a2b_baseline_restore_contract.sql",
   import.meta.url,
 ), "utf8");
+const runtimeContract = await readFile(new URL(
+  "../supabase/tests/runtime_contract_guard_v2.sql",
+  import.meta.url,
+), "utf8");
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 
@@ -624,6 +628,20 @@ test("Storage helper rejects URL confusion before invoking curl", () => {
     assert.match(result.stderr, /refusing (?:non-local Supabase URL|invalid local Storage port)/u);
     assert.doesNotMatch(result.stderr, /curl/u);
   }
+});
+
+test("runtime publication guard follows the secured delegate", () => {
+  assert.match(runtimeContract,
+    /optimizer_publish_role_variant_uat_v2\(uuid,uuid,text,text\)[\s\S]*optimizer_publish_role_variant_before_b4f121_uat_v2/iu);
+  assert.match(runtimeContract,
+    /optimizer_publish_role_variant_before_b4f121_uat_v2\(uuid,uuid,text,text\)/iu);
+  assert.match(runtimeContract, /ROLE_PUBLICATION_SECURED_DELEGATE_MISSING/u);
+  assert.match(runtimeContract, /v_role_publish_delegate_definition/iu);
+  assert.match(runtimeContract, /ROLE_PUBLICATION_FORBIDDEN/iu);
+  assert.match(runtimeContract, /solver_private\.revalidate_materialized_variant_v2/iu);
+  assert.match(runtimeContract, /ANON_RUNTIME_RPC_EXECUTE_NOT_REVOKED/u);
+  assert.doesNotMatch(runtimeContract,
+    /position\('ROLE_PUBLICATION_FORBIDDEN' in v_role_publish_definition\)/iu);
 });
 
 test("restore contract is read-only and validates both ledger paths", () => {

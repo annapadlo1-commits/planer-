@@ -617,86 +617,83 @@ begin
   select
     count(*),
     string_agg(
-      format(
-        '%s|%s|%s|%s|%s|%s',
-        acl_record.object_kind,
-        acl_record.schema_name,
-        acl_record.object_identity,
-        acl_record.object_subkind,
-        acl_record.owner_name,
-        acl_record.acl_items
-      ),
+      acl_record.canonical_line,
       E'\n'
-      order by
-        acl_record.object_kind collate "C",
-        acl_record.schema_name collate "C",
-        acl_record.object_identity collate "C",
-        acl_record.object_subkind collate "C",
-        acl_record.owner_name collate "C",
-        acl_record.acl_items collate "C"
+      order by acl_record.canonical_line collate "C"
     )
     into v_actual, v_definitions
   from (
-    select
-      'schema'::text as object_kind,
-      namespace_row.nspname as schema_name,
-      namespace_row.nspname as object_identity,
-      ''::text as object_subkind,
-      pg_get_userbyid(namespace_row.nspowner) as owner_name,
-      coalesce((
-        select string_agg(
-          acl_item::text, ',' order by acl_item::text collate "C"
-        )
-        from unnest(namespace_row.nspacl) acl_item
-      ), '') as acl_items
-    from pg_catalog.pg_namespace namespace_row
-    where namespace_row.nspname in ('cron', 'public')
-      and namespace_row.nspacl is not null
+    select format(
+      '%s|%s|%s|%s|%s|%s',
+      typed_acl.object_kind,
+      typed_acl.schema_name,
+      typed_acl.object_identity,
+      typed_acl.object_subkind,
+      typed_acl.owner_name,
+      typed_acl.acl_items
+    )::text as canonical_line
+    from (
+      select
+        'schema'::text as object_kind,
+        namespace_row.nspname::text as schema_name,
+        namespace_row.nspname::text as object_identity,
+        ''::text as object_subkind,
+        pg_get_userbyid(namespace_row.nspowner)::text as owner_name,
+        coalesce((
+          select string_agg(
+            acl_item::text, ',' order by acl_item::text collate "C"
+          )
+          from unnest(namespace_row.nspacl) acl_item
+        ), ''::text) as acl_items
+      from pg_catalog.pg_namespace namespace_row
+      where namespace_row.nspname in ('cron', 'public')
+        and namespace_row.nspacl is not null
 
-    union all
+      union all
 
-    select
-      'function',
-      namespace_row.nspname,
-      format(
-        '%I.%I(%s)',
-        namespace_row.nspname,
-        procedure_row.proname,
-        pg_get_function_identity_arguments(procedure_row.oid)
-      ),
-      procedure_row.prokind::text,
-      pg_get_userbyid(procedure_row.proowner),
-      coalesce((
-        select string_agg(
-          acl_item::text, ',' order by acl_item::text collate "C"
-        )
-        from unnest(procedure_row.proacl) acl_item
-      ), '')
-    from pg_catalog.pg_proc procedure_row
-    join pg_catalog.pg_namespace namespace_row
-      on namespace_row.oid = procedure_row.pronamespace
-    where namespace_row.nspname in ('cron', 'extensions', 'vault')
-      and procedure_row.proacl is not null
+      select
+        'function'::text,
+        namespace_row.nspname::text,
+        format(
+          '%I.%I(%s)',
+          namespace_row.nspname,
+          procedure_row.proname,
+          pg_get_function_identity_arguments(procedure_row.oid)
+        )::text,
+        procedure_row.prokind::text,
+        pg_get_userbyid(procedure_row.proowner)::text,
+        coalesce((
+          select string_agg(
+            acl_item::text, ',' order by acl_item::text collate "C"
+          )
+          from unnest(procedure_row.proacl) acl_item
+        ), ''::text)
+      from pg_catalog.pg_proc procedure_row
+      join pg_catalog.pg_namespace namespace_row
+        on namespace_row.oid = procedure_row.pronamespace
+      where namespace_row.nspname in ('cron', 'extensions', 'vault')
+        and procedure_row.proacl is not null
 
-    union all
+      union all
 
-    select
-      'relation',
-      namespace_row.nspname,
-      format('%I.%I', namespace_row.nspname, relation_row.relname),
-      relation_row.relkind::text,
-      pg_get_userbyid(relation_row.relowner),
-      coalesce((
-        select string_agg(
-          acl_item::text, ',' order by acl_item::text collate "C"
-        )
-        from unnest(relation_row.relacl) acl_item
-      ), '')
-    from pg_catalog.pg_class relation_row
-    join pg_catalog.pg_namespace namespace_row
-      on namespace_row.oid = relation_row.relnamespace
-    where namespace_row.nspname in ('cron', 'extensions', 'vault')
-      and relation_row.relacl is not null
+      select
+        'relation'::text,
+        namespace_row.nspname::text,
+        format('%I.%I', namespace_row.nspname, relation_row.relname)::text,
+        relation_row.relkind::text,
+        pg_get_userbyid(relation_row.relowner)::text,
+        coalesce((
+          select string_agg(
+            acl_item::text, ',' order by acl_item::text collate "C"
+          )
+          from unnest(relation_row.relacl) acl_item
+        ), ''::text)
+      from pg_catalog.pg_class relation_row
+      join pg_catalog.pg_namespace namespace_row
+        on namespace_row.oid = relation_row.relnamespace
+      where namespace_row.nspname in ('cron', 'extensions', 'vault')
+        and relation_row.relacl is not null
+    ) typed_acl
   ) acl_record;
   if v_actual <> 75
     or octet_length(v_definitions) <> 12999
