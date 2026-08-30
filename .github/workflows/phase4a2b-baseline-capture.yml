@@ -28,12 +28,13 @@ jobs:
       TARGET_BRANCH_NAME: dynamic-matrix-solver-v2
       EXPECTED_UAT_PROJECT_REF: nhthrtpkfpmufmrmdyjg
       EXPECTED_BASE_COMMIT: 9ce77eeadffcf46a7d8842e914b43f4fbcfddbfc
-      EXPECTED_WORKFLOW_PARENT: 3a27a06d15663772f494def6a3b303acfd1c49d7
+      EXPECTED_WORKFLOW_PARENT: 33d856f160b35294cc0aed1117b1751becec888c
       FROZEN_SOURCE_COMMIT: 5565c50370cb9436a76d1e6d7013250eaad2bece
       FROZEN_SOURCE_TREE: a8f6148cc0ff8960638553951972ba949b464d84
       EXPECTED_PREFLIGHT_BLOB: 9d43a89a0e533b336e8d071832f321fcc0774972
       EXPECTED_PREFLIGHT_SHA256: 52b9412dbaa71c9cebafaf1cbf9baef74d029deff2e7672a606c438297c690e9
       EXPECTED_UAT_REF_OCCURRENCES: 5
+      EXPECTED_DB_CA_CERT_SHA256: 807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa
       PATCHED_PG_IMAGE: postgres@sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28
       CAPTURE_RECIPIENT_CERT_SHA256: 0d7060c58c4a2cfa3de55b16b59e50ec76b00b24edc47bb77ffd5a490060eab8
 
@@ -79,17 +80,23 @@ jobs:
 
           credential_file="$RUNNER_TEMP/phase4a2-branch.env"
           credential_error_log="$RUNNER_TEMP/phase4a2-branch.err"
+          db_ca_input="$RUNNER_TEMP/supabase-db-ca-input.crt"
           db_ca_file="$RUNNER_TEMP/supabase-db-ca.crt"
           recipient_cert=''
           package_file=''
           : > "$credential_file"
           : > "$credential_error_log"
-          printf '%s\n' "$SUPABASE_DB_CA_CERT" > "$db_ca_file"
-          chmod 600 "$credential_file" "$credential_error_log" "$db_ca_file"
+          printf '%s\n' "$SUPABASE_DB_CA_CERT" > "$db_ca_input"
+          chmod 600 "$credential_file" "$credential_error_log" "$db_ca_input"
+          test "$(grep -c '^-----BEGIN CERTIFICATE-----$' "$db_ca_input")" -eq 1
+          test "$(grep -c '^-----END CERTIFICATE-----$' "$db_ca_input")" -eq 1
+          openssl x509 -in "$db_ca_input" -out "$db_ca_file"
+          chmod 600 "$db_ca_file"
           openssl x509 -in "$db_ca_file" -noout -checkend 0 >/dev/null
           db_ca_sha256="$(openssl x509 -in "$db_ca_file" -outform DER | sha256sum | cut -d' ' -f1)"
+          test "$db_ca_sha256" = "$EXPECTED_DB_CA_CERT_SHA256"
           cleanup_sensitive_files() {
-            rm -f "$credential_file" "$credential_error_log" "$db_ca_file"
+            rm -f "$credential_file" "$credential_error_log" "$db_ca_input" "$db_ca_file"
             if [[ -n "${recipient_cert:-}" ]]; then rm -f "$recipient_cert"; fi
             if [[ -n "${package_file:-}" ]]; then rm -f "$package_file"; fi
           }
@@ -617,10 +624,39 @@ jobs:
                       f'{routine[0]}.{routine[1]}:expected:{expected_count},actual:{actual_count}',
                   )
 
+          expected_event_triggers = {
+              'issue_graphql_placeholder',
+              'issue_pg_cron_access',
+              'issue_pg_graphql_access',
+              'issue_pg_net_access',
+              'pgrst_ddl_watch',
+              'pgrst_drop_watch',
+          }
+          actual_event_trigger_creates = {name: 0 for name in expected_event_triggers}
+          event_trigger_reference = re.compile(r'\bEVENT\s+TRIGGER\s+"([^"]+)"', re.I)
+          event_trigger_create = re.compile(r'^\s*CREATE\s+EVENT\s+TRIGGER\s+"([^"]+)"', re.I)
+          for index, (_clean_statement, safe_statement) in enumerate(statements, 1):
+              if re.search(r'\bEVENT\s+TRIGGER\b', safe_statement, re.I) is None:
+                  continue
+              references = event_trigger_reference.findall(safe_statement)
+              if len(references) != 1 or references[0] not in expected_event_triggers:
+                  record('event_trigger_outside_observe_only_allowlist', schema_name, f'statement:{index}')
+                  continue
+              created = event_trigger_create.match(safe_statement)
+              if created:
+                  actual_event_trigger_creates[created.group(1)] += 1
+          for name, count in actual_event_trigger_creates.items():
+              if count != 1:
+                  record(
+                      'event_trigger_create_inventory_changed',
+                      schema_name,
+                      f'{name}:expected:1,actual:{count}',
+                  )
+
           banned_start = re.compile(
               r'^\s*(?:INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|REFRESH\s+MATERIALIZED\s+VIEW|'
               r'DO|CALL|PREPARE|EXECUTE|EXPLAIN|LOAD|VACUUM|ANALYZE|CLUSTER|REINDEX|ALTER\s+SYSTEM|'
-              r'CREATE\s+(?:DATABASE|SUBSCRIPTION|PUBLICATION|SERVER|EVENT\s+TRIGGER|USER\s+MAPPING|ROLE|USER)|'
+              r'CREATE\s+(?:DATABASE|SUBSCRIPTION|PUBLICATION|SERVER|USER\s+MAPPING|ROLE|USER)|'
               r'ALTER\s+(?:SUBSCRIPTION|PUBLICATION|SERVER|ROLE|USER))\b',
               re.I,
           )
