@@ -450,7 +450,7 @@ jobs:
               test -f "$contract"
               if test "$contract" = 'supabase/tests/phase4a1_scoped_manager_security_contract.sql'; then
                 local phase4a1_output="$gate_dir/phase4a1-${ledger_mode}.out"
-                test "$(git hash-object "$contract")" = 'a6f890fc3668ad14a120d1b80d0d40a8082caee3'
+                test "$(git hash-object "$contract")" = '6f8b8a754f09243ac2084a86adf8818ca2ad525e'
                 test "$(grep -Fxc 'begin;' "$contract")" = '1'
                 test "$(grep -Fxc 'rollback;' "$contract")" = '1'
                 ! grep -Fqx 'commit;' "$contract"

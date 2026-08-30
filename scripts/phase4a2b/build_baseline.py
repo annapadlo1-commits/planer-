@@ -27,13 +27,14 @@ CAPTURE_FROZEN_SOURCE_COMMIT = "5565c50370cb9436a76d1e6d7013250eaad2bece"
 CAPTURE_FROZEN_SOURCE_TREE = "a8f6148cc0ff8960638553951972ba949b464d84"
 PGMQ_INVENTORY_RECORDED_AT_UTC = "2026-08-30T08:50:37Z"
 PGMQ_INVENTORY_SHA256 = "e57a3b17aa2be4432b8820168e9d20156a148e338d03654c2e15a82908c7d656"
-MANAGED_ACL_INVENTORY_RECORDED_AT_UTC = "2026-08-30T09:12:39Z"
+MANAGED_ACL_INVENTORY_RECORDED_AT_UTC = "2026-08-30T10:49:11Z"
+MANAGED_ACL_CAPTURE_RUN_ID = 33_307_376_650
 MANAGED_ACL_RECORD_COUNT = 75
-MANAGED_ACL_CANONICAL_BYTES = 10_311
-MANAGED_ACL_CANONICAL_SHA256 = "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc"
+MANAGED_ACL_CANONICAL_BYTES = 12_186
+MANAGED_ACL_CANONICAL_SHA256 = "3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed"
 RESTORE_MANAGED_ACL_RECORD_COUNT = 75
-RESTORE_MANAGED_ACL_CANONICAL_BYTES = 12_999
-RESTORE_MANAGED_ACL_CANONICAL_SHA256 = "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5"
+RESTORE_MANAGED_ACL_CANONICAL_BYTES = 14_874
+RESTORE_MANAGED_ACL_CANONICAL_SHA256 = "7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27"
 MANAGED_ACL_SECTION_BYTES = 31_793
 MANAGED_ACL_SECTION_SHA256 = "4aeb80754c981402c5eba9b052ee312305113496c354c1e19ec40245b99e3b45"
 COMPANION_SERIALIZATION = "phase4a2-companion-v2"
@@ -474,9 +475,11 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
                 },
                 "default_acl_source_comparison": "exact-after-asserted-local-delta-exclusion",
                 "platform_managed_acl_compatibility": {
-                    "serialization": "phase4a2b-managed-acl-v1",
+                    "serialization": "phase4a2b-managed-acl-v2",
                     "evidence_path": "docs/phase4a2b-managed-acl-catalogs.json",
+                    "query_path": "scripts/phase4a2b/managed_acl_catalog_v2.sql",
                     "source_uat": {
+                        "runtime_accepted": False,
                         "record_count": MANAGED_ACL_RECORD_COUNT,
                         "canonical_bytes": MANAGED_ACL_CANONICAL_BYTES,
                         "canonical_sha256": MANAGED_ACL_CANONICAL_SHA256,
@@ -487,8 +490,18 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
                         "canonical_bytes": RESTORE_MANAGED_ACL_CANONICAL_BYTES,
                         "canonical_sha256": RESTORE_MANAGED_ACL_CANONICAL_SHA256,
                     },
+                    "identity_sets_equal": True,
+                    "difference_counts": {
+                        "exact": 23,
+                        "extension_owner_grantor_and_owner_acl_representation": 46,
+                        "dashboard_user_privilege_delta": 5,
+                        "cron_job_run_details_trigger_privilege_delta": 1,
+                        "unmatched": 0,
+                        "unclassified": 0,
+                    },
                     "difference_classes": [
                         "extension-object-owner-grantor-and-owner-acl-representation",
+                        "dashboard-user-pg-stat-statements-privilege-delta",
                         "cron.job_run_details-postgres-trigger-privilege",
                     ],
                     "treatment": "observe-and-assert-only",
@@ -548,9 +561,11 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
             "message_rows_read": 0,
             "uat_mutations": 0,
             "managed_acl_catalog": {
-                "serialization": "phase4a2b-managed-acl-v1",
+                "serialization": "phase4a2b-managed-acl-v2",
+                "query_path": "scripts/phase4a2b/managed_acl_catalog_v2.sql",
                 "recorded_at_utc": MANAGED_ACL_INVENTORY_RECORDED_AT_UTC,
                 "uat_identity_verified": True,
+                "workflow_run_id": MANAGED_ACL_CAPTURE_RUN_ID,
                 "record_count": MANAGED_ACL_RECORD_COUNT,
                 "canonical_bytes": MANAGED_ACL_CANONICAL_BYTES,
                 "canonical_sha256": MANAGED_ACL_CANONICAL_SHA256,

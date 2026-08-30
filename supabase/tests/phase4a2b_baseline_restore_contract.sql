@@ -609,11 +609,11 @@ begin
   end loop;
 
   -- Platform/extension ACL sections are observe-only and are never rewritten.
-  -- Source UAT attestation remains separately pinned at 75 records / 10311
-  -- bytes / c3278105... . The executable expectation below is the exact
-  -- platform-native catalog produced by the pinned fresh local Supabase stack;
-  -- owner/grantor representation and the reviewed cron privilege differ from
-  -- UAT by platform bootstrap design.
+  -- The source UAT v2 attestation is pinned only in the evidence artifact.
+  -- Runtime accepts exactly the platform-native v2 catalog produced by the
+  -- pinned fresh local Supabase stack. Reviewed differences include extension
+  -- owner/grantor representation, five dashboard_user pg_stat_statements
+  -- privileges, and the cron.job_run_details postgres TRIGGER privilege.
   select
     count(*),
     string_agg(
@@ -696,10 +696,10 @@ begin
     ) typed_acl
   ) acl_record;
   if v_actual <> 75
-    or octet_length(v_definitions) <> 12999
+    or octet_length(v_definitions) <> 14874
     or encode(
       pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
-    ) <> '9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5'
+    ) <> '7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27'
   then
     raise exception 'PHASE4A2B_MANAGED_ACL_CATALOG_INVALID:%:%:%',
       v_actual,

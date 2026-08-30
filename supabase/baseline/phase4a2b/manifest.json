@@ -85,21 +85,33 @@
       },
       "default_acl_source_comparison": "exact-after-asserted-local-delta-exclusion",
       "platform_managed_acl_compatibility": {
-        "serialization": "phase4a2b-managed-acl-v1",
+        "serialization": "phase4a2b-managed-acl-v2",
         "evidence_path": "docs/phase4a2b-managed-acl-catalogs.json",
+        "query_path": "scripts/phase4a2b/managed_acl_catalog_v2.sql",
         "source_uat": {
+          "runtime_accepted": false,
           "record_count": 75,
-          "canonical_bytes": 10311,
-          "canonical_sha256": "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc"
+          "canonical_bytes": 12186,
+          "canonical_sha256": "3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed"
         },
         "fresh_restore": {
           "runtime_scope": "pinned-fresh-local-supabase",
           "record_count": 75,
-          "canonical_bytes": 12999,
-          "canonical_sha256": "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5"
+          "canonical_bytes": 14874,
+          "canonical_sha256": "7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27"
+        },
+        "identity_sets_equal": true,
+        "difference_counts": {
+          "exact": 23,
+          "extension_owner_grantor_and_owner_acl_representation": 46,
+          "dashboard_user_privilege_delta": 5,
+          "cron_job_run_details_trigger_privilege_delta": 1,
+          "unmatched": 0,
+          "unclassified": 0
         },
         "difference_classes": [
           "extension-object-owner-grantor-and-owner-acl-representation",
+          "dashboard-user-pg-stat-statements-privilege-delta",
           "cron.job_run_details-postgres-trigger-privilege"
         ],
         "treatment": "observe-and-assert-only",
@@ -156,12 +168,14 @@
     "message_rows_read": 0,
     "uat_mutations": 0,
     "managed_acl_catalog": {
-      "serialization": "phase4a2b-managed-acl-v1",
-      "recorded_at_utc": "2026-08-30T09:12:39Z",
+      "serialization": "phase4a2b-managed-acl-v2",
+      "query_path": "scripts/phase4a2b/managed_acl_catalog_v2.sql",
+      "recorded_at_utc": "2026-08-30T10:49:11Z",
       "uat_identity_verified": true,
+      "workflow_run_id": 33307376650,
       "record_count": 75,
-      "canonical_bytes": 10311,
-      "canonical_sha256": "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc",
+      "canonical_bytes": 12186,
+      "canonical_sha256": "3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed",
       "business_rows_read": 0,
       "uat_mutations": 0
     },

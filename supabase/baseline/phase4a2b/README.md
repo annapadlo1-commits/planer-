@@ -29,13 +29,18 @@ migration-ledger repair, UAT reset/rebase, or production access.
   command text was never captured; the exact three-record default-ACL platform
   compatibility set is asserted separately; and the 75-record managed ACL
   catalog is checked against the pinned fresh-platform fingerprint below.
-- Managed extension, cron, and vault objects remain platform-owned. UAT source
-  attestation is 75 records / 10,311 bytes / SHA-256 `c3278105...`; the pinned
-  fresh local restore is independently 75 records / 12,999 bytes / SHA-256
-  `9055de51...`. Their reviewed differences are extension owner/grantor/owner
-  ACL representation plus the `cron.job_run_details` postgres TRIGGER
-  privilege. Neither catalog authorizes owner or ACL replay. Full canonical
-  evidence is in `docs/phase4a2b-managed-acl-catalogs.json`.
+- Managed extension, cron, and vault objects remain platform-owned. The
+  complete v2 catalog preserves full function identities: UAT source
+  attestation is 75 records / 12,186 bytes / SHA-256 `3266bb40...`; the
+  pinned fresh local restore is 75 records / 14,874 bytes / SHA-256
+  `7f9df875...`. The identity sets are equal: 23 records are exact, 46 differ
+  only by extension owner/grantor/owner-ACL representation, five
+  `pg_stat_statements` objects have a real `dashboard_user` privilege on UAT
+  that is absent locally, and `cron.job_run_details` has the reviewed postgres
+  TRIGGER delta. Runtime accepts only the exact fresh-local v2 fingerprint;
+  the UAT hash remains source evidence only. Neither catalog authorizes owner
+  or ACL replay. Full canonical evidence and classifications are in
+  `docs/phase4a2b-managed-acl-catalogs.json`.
 - The 67 omitted ACL dump sections and supplemental source and restore catalogs
   remain independently hashed; mutating or normalizing platform ACLs is
   prohibited.

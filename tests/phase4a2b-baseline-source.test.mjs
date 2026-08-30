@@ -31,6 +31,10 @@ const bucketProvisionerPath = fileURLToPath(new URL(
   "../scripts/phase4a2b/provision_local_storage_bucket.sh",
   import.meta.url,
 ));
+const managedAclQuery = await readFile(new URL(
+  "../scripts/phase4a2b/managed_acl_catalog_v2.sql",
+  import.meta.url,
+), "utf8");
 const restoreContract = await readFile(new URL(
   "../supabase/tests/phase4a2b_baseline_restore_contract.sql",
   import.meta.url,
@@ -255,38 +259,186 @@ test("manifest pins the approved capture and deterministic routing", async () =>
   assert.equal(manifest.supplemental_read_only_inventory.message_rows_read, 0);
   assert.equal(manifest.supplemental_read_only_inventory.uat_mutations, 0);
   assert.deepEqual(manifest.supplemental_read_only_inventory.managed_acl_catalog, {
-    serialization: "phase4a2b-managed-acl-v1",
-    recorded_at_utc: "2026-08-30T09:12:39Z",
+    serialization: "phase4a2b-managed-acl-v2",
+    query_path: "scripts/phase4a2b/managed_acl_catalog_v2.sql",
+    recorded_at_utc: "2026-08-30T10:49:11Z",
     uat_identity_verified: true,
+    workflow_run_id: 33307376650,
     record_count: 75,
-    canonical_bytes: 10311,
-    canonical_sha256: "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc",
+    canonical_bytes: 12186,
+    canonical_sha256: "3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed",
     business_rows_read: 0,
     uat_mutations: 0,
   });
-  assert.deepEqual(managedAclEvidence.comparison, {
-    exact_identity_and_acl_records: 23,
-    extension_object_owner_grantor_or_owner_acl_representation_deltas: 51,
-    same_identity_acl_only_deltas: 1,
-    unmatched_identity_records: 0,
-    acl_only_identity: "relation|cron|cron.job_run_details|r",
-    mutation_or_normalization: "prohibited",
-    treatment: "observe-and-assert-only",
+
+  const managedCompatibility =
+    manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility;
+  assert.equal(managedAclEvidence.format, "phase4a2b-managed-acl-evidence-v2");
+  assert.equal(managedAclEvidence.serialization.version, "phase4a2b-managed-acl-v2");
+  assert.equal(managedAclEvidence.serialization.canonical_query_path,
+    "scripts/phase4a2b/managed_acl_catalog_v2.sql");
+  const managedQueryBlobSha = createHash("sha1")
+    .update(`blob ${Buffer.byteLength(managedAclQuery)}\0`)
+    .update(managedAclQuery)
+    .digest("hex");
+  assert.equal(managedQueryBlobSha, managedAclEvidence.serialization.canonical_query_blob_sha);
+  assert.match(managedAclQuery, /pg_get_function_identity_arguments\(procedure_row\.oid\)/u);
+  assert.match(managedAclQuery, /namespace_row\.nspname::text as schema_name/u);
+  assert.match(managedAclQuery, /format\([\s\S]*pg_get_function_identity_arguments[\s\S]*\)::text/u);
+  assert.match(managedAclQuery, /order by canonical_line collate "C"/u);
+  assert.doesNotMatch(managedAclQuery,
+    /^\s*(?:insert|update|delete|merge|truncate|copy|call|do|create|alter|drop|grant|revoke)\b/imu);
+
+  const parseManagedLine = line => {
+    const fields = line.split("|");
+    assert.equal(fields.length, 6, line);
+    const [kind, schema, identity, subkind, owner, acl] = fields;
+    return {
+      line, kind, schema, identity, subkind, owner, acl,
+      key: [kind, schema, identity, subkind].join("|"),
+    };
+  };
+  const sortC = values => [...values].sort((left, right) =>
+    Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")));
+  const aclItems = acl => acl ? acl.split(",") : [];
+  const lineOf = row =>
+    [row.kind, row.schema, row.identity, row.subkind, row.owner, row.acl].join("|");
+  const normalizeFreshExtensionRepresentation = row => ({
+    ...row,
+    owner: row.owner === "supabase_admin" ? "postgres" : row.owner,
+    acl: sortC(aclItems(row.acl)
+      .filter(item => !item.startsWith("supabase_admin="))
+      .map(item => item.replace(/\/supabase_admin$/u, "/postgres")))
+      .join(","),
   });
+
   for (const [label, expected] of [
-    ["source_uat", manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.source_uat],
-    ["fresh_restore_compatibility", manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.fresh_restore],
+    ["source_uat", managedCompatibility.source_uat],
+    ["fresh_restore", managedCompatibility.fresh_restore],
   ]) {
     const catalog = managedAclEvidence[label];
-    const payload = catalog.canonical_lines.join("\n");
+    const catalogPayload = catalog.canonical_lines.join("\n");
+    assert.equal(catalog.serialization ?? managedAclEvidence.serialization.version,
+      "phase4a2b-managed-acl-v2");
     assert.equal(catalog.canonical_lines.length, expected.record_count);
-    assert.equal(Buffer.byteLength(payload), expected.canonical_bytes);
-    assert.equal(sha256(payload), expected.canonical_sha256);
+    assert.deepEqual(catalog.canonical_lines, sortC(catalog.canonical_lines));
+    assert.equal(new Set(catalog.canonical_lines).size, catalog.canonical_lines.length);
+    assert.equal(Buffer.byteLength(catalogPayload), expected.canonical_bytes);
+    assert.equal(sha256(catalogPayload), expected.canonical_sha256);
+    const functionRows = catalog.canonical_lines
+      .map(parseManagedLine)
+      .filter(row => row.kind === "function");
+    assert.equal(functionRows.length, 67);
+    assert.equal(functionRows.every(row => row.identity.endsWith(")")), true);
   }
-  assert.notEqual(
-    manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.source_uat.canonical_sha256,
-    manifest.platform_companion.restore_expectation.platform_managed_acl_compatibility.fresh_restore.canonical_sha256,
+
+  const sourceRows = managedAclEvidence.source_uat.canonical_lines.map(parseManagedLine);
+  const freshRows = managedAclEvidence.fresh_restore.canonical_lines.map(parseManagedLine);
+  const sourceByKey = new Map(sourceRows.map(row => [row.key, row]));
+  const freshByKey = new Map(freshRows.map(row => [row.key, row]));
+  assert.deepEqual(sortC([...sourceByKey.keys()]), sortC([...freshByKey.keys()]));
+
+  const derived = {
+    exact: [],
+    extension_owner_grantor_and_owner_acl_representation: [],
+    dashboard_user_privilege_delta: [],
+    cron_job_run_details_trigger_privilege_delta: [],
+    unclassified: [],
+  };
+  for (const [key, sourceRow] of sourceByKey) {
+    const freshRow = freshByKey.get(key);
+    if (lineOf(sourceRow) === lineOf(freshRow)) {
+      derived.exact.push(key);
+      continue;
+    }
+    if (sourceRow.schema === "extensions"
+      && sourceRow.owner === "postgres"
+      && freshRow.owner === "supabase_admin") {
+      const normalized = normalizeFreshExtensionRepresentation(freshRow);
+      if (lineOf(sourceRow) === lineOf(normalized)) {
+        derived.extension_owner_grantor_and_owner_acl_representation.push(key);
+        continue;
+      }
+      const sourceAcl = new Set(aclItems(sourceRow.acl));
+      const normalizedAcl = new Set(aclItems(normalized.acl));
+      const missing = [...sourceAcl].filter(item => !normalizedAcl.has(item));
+      const extra = [...normalizedAcl].filter(item => !sourceAcl.has(item));
+      if (missing.length === 1 && missing[0].startsWith("dashboard_user=")
+        && extra.length === 0) {
+        derived.dashboard_user_privilege_delta.push(key);
+        continue;
+      }
+    }
+    if (key === "relation|cron|cron.job_run_details|r") {
+      derived.cron_job_run_details_trigger_privilege_delta.push(key);
+      continue;
+    }
+    derived.unclassified.push(key);
+  }
+  for (const values of Object.values(derived)) values.sort((left, right) =>
+    Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")));
+
+  assert.deepEqual({
+    exact: derived.exact.length,
+    extension_owner_grantor_and_owner_acl_representation:
+      derived.extension_owner_grantor_and_owner_acl_representation.length,
+    dashboard_user_privilege_delta: derived.dashboard_user_privilege_delta.length,
+    cron_job_run_details_trigger_privilege_delta:
+      derived.cron_job_run_details_trigger_privilege_delta.length,
+    unmatched: 0,
+    unclassified: derived.unclassified.length,
+  }, managedCompatibility.difference_counts);
+  assert.deepEqual(derived.exact, sortC(managedAclEvidence.comparison.exact.identities));
+  assert.deepEqual(
+    derived.extension_owner_grantor_and_owner_acl_representation,
+    sortC(managedAclEvidence.comparison
+      .extension_owner_grantor_and_owner_acl_representation.identities),
   );
+  assert.deepEqual(
+    derived.dashboard_user_privilege_delta,
+    sortC(managedAclEvidence.comparison.dashboard_user_privilege_delta.identities),
+  );
+  assert.deepEqual(
+    derived.cron_job_run_details_trigger_privilege_delta,
+    sortC(managedAclEvidence.comparison
+      .cron_job_run_details_trigger_privilege_delta.identities),
+  );
+  assert.deepEqual(derived.unclassified, []);
+  assert.deepEqual(managedAclEvidence.comparison.source_only_identities, []);
+  assert.deepEqual(managedAclEvidence.comparison.fresh_only_identities, []);
+  assert.deepEqual(managedAclEvidence.comparison.unclassified_identities, []);
+  assert.equal(
+    Object.values(managedCompatibility.difference_counts)
+      .slice(0, 4).reduce((sum, count) => sum + count, 0),
+    75,
+  );
+
+  const dashboardObjects = derived.dashboard_user_privilege_delta.map(key => {
+    const [kind, , identity] = key.split("|");
+    return `${kind}:${identity.replace(/\(.*/u, "")}`;
+  }).sort();
+  assert.deepEqual(dashboardObjects, [
+    "function:extensions.pg_stat_statements",
+    "function:extensions.pg_stat_statements_info",
+    "function:extensions.pg_stat_statements_reset",
+    "relation:extensions.pg_stat_statements",
+    "relation:extensions.pg_stat_statements_info",
+  ]);
+  assert.deepEqual(derived.cron_job_run_details_trigger_privilege_delta,
+    ["relation|cron|cron.job_run_details|r"]);
+  assert.deepEqual(managedAclEvidence.runtime_acceptance, {
+    accepted_catalog: "fresh_restore only",
+    source_uat_hash_is_runtime_accepted: false,
+    accepted_record_count: 75,
+    accepted_canonical_bytes: 14874,
+    accepted_canonical_sha256:
+      "7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27",
+    multiple_hash_or_fallback: false,
+  });
+  assert.equal(managedAclEvidence.comparison.mutation_or_normalization, "prohibited");
+  assert.equal(managedAclEvidence.safety.managed_acl_or_owner_mutations, false);
+  assert.notEqual(managedCompatibility.source_uat.canonical_sha256,
+    managedCompatibility.fresh_restore.canonical_sha256);
   assert.deepEqual(manifest.supplemental_read_only_inventory.publication_catalog, {
     recorded_at_utc: "2026-08-30T09:18:00Z",
     uat_identity_verified: true,
@@ -556,21 +708,33 @@ test("platform companion restores only reviewed app-owned state", async () => {
     },
     default_acl_source_comparison: "exact-after-asserted-local-delta-exclusion",
     platform_managed_acl_compatibility: {
-      serialization: "phase4a2b-managed-acl-v1",
+      serialization: "phase4a2b-managed-acl-v2",
       evidence_path: "docs/phase4a2b-managed-acl-catalogs.json",
+      query_path: "scripts/phase4a2b/managed_acl_catalog_v2.sql",
       source_uat: {
+        runtime_accepted: false,
         record_count: 75,
-        canonical_bytes: 10311,
-        canonical_sha256: "c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc",
+        canonical_bytes: 12186,
+        canonical_sha256: "3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed",
       },
       fresh_restore: {
         runtime_scope: "pinned-fresh-local-supabase",
         record_count: 75,
-        canonical_bytes: 12999,
-        canonical_sha256: "9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5",
+        canonical_bytes: 14874,
+        canonical_sha256: "7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27",
+      },
+      identity_sets_equal: true,
+      difference_counts: {
+        exact: 23,
+        extension_owner_grantor_and_owner_acl_representation: 46,
+        dashboard_user_privilege_delta: 5,
+        cron_job_run_details_trigger_privilege_delta: 1,
+        unmatched: 0,
+        unclassified: 0,
       },
       difference_classes: [
         "extension-object-owner-grantor-and-owner-acl-representation",
+        "dashboard-user-pg-stat-statements-privilege-delta",
         "cron.job_run_details-postgres-trigger-privilege",
       ],
       treatment: "observe-and-assert-only",
@@ -592,6 +756,11 @@ test("builder and local renderer fail closed", () => {
   assert.match(builder, /expected 2602 pg_dump sections/u);
   assert.match(builder, /source project ref distribution changed/u);
   assert.match(builder, /platform-managed default ACL leaked/u);
+  assert.match(builder, /MANAGED_ACL_CAPTURE_RUN_ID = 33_307_376_650/u);
+  assert.match(builder, /MANAGED_ACL_CANONICAL_BYTES = 12_186/u);
+  assert.match(builder, /RESTORE_MANAGED_ACL_CANONICAL_BYTES = 14_874/u);
+  assert.match(builder, /phase4a2b-managed-acl-v2/u);
+  assert.doesNotMatch(builder, /phase4a2b-managed-acl-v1/u);
   assert.match(assembler, /\^local\[a-z\]\{15\}\$/u);
   assert.match(assembler, /expected five environment tokens/u);
   assert.match(assembler, /baseline file set differs from manifest/u);
@@ -681,13 +850,19 @@ test("restore contract is read-only and validates both ledger paths", () => {
   assert.match(restoreContract, /PHASE4A2B_PUBLICATION_SET_INVALID/u);
   assert.doesNotMatch(
     restoreContract,
-    /c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc/u,
+    /3266bb4037115a7f14ee4e612b1d27eb56a6b8dd2eed2774181c4a9a7264eeed/u,
   );
   assert.match(
     restoreContract,
-    /9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5/u,
+    /7f9df875629efa3cc7ad63829b2293a4002e40b6257c05c7f911ed0d24c9eb27/u,
   );
+  assert.doesNotMatch(restoreContract,
+    /c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc|9055de5193241c43fffe2b9dc75925a305eada026bc765131d40f01e48d349c5/u);
   assert.match(restoreContract, /PHASE4A2B_MANAGED_ACL_CATALOG_INVALID/u);
+  assert.match(restoreContract, /'schema'::text as object_kind/u);
+  assert.match(restoreContract, /namespace_row\.nspname::text as schema_name/u);
+  assert.match(restoreContract,
+    /pg_get_function_identity_arguments\(procedure_row\.oid\)[\s\S]*\)::text/iu);
   assert.match(restoreContract, /PHASE4A2B_SECURITY_DEFINER_SEARCH_PATH_DRIFT/u);
   assert.match(restoreContract, /\('search_path=""'::text, 458::bigint\)/u);
   assert.match(restoreContract, /trigger_row\.evttags is not distinct from v_record\.tags/u);
