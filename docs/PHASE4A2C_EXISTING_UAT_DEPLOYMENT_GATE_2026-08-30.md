@@ -47,10 +47,14 @@ change requires recapture and review rather than weakening a predicate.
 4. Execute the complete
    `docs/PHASE4A2C_UAT_ATOMIC_ONE_MIGRATION_APPLY.sql` in one Supabase MCP
    `execute_sql` call. Do not use `db push`, `migration up`,
-   `apply_migration`, or replay the migration directory. The runner locks and
-   fingerprints the 254-row ledger, executes exactly the six statements also
-   present in the reviewed migration, writes their canonical receipt, verifies
-   the complete 255-row fingerprint, and commits atomically.
+   `apply_migration`, or replay the migration directory. The runner uses a
+   `REPEATABLE READ` transaction, locks and fingerprints the 254-row ledger,
+   and revalidates the pinned active Matrix, pre-migration default ACL,
+   grantor-aware public ACL/RLS/policy snapshot, and zero probe residue inside
+   that same transaction before the first `ALTER`. It then executes exactly
+   the six statements also present in the reviewed migration, writes their
+   canonical receipt, verifies the complete 255-row fingerprint, and commits
+   atomically. Any mismatch aborts the entire transaction before mutation.
 5. Verify the ledger is exactly
    `255 / 9996f95dfb7d936194efcf4e6fc59214`, and the new row is exactly
    `20260830180000 / phase4a2c_default_privileges_hardening / 6 statements /
