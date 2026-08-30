@@ -4,8 +4,10 @@ import test from 'node:test';
 
 const preflight = readFileSync('docs/PHASE4A2C_UAT_READ_ONLY_PREFLIGHT.sql', 'utf8');
 const snapshot = readFileSync('docs/PHASE4A2C_UAT_EXISTING_SECURITY_SNAPSHOT.sql', 'utf8');
+const apply = readFileSync('docs/PHASE4A2C_UAT_ATOMIC_ONE_MIGRATION_APPLY.sql', 'utf8');
 const contract = readFileSync('supabase/tests/phase4a2c_existing_uat_hosted_contract.sql', 'utf8');
 const runbook = readFileSync('docs/PHASE4A2C_EXISTING_UAT_DEPLOYMENT_GATE_2026-08-30.md', 'utf8');
+const migration = readFileSync('supabase/migrations/20260830180000_phase4a2c_default_privileges_hardening.sql', 'utf8');
 
 test('preflight is SELECT-only and pins exact UAT identity', () => {
   const scrubbed = preflight.replace(/^\s*--.*$/gm, '');
@@ -33,6 +35,8 @@ test('hosted contract is transaction-bound and identity pinned', () => {
   assert.match(contract, /ISOLATED_UAT/);
   assert.doesNotMatch(contract, /bdybebzvzapihjdauehg/);
   assert.match(contract, /v_ledger_count <> 255/);
+  assert.match(contract, /9996f95dfb7d936194efcf4e6fc59214/);
+  assert.match(contract, /c3550dc2c665d7349a4919e314f7a356/);
 });
 
 test('hosted contract requires exact hardened fingerprint', () => {
@@ -51,15 +55,17 @@ test('security snapshot is SELECT-only, canonical and fail-closed', () => {
   assert.match(snapshot, /rls\|/);
   assert.match(snapshot, /policy\|/);
   assert.match(snapshot, /record_count = 3623/);
-  assert.match(snapshot, /337074/);
-  assert.match(snapshot, /5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185/);
+  assert.match(snapshot, /x\.grantor/);
+  assert.match(snapshot, /367503/);
+  assert.match(snapshot, /9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637/);
   assert.match(snapshot, /STOP — EXISTING ACL, RLS, OR POLICY STATE CHANGED/);
 });
 
 test('hosted contract pins the unchanged existing security state', () => {
   assert.match(contract, /v_count <> 3623/);
-  assert.match(contract, /octet_length\(v_payload\) <> 337074/);
-  assert.match(contract, /5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185/);
+  assert.match(contract, /x\.grantor/);
+  assert.match(contract, /octet_length\(v_payload\) <> 367503/);
+  assert.match(contract, /9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637/);
   assert.match(contract, /EXISTING_SECURITY_STATE_CHANGED/);
 });
 
@@ -68,13 +74,41 @@ test('hosted contract checks all four rollback-only canaries', () => {
     assert.match(contract, new RegExp(`phase4a2c_uat_${marker}`));
   }
   assert.match(contract, /DEFAULT_DENY_FAILED/);
-  assert.match(contract, /OWNER_RIGHTS_MISSING/);
+  assert.match(contract, /RAW_DEFAULT_ACL_NOT_DENIED/);
+  for (const privilege of ['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) {
+    assert.match(contract, new RegExp(`'${privilege}'`));
+  }
+  assert.match(contract, /OWNER_TABLE_RIGHT_MISSING/);
+  assert.match(contract, /OWNER_SEQUENCE_RIGHT_MISSING/);
+  assert.match(contract, /OWNER_ROUTINE_RIGHT_MISSING/);
   assert.match(contract, /DEFINER_CANARY_INVALID/);
+});
+
+test('atomic runner applies exactly the reviewed migration and canonical receipt', () => {
+  assert.match(apply, /^--[\s\S]*\nbegin;/);
+  assert.match(apply, /lock table supabase_migrations\.schema_migrations/);
+  assert.match(apply, /04c5c2ad59937027420bd7c71b782d14/);
+  assert.match(apply, /9996f95dfb7d936194efcf4e6fc59214/);
+  assert.match(apply, /c3550dc2c665d7349a4919e314f7a356/);
+  assert.match(apply, /insert into supabase_migrations\.schema_migrations/);
+  assert.match(apply, /commit;\s*$/);
+  assert.match(apply, /Do not use db push or apply_migration/);
+
+  const sourceStatements = migration
+    .replace(/^\s*--.*$/gm, '')
+    .split(';').map((value) => value.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const arrayBody = apply.match(/v_statements constant text\[\] := array\[([\s\S]*?)\]\s*::text\[\]/)?.[1];
+  assert.ok(arrayBody);
+  const receiptStatements = [...arrayBody.matchAll(/'([^']*)'/g)]
+    .map((match) => match[1].replace(/\s+/g, ' ').trim());
+  assert.deepEqual(receiptStatements, sourceStatements);
 });
 
 test('runbook requires separate authorization and forward-only repair', () => {
   assert.match(runbook, /explicit user authorization/i);
   assert.match(runbook, /forward-only repair migration/i);
+  assert.match(runbook, /ATOMIC_ONE_MIGRATION_APPLY/);
+  assert.match(runbook, /9996f95dfb7d936194efcf4e6fc59214/);
   assert.match(runbook, /do not edit or delete the applied ledger row/i);
   assert.match(runbook, /NO ACCESS \/ NO MUTATION/);
   assert.match(runbook, /NO DML/);

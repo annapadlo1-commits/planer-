@@ -7,6 +7,7 @@ set local row_security = on;
 do $identity$
 declare
   v_ledger_count integer;
+  v_ledger_fingerprint text;
 begin
   if current_user is distinct from 'postgres' then
     raise exception 'PHASE4A2C_UAT_CREATOR_INVALID:%', current_user;
@@ -27,12 +28,27 @@ begin
   select count(*) into v_ledger_count
   from supabase_migrations.schema_migrations;
 
-  if v_ledger_count <> 255 or (
+  select md5(string_agg(
+    version || '|' || name || '|' || coalesce(cardinality(statements), 0)::text ||
+    '|' || octet_length(coalesce(array_to_string(statements, E'\n'), ''))::text ||
+    '|' || md5(coalesce(array_to_string(statements, E'\n'), '')),
+    E'\n' order by version
+  )) into v_ledger_fingerprint
+  from supabase_migrations.schema_migrations;
+
+  if v_ledger_count <> 255
+    or v_ledger_fingerprint <> '9996f95dfb7d936194efcf4e6fc59214'
+    or (
     select count(*) from supabase_migrations.schema_migrations
     where version = '20260830180000'
       and name = 'phase4a2c_default_privileges_hardening'
+      and cardinality(statements) = 6
+      and octet_length(array_to_string(statements, E'\n')) = 818
+      and md5(array_to_string(statements, E'\n')) =
+        'c3550dc2c665d7349a4919e314f7a356'
   ) <> 1 then
-    raise exception 'PHASE4A2C_UAT_LEDGER_INVALID:%', v_ledger_count;
+    raise exception 'PHASE4A2C_UAT_LEDGER_INVALID:%:%',
+      v_ledger_count, v_ledger_fingerprint;
   end if;
 
   if (select count(*) from public.matrix_versions where status = 'ACTIVE') <> 1
@@ -116,6 +132,8 @@ begin
   with records as (
     select 'relation_acl|' || n.nspname || '|' || c.relname || '|' ||
            c.relkind::text || '|' ||
+           case when x.grantor = 0 then 'PUBLIC'
+                else pg_catalog.pg_get_userbyid(x.grantor) end || '|' ||
            case when x.grantee = 0 then 'PUBLIC'
                 else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
            x.privilege_type || '|' || x.is_grantable::text as record
@@ -131,6 +149,8 @@ begin
     union all
     select 'routine_acl|' || n.nspname || '|' || p.proname || '|' ||
            pg_catalog.pg_get_function_identity_arguments(p.oid) || '|' ||
+           case when x.grantor = 0 then 'PUBLIC'
+                else pg_catalog.pg_get_userbyid(x.grantor) end || '|' ||
            case when x.grantee = 0 then 'PUBLIC'
                 else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
            x.privilege_type || '|' || x.is_grantable::text
@@ -156,10 +176,10 @@ begin
   select count(*)::int, string_agg(record, E'\n' order by record collate "C")
   into v_count, v_payload from records;
 
-  if v_count <> 3623 or octet_length(v_payload) <> 337074
+  if v_count <> 3623 or octet_length(v_payload) <> 367503
     or pg_catalog.encode(
       pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex'
-    ) <> '5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185'
+    ) <> '9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637'
   then
     raise exception 'PHASE4A2C_UAT_EXISTING_SECURITY_STATE_CHANGED:%', v_count;
   end if;
@@ -176,22 +196,92 @@ language sql stable security definer set search_path = '' as 'select 1';
 do $canaries$
 declare
   v_role text;
+  v_privilege text;
 begin
   foreach v_role in array array['anon','authenticated','service_role']::text[] loop
-    if has_table_privilege(v_role, 'public.phase4a2c_uat_probe_table', 'SELECT')
-      or has_sequence_privilege(v_role, 'public.phase4a2c_uat_probe_sequence', 'USAGE')
-      or has_function_privilege(v_role, 'public.phase4a2c_uat_probe_invoker()', 'EXECUTE')
-      or has_function_privilege(v_role, 'public.phase4a2c_uat_probe_definer()', 'EXECUTE')
-    then
-      raise exception 'PHASE4A2C_UAT_DEFAULT_DENY_FAILED:%', v_role;
+    foreach v_privilege in array array[
+      'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+    ]::text[] loop
+      if has_table_privilege(
+        v_role, 'public.phase4a2c_uat_probe_table', v_privilege
+      ) then
+        raise exception 'PHASE4A2C_UAT_TABLE_DEFAULT_DENY_FAILED:%:%',
+          v_role, v_privilege;
+      end if;
+    end loop;
+
+    foreach v_privilege in array array['SELECT','UPDATE','USAGE']::text[] loop
+      if has_sequence_privilege(
+        v_role, 'public.phase4a2c_uat_probe_sequence', v_privilege
+      ) then
+        raise exception 'PHASE4A2C_UAT_SEQUENCE_DEFAULT_DENY_FAILED:%:%',
+          v_role, v_privilege;
+      end if;
+    end loop;
+
+    if has_function_privilege(
+      v_role, 'public.phase4a2c_uat_probe_invoker()', 'EXECUTE'
+    ) or has_function_privilege(
+      v_role, 'public.phase4a2c_uat_probe_definer()', 'EXECUTE'
+    ) then
+      raise exception 'PHASE4A2C_UAT_ROUTINE_DEFAULT_DENY_FAILED:%', v_role;
     end if;
   end loop;
 
-  if not has_table_privilege('postgres', 'public.phase4a2c_uat_probe_table', 'SELECT')
-    or not has_sequence_privilege('postgres', 'public.phase4a2c_uat_probe_sequence', 'USAGE')
-    or not has_function_privilege('postgres', 'public.phase4a2c_uat_probe_definer()', 'EXECUTE')
-  then
-    raise exception 'PHASE4A2C_UAT_OWNER_RIGHTS_MISSING';
+  if exists (
+    select 1 from (
+      select x.grantee
+      from pg_catalog.pg_class c
+      cross join lateral pg_catalog.aclexplode(coalesce(
+        c.relacl, pg_catalog.acldefault('r', c.relowner)
+      )) x where c.oid = 'public.phase4a2c_uat_probe_table'::regclass
+      union all
+      select x.grantee
+      from pg_catalog.pg_class c
+      cross join lateral pg_catalog.aclexplode(coalesce(
+        c.relacl, pg_catalog.acldefault('s', c.relowner)
+      )) x where c.oid = 'public.phase4a2c_uat_probe_sequence'::regclass
+      union all
+      select x.grantee
+      from pg_catalog.pg_proc p
+      cross join lateral pg_catalog.aclexplode(coalesce(
+        p.proacl, pg_catalog.acldefault('f', p.proowner)
+      )) x where p.oid in (
+        'public.phase4a2c_uat_probe_invoker()'::regprocedure,
+        'public.phase4a2c_uat_probe_definer()'::regprocedure
+      )
+    ) raw_acl
+    where grantee = 0 or pg_catalog.pg_get_userbyid(grantee) in (
+      'anon','authenticated','service_role'
+    )
+  ) then
+    raise exception 'PHASE4A2C_UAT_RAW_DEFAULT_ACL_NOT_DENIED';
+  end if;
+
+  foreach v_privilege in array array[
+    'SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+  ]::text[] loop
+    if not has_table_privilege(
+      'postgres', 'public.phase4a2c_uat_probe_table', v_privilege
+    ) then
+      raise exception 'PHASE4A2C_UAT_OWNER_TABLE_RIGHT_MISSING:%', v_privilege;
+    end if;
+  end loop;
+
+  foreach v_privilege in array array['SELECT','UPDATE','USAGE']::text[] loop
+    if not has_sequence_privilege(
+      'postgres', 'public.phase4a2c_uat_probe_sequence', v_privilege
+    ) then
+      raise exception 'PHASE4A2C_UAT_OWNER_SEQUENCE_RIGHT_MISSING:%', v_privilege;
+    end if;
+  end loop;
+
+  if not has_function_privilege(
+    'postgres', 'public.phase4a2c_uat_probe_invoker()', 'EXECUTE'
+  ) or not has_function_privilege(
+    'postgres', 'public.phase4a2c_uat_probe_definer()', 'EXECUTE'
+  ) then
+    raise exception 'PHASE4A2C_UAT_OWNER_ROUTINE_RIGHT_MISSING';
   end if;
 
   if exists (

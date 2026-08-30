@@ -4,6 +4,8 @@
 with records as (
   select 'relation_acl|' || n.nspname || '|' || c.relname || '|' ||
          c.relkind::text || '|' ||
+         case when x.grantor = 0 then 'PUBLIC'
+              else pg_catalog.pg_get_userbyid(x.grantor) end || '|' ||
          case when x.grantee = 0 then 'PUBLIC'
               else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
          x.privilege_type || '|' || x.is_grantable::text as record
@@ -22,6 +24,8 @@ with records as (
 
   select 'routine_acl|' || n.nspname || '|' || p.proname || '|' ||
          pg_catalog.pg_get_function_identity_arguments(p.oid) || '|' ||
+         case when x.grantor = 0 then 'PUBLIC'
+              else pg_catalog.pg_get_userbyid(x.grantor) end || '|' ||
          case when x.grantee = 0 then 'PUBLIC'
               else pg_catalog.pg_get_userbyid(x.grantee) end || '|' ||
          x.privilege_type || '|' || x.is_grantable::text
@@ -60,10 +64,10 @@ select record_count,
        ) as sha256,
        case
          when record_count = 3623
-          and octet_length(value) = 337074
+          and octet_length(value) = 367503
           and pg_catalog.encode(
             pg_catalog.sha256(pg_catalog.convert_to(value, 'UTF8')), 'hex'
-          ) = '5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185'
+          ) = '9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637'
          then 'MATCH — EXISTING SECURITY STATE UNCHANGED'
          else 'STOP — EXISTING ACL, RLS, OR POLICY STATE CHANGED'
        end as verdict

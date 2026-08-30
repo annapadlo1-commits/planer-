@@ -23,7 +23,10 @@ other than `nhthrtpkfpmufmrmdyjg`.
 - post-migration application/default-ACL fingerprint:
   `27 / 2708 bytes / 1f690d52941e6a5865cb59919ded58fa087f2e594215836bd33a78a1141ae9ff`
 - existing public-object ACL/RLS/policy snapshot:
-  `3623 / 337074 bytes / 5166ef241ec5b86a22eeb72c4ee62bca8d5da66efdae6fecbc1c9c1883e10185`
+  `3623 / 367503 bytes / 9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637`
+- canonical migration receipt: `6 / 818 bytes / MD5 c3550dc2c665d7349a4919e314f7a356`
+- exact post-migration ledger fingerprint:
+  `255 / MD5 9996f95dfb7d936194efcf4e6fc59214`
 - active Matrix: exactly one, workforce count `86`
 - active Matrix content hash:
   `32dac23aea267e87c037a47dd796f06da03f9ab17e01da94c21603b301681187`
@@ -38,13 +41,20 @@ change requires recapture and review rather than weakening a predicate.
 1. Run `docs/PHASE4A2C_UAT_READ_ONLY_PREFLIGHT.sql` through a read-only execution
    path. The sole acceptable final verdict is `GO — PHASE4A2C UAT PREFLIGHT`.
 2. Run `docs/PHASE4A2C_UAT_EXISTING_SECURITY_SNAPSHOT.sql` and record
-   `3623 / 337074 / 5166ef...10185`. Record Security and Performance Advisor
+   `3623 / 367503 / 9ea69a...1637`. Record Security and Performance Advisor
    results before migration.
 3. Obtain explicit user authorization for the persistent UAT migration.
-4. Apply only migration `20260830180000_phase4a2c_default_privileges_hardening`.
-   Do not push or replay the migration directory.
-5. Verify the ledger has exactly 255 rows and contains the exact new version and
-   name once.
+4. Execute the complete
+   `docs/PHASE4A2C_UAT_ATOMIC_ONE_MIGRATION_APPLY.sql` in one Supabase MCP
+   `execute_sql` call. Do not use `db push`, `migration up`,
+   `apply_migration`, or replay the migration directory. The runner locks and
+   fingerprints the 254-row ledger, executes exactly the six statements also
+   present in the reviewed migration, writes their canonical receipt, verifies
+   the complete 255-row fingerprint, and commits atomically.
+5. Verify the ledger is exactly
+   `255 / 9996f95dfb7d936194efcf4e6fc59214`, and the new row is exactly
+   `20260830180000 / phase4a2c_default_privileges_hardening / 6 statements /
+   818 bytes / c3550dc2c665d7349a4919e314f7a356`.
 6. Run `supabase/tests/phase4a2c_existing_uat_hosted_contract.sql`. It creates
    canary objects only inside a transaction and ends with `ROLLBACK`.
 7. Re-run the canonical read-only security snapshot and require the exact same
@@ -60,7 +70,9 @@ remote database.
 
 ## Forward-repair rule
 
-The default-privilege migration is persistent. If postflight fails:
+The default-privilege migration and its canonical application receipt are
+persistent. The receipt written atomically with the six statements is normal
+migration application, not a later ledger repair. If postflight fails:
 
 - stop application and migration work on the UAT branch;
 - preserve all before/after evidence;
