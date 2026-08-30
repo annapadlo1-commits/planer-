@@ -1,0 +1,894 @@
+name: Phase 4A.2C default-privilege gate (one-time)
+
+on:
+  push:
+    branches:
+      - ops/phase4a2c-default-privileges-gate-20260830
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase4a2c-default-privileges-gate-once
+  cancel-in-progress: false
+
+jobs:
+  restore-twice:
+    name: Fresh baseline hardening twice
+    if: >-
+      github.ref == 'refs/heads/ops/phase4a2c-default-privileges-gate-20260830'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SUPABASE_CLI_VERSION: 2.116.0
+      GATE_BRANCH: ops/phase4a2c-default-privileges-gate-20260830
+      EXPECTED_BASE_COMMIT: d0da06af2573ffc7c48e507bff281fd92f3d17a3
+      LOCAL_PROJECT_REF: localphasegateabcdef
+      BASELINE_DIR: supabase/baseline/phase4a2b
+      EXPECTED_ASSEMBLED_SHA256: b3f34448ccd4ed397fbc04ce7b55abbcdd6c7e5cc938a1279feacc6b2e95ab35
+      SYNTHETIC_MIGRATION_VERSION: "20260830000000"
+      SYNTHETIC_MIGRATION_NAME: phase4a2b_neutral_baseline
+      HARDENING_MIGRATION: supabase/migrations/20260830180000_phase4a2c_default_privileges_hardening.sql
+      HARDENING_VERSION: "20260830180000"
+      HARDENING_NAME: phase4a2c_default_privileges_hardening
+      HARDENING_MIGRATION_BLOB: 558886076cbfd61118fb11d916fc12aec3776e6b
+      HARDENING_CONTRACT_BLOB: 8672ed6b7a9817ae4fd839401c7431e2da0a70a1
+      STORAGE_IMAGE: supabase/storage-api:v1.70.3@sha256:528ec49c3c32561908b07ee91bced7f8456f3b688164e341eaa422441767a0bd
+      POSTGRES_CLIENT_IMAGE: postgres@sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28
+      EXCLUDED_SCHEMAS: information_schema|pg_*|_analytics|_realtime|_supavisor|auth|etl|extensions|pgbouncer|realtime|storage|supabase_functions|supabase_migrations|cron|dbdev|graphql|graphql_public|net|pgmq|pgsodium|pgsodium_masks|pgtle|repack|tiger|tiger_data|timescaledb_*|_timescaledb_*|topology|vault
+
+    steps:
+      - name: Check out candidate without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify local-only gate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'annapadlo1-commits/planer-'
+          test "$GITHUB_REF" = "refs/heads/$GATE_BRANCH"
+          test "$GITHUB_REF_NAME" = "$GATE_BRANCH"
+          [[ "$GITHUB_EVENT_NAME" = 'push' || "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git cat-file -t "$EXPECTED_BASE_COMMIT")" = 'commit'
+          test "$(git merge-base "$EXPECTED_BASE_COMMIT" HEAD)" = "$EXPECTED_BASE_COMMIT"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE_COMMIT"
+          test -z "$(git diff --name-only "$EXPECTED_BASE_COMMIT"..HEAD -- supabase/migrations/)"
+          test -z "$(git status --short)"
+          test "$LOCAL_PROJECT_REF" = 'localphasegateabcdef'
+          [[ "$LOCAL_PROJECT_REF" =~ ^[a-z]{20}$ ]]
+          test -z "${SUPABASE_ACCESS_TOKEN:-}"
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${SUPABASE_DB_PASSWORD:-}"
+          test -z "${SUPABASE_DB_CA_CERT:-}"
+          test -z "${SUPABASE_PROJECT_ID:-}"
+          test -z "${SUPABASE_AUTH_JWT_SECRET:-}"
+          test -z "${SUPABASE_AUTH_ANON_KEY:-}"
+          test -z "${SUPABASE_AUTH_SERVICE_ROLE_KEY:-}"
+          test -z "${NEXT_PUBLIC_SUPABASE_URL:-}"
+          test -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -f scripts/phase4a2b/assemble_baseline.py
+          test -x scripts/phase4a2b/provision_local_storage_bucket.sh
+          test -f scripts/phase4a2b/managed_acl_catalog_v2.sql
+          test -f "$BASELINE_DIR/manifest.json"
+          test -f supabase/tests/phase4a2b_baseline_restore_contract.sql
+          test -f "$HARDENING_MIGRATION"
+          test -f supabase/tests/phase4a2c_default_privileges_hardening_contract.sql
+          test "$(git hash-object "$HARDENING_MIGRATION")" = "$HARDENING_MIGRATION_BLOB"
+          test "$(git hash-object supabase/tests/phase4a2c_default_privileges_hardening_contract.sql)" = "$HARDENING_CONTRACT_BLOB"
+          test "$(git diff --name-only "$EXPECTED_BASE_COMMIT"..HEAD)" = '.github/workflows/phase4a2c-default-privileges-gate.yml'
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520
+        with:
+          version: 2.116.0
+
+      - name: Verify CLI surface and assemble the exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          ASSEMBLED_SQL="$RUNNER_TEMP/phase4a2c-gate/assembled.sql"
+          test "$(supabase --version)" = "$SUPABASE_CLI_VERSION"
+          supabase db start --help | grep -Fq 'Starts local Postgres database'
+          supabase stop --help | grep -Fq -- '--no-backup'
+          supabase migration up --help | grep -Fq -- '--include-all'
+          node --test \
+            tests/phase4a2b-baseline-source.test.mjs \
+            tests/phase4a2c-default-privileges-hardening.test.mjs \
+            tests/phase4a2-migration-baseline-preflight.test.mjs \
+            tests/phase4a1-scoped-manager-security.test.mjs \
+            tests/employee-workspace-privacy-contract.test.mjs \
+            tests/unified-matrix-workflow.test.mjs
+
+          mkdir -p "$(dirname "$ASSEMBLED_SQL")"
+          python3 scripts/phase4a2b/assemble_baseline.py \
+            --baseline-dir "$BASELINE_DIR" \
+            --project-ref "$LOCAL_PROJECT_REF" \
+            --output "$ASSEMBLED_SQL"
+          test -s "$ASSEMBLED_SQL"
+
+          python3 - "$ASSEMBLED_SQL" "$LOCAL_PROJECT_REF" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          project_ref = sys.argv[2]
+          sql = path.read_text(encoding="utf-8")
+          if re.fullmatch(r"[a-z]{20}", project_ref) is None:
+              raise SystemExit("synthetic project ref shape changed")
+          if sql.count(project_ref) != 5:
+              raise SystemExit("assembled SQL must contain exactly five synthetic project refs")
+          if "__PHASE4A2B_PROJECT_REF__" in sql:
+              raise SystemExit("unrendered project-ref token remains")
+          if re.search(r"(?:postgres(?:ql)?://|pooler\.supabase\.com|[a-z]{20}\.supabase\.co)", sql, re.I):
+              raise SystemExit("remote database or Supabase endpoint leaked into assembled SQL")
+          if re.search(
+              r'\b(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?|copy)\s+'
+              r'(?:(?:"storage"|storage)\s*\.\s*(?:"buckets"|buckets))',
+              sql,
+              re.I,
+          ):
+              raise SystemExit("Storage bucket must be provisioned through the local Storage API")
+          PY
+
+          assembled_sha="$(sha256sum "$ASSEMBLED_SQL" | cut -d' ' -f1)"
+          test "$assembled_sha" = "$EXPECTED_ASSEMBLED_SHA256"
+          echo "Assembled SQL SHA-256: $assembled_sha"
+
+      - name: Restore Pass A and Pass B
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          gate_dir="$RUNNER_TEMP/phase4a2c-gate"
+          ASSEMBLED_SQL="$gate_dir/assembled.sql"
+          mkdir -p "$gate_dir"
+          pass_a_dir=''
+          pass_b_dir=''
+          pass_a_storage=''
+          pass_b_storage=''
+
+          cleanup_one() {
+            local workdir="${1:-}" storage_container="${2:-}"
+            if [[ -n "$storage_container" ]]; then
+              docker rm -f "$storage_container" >/dev/null 2>&1 || true
+              docker volume rm -f "$storage_container" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "$workdir" && -f "$workdir/supabase/config.toml" ]]; then
+              supabase stop --workdir "$workdir" --no-backup >/dev/null 2>&1 || true
+            fi
+          }
+
+          cleanup_all() {
+            cleanup_one "$pass_b_dir" "$pass_b_storage"
+            cleanup_one "$pass_a_dir" "$pass_a_storage"
+          }
+          trap cleanup_all EXIT INT TERM
+
+          assert_cleaned() {
+            local project_id="$1" storage_container="$2"
+            local db_container="supabase_db_${project_id}"
+            if docker container inspect "$db_container" >/dev/null 2>&1; then
+              echo "database container survived explicit cleanup: $db_container" >&2
+              return 1
+            fi
+            if docker container inspect "$storage_container" >/dev/null 2>&1; then
+              echo "Storage container survived explicit cleanup: $storage_container" >&2
+              return 1
+            fi
+            if docker volume inspect "$db_container" >/dev/null 2>&1; then
+              echo "database volume survived --no-backup cleanup: $db_container" >&2
+              return 1
+            fi
+            if docker volume inspect "$storage_container" >/dev/null 2>&1; then
+              echo "Storage volume survived explicit cleanup: $storage_container" >&2
+              return 1
+            fi
+            if docker network inspect "supabase_network_${project_id}" >/dev/null 2>&1; then
+              echo "Supabase network survived explicit cleanup: supabase_network_${project_id}" >&2
+              return 1
+            fi
+          }
+
+          write_config() {
+            local workdir="$1" project_id="$2" api_port="$3" db_port="$4" shadow_port="$5"
+            mkdir -p "$workdir/supabase"
+            cat > "$workdir/supabase/config.toml" <<EOF
+          project_id = "$project_id"
+
+          [api]
+          enabled = true
+          port = $api_port
+          schemas = ["public", "graphql_public"]
+          extra_search_path = ["public", "extensions"]
+          max_rows = 1000
+
+          [db]
+          port = $db_port
+          shadow_port = $shadow_port
+          major_version = 17
+          health_timeout = "4m"
+
+          [db.pooler]
+          enabled = false
+
+          [db.migrations]
+          enabled = false
+
+          [db.seed]
+          enabled = false
+
+          [realtime]
+          enabled = true
+
+          [studio]
+          enabled = false
+
+          [storage]
+          enabled = true
+          file_size_limit = "50MiB"
+
+          [storage.s3_protocol]
+          enabled = false
+
+          [storage.vector]
+          enabled = false
+          max_buckets = 10
+          max_indexes = 5
+
+          [auth]
+          enabled = true
+          site_url = "http://127.0.0.1:3000"
+
+          [auth.email]
+          enable_signup = false
+
+          [edge_runtime]
+          enabled = false
+          EOF
+          }
+
+          db_psql() {
+            local db_container="$1"
+            shift
+            docker run --rm \
+              --network "container:${db_container}" \
+              --env PGPASSWORD=postgres \
+              "$POSTGRES_CLIENT_IMAGE" \
+              psql --host 127.0.0.1 --port 5432 \
+              -X --username postgres --dbname postgres --no-psqlrc \
+              -v ON_ERROR_STOP=1 "$@"
+          }
+
+          db_psql_stdin() {
+            local db_container="$1"
+            shift
+            docker run --rm --interactive \
+              --network "container:${db_container}" \
+              --env PGPASSWORD=postgres \
+              "$POSTGRES_CLIENT_IMAGE" \
+              psql --host 127.0.0.1 --port 5432 \
+              -X --username postgres --dbname postgres --no-psqlrc \
+              -v ON_ERROR_STOP=1 "$@"
+          }
+
+          ledger_count() {
+            local db_container="$1"
+            local ledger_exists
+            ledger_exists="$(db_psql "$db_container" --tuples-only --no-align \
+              --command "select to_regclass('supabase_migrations.schema_migrations') is not null;" \
+              | tr -d '[:space:]')"
+            if [[ "$ledger_exists" = 'f' ]]; then
+              echo 0
+              return
+            fi
+            test "$ledger_exists" = 't'
+            db_psql "$db_container" --tuples-only --no-align \
+              --command 'select count(*) from supabase_migrations.schema_migrations;' \
+              | tr -d '[:space:]'
+          }
+
+          assert_bucket() {
+            local db_container="$1"
+            local actual
+            actual="$(db_psql "$db_container" --tuples-only --no-align --field-separator '|' \
+              --command "select id,name,public,file_size_limit,array_to_string(allowed_mime_types,','),avif_autodetection,type::text,versioning_status::text from storage.buckets where id='profile-avatars';" \
+              | sed '/^[[:space:]]*$/d')"
+            test "$actual" = 'profile-avatars|profile-avatars|f|5242880|image/jpeg,image/png,image/webp|f|STANDARD|DISABLED'
+          }
+
+          start_storage_and_create_bucket() {
+            local project_id="$1" storage_port="$2" storage_container="$3" db_container="$4"
+            local network="supabase_network_${project_id}"
+            local local_jwt_secret local_anon_key local_service_key jwt_pair
+            local -a local_keys
+
+            # `db start` writes its local JWT secret into this database GUC.
+            # Sign local-only API keys from it; do not use repo or GitHub secrets.
+            local_jwt_secret="$(db_psql "$db_container" --tuples-only --no-align \
+              --command "select current_setting('app.settings.jwt_secret', true);" \
+              | tr -d '\r\n')"
+            test "${#local_jwt_secret}" -ge 32
+            [[ "$local_jwt_secret" != *[[:space:]]* ]]
+            echo "::add-mask::$local_jwt_secret"
+
+            jwt_pair="$(PHASE4A2B_LOCAL_JWT_SECRET="$local_jwt_secret" python3 - <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          import os
+
+          secret = os.environ.pop("PHASE4A2B_LOCAL_JWT_SECRET").encode("utf-8")
+          header = {"alg": "HS256", "typ": "JWT"}
+
+          def encode(value):
+              payload = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+              return base64.urlsafe_b64encode(payload).rstrip(b"=")
+
+          def sign(role):
+              signing_input = b".".join((
+                  encode(header),
+                  encode({"exp": 2524608000, "iss": "supabase-demo", "role": role}),
+              ))
+              signature = base64.urlsafe_b64encode(
+                  hmac.new(secret, signing_input, hashlib.sha256).digest(),
+              ).rstrip(b"=")
+              return b".".join((signing_input, signature)).decode("ascii")
+
+          print(sign("anon"))
+          print(sign("service_role"))
+          PY
+          )"
+            mapfile -t local_keys <<<"$jwt_pair"
+            test "${#local_keys[@]}" -eq 2
+            local_anon_key="${local_keys[0]}"
+            local_service_key="${local_keys[1]}"
+            unset jwt_pair local_keys
+            echo "::add-mask::$local_anon_key"
+            echo "::add-mask::$local_service_key"
+
+            docker run --detach --name "$storage_container" \
+              --network "$network" --network-alias storage \
+              --publish "127.0.0.1:${storage_port}:5000" \
+              --env PORT=5000 \
+              --env "ANON_KEY=$local_anon_key" \
+              --env "SERVICE_KEY=$local_service_key" \
+              --env "AUTH_JWT_SECRET=$local_jwt_secret" \
+              --env "PGRST_JWT_SECRET=$local_jwt_secret" \
+              --env "DATABASE_URL=postgresql://supabase_storage_admin:postgres@${db_container}:5432/postgres" \
+              --env FILE_SIZE_LIMIT=52428800 \
+              --env STORAGE_BACKEND=file \
+              --env FILE_STORAGE_BACKEND_PATH=/mnt \
+              --env STORAGE_FILE_BACKEND_PATH=/mnt \
+              --env TENANT_ID=stub \
+              --env STORAGE_S3_REGION=local \
+              --env GLOBAL_S3_BUCKET=stub \
+              --env ENABLE_IMAGE_TRANSFORMATION=false \
+              --env IMGPROXY_URL=http://127.0.0.1:5001 \
+              --env TUS_URL_PATH=/storage/v1/upload/resumable \
+              --env S3_PROTOCOL_ENABLED=false \
+              --env S3_PROTOCOL_ACCESS_KEY_ID=local \
+              --env S3_PROTOCOL_ACCESS_KEY_SECRET=local-secret \
+              --env S3_PROTOCOL_PREFIX=/storage/v1 \
+              --env UPLOAD_FILE_SIZE_LIMIT=52428800000 \
+              --env UPLOAD_FILE_SIZE_LIMIT_STANDARD=5242880000 \
+              --env SIGNED_UPLOAD_URL_EXPIRATION_TIME=7200 \
+              --volume "${storage_container}:/mnt" \
+              "$STORAGE_IMAGE" >/dev/null
+
+            for _ in $(seq 1 60); do
+              if curl --silent --fail "http://127.0.0.1:${storage_port}/status" >/dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            curl --silent --show-error --fail "http://127.0.0.1:${storage_port}/status" >/dev/null
+
+            SUPABASE_STORAGE_URL="http://127.0.0.1:${storage_port}" \
+            SUPABASE_SERVICE_ROLE_KEY="$local_service_key" \
+              scripts/phase4a2b/provision_local_storage_bucket.sh
+
+            assert_bucket "$db_container"
+          }
+
+          capture_managed_acl_v2() {
+            local db_container="$1" output="$2" label="$3"
+            local raw="${output}.raw"
+            test -f scripts/phase4a2b/managed_acl_catalog_v2.sql
+            db_psql_stdin "$db_container" \
+              --tuples-only --no-align --quiet --file - \
+              < scripts/phase4a2b/managed_acl_catalog_v2.sql > "$raw"
+            python3 - "$raw" "$output" "$label" <<'PY'
+          import base64
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          raw_path = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          label = sys.argv[3]
+          rows = [line.strip() for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+          if len(rows) != 1:
+              raise SystemExit(f"managed ACL query returned {len(rows)} non-empty rows")
+          data = json.loads(rows[0])
+          lines = data.get("canonical_lines")
+          if data.get("serialization") != "phase4a2b-managed-acl-v2":
+              raise SystemExit("managed ACL serialization changed")
+          if not isinstance(lines, list) or data.get("record_count") != len(lines) or len(lines) != 75:
+              raise SystemExit("managed ACL record count changed")
+          if lines != sorted(lines, key=lambda value: value.encode("utf-8")) or len(lines) != len(set(lines)):
+              raise SystemExit("managed ACL lines are not C-sorted and unique")
+          payload = "\n".join(lines).encode("utf-8")
+          if data.get("canonical_bytes") != len(payload):
+              raise SystemExit("managed ACL byte count mismatch")
+          if data.get("canonical_sha256") != hashlib.sha256(payload).hexdigest():
+              raise SystemExit("managed ACL SHA-256 mismatch")
+          functions = [line for line in lines if line.startswith("function|")]
+          if len(functions) != 67 or any(not line.split("|", 5)[2].endswith(")") for line in functions):
+              raise SystemExit("managed ACL function identities are incomplete")
+          encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+          output_path.write_bytes(encoded)
+          print(f"PHASE4A2B_MANAGED_ACL_V2_{label}_BASE64_BEGIN")
+          print(base64.b64encode(encoded).decode("ascii"))
+          print(f"PHASE4A2B_MANAGED_ACL_V2_{label}_BASE64_END")
+          PY
+            rm -f "$raw"
+          }
+
+          run_baseline_contract() {
+            local db_container="$1" ledger_mode="$2"
+            db_psql_stdin "$db_container" \
+              --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+              --file - < supabase/tests/phase4a2b_baseline_restore_contract.sql
+          }
+
+          capture_security_state() {
+            local db_container="$1" output="$2" label="$3"
+            db_psql_stdin "$db_container" \
+              --tuples-only --no-align --quiet --file - > "$output" <<'SQL'
+          with security_rows(canonical_line) as (
+            select jsonb_build_array(
+              'schema', namespace_row.nspname,
+              pg_get_userbyid(namespace_row.nspowner),
+              coalesce((
+                select string_agg(acl_item::text, ',' order by acl_item::text collate "C")
+                from unnest(namespace_row.nspacl) acl_item
+              ), '')
+            )::text
+            from pg_catalog.pg_namespace namespace_row
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+
+            union all
+
+            select jsonb_build_array(
+              'relation', namespace_row.nspname, relation_row.relname, relation_row.relkind,
+              pg_get_userbyid(relation_row.relowner),
+              relation_row.relrowsecurity, relation_row.relforcerowsecurity,
+              coalesce((
+                select string_agg(acl_item::text, ',' order by acl_item::text collate "C")
+                from unnest(relation_row.relacl) acl_item
+              ), '')
+            )::text
+            from pg_catalog.pg_class relation_row
+            join pg_catalog.pg_namespace namespace_row
+              on namespace_row.oid = relation_row.relnamespace
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+              and relation_row.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
+
+            union all
+
+            select jsonb_build_array(
+              'column', namespace_row.nspname, relation_row.relname,
+              attribute_row.attname, attribute_row.attnum,
+              coalesce((
+                select string_agg(acl_item::text, ',' order by acl_item::text collate "C")
+                from unnest(attribute_row.attacl) acl_item
+              ), '')
+            )::text
+            from pg_catalog.pg_attribute attribute_row
+            join pg_catalog.pg_class relation_row on relation_row.oid = attribute_row.attrelid
+            join pg_catalog.pg_namespace namespace_row on namespace_row.oid = relation_row.relnamespace
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+              and attribute_row.attnum > 0
+              and not attribute_row.attisdropped
+
+            union all
+
+            select jsonb_build_array(
+              'type', namespace_row.nspname, type_row.typname, type_row.typtype,
+              pg_get_userbyid(type_row.typowner),
+              coalesce((
+                select string_agg(acl_item::text, ',' order by acl_item::text collate "C")
+                from unnest(type_row.typacl) acl_item
+              ), '')
+            )::text
+            from pg_catalog.pg_type type_row
+            join pg_catalog.pg_namespace namespace_row on namespace_row.oid = type_row.typnamespace
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+
+            union all
+
+            select jsonb_build_array(
+              'routine', namespace_row.nspname, procedure_row.proname,
+              pg_get_function_identity_arguments(procedure_row.oid),
+              pg_get_userbyid(procedure_row.proowner), procedure_row.prosecdef,
+              coalesce((
+                select string_agg(acl_item::text, ',' order by acl_item::text collate "C")
+                from unnest(procedure_row.proacl) acl_item
+              ), ''),
+              coalesce((
+                select string_agg(config_item, ',' order by config_item collate "C")
+                from unnest(procedure_row.proconfig) config_item
+              ), '')
+            )::text
+            from pg_catalog.pg_proc procedure_row
+            join pg_catalog.pg_namespace namespace_row
+              on namespace_row.oid = procedure_row.pronamespace
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+
+            union all
+
+            select jsonb_build_array(
+              'policy', namespace_row.nspname, relation_row.relname, policy_row.polname,
+              policy_row.polcmd, policy_row.polpermissive,
+              coalesce((
+                select string_agg(
+                  case when role_oid = 0 then 'PUBLIC' else pg_get_userbyid(role_oid) end,
+                  ',' order by
+                  (case when role_oid = 0 then 'PUBLIC' else pg_get_userbyid(role_oid) end) collate "C"
+                )
+                from unnest(policy_row.polroles) role_oid
+              ), ''),
+              coalesce(pg_get_expr(policy_row.polqual, policy_row.polrelid), ''),
+              coalesce(pg_get_expr(policy_row.polwithcheck, policy_row.polrelid), '')
+            )::text
+            from pg_catalog.pg_policy policy_row
+            join pg_catalog.pg_class relation_row on relation_row.oid = policy_row.polrelid
+            join pg_catalog.pg_namespace namespace_row on namespace_row.oid = relation_row.relnamespace
+            where namespace_row.nspname <> 'information_schema'
+              and namespace_row.nspname !~ '^pg_'
+          ), canonical as (
+            select
+              count(*) as record_count,
+              string_agg(canonical_line, E'\n' order by canonical_line collate "C") as payload
+            from security_rows
+          )
+          select
+            record_count::text || '|' ||
+            octet_length(payload)::text || '|' ||
+            encode(pg_catalog.sha256(pg_catalog.convert_to(payload, 'UTF8')), 'hex')
+          from canonical;
+          SQL
+            test "$(wc -l < "$output" | tr -d '[:space:]')" = '1'
+            grep -Eq '^[0-9]+\|[0-9]+\|[0-9a-f]{64}$' "$output"
+            echo "$label security-state: $(cat "$output")"
+          }
+
+          apply_hardening_direct() {
+            local db_container="$1"
+            test "$(git hash-object "$HARDENING_MIGRATION")" = "$HARDENING_MIGRATION_BLOB"
+            db_psql_stdin "$db_container" --single-transaction --file - < "$HARDENING_MIGRATION"
+          }
+          run_post_hardening_contracts() {
+            local db_container="$1" ledger_mode="$2"
+            local contract
+            for contract in \
+              supabase/tests/phase4a2c_default_privileges_hardening_contract.sql \
+              supabase/tests/employee_workspace_privacy_contract.sql \
+              supabase/tests/public_api_security_hardening_contract.sql \
+              supabase/tests/phase4a1_scoped_manager_security_contract.sql \
+              supabase/tests/runtime_contract_guard_v2.sql \
+              supabase/tests/resource_scoped_manager_authorization_contract.sql
+            do
+              test -f "$contract"
+              if test "$contract" = 'supabase/tests/phase4a2c_default_privileges_hardening_contract.sql'; then
+                local phase4a2c_output="$gate_dir/phase4a2c-${ledger_mode}.out"
+                test "$(grep -Fxc 'begin;' "$contract")" = '1'
+                test "$(grep -Fxc 'rollback;' "$contract")" = '1'
+                ! grep -Fqx 'commit;' "$contract"
+                {
+                  cat "$contract"
+                  echo "select 'PHASE4A2C_LOCAL_CONTRACT_COMPLETE';"
+                } | db_psql_stdin "$db_container" \
+                  --command "set phase4a2c.isolated_restore_gate = 'on'" \
+                  --file - | tee "$phase4a2c_output"
+                test "$(grep -Fc 'PHASE4A2C_LOCAL_CONTRACT_COMPLETE' "$phase4a2c_output")" = '1'
+                test "$(db_psql "$db_container" --tuples-only --no-align --command "select count(*) from pg_catalog.pg_class where relname like 'phase4a2c_acl_probe_%';" | sed '/^[[:space:]]*$/d')" = '0'
+              elif test "$contract" = 'supabase/tests/phase4a1_scoped_manager_security_contract.sql'; then
+                local phase4a1_output="$gate_dir/phase4a1-${ledger_mode}.out"
+                test "$(git hash-object "$contract")" = '6f8b8a754f09243ac2084a86adf8818ca2ad525e'
+                test "$(grep -Fxc 'begin;' "$contract")" = '1'
+                test "$(grep -Fxc 'rollback;' "$contract")" = '1'
+                ! grep -Fqx 'commit;' "$contract"
+                ! grep -Eni '^[[:space:]]*set[[:space:]]+transaction' "$contract"
+                ! grep -Eni '\\(connect|copy|include|ir)([[:space:]]|$)' "$contract"
+                ! grep -Eni '(^|[^[:alnum:]_])(dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron[.]schedule)([^[:alnum:]_]|$)' "$contract"
+                {
+                  echo 'begin;'
+                  printf '%s\n' \
+                    'do $phase4a2b_local_guard$' \
+                    'declare v_definitions text;' \
+                    'begin' \
+                    "  if inet_client_addr() is null or not (inet_client_addr() <<= inet '127.0.0.0/8' or inet_client_addr() = inet '::1') then" \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_REMOTE_DATABASE_REFUSED';" \
+                    '  end if;' \
+                    '  select string_agg(pg_get_functiondef(procedure_row.oid), chr(10) order by namespace_row.nspname, procedure_row.proname)' \
+                    '    into v_definitions' \
+                    '  from pg_catalog.pg_proc procedure_row' \
+                    '  join pg_catalog.pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace' \
+                    '  where (namespace_row.nspname, procedure_row.proname) in (' \
+                    "    ('public', 'uat_full_business_reset_preview_v1')," \
+                    "    ('public', 'uat_full_business_reset_v1')," \
+                    "    ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1')" \
+                    '  );' \
+                    "  if regexp_count(v_definitions, 'localphasegateabcdef') <> 5" \
+                    "    or v_definitions like '%__PHASE4A2B_PROJECT_REF__%'" \
+                    '  then' \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_LOCAL_IDENTITY_REQUIRED';" \
+                    '  end if;' \
+                    '  if exists (select 1 from public.uat_environment_controls) then' \
+                    "    raise exception 'PHASE4A2B_PHASE4A1_CONTROL_PREEXISTS';" \
+                    '  end if;' \
+                    'end;' \
+                    '$phase4a2b_local_guard$;' \
+                    "insert into public.uat_environment_controls(control_key,enabled,config)" \
+                    "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-local-contract\"}'::jsonb);"
+                  cat "$contract"
+                  echo "select 'PHASE4A2B_PHASE4A1_LOCAL_CONTRACT_COMPLETE';"
+                } | db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file - | tee "$phase4a1_output"
+                test "$(grep -Fc 'PHASE4A2B_PHASE4A1_LOCAL_CONTRACT_COMPLETE' "$phase4a1_output")" = '1'
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from public.uat_environment_controls;" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
+              elif test "$contract" = 'supabase/tests/resource_scoped_manager_authorization_contract.sql'; then
+                local resource_scope_output="$gate_dir/resource-scope-${ledger_mode}.out"
+                test "$(git hash-object "$contract")" = '176f4a41712949cf28e9bbd6ecaf69092e6c4206'
+                test "$(grep -Fxc 'begin;' "$contract")" = '1'
+                test "$(grep -Fxc 'rollback;' "$contract")" = '1'
+                ! grep -Fqx 'commit;' "$contract"
+                ! grep -Eni '^[[:space:]]*set[[:space:]]+transaction' "$contract"
+                ! grep -Eni '\\(connect|copy|include|ir)([[:space:]]|$)' "$contract"
+                ! grep -Eni '(^|[^[:alnum:]_])(dblink|postgres_fdw|http_get|http_post|pg_notify|notify|listen|cron[.]schedule)([^[:alnum:]_]|$)' "$contract"
+                {
+                  echo 'begin;'
+                  printf '%s\n' \
+                    'do $phase4a2b_resource_scope_guard$' \
+                    'declare v_definitions text;' \
+                    'begin' \
+                    "  if inet_client_addr() is null or not (inet_client_addr() <<= inet '127.0.0.0/8' or inet_client_addr() = inet '::1') then" \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_REMOTE_DATABASE_REFUSED';" \
+                    '  end if;' \
+                    '  select string_agg(pg_get_functiondef(procedure_row.oid), chr(10) order by namespace_row.nspname, procedure_row.proname)' \
+                    '    into v_definitions' \
+                    '  from pg_catalog.pg_proc procedure_row' \
+                    '  join pg_catalog.pg_namespace namespace_row on namespace_row.oid = procedure_row.pronamespace' \
+                    '  where (namespace_row.nspname, procedure_row.proname) in (' \
+                    "    ('public', 'uat_full_business_reset_preview_v1')," \
+                    "    ('public', 'uat_full_business_reset_v1')," \
+                    "    ('solver_private', 'matrix_v2_create_safe_first_run_uat_v1')" \
+                    '  );' \
+                    "  if regexp_count(v_definitions, 'localphasegateabcdef') <> 5" \
+                    "    or v_definitions like '%__PHASE4A2B_PROJECT_REF__%'" \
+                    '  then' \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_IDENTITY_REQUIRED';" \
+                    '  end if;' \
+                    '  if exists (select 1 from public.uat_environment_controls) then' \
+                    "    raise exception 'PHASE4A2B_RESOURCE_SCOPE_CONTROL_PREEXISTS';" \
+                    '  end if;' \
+                    'end;' \
+                    '$phase4a2b_resource_scope_guard$;' \
+                    "insert into public.uat_environment_controls(control_key,enabled,config)" \
+                    "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-resource-scope-local-contract\"}'::jsonb);"
+                  cat "$contract"
+                  echo "select 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_CONTRACT_COMPLETE';"
+                } | db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file - | tee "$resource_scope_output"
+                test "$(grep -Fc 'PHASE4A2B_RESOURCE_SCOPE_LOCAL_CONTRACT_COMPLETE' "$resource_scope_output")" = '1'
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from public.uat_environment_controls;" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from auth.users where id in ('f1000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000002','f1000000-0000-4000-8000-000000000003','f1000000-0000-4000-8000-000000000004','f1000000-0000-4000-8000-000000000005');" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
+              else
+                db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file - < "$contract"
+              fi
+            done
+          }
+
+          normalized_dump() {
+            local project_id="$1" db_container="$2" output="$3"
+            local raw="${output}.raw"
+            docker run --rm \
+              --network "supabase_network_${project_id}" \
+              --env PGPASSWORD=postgres \
+              "$POSTGRES_CLIENT_IMAGE" \
+              pg_dump \
+              --host "$db_container" \
+              --port 5432 \
+              --username postgres \
+              --dbname postgres \
+              --schema-only \
+              --quote-all-identifiers \
+              --role postgres \
+              --exclude-schema "$EXCLUDED_SCHEMAS" \
+              --no-publications \
+              --no-subscriptions \
+              --no-password > "$raw"
+            test -s "$raw"
+            python3 - "$raw" "$output" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          raw_path = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          text = raw_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+          matches = list(re.finditer(r"(?m)^\\(restrict|unrestrict) ([A-Za-z0-9]{32,128})$", text))
+          if [match.group(1) for match in matches] != ["restrict", "unrestrict"]:
+              raise SystemExit("unexpected pg_dump restore-guard shape")
+          if matches[0].group(2) != matches[1].group(2):
+              raise SystemExit("pg_dump restore-guard tokens differ")
+          text = re.sub(
+              r"(?m)^\\(restrict|unrestrict) [A-Za-z0-9]{32,128}$",
+              lambda match: f"\\{match.group(1)} PHASE4A2B_NORMALIZED_TOKEN",
+              text,
+          )
+          output_path.write_text(text, encoding="utf-8", newline="\n")
+          PY
+            rm -f "$raw"
+          }
+
+          run_pass_a() {
+            local project_id="$LOCAL_PROJECT_REF"
+            local db_container="supabase_db_${project_id}"
+            pass_a_storage="supabase_storage_${project_id}"
+            pass_a_dir="$(mktemp -d "$RUNNER_TEMP/phase4a2c-pass-a.XXXXXX")"
+            write_config "$pass_a_dir" "$project_id" 55321 55322 55320
+
+            supabase db start --workdir "$pass_a_dir"
+            test "$(ledger_count "$db_container")" = '0'
+            db_psql_stdin "$db_container" --single-transaction --file - < "$ASSEMBLED_SQL"
+            test "$(ledger_count "$db_container")" = '0'
+
+            start_storage_and_create_bucket "$project_id" 55329 "$pass_a_storage" "$db_container"
+            run_baseline_contract "$db_container" empty
+            capture_security_state "$db_container" "$gate_dir/pass-a.security-before.txt" PASS_A_BEFORE
+            apply_hardening_direct "$db_container"
+            test "$(ledger_count "$db_container")" = '0'
+            capture_security_state "$db_container" "$gate_dir/pass-a.security-after.txt" PASS_A_AFTER
+            cmp --silent "$gate_dir/pass-a.security-before.txt" "$gate_dir/pass-a.security-after.txt"
+            run_post_hardening_contracts "$db_container" empty
+            test "$(ledger_count "$db_container")" = '0'
+            capture_managed_acl_v2 "$db_container" "$gate_dir/pass-a.managed-acl-v2.json" PASS_A
+            normalized_dump "$project_id" "$db_container" "$gate_dir/pass-a.normalized.sql"
+
+            cleanup_one "$pass_a_dir" "$pass_a_storage"
+            assert_cleaned "$project_id" "$pass_a_storage"
+            pass_a_dir=''
+            pass_a_storage=''
+          }
+
+          run_pass_b() {
+            local project_id="$LOCAL_PROJECT_REF"
+            local db_container="supabase_db_${project_id}"
+            local migration_dir baseline_file hardening_file ledger_rows expected_ledger_rows
+            pass_b_storage="supabase_storage_${project_id}"
+            pass_b_dir="$(mktemp -d "$RUNNER_TEMP/phase4a2c-pass-b.XXXXXX")"
+            write_config "$pass_b_dir" "$project_id" 56321 56322 56320
+
+            supabase db start --workdir "$pass_b_dir"
+            test "$(ledger_count "$db_container")" = '0'
+
+            migration_dir="$pass_b_dir/supabase/migrations"
+            baseline_file="$migration_dir/${SYNTHETIC_MIGRATION_VERSION}_${SYNTHETIC_MIGRATION_NAME}.sql"
+            hardening_file="$migration_dir/${HARDENING_VERSION}_${HARDENING_NAME}.sql"
+            mkdir -p "$migration_dir"
+            cp "$ASSEMBLED_SQL" "$baseline_file"
+            test "$(find "$migration_dir" -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 1
+            cmp --silent "$ASSEMBLED_SQL" "$baseline_file"
+            python3 - "$pass_b_dir/supabase/config.toml" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          needle = "[db.migrations]\nenabled = false"
+          if text.count(needle) != 1:
+              raise SystemExit("migration enablement marker changed")
+          path.write_text(text.replace(needle, "[db.migrations]\nenabled = true"), encoding="utf-8")
+          PY
+            supabase migration up --local --include-all --workdir "$pass_b_dir"
+
+            test "$(ledger_count "$db_container")" = '1'
+            ledger_rows="$(db_psql "$db_container" --tuples-only --no-align --field-separator '|' \
+              --command 'select version,name from supabase_migrations.schema_migrations order by version;' \
+              | sed '/^[[:space:]]*$/d')"
+            test "$ledger_rows" = "${SYNTHETIC_MIGRATION_VERSION}|${SYNTHETIC_MIGRATION_NAME}"
+
+            start_storage_and_create_bucket "$project_id" 56329 "$pass_b_storage" "$db_container"
+            run_baseline_contract "$db_container" synthetic-baseline
+            capture_security_state "$db_container" "$gate_dir/pass-b.security-before.txt" PASS_B_BEFORE
+
+            cp "$HARDENING_MIGRATION" "$hardening_file"
+            test "$(find "$migration_dir" -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 2
+            cmp --silent "$HARDENING_MIGRATION" "$hardening_file"
+            supabase migration up --local --include-all --workdir "$pass_b_dir"
+
+            test "$(ledger_count "$db_container")" = '2'
+            ledger_rows="$(db_psql "$db_container" --tuples-only --no-align --field-separator '|' \
+              --command 'select version,name from supabase_migrations.schema_migrations order by version;' \
+              | sed '/^[[:space:]]*$/d')"
+            expected_ledger_rows="${SYNTHETIC_MIGRATION_VERSION}|${SYNTHETIC_MIGRATION_NAME}"$'\n'"${HARDENING_VERSION}|${HARDENING_NAME}"
+            test "$ledger_rows" = "$expected_ledger_rows"
+
+            capture_security_state "$db_container" "$gate_dir/pass-b.security-after.txt" PASS_B_AFTER
+            cmp --silent "$gate_dir/pass-b.security-before.txt" "$gate_dir/pass-b.security-after.txt"
+            run_post_hardening_contracts "$db_container" synthetic-baseline
+            test "$(ledger_count "$db_container")" = '2'
+            capture_managed_acl_v2 "$db_container" "$gate_dir/pass-b.managed-acl-v2.json" PASS_B
+            normalized_dump "$project_id" "$db_container" "$gate_dir/pass-b.normalized.sql"
+
+            cleanup_one "$pass_b_dir" "$pass_b_storage"
+            assert_cleaned "$project_id" "$pass_b_storage"
+            pass_b_dir=''
+            pass_b_storage=''
+          }
+          run_pass_a
+          run_pass_b
+
+          cmp --silent "$gate_dir/pass-a.normalized.sql" "$gate_dir/pass-b.normalized.sql"
+          cmp --silent "$gate_dir/pass-a.managed-acl-v2.json" "$gate_dir/pass-b.managed-acl-v2.json"
+          cmp --silent "$gate_dir/pass-a.security-after.txt" "$gate_dir/pass-b.security-after.txt"
+          local_managed_acl_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["canonical_sha256"])' "$gate_dir/pass-a.managed-acl-v2.json")"
+          security_state="$(cat "$gate_dir/pass-a.security-after.txt")"
+          pass_a_sha="$(sha256sum "$gate_dir/pass-a.normalized.sql" | cut -d' ' -f1)"
+          pass_b_sha="$(sha256sum "$gate_dir/pass-b.normalized.sql" | cut -d' ' -f1)"
+          test "$pass_a_sha" = "$pass_b_sha"
+          assembled_sha="$(sha256sum "$ASSEMBLED_SQL" | cut -d' ' -f1)"
+
+          {
+            echo '## Phase 4A.2C default-privilege gate'
+            echo
+            echo '- Result: PASS'
+            echo "- Assembled Phase 4A.2B SQL SHA-256: \`$assembled_sha\`"
+            echo "- Normalized hardened Pass A/Pass B schema SHA-256: \`$pass_a_sha\`"
+            echo "- Existing object ACL/RLS/policy state: \`$security_state\`"
+            echo "- Managed ACL v2 Pass A/Pass B SHA-256: \`$local_managed_acl_sha\`"
+            echo '- Pass A: direct baseline + direct hardening, migration ledger 0'
+            echo "- Pass B: synthetic baseline \`${SYNTHETIC_MIGRATION_VERSION}\` + hardening \`${HARDENING_VERSION}\`, migration ledger 2"
+            echo '- Phase 4A.2B legacy contract passed before hardening in both passes'
+            echo '- Phase 4A.2C rollback contract and security/runtime regressions passed after hardening'
+            echo '- Existing object ACLs, RLS flags, policies, owners and routine security settings were unchanged'
+            echo '- Storage bucket: provisioned through an ephemeral local Storage API'
+            echo '- Remote credentials, project refs, database URLs, UAT and production: not used'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          rm -f \
+            "$gate_dir/pass-a.normalized.sql" "$gate_dir/pass-b.normalized.sql" \
+            "$gate_dir/pass-a.managed-acl-v2.json" "$gate_dir/pass-b.managed-acl-v2.json" \
+            "$gate_dir/pass-a.security-before.txt" "$gate_dir/pass-a.security-after.txt" \
+            "$gate_dir/pass-b.security-before.txt" "$gate_dir/pass-b.security-after.txt" \
+            "$ASSEMBLED_SQL"
