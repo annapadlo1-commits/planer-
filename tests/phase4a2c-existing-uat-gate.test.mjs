@@ -125,6 +125,23 @@ test('atomic runner applies exactly the reviewed migration and canonical receipt
   assert.deepEqual(receiptStatements, sourceStatements);
 });
 
+test('atomic runner locks before snapshot and uses valid sequence ACL codes', () => {
+  const ledgerLock = apply.indexOf(
+    'lock table supabase_migrations.schema_migrations'
+  );
+  const firstSnapshotSelect = apply.indexOf(
+    'select pg_catalog.pg_advisory_xact_lock'
+  );
+  assert.ok(ledgerLock > -1);
+  assert.ok(firstSnapshotSelect > -1);
+  assert.ok(ledgerLock < firstSnapshotSelect);
+
+  for (const source of [apply, snapshot, contract]) {
+    assert.match(source, /then 's'::"char"/);
+    assert.doesNotMatch(source, /then 'S'::"char"/);
+  }
+});
+
 test('runbook requires separate authorization and forward-only repair', () => {
   assert.match(runbook, /explicit user authorization/i);
   assert.match(runbook, /forward-only repair migration/i);
