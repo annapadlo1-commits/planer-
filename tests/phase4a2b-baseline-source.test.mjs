@@ -299,6 +299,13 @@ test("neutral SQL contains no remote identity, data load, or managed replay", as
   const files = await loadBaselineFiles();
   const neutral = files.filter(file => !file.path.endsWith(".tmpl"));
   const neutralText = neutral.map(file => file.text).join("\n");
+  const extensions = files.find(file => file.path === "00_platform_extensions.sql");
+  assert.ok(extensions);
+  assert.match(
+    extensions.text,
+    /CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";\nGRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";[\s\S]*CREATE EXTENSION IF NOT EXISTS "pgmq" WITH SCHEMA "pgmq";/u,
+  );
+  assert.equal((extensions.text.match(/CREATE SCHEMA IF NOT EXISTS "pgmq"/gu) ?? []).length, 1);
   assert.doesNotMatch(neutralText, /nhthrtpkfpmufmrmdyjg|bdybebzvzapihjdauehg/u);
   assert.doesNotMatch(neutralText, /__PHASE4A2B_PROJECT_REF__/u);
   assert.doesNotMatch(neutralText, /^\s*(?:CREATE|ALTER|DROP)\s+EVENT\s+TRIGGER\b/imu);

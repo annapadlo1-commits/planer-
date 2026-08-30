@@ -91,6 +91,16 @@ SET row_security = off;
 
 """
 
+# pg_dump records the pgmq extension in its target schema but omits the
+# extension-owned schema declaration. A fresh Supabase local database does not
+# pre-create that namespace, so bootstrap the observed UAT schema identity and
+# ACL before CREATE EXTENSION runs.
+PGMQ_SCHEMA_BOOTSTRAP = '''-- Required target namespace for the non-relocatable pgmq extension.
+CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";
+GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
+
+'''
+
 PLATFORM_POSTLUDE = r'''-- The bucket itself is provisioned through the Storage API by the restore runner.
 -- Direct writes to storage.buckets are intentionally forbidden.
 CREATE POLICY "profile_avatars_self_delete_v1"
@@ -308,7 +318,11 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
     if observed_event_names != EXPECTED_EVENT_TRIGGERS:
         raise SystemExit(f"event trigger inventory changed: {observed_event_names}")
 
-    extension_text = PROLOGUE + "".join(section.text for section in extensions)
+    extension_text = (
+        PROLOGUE
+        + PGMQ_SCHEMA_BOOTSTRAP
+        + "".join(section.text for section in extensions)
+    )
     environment_text = PROLOGUE + "".join(section.text for section in environment)
     if environment_text.count(source_project_ref) != 5:
         raise SystemExit("environment function ref count changed")

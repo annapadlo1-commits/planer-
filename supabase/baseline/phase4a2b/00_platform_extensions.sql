@@ -13,6 +13,10 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+-- Required target namespace for the non-relocatable pgmq extension.
+CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";
+GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
+
 --
 -- Name: pg_cron; Type: EXTENSION; Schema: -; Owner: -
 --
