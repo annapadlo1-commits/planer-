@@ -447,9 +447,27 @@ begin
   -- capture state: 3 function grants, 4 table grants and 4 sequence grants.
   -- Managed supabase_admin default ACLs are supplied by platform bootstrap;
   -- the baseline deliberately neither replays nor rewrites them.
-  select count(*) into v_actual from pg_catalog.pg_default_acl;
+  select
+    count(*),
+    array_agg(
+      format(
+        '%s:%s:%s',
+        coalesce(namespace_row.nspname, '<global>'),
+        pg_get_userbyid(default_acl.defaclrole),
+        default_acl.defaclobjtype::text
+      )
+      order by
+        coalesce(namespace_row.nspname, '') collate "C",
+        pg_get_userbyid(default_acl.defaclrole) collate "C",
+        default_acl.defaclobjtype::text collate "C"
+    )
+    into v_actual, v_names
+  from pg_catalog.pg_default_acl default_acl
+  left join pg_catalog.pg_namespace namespace_row
+    on namespace_row.oid = default_acl.defaclnamespace;
   if v_actual <> 29 then
-    raise exception 'PHASE4A2B_DEFAULT_ACL_TOTAL_COUNT_INVALID:%', v_actual;
+    raise exception 'PHASE4A2B_DEFAULT_ACL_TOTAL_COUNT_INVALID:%:%',
+      v_actual, v_names;
   end if;
 
   select string_agg(

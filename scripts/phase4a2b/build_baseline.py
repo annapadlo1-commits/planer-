@@ -101,11 +101,11 @@ GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
 '''
 
-# Supabase's fresh local platform can install ambient postgres/public function
-# defaults that include API roles. pg_dump emits each object's ACL relative to
-# PostgreSQL's built-in creation defaults, so normalize to that base before any
-# application function is created. The final UAT default ACL is replayed only
-# after all restored objects exist.
+# Supabase's fresh local platform can install ambient postgres/public defaults
+# for functions, tables and sequences that include API roles. pg_dump emits
+# each object's ACL relative to PostgreSQL's built-in creation defaults, so
+# normalize to that base before application objects are created. The final UAT
+# default ACL is replayed only after all restored objects exist.
 APP_OBJECT_DEFAULT_ACL_PRELUDE = '''-- Normalize object defaults to PostgreSQL's built-in creation base.
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
   REVOKE ALL ON FUNCTIONS FROM PUBLIC, "postgres", "anon", "authenticated", "service_role";
