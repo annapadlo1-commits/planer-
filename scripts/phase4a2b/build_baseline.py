@@ -101,6 +101,28 @@ GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
 '''
 
+# Supabase's fresh local platform can install an ambient postgres/public
+# function default ACL that includes anon. Normalize it to the exact UAT
+# application-owned default before any public functions are created, so the
+# per-function ACL statements from pg_dump are replayed against the same base.
+APP_FUNCTION_DEFAULT_ACL_PRELUDE = '''-- Normalize application function defaults before object creation.
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "service_role";
+
+'''
+
 PLATFORM_POSTLUDE = r'''-- pg_dump omits owner-equivalent schema ACL entries. Restore the explicit
 -- application-owned catalog state observed on UAT.
 GRANT ALL ON SCHEMA "authorization_private" TO "postgres";
@@ -326,6 +348,7 @@ def build(raw_path: Path, output_dir: Path, source_project_ref: str) -> None:
     extension_text = (
         PROLOGUE
         + PGMQ_SCHEMA_BOOTSTRAP
+        + APP_FUNCTION_DEFAULT_ACL_PRELUDE
         + "".join(section.text for section in extensions)
     )
     environment_text = PROLOGUE + "".join(section.text for section in environment)

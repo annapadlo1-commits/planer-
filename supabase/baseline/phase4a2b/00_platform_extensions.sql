@@ -17,6 +17,22 @@ SET row_security = off;
 CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";
 GRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";
 
+-- Normalize application function defaults before object creation.
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  REVOKE ALL ON FUNCTIONS FROM "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+  GRANT ALL ON FUNCTIONS TO "service_role";
+
 --
 -- Name: pg_cron; Type: EXTENSION; Schema: -; Owner: -
 --

@@ -306,6 +306,12 @@ test("neutral SQL contains no remote identity, data load, or managed replay", as
     /CREATE SCHEMA IF NOT EXISTS "pgmq" AUTHORIZATION "postgres";\nGRANT USAGE ON SCHEMA "pgmq" TO "pg_monitor";[\s\S]*CREATE EXTENSION IF NOT EXISTS "pgmq" WITH SCHEMA "pgmq";/u,
   );
   assert.equal((extensions.text.match(/CREATE SCHEMA IF NOT EXISTS "pgmq"/gu) ?? []).length, 1);
+  assert.match(
+    extensions.text,
+    /REVOKE ALL ON FUNCTIONS FROM PUBLIC;[\s\S]*REVOKE ALL ON FUNCTIONS FROM "anon";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "authenticated";[\s\S]*REVOKE ALL ON FUNCTIONS FROM "service_role";[\s\S]*GRANT ALL ON FUNCTIONS TO "postgres";[\s\S]*GRANT ALL ON FUNCTIONS TO "authenticated";[\s\S]*GRANT ALL ON FUNCTIONS TO "service_role";/u,
+  );
+  assert.equal((extensions.text.match(/REVOKE ALL ON FUNCTIONS FROM /gu) ?? []).length, 4);
+  assert.equal((extensions.text.match(/GRANT ALL ON FUNCTIONS TO /gu) ?? []).length, 3);
   assert.doesNotMatch(neutralText, /nhthrtpkfpmufmrmdyjg|bdybebzvzapihjdauehg/u);
   assert.doesNotMatch(neutralText, /__PHASE4A2B_PROJECT_REF__/u);
   assert.doesNotMatch(neutralText, /^\s*(?:CREATE|ALTER|DROP)\s+EVENT\s+TRIGGER\b/imu);
