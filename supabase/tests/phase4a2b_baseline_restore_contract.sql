@@ -702,7 +702,12 @@ begin
       pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
     ) <> 'c3278105b5071f36da447bb3dd365f2602e3346ffa5eb9560e96bdd9bd9f2ffc'
   then
-    raise exception 'PHASE4A2B_MANAGED_ACL_CATALOG_INVALID:%', v_actual;
+    raise exception 'PHASE4A2B_MANAGED_ACL_CATALOG_INVALID:%:%:%',
+      v_actual,
+      octet_length(v_definitions),
+      encode(
+        pg_catalog.sha256(pg_catalog.convert_to(v_definitions, 'UTF8')), 'hex'
+      );
   end if;
 
   -- Exact captured extension identity. Other platform extensions are not
