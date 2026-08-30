@@ -314,16 +314,24 @@ begin
     end if;
   end loop;
 
-  if exists(
-    select 1
+  select string_agg(
+    format(
+      '%I.%I(%s)',
+      namespace_row.nspname,
+      procedure_row.proname,
+      pg_get_function_identity_arguments(procedure_row.oid)
+    ),
+    ',' order by procedure_row.oid
+  ) into v_definitions
     from pg_catalog.pg_proc procedure_row
     join pg_catalog.pg_namespace namespace_row
       on namespace_row.oid = procedure_row.pronamespace
     where namespace_row.nspname = 'public'
       and procedure_row.prosecdef
-      and has_function_privilege('anon', procedure_row.oid, 'execute')
-  ) then
-    raise exception 'PHASE4A2B_ANON_SECURITY_DEFINER_EXECUTE_LEAK';
+      and has_function_privilege('anon', procedure_row.oid, 'execute');
+  if v_definitions is not null then
+    raise exception 'PHASE4A2B_ANON_SECURITY_DEFINER_EXECUTE_LEAK:%',
+      v_definitions;
   end if;
 
   if has_schema_privilege('anon', 'authorization_private', 'usage')
