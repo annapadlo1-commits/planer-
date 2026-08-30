@@ -402,9 +402,23 @@ jobs:
               supabase/tests/phase4a2b_baseline_restore_contract.sql
             do
               test -f "$contract"
-              db_psql_stdin "$db_container" \
-                --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
-                --file - < "$contract"
+              if test "$contract" = 'supabase/tests/phase4a1_scoped_manager_security_contract.sql'; then
+                {
+                  echo 'begin;'
+                  echo "insert into public.uat_environment_controls(control_key,enabled,config)"
+                  echo "values ('ISOLATED_UAT_DESTRUCTIVE_TOOLS',true,'{\"fixture\":\"phase4a2b-local-contract\"}'::jsonb);"
+                  cat "$contract"
+                } | db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file -
+                test "$(db_psql "$db_container" --tuples-only --no-align \
+                  --command "select count(*) from public.uat_environment_controls where control_key='ISOLATED_UAT_DESTRUCTIVE_TOOLS';" \
+                  | sed '/^[[:space:]]*$/d')" = '0'
+              else
+                db_psql_stdin "$db_container" \
+                  --command "set phase4a2b.expected_ledger_mode = '${ledger_mode}'" \
+                  --file - < "$contract"
+              fi
             done
           }
 
