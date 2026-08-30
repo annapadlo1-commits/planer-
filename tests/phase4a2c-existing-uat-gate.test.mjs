@@ -93,6 +93,27 @@ test('atomic runner applies exactly the reviewed migration and canonical receipt
   assert.match(apply, /insert into supabase_migrations\.schema_migrations/);
   assert.match(apply, /commit;\s*$/);
   assert.match(apply, /Do not use db push or apply_migration/);
+  assert.match(apply, /set transaction isolation level repeatable read/);
+  assert.match(apply, /PHASE4A2C_APPLY_MATRIX_INVALID/);
+  assert.match(apply, /c86785623e746bdaf24fabcb75b2a6019385b230830284d851ec27ad030933a3/);
+  assert.match(apply, /PHASE4A2C_APPLY_DEFAULT_ACL_INVALID/);
+  assert.match(apply, /x\.grantor/);
+  assert.match(apply, /9ea69a5ac1f4d89a7463aa2e2b8efe64e7bd87f753319e43e7e3c6b735071637/);
+  assert.match(apply, /PHASE4A2C_APPLY_EXISTING_SECURITY_INVALID/);
+  assert.match(apply, /PHASE4A2C_APPLY_PROBE_RESIDUE_PREEXISTS/);
+
+  const firstAlterExecution = apply.indexOf('foreach v_sql in array v_statements loop');
+  for (const guard of [
+    'PHASE4A2C_APPLY_PRE_LEDGER_INVALID',
+    'PHASE4A2C_APPLY_MATRIX_INVALID',
+    'PHASE4A2C_APPLY_DEFAULT_ACL_INVALID',
+    'PHASE4A2C_APPLY_EXISTING_SECURITY_INVALID',
+    'PHASE4A2C_APPLY_PROBE_RESIDUE_PREEXISTS',
+    'PHASE4A2C_APPLY_PAYLOAD_INVALID',
+  ]) {
+    assert.ok(apply.indexOf(guard) > -1);
+    assert.ok(apply.indexOf(guard) < firstAlterExecution);
+  }
 
   const sourceStatements = migration
     .replace(/^\s*--.*$/gm, '')
