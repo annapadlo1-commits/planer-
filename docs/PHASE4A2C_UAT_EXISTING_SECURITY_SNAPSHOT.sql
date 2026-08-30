@@ -14,7 +14,7 @@ with records as (
   cross join lateral pg_catalog.aclexplode(coalesce(
     c.relacl,
     pg_catalog.acldefault(
-      case when c.relkind = 'S' then 'S'::"char" else 'r'::"char" end,
+      case when c.relkind = 'S' then 's'::"char" else 'r'::"char" end,
       c.relowner
     )
   )) x
