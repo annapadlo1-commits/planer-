@@ -2,23 +2,36 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
+import { canonicalGitBytes, canonicalGitText } from "./helpers/canonical-git-bytes.mjs";
 
 const migration = await readFile(new URL(
   "../supabase/migrations/20260827160000_phase4a1_scoped_manager_security_hardening.sql",
   import.meta.url,
 ), "utf8");
-const restoredRpcParity = await readFile(new URL(
+const restoredRpcParityWorktree = await readFile(new URL(
   "../supabase/migrations/20260826224321_restore_frontend_rpc_parity.sql",
   import.meta.url,
-), "utf8");
-const canonicalEmployeePrivacy = await readFile(new URL(
+));
+const restoredRpcParity = canonicalGitText(
+  "supabase/migrations/20260826224321_restore_frontend_rpc_parity.sql",
+  restoredRpcParityWorktree,
+);
+const canonicalEmployeePrivacyWorktree = await readFile(new URL(
   "../supabase/migrations/20260826201603_employee_workspace_privacy.sql",
   import.meta.url,
 ));
-const canonicalAnonymousHardening = await readFile(new URL(
+const canonicalEmployeePrivacy = canonicalGitBytes(
+  "supabase/migrations/20260826201603_employee_workspace_privacy.sql",
+  canonicalEmployeePrivacyWorktree,
+);
+const canonicalAnonymousHardeningWorktree = await readFile(new URL(
   "../supabase/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
   import.meta.url,
 ));
+const canonicalAnonymousHardening = canonicalGitBytes(
+  "supabase/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
+  canonicalAnonymousHardeningWorktree,
+);
 const phase3ResourceAuthorization = await readFile(new URL(
   "../supabase/migrations/20260826140255_resource_scoped_manager_authorization.sql",
   import.meta.url,
@@ -269,10 +282,11 @@ test("SQL fixture source is self-contained and explicitly typed", () => {
     /insert into public\.locations[\s\S]*'KRUCZA'::public\.location_code[\s\S]*'PAWILONY'::public\.location_code[\s\S]*on conflict\(code\) do nothing/iu);
   assert.match(sqlContract,
     /insert into public\.matrix_employee_profiles_v2[\s\S]*P4A-A[\s\S]*P4A-B[\s\S]*P4A-N[\s\S]*P4A-I/iu);
-  const matrixBootstrapStart = sqlContract.indexOf("do $$\ndeclare v_version integer;v_settings jsonb;");
-  const matrixBootstrapEnd = sqlContract.indexOf("\ninsert into public.matrix_roles_v2", matrixBootstrapStart);
+  const normalizedSqlContract = sqlContract.replace(/\r\n/gu, "\n");
+  const matrixBootstrapStart = normalizedSqlContract.indexOf("do $$\ndeclare v_version integer;v_settings jsonb;");
+  const matrixBootstrapEnd = normalizedSqlContract.indexOf("\ninsert into public.matrix_roles_v2", matrixBootstrapStart);
   assert.ok(matrixBootstrapStart >= 0 && matrixBootstrapEnd > matrixBootstrapStart);
-  const matrixBootstrap = sqlContract.slice(matrixBootstrapStart, matrixBootstrapEnd);
+  const matrixBootstrap = normalizedSqlContract.slice(matrixBootstrapStart, matrixBootstrapEnd);
   assert.match(matrixBootstrap,
     /jsonb_build_object\([\s\S]*\)\s*\|\|\s*coalesce\(\([\s\S]*select settings from public\.matrix_versions/iu);
   assert.match(matrixBootstrap, /'currency','PLN'/iu);

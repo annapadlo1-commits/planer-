@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { canonicalGitBytes, canonicalGitText } from "./helpers/canonical-git-bytes.mjs";
 
 const baselineUrl = new URL("../supabase/baseline/phase4a2b/", import.meta.url);
 const manifest = JSON.parse(await readFile(new URL("manifest.json", baselineUrl), "utf8"));
@@ -24,17 +25,21 @@ const assembler = await readFile(new URL(
   import.meta.url,
 ), "utf8");
 const bucketProvisioner = await readFile(new URL(
-  "../scripts/phase4a2b/provision_local_storage_bucket.sh",
+  "../scripts/phase4a2b/provision_local_storage_bucket.mjs",
   import.meta.url,
 ), "utf8");
 const bucketProvisionerPath = fileURLToPath(new URL(
-  "../scripts/phase4a2b/provision_local_storage_bucket.sh",
+  "../scripts/phase4a2b/provision_local_storage_bucket.mjs",
   import.meta.url,
 ));
-const managedAclQuery = await readFile(new URL(
+const managedAclQueryWorktree = await readFile(new URL(
   "../scripts/phase4a2b/managed_acl_catalog_v2.sql",
   import.meta.url,
-), "utf8");
+));
+const managedAclQuery = canonicalGitText(
+  "scripts/phase4a2b/managed_acl_catalog_v2.sql",
+  managedAclQueryWorktree,
+);
 const restoreContract = await readFile(new URL(
   "../supabase/tests/phase4a2b_baseline_restore_contract.sql",
   import.meta.url,
@@ -207,7 +212,8 @@ const tokenizeStatements = sql => {
 const loadBaselineFiles = async () => {
   const files = [];
   for (const entry of manifest.files) {
-    const data = await readFile(new URL(entry.path, baselineUrl));
+    const worktreeData = await readFile(new URL(entry.path, baselineUrl));
+    const data = canonicalGitBytes(`supabase/baseline/phase4a2b/${entry.path}`, worktreeData);
     files.push({ ...entry, data, text: data.toString("utf8") });
   }
   return files;
@@ -764,13 +770,13 @@ test("builder and local renderer fail closed", () => {
   assert.match(assembler, /\^local\[a-z\]\{15\}\$/u);
   assert.match(assembler, /expected five environment tokens/u);
   assert.match(assembler, /baseline file set differs from manifest/u);
-  assert.match(bucketProvisioner, /127\[\.\]0\[\.\]0\[\.\]1\|localhost/u);
+  assert.match(bucketProvisioner, /127\.0\.0\.1/u);
   assert.match(bucketProvisioner, /\/storage\/v1/u);
   assert.match(bucketProvisioner, /> 65535/u);
   assert.match(bucketProvisioner, /SUPABASE_STORAGE_URL/u);
   assert.match(bucketProvisioner, /\/bucket/u);
-  assert.match(bucketProvisioner, /"id":"profile-avatars"/u);
-  assert.match(bucketProvisioner, /"type":"STANDARD"/u);
+  assert.match(bucketProvisioner, /id:\s*"profile-avatars"/u);
+  assert.match(bucketProvisioner, /type:\s*"STANDARD"/u);
   assert.doesNotMatch(bucketProvisioner, /https:\/\//u);
 });
 
@@ -784,7 +790,7 @@ test("Storage helper rejects URL confusion before invoking curl", () => {
     "https://127.0.0.1:5000",
   ];
   for (const url of rejected) {
-    const result = spawnSync("bash", [bucketProvisionerPath], {
+    const result = spawnSync(process.execPath, [bucketProvisionerPath], {
       encoding: "utf8",
       env: {
         PATH: process.env.PATH,

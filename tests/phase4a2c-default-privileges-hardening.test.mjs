@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import { canonicalGitText } from "./helpers/canonical-git-bytes.mjs";
 
 const migrationUrl = new URL(
   "../supabase/migrations/20260830180000_phase4a2c_default_privileges_hardening.sql",
@@ -20,9 +21,12 @@ const baselineUrl = new URL("../supabase/baseline/phase4a2b/", import.meta.url);
 const migration = await readFile(migrationUrl, "utf8");
 const contract = await readFile(contractUrl, "utf8");
 const docs = await readFile(docsUrl, "utf8");
-const baselineCompanion = await readFile(
+const baselineCompanionWorktree = await readFile(
   new URL("99_platform_companion.sql", baselineUrl),
-  "utf8",
+);
+const baselineCompanion = canonicalGitText(
+  "supabase/baseline/phase4a2b/99_platform_companion.sql",
+  baselineCompanionWorktree,
 );
 const baselineManifest = JSON.parse(await readFile(
   new URL("manifest.json", baselineUrl),
