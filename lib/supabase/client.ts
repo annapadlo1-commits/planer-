@@ -5,6 +5,14 @@ let browserClient: SupabaseClient | null | undefined;
 
 const UAT_PROJECT_REF = "nhthrtpkfpmufmrmdyjg";
 const PRODUCTION_PROJECT_REF = "bdybebzvzapihjdauehg";
+const MISSING_PROJECT_REF = "brak-projektu";
+const UNKNOWN_PROJECT_REF = "nieznany-projekt";
+const PROJECT_BY_ENVIRONMENT: Readonly<Record<string, string>> = Object.freeze({
+  preview: UAT_PROJECT_REF,
+  production: PRODUCTION_PROJECT_REF,
+  development: UAT_PROJECT_REF,
+  local: UAT_PROJECT_REF,
+});
 
 export type SupabaseEnvironmentGuard = {
   allowed: boolean;
@@ -17,24 +25,64 @@ export function evaluateSupabaseEnvironment(
   url: string | undefined,
   deploymentEnvironment: string | undefined,
 ): SupabaseEnvironmentGuard {
-  let projectRef = "brak-projektu";
+  let projectRef = MISSING_PROJECT_REF;
   if (url) {
-    try { projectRef = new URL(url).hostname.split(".")[0] || "nieznany-projekt"; }
-    catch { projectRef = "nieznany-projekt"; }
+    try {
+      const parsed = new URL(url);
+      const hostMatch = parsed.hostname.match(/^([a-z0-9]+)\.supabase\.co$/u);
+      const isCanonicalOrigin = parsed.protocol === "https:"
+        && parsed.username === ""
+        && parsed.password === ""
+        && parsed.port === ""
+        && parsed.pathname === "/"
+        && parsed.search === ""
+        && parsed.hash === "";
+      projectRef = isCanonicalOrigin && hostMatch?.[1]
+        ? hostMatch[1]
+        : UNKNOWN_PROJECT_REF;
+    } catch {
+      projectRef = UNKNOWN_PROJECT_REF;
+    }
   }
   const environment = (deploymentEnvironment || "local").trim().toLowerCase();
-  const productionOnPreview = environment === "preview" && projectRef === PRODUCTION_PROJECT_REF;
-  const uatOnProduction = environment === "production" && projectRef === UAT_PROJECT_REF;
-  if (productionOnPreview || uatOnProduction) {
+  const expectedProjectRef = PROJECT_BY_ENVIRONMENT[environment];
+
+  if (projectRef === MISSING_PROJECT_REF) {
     return {
       allowed: false,
       projectRef,
       deploymentEnvironment: environment,
-      message: productionOnPreview
-        ? "Wdrożenie testowe wskazuje produkcyjną bazę. Dostęp został bezpiecznie zablokowany. Przejdź do Vercel → Environment Variables i przypisz zmienne UAT do tej gałęzi, a następnie wykonaj redeploy Preview."
-        : "Wdrożenie produkcyjne wskazuje bazę UAT. Dostęp został bezpiecznie zablokowany. Sprawdź zmienne środowiska Production w Vercel przed ponownym wdrożeniem.",
+      message: "Brakuje adresu projektu Supabase. Dostęp został bezpiecznie zablokowany. Przejdź do Vercel → Environment Variables, ustaw NEXT_PUBLIC_SUPABASE_URL dla bieżącego środowiska i ponów wdrożenie.",
     };
   }
+
+  if (projectRef === UNKNOWN_PROJECT_REF) {
+    return {
+      allowed: false,
+      projectRef,
+      deploymentEnvironment: environment,
+      message: "Adres Supabase nie wskazuje rozpoznanego, dozwolonego projektu. Dostęp został bezpiecznie zablokowany. Przejdź do Vercel → Environment Variables i ustaw kanoniczny adres projektu dla bieżącego środowiska.",
+    };
+  }
+
+  if (!expectedProjectRef) {
+    return {
+      allowed: false,
+      projectRef,
+      deploymentEnvironment: environment,
+      message: "Nie rozpoznano środowiska wdrożenia. Dostęp do Supabase został bezpiecznie zablokowany. Ustaw środowisko na Preview, Production albo lokalny Development i uruchom aplikację ponownie.",
+    };
+  }
+
+  if (projectRef !== expectedProjectRef) {
+    const message = environment === "preview" && projectRef === PRODUCTION_PROJECT_REF
+      ? "Wdrożenie testowe wskazuje produkcyjną bazę. Dostęp został bezpiecznie zablokowany. Przejdź do Vercel → Environment Variables i przypisz zmienne UAT do tej gałęzi, a następnie wykonaj redeploy Preview."
+      : environment === "production" && projectRef === UAT_PROJECT_REF
+        ? "Wdrożenie produkcyjne wskazuje bazę UAT. Dostęp został bezpiecznie zablokowany. Sprawdź zmienne środowiska Production w Vercel przed ponownym wdrożeniem."
+        : "Projekt Supabase nie jest dozwolony dla bieżącego środowiska. Dostęp został bezpiecznie zablokowany. Przejdź do ustawień środowiska i przypisz właściwy projekt przed ponownym uruchomieniem.";
+    return { allowed: false, projectRef, deploymentEnvironment: environment, message };
+  }
+
   return { allowed: true, projectRef, deploymentEnvironment: environment, message: "" };
 }
 
