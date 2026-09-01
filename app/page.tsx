@@ -46,6 +46,16 @@ import {
 import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,type MatrixV2Workspace} from "@/lib/matrix-v2";
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import {
+  beginMonthWorkspaceLoad,
+  canUseMonthWorkspace,
+  completeMonthWorkspaceLoad,
+  createMonthWorkspaceGate,
+  failMonthWorkspaceLoad,
+  invalidateMonthWorkspaceRequests,
+  isMonthWorkspaceRequestCurrent,
+  selectMonthWorkspace,
+} from "@/lib/month-workspace-state";
+import {
   employeeNavigation,
   canManageSchedule,
   isEmployeePersona,
@@ -67,6 +77,10 @@ type ShiftSwapBoardContext = {requests?:ShiftSwapAnnouncement[]};
 
 const DEFAULT_MONTH = new Date().toISOString().slice(0,7);
 const MONTH_STORAGE_KEY = "grafik-pro:selected-month";
+const EMPTY_WORKSPACE:Workspace={
+  plan:null,assignments:[],shifts:[],issues:[],events:[],
+  budget:{amount:0,warning_percent:90,hard_limit:false},
+};
 function monthDate(month:string){return `${month}-01`;}
 function monthLabel(month:string,_timeZone?:string){
   return new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric",timeZone:"UTC"})
@@ -129,21 +143,18 @@ export default function GrafikPro() {
     :(productNavigation[0]?.key??(employeeShell?"today":"start"));
   const scheduleWriteAllowed=canManageSchedule(access?.roles);
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
-  const [data,setData]=useState<Workspace>({
-    plan:null,assignments:[],shifts:[],issues:[],events:[],
-    budget:{amount:0,warning_percent:90,hard_limit:false}
-  });
-  const [complete,setComplete]=useState<ActiveWorkspace|null>(null);
-  const [matrixV2,setMatrixV2]=useState<MatrixV2Workspace|null>(null);
-  const [operationalWorkspace,setOperationalWorkspace]=useState<SolverWorkspace|null>(null);
-  const [managerStandby,setManagerStandby]=useState<SolverManagerStandby[]>([]);
-  const [swapAnnouncements,setSwapAnnouncements]=useState<ShiftSwapAnnouncement[]>([]);
-  const [workforceCalendar,setWorkforceCalendar]=useState<WorkforceCalendarContext>({events:[]});
+  const [loadedData,setData]=useState<Workspace>(EMPTY_WORKSPACE);
+  const [loadedComplete,setComplete]=useState<ActiveWorkspace|null>(null);
+  const [loadedMatrixV2,setMatrixV2]=useState<MatrixV2Workspace|null>(null);
+  const [loadedOperationalWorkspace,setOperationalWorkspace]=useState<SolverWorkspace|null>(null);
+  const [loadedManagerStandby,setManagerStandby]=useState<SolverManagerStandby[]>([]);
+  const [loadedSwapAnnouncements,setSwapAnnouncements]=useState<ShiftSwapAnnouncement[]>([]);
+  const [loadedWorkforceCalendar,setWorkforceCalendar]=useState<WorkforceCalendarContext>({events:[]});
   const [matrixFocusEmployeeId,setMatrixFocusEmployeeId]=useState<string|null>(null);
   const [matrixCreateEmployeeRequest,setMatrixCreateEmployeeRequest]=useState(0);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
-  const [solverConfiguration,setSolverConfiguration]=useState<SolverConfiguration|null>(null);
+  const [loadedSolverConfiguration,setSolverConfiguration]=useState<SolverConfiguration|null>(null);
   const [solverConfigurationError,setSolverConfigurationError]=useState("");
   const [planScope,setPlanScope]=useState<PlanScope>({type:"COMPANY",category:null});
   const [solverPanelVersion,setSolverPanelVersion]=useState(0);
@@ -170,7 +181,19 @@ export default function GrafikPro() {
   });
   const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
-  const loadTokenRef=useRef(0),loadMonthRef=useRef(selectedMonthDate);loadMonthRef.current=selectedMonthDate;
+  const monthWorkspaceGateRef=useRef(createMonthWorkspaceGate(selectedMonthDate));
+  selectMonthWorkspace(monthWorkspaceGateRef.current,selectedMonthDate);
+  const [loadedMonth,setLoadedMonth]=useState<string|null>(null);
+  const workspaceCurrent=loadedMonth===selectedMonthDate
+    &&canUseMonthWorkspace(monthWorkspaceGateRef.current,selectedMonthDate);
+  const data=workspaceCurrent?loadedData:EMPTY_WORKSPACE;
+  const complete=workspaceCurrent?loadedComplete:null;
+  const matrixV2=workspaceCurrent?loadedMatrixV2:null;
+  const operationalWorkspace=workspaceCurrent?loadedOperationalWorkspace:null;
+  const managerStandby=workspaceCurrent?loadedManagerStandby:[];
+  const swapAnnouncements=workspaceCurrent?loadedSwapAnnouncements:[];
+  const workforceCalendar=workspaceCurrent?loadedWorkforceCalendar:{events:[]};
+  const solverConfiguration=workspaceCurrent?loadedSolverConfiguration:null;
   const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:""});
   const planPanelStorageKey="grafik-pro:open-role-generator";
   const isOrtools=solverConfiguration?.engine==="ORTOOLS_V2";
@@ -252,19 +275,40 @@ export default function GrafikPro() {
   },[]);
 
   const notify=(message:string)=>{setToast(message);window.setTimeout(()=>setToast(""),3200);};
+  const clearMonthWorkspace=useCallback(()=>{
+    setLoadedMonth(null);
+    setSolverConfiguration(null);
+    setComplete(null);
+    setMatrixV2(null);
+    setOperationalWorkspace(null);
+    setManagerStandby([]);
+    setSwapAnnouncements([]);
+    setWorkforceCalendar({events:[]});
+    setData(EMPTY_WORKSPACE);
+    setPlanScope({type:"COMPANY",category:null});
+    setModal(null);
+    setSelectedShift(null);
+    setMonthlyBudgetOpen(false);
+  },[]);
   const load=useCallback(async()=>{
     if(!supabase||!user)return;
     const requestedMonth=selectedMonthDate;
-    if(loadMonthRef.current!==requestedMonth)return;
-    const token=++loadTokenRef.current;
-    // Keep the last confirmed configuration while data refreshes. Clearing it here
-    // made a window-focus refresh look like an engine change and closed every open
-    // schedule drawer/modal, forcing the user to find their place again.
+    const switchingMonth=monthWorkspaceGateRef.current.loadedMonth!==requestedMonth;
+    const request=beginMonthWorkspaceLoad(monthWorkspaceGateRef.current,requestedMonth);
+    if(switchingMonth)clearMonthWorkspace();
     setLoading(true);setError("");setSolverConfigurationError("");
     const solverConfigurationResult=await loadSolverConfiguration(supabase,requestedMonth)
       .then(configuration=>({configuration,error:null as Error|null}))
       .catch(cause=>({configuration:null,error:cause instanceof Error?cause:new Error(String(cause))}));
-    if(token!==loadTokenRef.current||loadMonthRef.current!==requestedMonth)return;
+    if(!isMonthWorkspaceRequestCurrent(monthWorkspaceGateRef.current,request))return;
+    if(solverConfigurationResult.error||!solverConfigurationResult.configuration){
+      failMonthWorkspaceLoad(monthWorkspaceGateRef.current,request);
+      clearMonthWorkspace();
+      const detail=solverErrorMessage(solverConfigurationResult.error?.message??"brak opublikowanej konfiguracji");
+      const message=`Nie udało się wczytać danych dla ${monthLabel(requestedMonth.slice(0,7))}. Dane poprzedniego miesiąca zostały usunięte, a zapis, publikacja i generator są zablokowane. Sprawdź połączenie oraz opublikowaną konfigurację w Konfiguracja firmy → Kontrola gotowości, a następnie kliknij „Ponów odczyt”. Szczegóły: ${detail}`;
+      setSolverConfigurationError(message);setError(message);setLoading(false);
+      return;
+    }
     const currentSolverConfiguration=solverConfigurationResult.configuration;
     const readsLegacyPlan=currentSolverConfiguration?.engine==="ALPHA15"||currentSolverConfiguration?.engine==="SHADOW";
     const legacyPlanRequest=readsLegacyPlan
@@ -291,23 +335,26 @@ export default function GrafikPro() {
       standbyRequest,
       swapBoardRequest,
     ]);
-    if(token!==loadTokenRef.current||loadMonthRef.current!==requestedMonth)return;
+    if(!isMonthWorkspaceRequestCurrent(monthWorkspaceGateRef.current,request))return;
+    if(completeResult.error){
+      failMonthWorkspaceLoad(monthWorkspaceGateRef.current,request);
+      clearMonthWorkspace();
+      const message=`Nie udało się wczytać danych dla ${monthLabel(requestedMonth.slice(0,7))}. Dane poprzedniego miesiąca zostały usunięte, a zapis, publikacja i generator są zablokowane. Sprawdź połączenie oraz opublikowaną konfigurację w Konfiguracja firmy → Kontrola gotowości, a następnie kliknij „Ponów odczyt”. Szczegóły: ${completeResult.error.message}`;
+      setSolverConfigurationError(message);setError(message);setLoading(false);
+      return;
+    }
+    if(!completeMonthWorkspaceLoad(monthWorkspaceGateRef.current,request))return;
     const errors:string[]=[];
     setManagerStandby(standbyResult.rows);
     setSwapAnnouncements(((swapBoardResult.data as ShiftSwapBoardContext|null)?.requests??[]).filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)));
     if(standbyResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać rezerwy bezpieczeństwa: ${standbyResult.error.message}`);
     if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać ogłoszeń zamiany: ${swapBoardResult.error.message}`);
-    if(solverConfigurationResult.error){
-      const message=solverErrorMessage(solverConfigurationResult.error.message);
-      setSolverConfigurationError(message);
-    }else if(currentSolverConfiguration){
-      setSolverConfiguration(currentSolverConfiguration);
-      setPlanForm(current=>{
-        if(currentSolverConfiguration.scenarios.some(scenario=>scenario.code===current.scenario))return current;
-        const selected=currentSolverConfiguration.scenarios.find(scenario=>scenario.isDefault);
-        return selected?{...current,scenario:selected.code}:current;
-      });
-    }
+    setSolverConfiguration(currentSolverConfiguration);
+    setPlanForm(current=>{
+      if(currentSolverConfiguration.scenarios.some(scenario=>scenario.code===current.scenario))return current;
+      const selected=currentSolverConfiguration.scenarios.find(scenario=>scenario.isDefault);
+      return selected?{...current,scenario:selected.code}:current;
+    });
     const legacyData=(result.data||{
       plan:null,assignments:[],shifts:[],issues:[],events:[],
       budget:{amount:0,warning_percent:90,hard_limit:false}
@@ -331,12 +378,7 @@ export default function GrafikPro() {
       setOperationalWorkspace(null);
       setData({plan:null,assignments:[],shifts:[],issues:[],events:legacyData.events,budget:{amount:0,warning_percent:100,hard_limit:false}});
     }
-    if(!completeResult.error&&completeResult.data)setComplete(completeResult.data as ActiveWorkspace);
-    if(completeResult.error
-      &&completeResult.error.message!=="Could not find the function public.complete_workspace"
-      &&!completeResult.error.message.includes("EMPLOYEE_ACCOUNT_NOT_LINKED")){
-      errors.push(completeResult.error.message);
-    }
+    setComplete(completeResult.data?completeResult.data as ActiveWorkspace:null);
     if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
     else{
       setWorkforceCalendar({events:[]});
@@ -360,10 +402,11 @@ export default function GrafikPro() {
       setMatrixV2(null);
       if(matrixV2Result.error&&currentSolverConfiguration?.engine==="ORTOOLS_V2")errors.push(matrixV2Result.error.message);
     }
+    setLoadedMonth(requestedMonth);
     setError(errors.join(" • "));
     setLoading(false);
-  },[supabase,user,selectedMonthDate,canReadCompanyWorkspace]);
-  useEffect(()=>{void load();return()=>{loadTokenRef.current+=1};},[load]);
+  },[supabase,user,selectedMonthDate,canReadCompanyWorkspace,clearMonthWorkspace]);
+  useEffect(()=>{void load();return()=>invalidateMonthWorkspaceRequests(monthWorkspaceGateRef.current);},[load]);
   useEffect(()=>{monthStorageReadyRef.current=true;},[]);
   useEffect(()=>{
     if(monthStorageReadyRef.current)window.sessionStorage.setItem(MONTH_STORAGE_KEY,selectedMonth);
@@ -504,14 +547,15 @@ export default function GrafikPro() {
             <label className="date-selector" title="Wybierz miesiąc"><CalendarDays size={16}/><select aria-label="Wybierz miesiąc z listy" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{monthOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <button type="button" aria-label="Następny miesiąc" title="Następny miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,1))}><ChevronRight size={17}/></button>
           </div>
-          {!employeeShell&&primarySection==="schedule"&&<button className="secondary-button" onClick={()=>setMonthlyBudgetOpen(true)}><CircleDollarSign size={17}/> Budżet miesiąca</button>}
-          {!employeeShell&&scheduleWriteAllowed&&<button className="primary-button" disabled={!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
+          {!employeeShell&&primarySection==="schedule"&&<button className="secondary-button" disabled={!workspaceCurrent||!matrixV2} onClick={()=>setMonthlyBudgetOpen(true)}><CircleDollarSign size={17}/> Budżet miesiąca</button>}
+          {!employeeShell&&scheduleWriteAllowed&&<button className="primary-button" disabled={!workspaceCurrent||!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
         </div>
       </header>
       {error&&<div className="context-feedback-stack" role="region" aria-live="assertive">
         {error&&<div className="engine-error"><AlertTriangle size={18}/><span><strong>Operacja nie powiodła się</strong>{error}</span><button aria-label="Zamknij komunikat" onClick={()=>setError("")}>×</button></div>}
       </div>}
-      {loading?<div className="engine-loading"><RefreshCw className="spin"/><strong>Pobieram rzeczywisty grafik…</strong></div>:
+      {loading?<div className="engine-loading"><RefreshCw className="spin"/><strong>Pobieram rzeczywisty grafik…</strong></div>:!workspaceCurrent?
+      <section className="empty-engine" aria-live="assertive"><AlertTriangle/><h2>{`Nie udało się wczytać danych dla ${selectedMonthLabel}`}</h2><p>{solverConfigurationError||"Dane wybranego miesiąca nie zostały potwierdzone. Zapis, publikacja i generator pozostają zablokowane. Sprawdź Konfiguracja firmy → Kontrola gotowości i ponów odczyt."}</p><button className="primary-button" onClick={()=>void load()}><RefreshCw/> Ponów odczyt</button></section>:
       <div className="content">
         {employeeShell?<>
           {primarySection==="messages"&&<MessageCenter notify={notify} fail={setError}/>} 
@@ -593,8 +637,8 @@ export default function GrafikPro() {
         </>}
       </div>}
     </section>
-    {monthlyBudgetOpen&&<MonthlyBudgetDrawer month={selectedMonthDate} matrix={matrixV2} currency={activeCurrency} close={()=>setMonthlyBudgetOpen(false)} notify={notify} fail={setError}/>}
-    {modal&&<>{modal!=="plan"&&<button className="drawer-scrim" onClick={closeModal}/>}<aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
+    {workspaceCurrent&&monthlyBudgetOpen&&<MonthlyBudgetDrawer month={selectedMonthDate} matrix={matrixV2} currency={activeCurrency} close={()=>setMonthlyBudgetOpen(false)} notify={notify} fail={setError}/>}
+    {workspaceCurrent&&modal&&<>{modal!=="plan"&&<button className="drawer-scrim" onClick={closeModal}/>}<aside className={`drawer ${modal==="plan"?"solver-drawer":""}`}>
       <div className="drawer-head"><div><p className="eyebrow">SZAFUNEK • OPERACJA</p><h2>{modal==="plan"?"Nowy wariant":"Szczegóły zmiany"}</h2></div><button className="icon-button" onClick={closeModal}><X/></button></div>
       {modal==="plan"&&<div className="drawer-content">
         {!solverConfiguration&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, dopóki konfiguracja nie zostanie poprawnie odczytana.</div>}
