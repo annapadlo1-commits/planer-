@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
+
+const appRoot = fileURLToPath(new URL(".", import.meta.url));
 
 const appBuildId = process.env.VERCEL_GIT_COMMIT_SHA
   || process.env.GITHUB_SHA
@@ -7,6 +10,9 @@ const appBuildId = process.env.VERCEL_GIT_COMMIT_SHA
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  turbopack: {
+    root: appRoot,
+  },
   async headers() {
     return [
       {
