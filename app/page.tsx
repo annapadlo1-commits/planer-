@@ -45,6 +45,7 @@ import {
 } from "@/lib/solver-v2";
 import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,type MatrixV2Workspace} from "@/lib/matrix-v2";
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
+import { userSafeErrorMessage } from "@/lib/user-safe-error";
 import {
   beginMonthWorkspaceLoad,
   canStartMonthWorkspaceLoad,
@@ -340,7 +341,11 @@ export default function GrafikPro() {
     if(completeResult.error){
       failMonthWorkspaceLoad(monthWorkspaceGateRef.current,request);
       clearMonthWorkspace();
-      const message=`Nie udało się wczytać danych dla ${monthLabel(requestedMonth.slice(0,7))}. Dane poprzedniego miesiąca zostały usunięte, a zapis, publikacja i generator są zablokowane. Sprawdź połączenie oraz opublikowaną konfigurację w Konfiguracja firmy → Kontrola gotowości, a następnie kliknij „Ponów odczyt”. Szczegóły: ${completeResult.error.message}`;
+      const message=userSafeErrorMessage(completeResult.error,{
+        context:"month-workspace",
+        summary:`Nie udało się wczytać danych dla ${monthLabel(requestedMonth.slice(0,7))}. Dane poprzedniego miesiąca zostały usunięte, a zapis, publikacja i generator są zablokowane.`,
+        nextStep:"Sprawdź połączenie oraz opublikowaną konfigurację w Konfiguracja firmy → Kontrola gotowości, a następnie kliknij „Ponów odczyt”.",
+      });
       setSolverConfigurationError(message);setError(message);setLoading(false);
       return;
     }
@@ -348,8 +353,8 @@ export default function GrafikPro() {
     const errors:string[]=[];
     setManagerStandby(standbyResult.rows);
     setSwapAnnouncements(((swapBoardResult.data as ShiftSwapBoardContext|null)?.requests??[]).filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)));
-    if(standbyResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać rezerwy bezpieczeństwa: ${standbyResult.error.message}`);
-    if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(`Nie udało się pobrać ogłoszeń zamiany: ${swapBoardResult.error.message}`);
+    if(standbyResult.error&&canReadCompanyWorkspace)errors.push(userSafeErrorMessage(standbyResult.error,{context:"standby-read",summary:"Nie udało się pobrać rezerwy bezpieczeństwa.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
+    if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(userSafeErrorMessage(swapBoardResult.error,{context:"swap-board-read",summary:"Nie udało się pobrać ogłoszeń zamiany.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
     setSolverConfiguration(currentSolverConfiguration);
     setPlanForm(current=>{
       if(currentSolverConfiguration.scenarios.some(scenario=>scenario.code===current.scenario))return current;
@@ -360,7 +365,7 @@ export default function GrafikPro() {
       plan:null,assignments:[],shifts:[],issues:[],events:[],
       budget:{amount:0,warning_percent:90,hard_limit:false}
     }) as Workspace;
-    if(result.error)errors.push(result.error.message);
+    if(result.error)errors.push(userSafeErrorMessage(result.error,{context:"legacy-workspace-read",summary:"Nie udało się pobrać danych grafiku.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
     if(currentSolverConfiguration?.engine==="ORTOOLS_V2"&&(isActiveOrtoolsWorkspace(activeWorkspaceResult.workspace)||isEmptyOrtoolsWorkspace(activeWorkspaceResult.workspace))){
       setOperationalWorkspace(activeWorkspaceResult.workspace);
       setData(mapSolverWorkspaceToOperational(activeWorkspaceResult.workspace,{events:[]}));
@@ -368,7 +373,7 @@ export default function GrafikPro() {
       setOperationalWorkspace(null);
       setData({plan:null,assignments:[],shifts:[],issues:[],events:[],budget:{amount:0,warning_percent:100,hard_limit:false}});
       if(canReadCompanyWorkspace&&activeWorkspaceResult.error){
-        errors.push(`Nie udało się pobrać obowiązującego grafiku OR-Tools: ${activeWorkspaceResult.error.message}`);
+        errors.push(userSafeErrorMessage(activeWorkspaceResult.error,{context:"published-schedule-read",summary:"Nie udało się pobrać obowiązującego grafiku.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
       }else if(canReadCompanyWorkspace&&activeWorkspaceResult.workspace){
         errors.push("Odczyt obowiązującego grafiku nie potwierdził aktywnego workspace OR-Tools.");
       }
@@ -383,7 +388,7 @@ export default function GrafikPro() {
     if(!calendarResult.error&&calendarResult.data)setWorkforceCalendar(calendarResult.data as WorkforceCalendarContext);
     else{
       setWorkforceCalendar({events:[]});
-      if(calendarResult.error)errors.push(`Nie udało się pobrać wydarzeń i limitów nieobecności: ${calendarResult.error.message}`);
+      if(calendarResult.error)errors.push(userSafeErrorMessage(calendarResult.error,{context:"calendar-read",summary:"Nie udało się pobrać wydarzeń i limitów nieobecności.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
     }
     if(!matrixV2Result.error&&matrixV2Result.data&&(matrixV2Result.data as MatrixV2Workspace).matrixVersion?.schema_version>=2){
       try{
@@ -401,7 +406,7 @@ export default function GrafikPro() {
       }
     }else{
       setMatrixV2(null);
-      if(matrixV2Result.error&&currentSolverConfiguration?.engine==="ORTOOLS_V2")errors.push(matrixV2Result.error.message);
+      if(matrixV2Result.error&&currentSolverConfiguration?.engine==="ORTOOLS_V2")errors.push(userSafeErrorMessage(matrixV2Result.error,{context:"configuration-read",summary:"Nie udało się pobrać konfiguracji firmy.",nextStep:"Przejdź do Konfiguracja firmy → Kontrola gotowości i ponów odczyt."}));
     }
     setLoadedMonth(requestedMonth);
     setError(errors.join(" • "));

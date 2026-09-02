@@ -1,3 +1,5 @@
+import { userSafeErrorMessage } from "./user-safe-error.ts";
+
 export type MatrixV2Version = {
   id: string;
   version: number;
@@ -517,9 +519,20 @@ export function matrixV2ErrorMessage(message: string) {
     return "Rola podstawowa jest używana standardowo, a każda rola dodatkowa wyłącznie awaryjnie. Wróć do Zespół → Role i usuń sprzeczne przypisanie.";
   }
   if (value.includes("CHECK CONSTRAINT")) {
-    const constraint=message.match(/constraint ["']?([^"'\s]+)["']?/i)?.[1];
-    return `Jedna z wartości narusza regułę bazy${constraint?` „${constraint}”`:""}. Żadne dane nie zostały częściowo zapisane; komunikat został zachowany dla administratora UAT.`;
+    return userSafeErrorMessage(message, {
+      context: "configuration-constraint",
+      summary: "Jedna z wartości narusza regułę konfiguracji firmy. Żadne dane nie zostały częściowo zapisane.",
+      nextStep: "Sprawdź pola oznaczone w bieżącym formularzu i spróbuj ponownie.",
+    });
   }
-  if (value.includes("INVALID")) return `Jedna z wartości nie spełnia reguł konfiguracji firmy. Szczegół techniczny: ${message}`;
-  return `Nie udało się zapisać zmiany. Szczegół techniczny dla administratora UAT: ${message}`;
+  if (value.includes("INVALID")) return userSafeErrorMessage(message, {
+    context: "configuration-invalid-value",
+    summary: "Jedna z wartości nie spełnia reguł konfiguracji firmy.",
+    nextStep: "Sprawdź bieżący formularz i ponów zapis.",
+  });
+  return userSafeErrorMessage(message, {
+    context: "configuration-save",
+    summary: "Nie udało się zapisać zmiany. Żadne dane nie zostały częściowo zapisane.",
+    nextStep: "Odśwież konfigurację firmy i spróbuj ponownie.",
+  });
 }

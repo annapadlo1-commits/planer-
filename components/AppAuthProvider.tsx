@@ -18,6 +18,7 @@ import {
   supabaseEnvironmentGuard,
   supabaseProjectRef,
 } from "@/lib/supabase/client";
+import { userSafeErrorMessage } from "@/lib/user-safe-error";
 
 type LiveSummary = {
   employees: number;
@@ -449,7 +450,15 @@ function LoginScreen({ notice = "" }: { notice?: string }) {
     setBusy(false);
     if (result.error) {
       setIsError(true);
-      setMessage(result.error.message);
+      setMessage(userSafeErrorMessage(result.error, {
+        context: mode === "login" ? "auth-login" : "auth-signup",
+        summary: mode === "login"
+          ? "Nie udało się zalogować."
+          : "Nie udało się utworzyć konta.",
+        nextStep: mode === "login"
+          ? "Sprawdź e-mail i hasło, a następnie spróbuj ponownie."
+          : "Sprawdź e-mail i wymagania hasła, a następnie spróbuj ponownie.",
+      }));
       return;
     }
     if (mode === "signup" && !result.data.session) {
