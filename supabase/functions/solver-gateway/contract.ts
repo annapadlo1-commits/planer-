@@ -2,6 +2,7 @@ export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export const WORKER_ACTIONS = [
   "solver_claim_next_v2",
+  "solver_claim_next_v3",
   "solver_load_snapshot_v2",
   "solver_heartbeat_v2",
   "solver_save_variant_v2",
@@ -839,6 +840,47 @@ function validateSaveVariant(args: JsonObject): void {
   validateVariant(args.p_variant);
 }
 
+function validateClaimV3(args: JsonObject): void {
+  assertExactKeys(args, [
+    "p_worker_id",
+    "p_worker_version",
+    "p_worker_build_manifest",
+    "p_task_attempt",
+    "p_lease_seconds",
+  ]);
+  validateClaim({
+    p_worker_id: args.p_worker_id,
+    p_worker_version: args.p_worker_version,
+    p_task_attempt: args.p_task_attempt,
+    p_lease_seconds: args.p_lease_seconds,
+  });
+  assertObject(args.p_worker_build_manifest, "WORKER_BUILD_MANIFEST");
+  const manifest = args.p_worker_build_manifest;
+  assertExactKeys(manifest, [
+    "contractVersion",
+    "sourceSha",
+    "imageDigest",
+    "buildTimestamp",
+  ]);
+  if (
+    typeof manifest.contractVersion !== "string" ||
+    !/^[A-Z][A-Z0-9_]{2,99}$/u.test(manifest.contractVersion)
+  ) fail(400, "INVALID_SOLVER_CONTRACT_VERSION");
+  if (
+    typeof manifest.sourceSha !== "string" ||
+    !/^[0-9a-f]{40}$/u.test(manifest.sourceSha)
+  ) fail(400, "INVALID_SOLVER_SOURCE_SHA");
+  if (
+    typeof manifest.imageDigest !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/u.test(manifest.imageDigest)
+  ) fail(400, "INVALID_SOLVER_IMAGE_DIGEST");
+  if (
+    typeof manifest.buildTimestamp !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(manifest.buildTimestamp) ||
+    Number.isNaN(Date.parse(manifest.buildTimestamp))
+  ) fail(400, "INVALID_SOLVER_BUILD_TIMESTAMP");
+}
+
 function validateSaveVariants(args: JsonObject): void {
   assertExactKeys(args, [
     "p_run_id",
@@ -901,6 +943,7 @@ function validateFailure(args: JsonObject): void {
 
 const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
   solver_claim_next_v2: { maxBodyBytes: 16 * 1024, validate: validateClaim },
+  solver_claim_next_v3: { maxBodyBytes: 16 * 1024, validate: validateClaimV3 },
   solver_load_snapshot_v2: {
     maxBodyBytes: 4 * 1024,
     validate: validateLoadSnapshot,

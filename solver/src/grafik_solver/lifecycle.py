@@ -242,6 +242,10 @@ class WorkerRuntime:
         return self.rpc.claim(
             worker_id=self.config.worker_id,
             worker_version=self.config.solver_version,
+            contract_version=self.config.contract_version,
+            source_sha=self.config.source_sha,
+            image_digest=self.config.image_digest,
+            build_timestamp=self.config.build_timestamp,
             task_attempt=self.config.task_attempt,
             lease_seconds=self.config.lease_seconds,
         )

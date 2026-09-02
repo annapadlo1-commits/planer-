@@ -4,6 +4,7 @@ import os
 import re
 import socket
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from . import __version__
@@ -50,6 +51,10 @@ class WorkerConfig:
     lease_seconds: int
     solver_max_seconds: int
     solver_finalization_reserve_seconds: int = 30
+    contract_version: str = "SOLVER_CONTRACT_V2"
+    source_sha: str = "0" * 40
+    image_digest: str = "sha256:" + "0" * 64
+    build_timestamp: str = "1970-01-01T00:00:00Z"
 
     @classmethod
     def from_env(cls) -> WorkerConfig:
@@ -101,6 +106,38 @@ class WorkerConfig:
             )
         ):
             raise ConfigurationError("SOLVER_VERSION must identify this worker image")
+        contract_version = os.getenv("SOLVER_CONTRACT_VERSION", "").strip()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,99}", contract_version):
+            raise ConfigurationError(
+                "SOLVER_CONTRACT_VERSION must be an explicit version identifier"
+            )
+        source_sha = os.getenv("SOLVER_SOURCE_SHA", "").strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+            raise ConfigurationError(
+                "SOLVER_SOURCE_SHA must be the exact lowercase 40-character Git SHA"
+            )
+        image_digest = os.getenv("SOLVER_IMAGE_DIGEST", "").strip()
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_digest):
+            raise ConfigurationError(
+                "SOLVER_IMAGE_DIGEST must be an immutable sha256 image digest"
+            )
+        build_timestamp = os.getenv("SOLVER_BUILD_TIMESTAMP", "").strip()
+        try:
+            parsed_build_timestamp = datetime.fromisoformat(
+                build_timestamp.removesuffix("Z") + "+00:00"
+            )
+        except ValueError as exc:
+            raise ConfigurationError(
+                "SOLVER_BUILD_TIMESTAMP must be an ISO-8601 UTC timestamp"
+            ) from exc
+        if (
+            not build_timestamp.endswith("Z")
+            or parsed_build_timestamp.tzinfo != timezone.utc
+            or parsed_build_timestamp.microsecond != 0
+        ):
+            raise ConfigurationError(
+                "SOLVER_BUILD_TIMESTAMP must be an ISO-8601 UTC timestamp"
+            )
         heartbeat_seconds = _positive_int("HEARTBEAT_SECONDS", 20)
         lease_seconds = _positive_int("LEASE_SECONDS", 90)
         if not 30 <= lease_seconds <= 900:
@@ -132,4 +169,8 @@ class WorkerConfig:
             lease_seconds=lease_seconds,
             solver_max_seconds=solver_max_seconds,
             solver_finalization_reserve_seconds=finalization_reserve,
+            contract_version=contract_version,
+            source_sha=source_sha,
+            image_digest=image_digest,
+            build_timestamp=build_timestamp,
         )

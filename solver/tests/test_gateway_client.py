@@ -21,6 +21,10 @@ from grafik_solver.rpc import (
 GATEWAY_URL = "https://example.supabase.co/functions/v1/solver-gateway"
 GATEWAY_TOKEN = "gateway-test-token".ljust(64, "x")
 SOLVER_VERSION = "ORTOOLS_V2_2026_08_02"
+SOLVER_CONTRACT_VERSION = "SOLVER_CONTRACT_V2"
+SOLVER_SOURCE_SHA = "a" * 40
+SOLVER_IMAGE_DIGEST = "sha256:" + "b" * 64
+SOLVER_BUILD_TIMESTAMP = "2026-09-03T10:15:30Z"
 
 
 class _Response:
@@ -88,15 +92,25 @@ class GatewayClientTests(unittest.TestCase):
             claim = client.claim(
                 worker_id="worker-eu-1:42",
                 worker_version=SOLVER_VERSION,
+                contract_version=SOLVER_CONTRACT_VERSION,
+                source_sha=SOLVER_SOURCE_SHA,
+                image_digest=SOLVER_IMAGE_DIGEST,
+                build_timestamp=SOLVER_BUILD_TIMESTAMP,
                 task_attempt=1,
                 lease_seconds=90,
             )
         self.assertEqual(claim.run_id, "run-1")
         call.assert_called_once_with(
-            "solver_claim_next_v2",
+            "solver_claim_next_v3",
             {
                 "p_worker_id": "worker-eu-1:42",
                 "p_worker_version": SOLVER_VERSION,
+                "p_worker_build_manifest": {
+                    "contractVersion": SOLVER_CONTRACT_VERSION,
+                    "sourceSha": SOLVER_SOURCE_SHA,
+                    "imageDigest": SOLVER_IMAGE_DIGEST,
+                    "buildTimestamp": SOLVER_BUILD_TIMESTAMP,
+                },
                 "p_task_attempt": 1,
                 "p_lease_seconds": 90,
             },
@@ -221,6 +235,10 @@ class GatewayClientTests(unittest.TestCase):
             "SOLVER_GATEWAY_URL": GATEWAY_URL,
             "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
             "SOLVER_VERSION": SOLVER_VERSION,
+            "SOLVER_CONTRACT_VERSION": SOLVER_CONTRACT_VERSION,
+            "SOLVER_SOURCE_SHA": SOLVER_SOURCE_SHA,
+            "SOLVER_IMAGE_DIGEST": SOLVER_IMAGE_DIGEST,
+            "SOLVER_BUILD_TIMESTAMP": SOLVER_BUILD_TIMESTAMP,
             "WORKER_TASK_ATTEMPT": "1",
         }
         with patch.dict("os.environ", valid_environment, clear=True):
@@ -228,6 +246,10 @@ class GatewayClientTests(unittest.TestCase):
         self.assertEqual(config.solver_gateway_url, GATEWAY_URL)
         self.assertEqual(config.solver_gateway_token, GATEWAY_TOKEN)
         self.assertEqual(config.solver_version, SOLVER_VERSION)
+        self.assertEqual(config.contract_version, SOLVER_CONTRACT_VERSION)
+        self.assertEqual(config.source_sha, SOLVER_SOURCE_SHA)
+        self.assertEqual(config.image_digest, SOLVER_IMAGE_DIGEST)
+        self.assertEqual(config.build_timestamp, SOLVER_BUILD_TIMESTAMP)
         self.assertEqual(config.task_attempt, 1)
 
         legacy_only = {
@@ -245,6 +267,10 @@ class GatewayClientTests(unittest.TestCase):
             "SOLVER_GATEWAY_URL": GATEWAY_URL,
             "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
             "SOLVER_VERSION": SOLVER_VERSION,
+            "SOLVER_CONTRACT_VERSION": SOLVER_CONTRACT_VERSION,
+            "SOLVER_SOURCE_SHA": SOLVER_SOURCE_SHA,
+            "SOLVER_IMAGE_DIGEST": SOLVER_IMAGE_DIGEST,
+            "SOLVER_BUILD_TIMESTAMP": SOLVER_BUILD_TIMESTAMP,
             "WORKER_TASK_ATTEMPT": "1",
         }
         for name, value, message in (
@@ -274,6 +300,30 @@ class GatewayClientTests(unittest.TestCase):
                 self.subTest(name=name, value=value),
                 patch.dict("os.environ", {**base, name: value}, clear=True),
                 self.assertRaisesRegex(ConfigurationError, message),
+            ):
+                WorkerConfig.from_env()
+
+    def test_worker_build_manifest_is_fail_closed(self) -> None:
+        base = {
+            "SOLVER_GATEWAY_URL": GATEWAY_URL,
+            "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
+            "SOLVER_VERSION": SOLVER_VERSION,
+            "SOLVER_CONTRACT_VERSION": SOLVER_CONTRACT_VERSION,
+            "SOLVER_SOURCE_SHA": SOLVER_SOURCE_SHA,
+            "SOLVER_IMAGE_DIGEST": SOLVER_IMAGE_DIGEST,
+            "SOLVER_BUILD_TIMESTAMP": SOLVER_BUILD_TIMESTAMP,
+            "WORKER_TASK_ATTEMPT": "1",
+        }
+        for name, value in (
+            ("SOLVER_CONTRACT_VERSION", ""),
+            ("SOLVER_SOURCE_SHA", "not-a-git-sha"),
+            ("SOLVER_IMAGE_DIGEST", "latest"),
+            ("SOLVER_BUILD_TIMESTAMP", "2026-09-03"),
+        ):
+            with (
+                self.subTest(name=name),
+                patch.dict("os.environ", {**base, name: value}, clear=True),
+                self.assertRaisesRegex(ConfigurationError, name),
             ):
                 WorkerConfig.from_env()
 
