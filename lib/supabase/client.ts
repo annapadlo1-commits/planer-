@@ -44,7 +44,7 @@ export function evaluateSupabaseEnvironment(
       projectRef = UNKNOWN_PROJECT_REF;
     }
   }
-  const environment = (deploymentEnvironment || "local").trim().toLowerCase();
+  const environment = (deploymentEnvironment ?? "").trim().toLowerCase();
   const expectedProjectRef = PROJECT_BY_ENVIRONMENT[environment];
 
   if (projectRef === MISSING_PROJECT_REF) {

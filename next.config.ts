@@ -8,6 +8,9 @@ const appBuildId = process.env.VERCEL_GIT_COMMIT_SHA
   || process.env.NEXT_PUBLIC_APP_BUILD_ID
   || "local";
 
+const publicDeploymentEnvironment = process.env.VERCEL_ENV
+  || (process.env.NODE_ENV === "development" ? "development" : "unknown");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {
@@ -39,7 +42,7 @@ const nextConfig: NextConfig = {
   // non-secret environment name into the browser bundle so the Supabase
   // safety guard can fail closed before an auth client is created.
   env: {
-    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "local",
+    NEXT_PUBLIC_VERCEL_ENV: publicDeploymentEnvironment,
     NEXT_PUBLIC_APP_BUILD_ID: appBuildId,
   },
 };

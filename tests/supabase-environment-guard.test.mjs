@@ -51,10 +51,20 @@ test("missing Supabase project fails closed with a Polish repair path", () => {
 });
 
 test("local development may use UAT but never production or a foreign project", () => {
-  assert.equal(evaluateSupabaseEnvironment(UAT_URL, undefined).allowed, true);
+  assert.equal(evaluateSupabaseEnvironment(UAT_URL, "local").allowed, true);
   assert.equal(evaluateSupabaseEnvironment(UAT_URL, "development").allowed, true);
   assert.equal(evaluateSupabaseEnvironment(PRODUCTION_URL, "local").allowed, false);
   assert.equal(evaluateSupabaseEnvironment(FOREIGN_URL, "development").allowed, false);
+});
+
+test("missing or blank deployment environment fails closed for known projects", () => {
+  for (const projectUrl of [UAT_URL, PRODUCTION_URL]) {
+    for (const environment of [undefined, "", "   "]) {
+      const result = evaluateSupabaseEnvironment(projectUrl, environment);
+      assert.equal(result.allowed, false, `${projectUrl} / ${String(environment)}`);
+      assert.match(result.message, /środowisk/i);
+    }
+  }
 });
 
 test("unknown deployment environment fails closed", () => {
