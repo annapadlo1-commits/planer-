@@ -327,6 +327,53 @@ class GatewayClientTests(unittest.TestCase):
             ):
                 WorkerConfig.from_env()
 
+    def test_platform_deployment_sha_is_authoritative(self) -> None:
+        base = {
+            "SOLVER_GATEWAY_URL": GATEWAY_URL,
+            "SOLVER_GATEWAY_TOKEN": GATEWAY_TOKEN,
+            "SOLVER_VERSION": SOLVER_VERSION,
+            "SOLVER_CONTRACT_VERSION": SOLVER_CONTRACT_VERSION,
+            "SOLVER_SOURCE_SHA": SOLVER_SOURCE_SHA,
+            "SOLVER_IMAGE_DIGEST": SOLVER_IMAGE_DIGEST,
+            "SOLVER_BUILD_TIMESTAMP": SOLVER_BUILD_TIMESTAMP,
+            "WORKER_TASK_ATTEMPT": "1",
+        }
+
+        with patch.dict(
+            "os.environ",
+            {**base, "NF_DEPLOYMENT_SHA": SOLVER_SOURCE_SHA},
+            clear=True,
+        ):
+            config = WorkerConfig.from_env()
+        self.assertEqual(config.source_sha, SOLVER_SOURCE_SHA)
+
+        with (
+            patch.dict(
+                "os.environ",
+                {**base, "NF_DEPLOYMENT_SHA": "c" * 40},
+                clear=True,
+            ),
+            self.assertRaisesRegex(
+                ConfigurationError,
+                "SOLVER_SOURCE_SHA must match NF_DEPLOYMENT_SHA",
+            ),
+        ):
+            WorkerConfig.from_env()
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    **base,
+                    "SOLVER_SOURCE_SHA": "",
+                    "NF_DEPLOYMENT_SHA": "not-a-git-sha",
+                },
+                clear=True,
+            ),
+            self.assertRaisesRegex(ConfigurationError, "NF_DEPLOYMENT_SHA"),
+        ):
+            WorkerConfig.from_env()
+
 
 if __name__ == "__main__":
     unittest.main()

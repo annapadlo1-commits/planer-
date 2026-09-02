@@ -13,8 +13,9 @@ const gateway = await readFile(new URL(
 ), "utf8");
 
 test("worker image and gateway fail closed on immutable source identity", () => {
-  assert.match(dockerfile, /ARG SOLVER_SOURCE_SHA/u);
-  assert.match(dockerfile, /org\.opencontainers\.image\.revision/u);
+  assert.match(dockerfile, /ARG NF_GIT_SHA/u);
+  assert.match(dockerfile, /org\.opencontainers\.image\.revision="\$\{NF_GIT_SHA\}"/u);
+  assert.match(dockerfile, /SOLVER_SOURCE_SHA=\$\{NF_GIT_SHA\}/u);
   assert.match(gateway, /requireEnvironment\("GATEWAY_SOURCE_SHA"\)/u);
   assert.match(gateway, /\^\[0-9a-f\]\{40\}\$/u);
 });

@@ -111,10 +111,21 @@ class WorkerConfig:
             raise ConfigurationError(
                 "SOLVER_CONTRACT_VERSION must be an explicit version identifier"
             )
-        source_sha = os.getenv("SOLVER_SOURCE_SHA", "").strip()
+        declared_source_sha = os.getenv("SOLVER_SOURCE_SHA", "").strip()
+        platform_source_sha = os.getenv("NF_DEPLOYMENT_SHA", "").strip()
+        if (
+            platform_source_sha
+            and declared_source_sha
+            and platform_source_sha != declared_source_sha
+        ):
+            raise ConfigurationError(
+                "SOLVER_SOURCE_SHA must match NF_DEPLOYMENT_SHA"
+            )
+        source_sha = platform_source_sha or declared_source_sha
         if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
             raise ConfigurationError(
-                "SOLVER_SOURCE_SHA must be the exact lowercase 40-character Git SHA"
+                "NF_DEPLOYMENT_SHA or SOLVER_SOURCE_SHA must be the exact lowercase "
+                "40-character Git SHA"
             )
         image_digest = os.getenv("SOLVER_IMAGE_DIGEST", "").strip()
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_digest):
