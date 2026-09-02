@@ -7,7 +7,7 @@ import { matrixV2ErrorMessage } from "../lib/matrix-v2.ts";
 
 const raw = "relation solver_private.secret_table does not exist; token=hidden";
 
-test("unknown backend detail is logged with correlation but never rendered", () => {
+test("unknown backend detail is neither rendered nor exposed in the browser log", () => {
   const logged = [];
   const message = userSafeErrorMessage(raw, {
     context: "test-operation",
@@ -19,7 +19,12 @@ test("unknown backend detail is logged with correlation but never rendered", () 
   assert.doesNotMatch(message, /solver_private|secret_table|token=hidden/iu);
   assert.match(message, /UI-TEST-123456/u);
   assert.match(message, /Odśwież dane/u);
-  assert.match(JSON.stringify(logged), /solver_private/u);
+  assert.doesNotMatch(
+    JSON.stringify(logged),
+    /solver_private|secret_table|token=hidden/iu,
+  );
+  assert.match(JSON.stringify(logged), /UI-TEST-123456/u);
+  assert.match(JSON.stringify(logged), /"kind":"string"/u);
 });
 
 test("matrix fallback and constraint failure never expose backend names", () => {

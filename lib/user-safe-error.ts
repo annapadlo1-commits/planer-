@@ -15,14 +15,29 @@ function newCorrelationId() {
   return `UI-${Date.now().toString(36).toUpperCase()}-${String(fallbackSequence).padStart(6, "0")}`;
 }
 
-function errorDetail(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "UNSERIALIZABLE_ERROR";
-  }
+function safeDiagnosticCode(value: unknown) {
+  if (typeof value !== "string") return "UNAVAILABLE";
+  const normalized = value.trim();
+  return /^(?:[A-Z][A-Z0-9_]{1,63}|[0-9]{5})$/u.test(normalized)
+    ? normalized
+    : "UNAVAILABLE";
+}
+
+function safeDiagnostic(error: unknown) {
+  const record = typeof error === "object" && error !== null
+    ? error as Record<string, unknown>
+    : {};
+  const status = typeof record.status === "number"
+    && Number.isInteger(record.status)
+    && record.status >= 100
+    && record.status <= 599
+    ? record.status
+    : undefined;
+  return {
+    kind: error instanceof Error ? "Error" : typeof error,
+    code: safeDiagnosticCode(record.code),
+    ...(status === undefined ? {} : { status }),
+  };
 }
 
 export function userSafeErrorMessage(
@@ -31,6 +46,6 @@ export function userSafeErrorMessage(
 ) {
   const correlationId = options.correlationId ?? newCorrelationId();
   const logger = options.logger ?? console.error;
-  logger(`[SZAFUNEK:${options.context}:${correlationId}]`, errorDetail(error));
+  logger(`[SZAFUNEK:${options.context}:${correlationId}]`, safeDiagnostic(error));
   return `${options.summary} ${options.nextStep} Jeśli problem wróci, przekaż wsparciu identyfikator: ${correlationId}.`;
 }
