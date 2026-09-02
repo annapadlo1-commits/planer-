@@ -47,6 +47,7 @@ import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,typ
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import {
   beginMonthWorkspaceLoad,
+  canStartMonthWorkspaceLoad,
   canUseMonthWorkspace,
   completeMonthWorkspaceLoad,
   createMonthWorkspaceGate,
@@ -182,7 +183,6 @@ export default function GrafikPro() {
   const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
   const monthWorkspaceGateRef=useRef(createMonthWorkspaceGate(selectedMonthDate));
-  selectMonthWorkspace(monthWorkspaceGateRef.current,selectedMonthDate);
   const [loadedMonth,setLoadedMonth]=useState<string|null>(null);
   const workspaceCurrent=loadedMonth===selectedMonthDate
     &&canUseMonthWorkspace(monthWorkspaceGateRef.current,selectedMonthDate);
@@ -293,6 +293,7 @@ export default function GrafikPro() {
   const load=useCallback(async()=>{
     if(!supabase||!user)return;
     const requestedMonth=selectedMonthDate;
+    if(!canStartMonthWorkspaceLoad(monthWorkspaceGateRef.current,requestedMonth))return;
     const switchingMonth=monthWorkspaceGateRef.current.loadedMonth!==requestedMonth;
     const request=beginMonthWorkspaceLoad(monthWorkspaceGateRef.current,requestedMonth);
     if(switchingMonth)clearMonthWorkspace();
@@ -406,6 +407,12 @@ export default function GrafikPro() {
     setError(errors.join(" • "));
     setLoading(false);
   },[supabase,user,selectedMonthDate,canReadCompanyWorkspace,clearMonthWorkspace]);
+  const reloadCurrentMonth=useCallback(async()=>{
+    const requestedMonth=selectedMonthDate;
+    await load();
+    return canUseMonthWorkspace(monthWorkspaceGateRef.current,requestedMonth);
+  },[load,selectedMonthDate]);
+  useEffect(()=>{selectMonthWorkspace(monthWorkspaceGateRef.current,selectedMonthDate);},[selectedMonthDate]);
   useEffect(()=>{void load();return()=>invalidateMonthWorkspaceRequests(monthWorkspaceGateRef.current);},[load]);
   useEffect(()=>{monthStorageReadyRef.current=true;},[]);
   useEffect(()=>{
@@ -586,7 +593,7 @@ export default function GrafikPro() {
             <div className="quick-actions"><button onClick={()=>setActive("grafik")}>Otwórz grafik <ChevronRight/></button><button onClick={()=>setActive("kadra")}>Pracownicy i archiwum <ChevronRight/></button><button onClick={()=>setActive("alerty")}>Rozwiąż alerty <ChevronRight/></button></div>
           </section>}
         </>}
-        {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} activeConfigurationVersion={complete?.activeMatrix?.version} draftConfigurationVersion={complete?.draftMatrix?.version} notify={notify} fail={setError} onPublished={async()=>{await load();setActive("grafik");}}/>}
+        {active==="generator"&&solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&<GeneratorV2Page configuration={solverConfiguration} userId={user.id} month={selectedMonthDate} timezone={solverTimezone} activeConfigurationVersion={complete?.activeMatrix?.version} draftConfigurationVersion={complete?.draftMatrix?.version} notify={notify} fail={setError} onPublished={async()=>{if(await reloadCurrentMonth())setActive("grafik");}}/>}
         {active==="generator"&&solverConfiguration?.engine==="ALPHA15"&&<section className="empty-engine"><AlertTriangle/><h2>Nowy generator czeka na kontrolowane przełączenie</h2><p>Interfejs Alpha 15 nie jest już rozwijany. Uruchamianie nowych wariantów zostanie odblokowane po wdrożeniu workera OR-Tools, sekretu gatewaya i zmianie flagi silnika.</p></section>}
         {active==="scalanie"&&<section className="schedule-role-first-intro">
           <span>ETAP 2 Z 3 • SCALANIE FIRMY</span>
@@ -602,7 +609,7 @@ export default function GrafikPro() {
           scenarios={solverConfiguration.scenarios}
           matrixEffectiveFrom={solverConfiguration.matrixEffectiveFrom??undefined}
           refreshKey={roleCompositeRefreshKey}
-          onPublished={async()=>{notify("Scalony grafik ról został opublikowany");await load();setActive("grafik");}}
+          onPublished={async()=>{if(await reloadCurrentMonth()){notify("Scalony grafik ról został opublikowany");setActive("grafik");}}}
         />:active==="scalanie"?<section className="empty-engine"><AlertTriangle/><h2>Scalanie jest chwilowo niedostępne</h2><p>Dokończ odczyt opublikowanej konfiguracji firmy, a następnie wróć do tego etapu.</p></section>:null}
         {active==="grafik"&&isOrtools&&operationalWorkspace&&<SolverV2Workspace workspace={operationalWorkspace} timezone={activeTimezone} published operational notify={notify} fail={setError} onOperationalChanged={load}/>}
         {active==="grafik"&&isOrtools&&!operationalWorkspace&&<section className="empty-engine"><CalendarDays/><h2>Brak opublikowanego grafiku operacyjnego</h2><p>W Generatorze wybierz gotowy wariant, przejrzyj analizę i opublikuj go jako osobną wersję operacyjną.</p><button className="primary-button" onClick={()=>setActive("generator")}>Otwórz Generator i warianty</button></section>}
@@ -670,7 +677,7 @@ export default function GrafikPro() {
           }}
           onOpenReadiness={()=>{closeModal();openSetupStep("structure","readiness");}}
           onVariantSelected={variant=>{notify(`Wybrano wariant: ${variant.strategy.name}`);if(planScope.type==="CATEGORY")setRoleCompositeRefreshKey(current=>current+1);}}
-          onPublished={async()=>{await load();notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}
+          onPublished={async()=>{if(await reloadCurrentMonth()){notify("Opublikowany grafik OR-Tools jest teraz widoczny w głównym widoku.");setActive("grafik");}}}
         />}
         {solverConfiguration&&solverConfiguration.engine!=="ALPHA15"&&user&&!solverConfiguration.solverVersion&&<div className="solver-v2-notice warning"><AlertTriangle/>Generator pozostaje zablokowany, ponieważ konfiguracja nie wskazuje wersji solvera.</div>}
         {solverConfiguration?.engine==="ALPHA15"&&<div className="solver-v2-notice warning"><AlertTriangle/>Tworzenie nowych grafików Alpha 15 zostało usunięte. Przełącz kontrolowanie OR-Tools, aby uruchamiać warianty.</div>}

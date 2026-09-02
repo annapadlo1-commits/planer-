@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   beginMonthWorkspaceLoad,
+  canStartMonthWorkspaceLoad,
   canUseMonthWorkspace,
   completeMonthWorkspaceLoad,
   createMonthWorkspaceGate,
@@ -26,6 +27,17 @@ test("month loading uses an explicit latest-request gate", () => {
   assert.match(page, /isMonthWorkspaceRequestCurrent/u);
   assert.match(page, /completeMonthWorkspaceLoad/u);
   assert.match(page, /failMonthWorkspaceLoad/u);
+});
+
+test("a committed month selection blocks stale callbacks from restarting the prior month", () => {
+  assert.doesNotMatch(
+    page,
+    /monthWorkspaceGateRef=useRef\([^;]+;\s*selectMonthWorkspace\(monthWorkspaceGateRef\.current,selectedMonthDate\)/u,
+  );
+  assert.match(page, /canStartMonthWorkspaceLoad\(monthWorkspaceGateRef\.current,requestedMonth\)/u);
+  assert.match(page, /reloadCurrentMonth/u);
+  assert.equal(page.match(/await reloadCurrentMonth\(\)/gu)?.length, 3);
+  assert.doesNotMatch(page, /onPublished=\{async\(\)=>\{await load\(\)/u);
 });
 
 test("configuration and complete_workspace failures both fail closed", () => {
@@ -86,6 +98,13 @@ test("changing month during a request invalidates its late response", () => {
   selectMonthWorkspace(gate, "2026-09-01");
   assert.equal(completeMonthWorkspaceLoad(gate, requestA), false);
   assert.equal(gate.loadedMonth, null);
+});
+
+test("a stale callback cannot restart a load for the previously selected month", () => {
+  const gate = createMonthWorkspaceGate("2026-08-01");
+  selectMonthWorkspace(gate, "2026-09-01");
+  assert.equal(canStartMonthWorkspaceLoad(gate, "2026-08-01"), false);
+  assert.equal(canStartMonthWorkspaceLoad(gate, "2026-09-01"), true);
 });
 
 test("a newly selected month never exposes the prior month even briefly", () => {

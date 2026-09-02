@@ -22,6 +22,10 @@ export function selectMonthWorkspace(gate: MonthWorkspaceGate, month: string) {
   gate.requestId += 1;
 }
 
+export function canStartMonthWorkspaceLoad(gate: MonthWorkspaceGate, month: string) {
+  return gate.selectedMonth === month;
+}
+
 export function beginMonthWorkspaceLoad(
   gate: MonthWorkspaceGate,
   month: string,
