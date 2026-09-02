@@ -15,6 +15,7 @@ ALLOWED_GATEWAY_ACTIONS = frozenset(
         "solver_load_snapshot_v2",
         "solver_heartbeat_v2",
         "solver_save_variant_v2",
+        "solver_save_variants_v2",
         "solver_finalize_v2",
         "solver_interrupt_v2",
         "solver_fail_attempt_v2",
@@ -284,6 +285,19 @@ class SolverGatewayClient:
                 "p_attempt_id": claim.attempt_id,
                 "p_lease_token": claim.lease_token,
                 "p_variant": dict(variant),
+            },
+        )
+
+    def save_variants(
+        self, claim: Claim, variants: tuple[Mapping[str, Any], ...]
+    ) -> Any:
+        return self.call(
+            "solver_save_variants_v2",
+            {
+                "p_run_id": claim.run_id,
+                "p_attempt_id": claim.attempt_id,
+                "p_lease_token": claim.lease_token,
+                "p_variants": [dict(variant) for variant in variants],
             },
         )
 

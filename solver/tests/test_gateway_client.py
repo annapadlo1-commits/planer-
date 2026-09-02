@@ -115,6 +115,34 @@ class GatewayClientTests(unittest.TestCase):
         self.assertFalse(raised.exception.retryable)
         open_call.assert_not_called()
 
+    def test_save_variants_uses_one_atomic_gateway_request(self) -> None:
+        client = SolverGatewayClient(GATEWAY_URL, GATEWAY_TOKEN, maximum_attempts=1)
+        variants = (
+            {"strategyCode": "BALANCED"},
+            {"strategyCode": "MIN_COST"},
+            {"strategyCode": "PREFERENCES"},
+        )
+        with patch.object(
+            client,
+            "call",
+            return_value={"savedVariantCount": 3},
+        ) as call:
+            result = client.save_variants(
+                Claim("run-1", "attempt-1", "lease-1"),
+                variants,
+            )
+
+        self.assertEqual(result, {"savedVariantCount": 3})
+        call.assert_called_once_with(
+            "solver_save_variants_v2",
+            {
+                "p_run_id": "run-1",
+                "p_attempt_id": "attempt-1",
+                "p_lease_token": "lease-1",
+                "p_variants": [dict(variant) for variant in variants],
+            },
+        )
+
     def test_http_status_preserves_retry_classification(self) -> None:
         for status, retryable in ((403, False), (429, True), (503, True)):
             with self.subTest(status=status):

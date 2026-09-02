@@ -5,6 +5,7 @@ export const WORKER_ACTIONS = [
   "solver_load_snapshot_v2",
   "solver_heartbeat_v2",
   "solver_save_variant_v2",
+  "solver_save_variants_v2",
   "solver_finalize_v2",
   "solver_interrupt_v2",
   "solver_fail_attempt_v2",
@@ -838,6 +839,29 @@ function validateSaveVariant(args: JsonObject): void {
   validateVariant(args.p_variant);
 }
 
+function validateSaveVariants(args: JsonObject): void {
+  assertExactKeys(args, [
+    "p_run_id",
+    "p_attempt_id",
+    "p_lease_token",
+    "p_variants",
+  ]);
+  assertLeaseArgs(args);
+  assertArray(args.p_variants, "VARIANTS", 3);
+  if (args.p_variants.length !== 3) fail(400, "INVALID_VARIANT_BATCH");
+  args.p_variants.forEach(validateVariant);
+  const strategyCodes = args.p_variants.map((variant) =>
+    String((variant as JsonObject).strategyCode).toUpperCase()
+  );
+  const canonicalCodes = ["BALANCED", "MIN_COST", "PREFERENCES"];
+  if (
+    new Set(strategyCodes).size !== canonicalCodes.length ||
+    [...strategyCodes].sort().join(",") !== canonicalCodes.sort().join(",")
+  ) {
+    fail(400, "INVALID_STRATEGY_SET");
+  }
+}
+
 function validateFinalize(args: JsonObject): void {
   validateLoadSnapshot(args);
 }
@@ -888,6 +912,10 @@ const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
   solver_save_variant_v2: {
     maxBodyBytes: MAX_BODY_BYTES,
     validate: validateSaveVariant,
+  },
+  solver_save_variants_v2: {
+    maxBodyBytes: MAX_BODY_BYTES,
+    validate: validateSaveVariants,
   },
   solver_finalize_v2: { maxBodyBytes: 4 * 1024, validate: validateFinalize },
   solver_interrupt_v2: { maxBodyBytes: 8 * 1024, validate: validateInterrupt },
@@ -1043,7 +1071,10 @@ export function createGatewayHandler(options: GatewayOptions) {
 
       let result: RpcResult;
       try {
-        const rpcArgs = envelope.action === "solver_save_variant_v2"
+        const rpcArgs = (
+          envelope.action === "solver_save_variant_v2" ||
+          envelope.action === "solver_save_variants_v2"
+        )
           ? { ...envelope.args, p_gateway_version: options.gatewayVersion }
           : envelope.args;
         result = await options.invokeRpc(envelope.action, rpcArgs);

@@ -97,6 +97,7 @@ test("exposes only provider-neutral worker actions", () => {
     "solver_load_snapshot_v2",
     "solver_heartbeat_v2",
     "solver_save_variant_v2",
+    "solver_save_variants_v2",
     "solver_finalize_v2",
     "solver_interrupt_v2",
     "solver_fail_attempt_v2",
@@ -232,6 +233,66 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
     action: "solver_save_variant_v2",
     args: { ...args, p_gateway_version: GATEWAY_VERSION },
   }]);
+});
+
+test("forwards one exact canonical variant batch to PostgreSQL", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variants = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variants: variants,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variants_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variants_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects incomplete, duplicate and foreign strategy batches", async () => {
+  const handler = handlerWith();
+  const canonical = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  for (const variants of [
+    canonical.slice(0, 2),
+    [canonical[0], canonical[1], canonical[0]],
+    [canonical[0], canonical[1], { ...canonical[2], strategyCode: "OTHER" }],
+  ]) {
+    const response = await handler(gatewayRequest("solver_save_variants_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variants: variants,
+    }));
+    assert.equal(response.status, 400);
+  }
 });
 
 test("uses only the named Supabase secret key and fails closed", () => {

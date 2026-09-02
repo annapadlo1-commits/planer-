@@ -47,7 +47,9 @@ class RpcProtocol(Protocol):
     def claim(self, **kwargs: Any) -> Claim | None: ...
     def load_snapshot(self, claim: Claim) -> Any: ...
     def heartbeat(self, claim: Claim, progress: Mapping[str, Any]) -> Any: ...
-    def save_variant(self, claim: Claim, variant: Mapping[str, Any]) -> Any: ...
+    def save_variants(
+        self, claim: Claim, variants: tuple[Mapping[str, Any], ...]
+    ) -> Any: ...
     def finalize(self, claim: Claim) -> Any: ...
     def interrupt(self, claim: Claim, reason: str) -> Any: ...
     def fail_attempt(self, claim: Claim, **kwargs: Any) -> Any: ...
@@ -581,21 +583,33 @@ class WorkerRuntime:
                 raise OptimizationCancelled(self._stop.get_reason() or "INTERRUPTED")
 
             self._set_progress(phase="VALIDATING", progress=91, completedStrategies=0)
-            for index, variant in enumerate(variants, start=1):
+            reports = []
+            for variant in variants:
                 if self._stop.event.is_set():
                     raise OptimizationCancelled(
                         self._stop.get_reason() or "INTERRUPTED"
                     )
                 report = validate_variant(snapshot, variant)
                 report.raise_for_errors()
-                self.rpc.save_variant(claim, variant.to_dict())
-                self._set_progress(
-                    phase="SAVING",
-                    progress=91 + (7 * index // len(variants)),
-                    completedStrategies=index,
-                    assignmentCount=report.assignment_count,
-                    unfilledCount=report.unfilled_count,
-                )
+                reports.append(report)
+            self._set_progress(
+                phase="SAVING",
+                progress=94,
+                completedStrategies=0,
+                assignmentCount=sum(report.assignment_count for report in reports),
+                unfilledCount=sum(report.unfilled_count for report in reports),
+            )
+            self.rpc.save_variants(
+                claim,
+                tuple(variant.to_dict() for variant in variants),
+            )
+            self._set_progress(
+                phase="SAVING",
+                progress=98,
+                completedStrategies=len(variants),
+                assignmentCount=sum(report.assignment_count for report in reports),
+                unfilledCount=sum(report.unfilled_count for report in reports),
+            )
             if self._stop.event.is_set():
                 raise OptimizationCancelled(self._stop.get_reason() or "INTERRUPTED")
             self._set_progress(

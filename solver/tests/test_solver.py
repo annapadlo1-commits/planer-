@@ -3215,6 +3215,39 @@ class SolverTests(unittest.TestCase):
         self.assertFalse(rpc.failed)
         self.assertIn("RUN_VARIANTS_INCOMPLETE", "\n".join(logs.output))
 
+    def test_worker_validates_every_variant_before_persisting_the_batch(self) -> None:
+        invalid_second = replace(
+            self.variants[1],
+            strategy_id="strategy-not-present-in-snapshot",
+        )
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=_FakeEngine((self.variants[0], invalid_second)),
+        )
+
+        self.assertEqual(runtime.run_once(), 1)
+        self.assertEqual(rpc.saved, [])
+        self.assertTrue(rpc.failed)
+        self.assertFalse(rpc.finalized)
+
     def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
         rpc = _FakeRpc(self.raw)
         config = WorkerConfig(
@@ -3862,6 +3895,9 @@ class _FakeRpc:
 
     def save_variant(self, _claim, variant):
         self.saved.append(variant)
+
+    def save_variants(self, _claim, variants):
+        self.saved.extend(variants)
 
     def finalize(self, _claim):
         self.finalized = True
