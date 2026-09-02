@@ -780,7 +780,7 @@ test("builder and local renderer fail closed", () => {
   assert.doesNotMatch(bucketProvisioner, /https:\/\//u);
 });
 
-test("Storage helper rejects URL confusion before invoking curl", () => {
+test("Storage helper rejects URL confusion before invoking the Node fetch client", () => {
   const rejected = [
     "http://localhost:5000@evil.example",
     "http://127.0.0.1:5000?redirect=evil.example",
