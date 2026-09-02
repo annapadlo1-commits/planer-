@@ -24,6 +24,9 @@ LOGGER = logging.getLogger(__name__)
 
 _MAX_RANDOM_SEED = 2_147_483_647
 _FAIRNESS_RETRY_SEED_STEP = 104_729
+_CANONICAL_STRATEGY_CODES = frozenset(
+    {"BALANCED", "MIN_COST", "PREFERENCES"}
+)
 
 
 _HEARTBEAT_PROGRESS_KEYS = frozenset(
@@ -48,6 +51,28 @@ class RpcProtocol(Protocol):
     def finalize(self, claim: Claim) -> Any: ...
     def interrupt(self, claim: Claim, reason: str) -> Any: ...
     def fail_attempt(self, claim: Claim, **kwargs: Any) -> Any: ...
+
+
+def validate_run_strategy_contract(snapshot: Snapshot) -> None:
+    """Reject incomplete current strategy contracts before any solver work.
+
+    Legacy unversioned fixtures remain parseable for isolated engine tests. A
+    snapshot emitted by the versioned database contract must contain the exact
+    product set once each, so neither an older nor an alternative producer can
+    silently reduce the variants persisted for a run.
+    """
+
+    if snapshot.settings.strategy_semantics_version is None:
+        return
+    codes = tuple(strategy.code.upper() for strategy in snapshot.strategies)
+    if (
+        len(codes) != len(_CANONICAL_STRATEGY_CODES)
+        or set(codes) != _CANONICAL_STRATEGY_CODES
+    ):
+        raise SnapshotError(
+            "STRATEGY_SET_MISMATCH: current snapshot contract requires "
+            "BALANCED, MIN_COST and PREFERENCES exactly once"
+        )
 
 
 @dataclass
@@ -542,6 +567,7 @@ class WorkerRuntime:
             snapshot = Snapshot.from_dict(envelope.snapshot)
             if snapshot.run_id != claim.run_id:
                 raise SnapshotError("Claimed run and snapshot run identifiers differ")
+            validate_run_strategy_contract(snapshot)
 
             self._set_progress(
                 phase="SOLVING",

@@ -26,7 +26,7 @@ from grafik_solver.cp_sat_engine import (
     coverage_minimum_is_proven,
 )
 from grafik_solver.eligibility import EligibilityIndex
-from grafik_solver.lifecycle import WorkerRuntime
+from grafik_solver.lifecycle import WorkerRuntime, validate_run_strategy_contract
 from grafik_solver.models import Assignment, Snapshot, SnapshotError
 from grafik_solver.pay_rules import quote_assignment
 from grafik_solver.rpc import Claim, Heartbeat, RpcError, SnapshotEnvelope
@@ -3144,6 +3144,43 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
+
+    def test_current_snapshot_contract_requires_exactly_three_canonical_strategies(
+        self,
+    ) -> None:
+        current = copy.deepcopy(self.raw)
+        current["settings"]["strategySemanticsVersion"] = "B4F170_V1"
+        template = current["strategies"][0]
+        current["strategies"] = [
+            {
+                **copy.deepcopy(template),
+                "id": f"strategy-{code.lower()}",
+                "code": code,
+                "sortOrder": index,
+            }
+            for index, code in enumerate(("BALANCED", "MIN_COST", "PREFERENCES"))
+        ]
+        validate_run_strategy_contract(Snapshot.from_dict(current))
+
+        invalid_sets = [
+            current["strategies"][:2],
+            [*current["strategies"], copy.deepcopy(current["strategies"][0])],
+            [
+                *current["strategies"][:2],
+                {**copy.deepcopy(current["strategies"][2]), "code": "OTHER"},
+            ],
+        ]
+        for strategies in invalid_sets:
+            with (
+                self.subTest(codes=[item["code"] for item in strategies]),
+                self.assertRaisesRegex(
+                    SnapshotError,
+                    "STRATEGY_SET_MISMATCH.*BALANCED.*MIN_COST.*PREFERENCES",
+                ),
+            ):
+                raw = copy.deepcopy(current)
+                raw["strategies"] = strategies
+                validate_run_strategy_contract(Snapshot.from_dict(raw))
 
     def test_worker_treats_structured_finalization_failure_as_failed_run(self) -> None:
         rpc = _FakeRpc(self.raw)

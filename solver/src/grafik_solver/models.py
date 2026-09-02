@@ -1253,6 +1253,7 @@ class FairnessQualityTarget:
 @dataclass(frozen=True)
 class Settings:
     timezone: str
+    strategy_semantics_version: str | None = None
     missing_availability_means_available: bool = True
     default_minimum_rest_minutes: int = 660
     require_optimal: bool = True
@@ -1280,6 +1281,19 @@ class Settings:
             raise SnapshotError("fairnessQualityTarget must be an object")
         return cls(
             timezone=str(_pick(raw, "timezone")),
+            strategy_semantics_version=(
+                None
+                if (
+                    semantics_version := _pick(
+                        raw,
+                        "strategySemanticsVersion",
+                        "strategy_semantics_version",
+                        default=None,
+                    )
+                )
+                is None
+                else str(semantics_version)
+            ),
             missing_availability_means_available=bool(
                 _pick(
                     raw,
