@@ -206,7 +206,7 @@ function solverVersionStampLabel(variant: SolverVariant) {
     `solver ${String(solver.workerVersion ?? solver.configuredVersion ?? "—")}`,
     `gateway ${String(gateway.deploymentId ?? "—").slice(0, 12)}`,
     `DB ${String(database.schemaVersion ?? "—")}`,
-    `Matrix v${String(strategy.matrixVersion ?? "—")} / ${String(strategy.strategySemanticsVersion ?? "—")}`,
+    `konfiguracja firmy v${String(strategy.matrixVersion ?? "—")} / ${String(strategy.strategySemanticsVersion ?? "—")}`,
   ];
   return values.join(" • ");
 }
@@ -1269,7 +1269,7 @@ export function SolverV2Panel({
               {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
               {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
               {variant.stageProof.length>0&&<div><dt>Dowód etapów optymalizacji<small>Status, wynik, zamrożona granica, tolerancja, budżet, czas i użycie fallbacku są zapisane dla każdego etapu.</small></dt><dd>{solverStageProofLabel(variant)}</dd></div>}
-              {Object.keys(variant.versionStamp).length>0&&<div><dt>Stamp wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
+              {Object.keys(variant.versionStamp).length>0&&<div><dt>Identyfikatory wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
             </dl>
           </details>
           {variant.strategy.name.toLocaleLowerCase("pl-PL").includes("równ")&&Number(variant.metrics.LOAD_UTILIZATION_SPREAD_BPS??0)>1000&&<div className="solver-v2-notice warning"><AlertTriangle/><span><strong>Podział godzin nadal wymaga decyzji lidera</strong><small>Różnica wykorzystania indywidualnych wymiarów przekracza 100 punktów procentowych. Nie jest to procent różnicy godzin min–max. Otwórz „Rozkład pracy”, aby sprawdzić godziny, wymiary, dostępność i decyzje generatora dla każdej osoby.</small></span></div>}
