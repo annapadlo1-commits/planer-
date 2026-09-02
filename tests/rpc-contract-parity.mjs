@@ -48,6 +48,17 @@ test("parity classifier validates named arguments and defaults", () => {
   assert.equal(classifyInventory(frontend, [incompatible]).matrix[0].classification, "SIGNATURE_MISMATCH");
 });
 
+test("parity classifier rejects an incompatible second call shape", () => {
+  const mixedCalls = [{
+    ...frontend[0],
+    payloadShapes: [
+      { keys: ["p_required"], dynamic: false },
+      { keys: ["p_required", "p_unknown"], dynamic: false },
+    ],
+  }];
+  assert.equal(classifyInventory(mixedCalls, [definition]).matrix[0].classification, "SIGNATURE_MISMATCH");
+});
+
 test("parity classifier detects a missing authenticated grant", () => {
   assert.equal(classifyInventory(frontend, [{ ...definition, authenticatedExecute: false }]).matrix[0].classification, "AUTH_GRANT_MISMATCH");
 });
