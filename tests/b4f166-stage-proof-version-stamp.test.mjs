@@ -57,7 +57,7 @@ test("B4F-166 sends the frontend build and exposes proof in technical details", 
   assert.match(client, /stageProof:\s*Array\.isArray/u);
   assert.match(client, /versionStamp:\s*record/u);
   assert.match(panel, /Dowód etapów optymalizacji/u);
-  assert.match(panel, /Stamp wersji przebiegu/u);
+  assert.match(panel, /Identyfikatory wersji przebiegu/u);
 });
 
 test("B4F-166 keeps the 500-character boundary outside PostgreSQL regex quantifiers", () => {
