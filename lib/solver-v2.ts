@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { solverRunRecoveryCandidates } from "./solver-run-recovery.ts";
 
 export type SolverEngine = "ALPHA15" | "ORTOOLS_V2" | "SHADOW";
 export type SolverScope = "COMPANY" | "ROLE";
@@ -1778,6 +1779,44 @@ export async function getSolverRunsCatalog(
       variants: Array.isArray(source.variants) ? source.variants.map(normalizeVariant) : [],
     };
   }) : [];
+}
+
+export async function getLatestRecoverableSolverRunId(
+  client: SupabaseClient,
+  input: {
+    month: string;
+    scenarioId: string;
+    scopeType: SolverScope;
+    scopeRoleId?: string | null;
+    engine: Exclude<SolverEngine, "ALPHA15">;
+    solverVersion: string;
+  },
+): Promise<string | null> {
+  const catalog = await getSolverRunsCatalog(
+    client,
+    input.month,
+    input.scopeType,
+    input.scopeRoleId,
+  );
+  const candidates = solverRunRecoveryCandidates(catalog, {
+    scenarioId: input.scenarioId,
+    scopeType: input.scopeType,
+    scopeRoleId: input.scopeRoleId,
+  });
+
+  for (const candidate of candidates) {
+    try {
+      const status = await getSolverStatus(client, candidate.id);
+      if (
+        status.run.requestEngine === input.engine
+        && status.run.solverVersion === input.solverVersion
+      ) return candidate.id;
+    } catch (error) {
+      if (String(error instanceof Error ? error.message : error).toUpperCase().includes("RUN_NOT_FOUND")) continue;
+      throw error;
+    }
+  }
+  return null;
 }
 
 export function isActiveOrtoolsWorkspace(workspace: SolverWorkspace | null): workspace is SolverWorkspace {

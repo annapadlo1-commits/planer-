@@ -25,6 +25,7 @@ import {
   getPublicationChangePreview,
   getPublicationReadiness,
   getPublicationAuthorityStatus,
+  getLatestRecoverableSolverRunId,
   getLeaderVariantForRun,
   getLeaderVariantWorkspace,
   getLeaderHistoryStatus,
@@ -343,11 +344,12 @@ export function SolverV2Panel({
   const [publicationWarningReason,setPublicationWarningReason]=useState("");
   const [publicationReplacementReason,setPublicationReplacementReason]=useState("");
   const [refreshing,setRefreshing]=useState(false);
+  const [serverRecoveryBusy,setServerRecoveryBusy]=useState(false);
   const [lastStatusCheck,setLastStatusCheck]=useState("");
   const statusFingerprintRef=useRef("");
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
-  const recovering = Boolean(pollingRunId && !run);
+  const recovering = serverRecoveryBusy || Boolean(pollingRunId && !run);
   const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant;
   const generatedSelectedVariant = (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
     ?? variants.find(variant => variant.selected)
@@ -512,6 +514,7 @@ export function SolverV2Panel({
     let disposed = false;
     setRun(null);
     setPollingRunId(null);
+    setServerRecoveryBusy(false);
     setMemoryPromptOpen(false);
     setMemoryGameOpen(false);
     setStrategies([]);
@@ -531,6 +534,26 @@ export function SolverV2Panel({
     statusFingerprintRef.current="";
     const recovered = skipRecovery ? null : (initialRunId ?? recoverSolverRun(context));
     if (recovered) setPollingRunId(recovered);
+    else if (!skipRecovery && supabase && selectedScenario?.id && expectedSolverVersion && engine !== "ALPHA15") {
+      setServerRecoveryBusy(true);
+      void getLatestRecoverableSolverRunId(supabase, {
+        month,
+        scenarioId:selectedScenario.id,
+        scopeType,
+        scopeRoleId,
+        engine,
+        solverVersion:expectedSolverVersion,
+      }).then(serverRunId => {
+        if (disposed || !serverRunId) return;
+        rememberSolverRun(context, serverRunId);
+        setPollingRunId(serverRunId);
+        setMessage("Odzyskano z serwera generowanie zapisane przed wylogowaniem. Aktualny postęp zostanie odświeżony automatycznie.");
+      }).catch(() => {
+        if (!disposed) setPollWarning("Nie udało się sprawdzić zapisanych generowań. Otwórz kategorię ponownie albo użyj przycisku „Sprawdź status”.");
+      }).finally(() => {
+        if (!disposed) setServerRecoveryBusy(false);
+      });
+    }
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
     if (publishedScheduleId && supabase) {
       void getPublishedSchedule(supabase, publishedScheduleId)
@@ -551,7 +574,7 @@ export function SolverV2Panel({
         });
     }
     return () => { disposed = true; };
-  }, [context, engine, month, supabase, initialRunId, skipRecovery]);
+  }, [context, engine, expectedSolverVersion, month, selectedScenario?.id, scopeRoleId, scopeType, supabase, initialRunId, skipRecovery]);
 
   useEffect(()=>{
     if(!supabase||engine!=="ORTOOLS_V2"||!selectedVariant||selectedVariant.status==="PUBLISHED"||!leaderPublicationReady){
@@ -592,7 +615,7 @@ export function SolverV2Panel({
   },[supabase,leaderVariant?.id,leaderVariant?.revision,leaderVariant?.status]);
 
   async function start() {
-    if (!supabase || pollingRunId || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount === 0 || !name.trim()) return;
+    if (!supabase || serverRecoveryBusy || pollingRunId || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount === 0 || !name.trim()) return;
     setBusy(true);
     setMessage("");
     setPollWarning("");
