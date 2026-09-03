@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "c0b6c4aba5419651992dc931fcd890e5a3439a5d",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "c0a00e658f05d28244bd5a9240e2f69c8d02daceca156d2e9fe02f8bea662a84",
+  "aggregateSha256": "0b715e1057a27baca60e4280e713220d6400113683f7660789313e7e4c5fad06",
   "entries": [
     {
       "version": "0001",
@@ -1836,6 +1836,14 @@
       "canonicalBytes": 8514,
       "canonicalSha256": "ac2b24e476defd8d7878b36eb1ca992251526f6f9c460ba1a954e2d65414378e",
       "gitBlobSha1": "5c12fcbdfce8c23cd8f20fcbd1b880e8f7b4e15a"
+    },
+    {
+      "version": "20260903140000",
+      "name": "aud011_company_timezone_context",
+      "file": "20260903140000_aud011_company_timezone_context.sql",
+      "canonicalBytes": 1946,
+      "canonicalSha256": "9bc917230d908d56a91b7f5545726ecb0f0fc5c78ee14f8e5317dc6114f6d722",
+      "gitBlobSha1": "fe66c82c52479294aa105b6f0c9c3439cad89551"
     }
   ]
 }

@@ -46,6 +46,7 @@ import {
 import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,type MatrixV2Workspace} from "@/lib/matrix-v2";
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import { userSafeErrorMessage } from "@/lib/user-safe-error";
+import { initialBusinessMonth } from "@/lib/company-time";
 import {
   beginMonthWorkspaceLoad,
   canStartMonthWorkspaceLoad,
@@ -77,7 +78,6 @@ type WorkforceCalendarContext = {events:WorkforceCalendarEvent[]};
 type ShiftSwapAnnouncement = {id:string;date:string;status:string;shiftName:string;locationName:string;roleName:string;proposerName:string};
 type ShiftSwapBoardContext = {requests?:ShiftSwapAnnouncement[]};
 
-const DEFAULT_MONTH = new Date().toISOString().slice(0,7);
 const MONTH_STORAGE_KEY = "grafik-pro:selected-month";
 const EMPTY_WORKSPACE:Workspace={
   plan:null,assignments:[],shifts:[],issues:[],events:[],
@@ -134,7 +134,7 @@ function downloadCsv(name:string, rows:unknown[][]) {
 }
 
 export default function GrafikPro() {
-  const { user, access, connected, summary, refresh, signOut }=useAppAuth();
+  const { user, access, connected, summary, companyTimezone, currentCompanyMonth, refresh, signOut }=useAppAuth();
   const router=useRouter();
   const pathname=usePathname();
   const employeeShell=isEmployeePersona(access?.roles);
@@ -176,10 +176,12 @@ export default function GrafikPro() {
   const [role,setRole]=useState("ALL");
   const [day,setDay]=useState("ALL");
   const [selectedMonth,setSelectedMonth]=useState(()=>{
-    if(typeof window==="undefined")return DEFAULT_MONTH;
-    const fromUrl=new URLSearchParams(window.location.search).get("month");
-    const fromSession=window.sessionStorage.getItem(MONTH_STORAGE_KEY);
-    return [fromUrl,fromSession].find(value=>value&&/^\d{4}-\d{2}$/.test(value))??DEFAULT_MONTH;
+    if(typeof window==="undefined")return initialBusinessMonth(currentCompanyMonth);
+    return initialBusinessMonth(
+      currentCompanyMonth,
+      new URLSearchParams(window.location.search).get("month"),
+      window.sessionStorage.getItem(MONTH_STORAGE_KEY),
+    );
   });
   const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
@@ -195,12 +197,12 @@ export default function GrafikPro() {
   const swapAnnouncements=workspaceCurrent?loadedSwapAnnouncements:[];
   const workforceCalendar=workspaceCurrent?loadedWorkforceCalendar:{events:[]};
   const solverConfiguration=workspaceCurrent?loadedSolverConfiguration:null;
-  const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${DEFAULT_MONTH}`,scenario:""});
+  const [planForm,setPlanForm]=useState({name:`Plan operacyjny ${currentCompanyMonth}`,scenario:""});
   const planPanelStorageKey="grafik-pro:open-role-generator";
   const isOrtools=solverConfiguration?.engine==="ORTOOLS_V2";
   const environmentLabel=applicationEnvironmentLabel();
   const projectRef=supabaseProjectRef();
-  const activeTimezone=isOrtools?solverConfiguration?.timezone??"": "Europe/Warsaw";
+  const activeTimezone=isOrtools?solverConfiguration?.timezone??companyTimezone:companyTimezone;
   const activeCurrency=isOrtools?solverConfiguration?.currency??"": "PLN";
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
   const selectedMonthLabel=monthLabel(selectedMonth);
