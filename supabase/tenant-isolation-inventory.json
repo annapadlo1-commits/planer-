@@ -1,0 +1,2727 @@
+{
+  "format": "szafunek-tenant-isolation-inventory-v1",
+  "evidence": {
+    "status": "HISTORICAL_CAPTURE_PLUS_LOCAL_RECONSTRUCTION",
+    "sourceCaptureRecordedAtUtc": "2026-08-30T10:49:11Z",
+    "sourceProjectIdentityVerifiedAtCapture": true,
+    "frozenSourceCommit": "5565c50370cb9436a76d1e6d7013250eaad2bece",
+    "rawSchemaSha256": "7628c7732e0dbc8402cab65fd1f34d3779c7407b0988a0344bb8914891786870",
+    "coreFiles": [
+      "10_core_01.sql",
+      "10_core_02.sql",
+      "10_core_03.sql",
+      "10_core_04.sql",
+      "10_core_05.sql",
+      "10_core_06.sql",
+      "10_core_07.sql"
+    ],
+    "reconstructedCoreSha256": "189779af48be034df745c5cc7577e996639c63c44555a9f6f17f0425819bed5b",
+    "limitation": "Dokładny projekt UAT nhthrtpkfpmufmrmdyjg nie był dostępny 2026-09-03; ten plik nie jest dowodem bieżącego katalogu live."
+  },
+  "globalAllowlist": [
+    {
+      "table": "solver_feature_flags",
+      "reason": "Wersjonowana flaga silnika całego artefaktu; dotychczasowe procedury resetu jawnie zachowują tę tabelę."
+    },
+    {
+      "table": "uat_environment_controls",
+      "reason": "Kontrola bezpieczeństwa środowiska UAT, a nie dane firmy; dotychczasowe procedury resetu jawnie zachowują tę tabelę."
+    }
+  ],
+  "tables": {
+    "count": 113,
+    "rlsEnabledCount": 113,
+    "withoutTenantKey": [
+      "application_access_directory_v1",
+      "application_finance_visibility_policy_v1",
+      "assignments",
+      "attendance_events",
+      "audit_log",
+      "availability_exception_reviews_v2",
+      "business_app_integrations_v1",
+      "composite_schedules",
+      "demand_rules",
+      "employee_availability",
+      "employee_availability_history",
+      "employee_capabilities",
+      "employee_hr_profiles",
+      "employee_locations",
+      "employee_pay_rates_v2",
+      "employee_preferences",
+      "employee_requests_v1",
+      "employee_time_constraints_v2",
+      "employee_weekly_work_patterns_v2",
+      "employees",
+      "employer_cost_components_v2",
+      "event_demand_changes",
+      "integration_runs",
+      "locations",
+      "matrix_conflicts",
+      "matrix_demand",
+      "matrix_duties_v2",
+      "matrix_employee_duties_v2",
+      "matrix_employee_locations_v2",
+      "matrix_employee_profiles_v2",
+      "matrix_employee_roles",
+      "matrix_employee_roles_v2",
+      "matrix_functions",
+      "matrix_import_runs",
+      "matrix_locations",
+      "matrix_locations_v2",
+      "matrix_pay_rule_duties_v2",
+      "matrix_pay_rule_locations_v2",
+      "matrix_pay_rule_roles_v2",
+      "matrix_pay_rule_shifts_v2",
+      "matrix_pay_rules_v2",
+      "matrix_role_categories_v2",
+      "matrix_role_duties_v2",
+      "matrix_role_functions",
+      "matrix_roles",
+      "matrix_roles_v2",
+      "matrix_scenario_budgets_v2",
+      "matrix_scenario_pay_rule_overrides_v2",
+      "matrix_scenario_strategies_v2",
+      "matrix_scenarios",
+      "matrix_scenarios_v2",
+      "matrix_scope_grants_v2",
+      "matrix_shift_templates",
+      "matrix_shift_templates_v2",
+      "matrix_staffing_rules_v2",
+      "matrix_strategies_v2",
+      "matrix_strategy_objectives_v2",
+      "matrix_versions",
+      "monthly_budget_lines_v2",
+      "monthly_budget_revisions_v2",
+      "monthly_budgets",
+      "notifications",
+      "operational_assignment_overrides_v2",
+      "operational_assignment_replacements_v2",
+      "operational_events",
+      "operational_program_audience_rules_v1",
+      "operational_program_audit_v1",
+      "operational_program_checklist_items_v1",
+      "operational_program_events_v1",
+      "operational_program_inventory_links_v1",
+      "operational_program_participants_v1",
+      "optimization_candidates",
+      "optimization_run_strategies_v2",
+      "optimization_runs",
+      "optimization_runs_v2",
+      "optimizer_profiles",
+      "plan_assignment_duties_v2",
+      "plan_assignments_v2",
+      "plan_issues",
+      "plan_issues_v2",
+      "plan_shifts_v2",
+      "plan_variants_v2",
+      "plans",
+      "published_role_schedules_v2",
+      "published_schedule_variants_v2",
+      "published_schedules_v2",
+      "published_standby_assignments_v2",
+      "recovery_actions_v2",
+      "recovery_ad_hoc_pool_v2",
+      "recovery_incident_rate_revisions_v2",
+      "recovery_incidents_v2",
+      "recovery_month_revisions_v2",
+      "recovery_offer_responses_v2",
+      "recovery_overrides_v2",
+      "role_plan_assignments",
+      "role_plan_sections",
+      "roles",
+      "shift_definitions",
+      "shift_swap_history_v2",
+      "shift_swap_requests_v2",
+      "shifts",
+      "solver_feature_flags",
+      "tasks",
+      "team_conversation_members_v1",
+      "team_conversations_v1",
+      "team_messages_v1",
+      "time_records",
+      "uat_environment_controls",
+      "user_permissions",
+      "user_profiles_v1",
+      "workforce_calendar_events_v2",
+      "workforce_event_demand_v2",
+      "workforce_hot_day_limits_v2"
+    ],
+    "tenantOwned": [
+      "application_access_directory_v1",
+      "application_finance_visibility_policy_v1",
+      "assignments",
+      "attendance_events",
+      "audit_log",
+      "availability_exception_reviews_v2",
+      "business_app_integrations_v1",
+      "composite_schedules",
+      "demand_rules",
+      "employee_availability",
+      "employee_availability_history",
+      "employee_capabilities",
+      "employee_hr_profiles",
+      "employee_locations",
+      "employee_pay_rates_v2",
+      "employee_preferences",
+      "employee_requests_v1",
+      "employee_time_constraints_v2",
+      "employee_weekly_work_patterns_v2",
+      "employees",
+      "employer_cost_components_v2",
+      "event_demand_changes",
+      "integration_runs",
+      "locations",
+      "matrix_conflicts",
+      "matrix_demand",
+      "matrix_duties_v2",
+      "matrix_employee_duties_v2",
+      "matrix_employee_locations_v2",
+      "matrix_employee_profiles_v2",
+      "matrix_employee_roles",
+      "matrix_employee_roles_v2",
+      "matrix_functions",
+      "matrix_import_runs",
+      "matrix_locations",
+      "matrix_locations_v2",
+      "matrix_pay_rule_duties_v2",
+      "matrix_pay_rule_locations_v2",
+      "matrix_pay_rule_roles_v2",
+      "matrix_pay_rule_shifts_v2",
+      "matrix_pay_rules_v2",
+      "matrix_role_categories_v2",
+      "matrix_role_duties_v2",
+      "matrix_role_functions",
+      "matrix_roles",
+      "matrix_roles_v2",
+      "matrix_scenario_budgets_v2",
+      "matrix_scenario_pay_rule_overrides_v2",
+      "matrix_scenario_strategies_v2",
+      "matrix_scenarios",
+      "matrix_scenarios_v2",
+      "matrix_scope_grants_v2",
+      "matrix_shift_templates",
+      "matrix_shift_templates_v2",
+      "matrix_staffing_rules_v2",
+      "matrix_strategies_v2",
+      "matrix_strategy_objectives_v2",
+      "matrix_versions",
+      "monthly_budget_lines_v2",
+      "monthly_budget_revisions_v2",
+      "monthly_budgets",
+      "notifications",
+      "operational_assignment_overrides_v2",
+      "operational_assignment_replacements_v2",
+      "operational_events",
+      "operational_program_audience_rules_v1",
+      "operational_program_audit_v1",
+      "operational_program_checklist_items_v1",
+      "operational_program_events_v1",
+      "operational_program_inventory_links_v1",
+      "operational_program_participants_v1",
+      "optimization_candidates",
+      "optimization_run_strategies_v2",
+      "optimization_runs",
+      "optimization_runs_v2",
+      "optimizer_profiles",
+      "plan_assignment_duties_v2",
+      "plan_assignments_v2",
+      "plan_issues",
+      "plan_issues_v2",
+      "plan_shifts_v2",
+      "plan_variants_v2",
+      "plans",
+      "published_role_schedules_v2",
+      "published_schedule_variants_v2",
+      "published_schedules_v2",
+      "published_standby_assignments_v2",
+      "recovery_actions_v2",
+      "recovery_ad_hoc_pool_v2",
+      "recovery_incident_rate_revisions_v2",
+      "recovery_incidents_v2",
+      "recovery_month_revisions_v2",
+      "recovery_offer_responses_v2",
+      "recovery_overrides_v2",
+      "role_plan_assignments",
+      "role_plan_sections",
+      "roles",
+      "shift_definitions",
+      "shift_swap_history_v2",
+      "shift_swap_requests_v2",
+      "shifts",
+      "tasks",
+      "team_conversation_members_v1",
+      "team_conversations_v1",
+      "team_messages_v1",
+      "time_records",
+      "user_permissions",
+      "user_profiles_v1",
+      "workforce_calendar_events_v2",
+      "workforce_event_demand_v2",
+      "workforce_hot_day_limits_v2"
+    ],
+    "global": [
+      "solver_feature_flags",
+      "uat_environment_controls"
+    ],
+    "foreignKeys": [
+      {
+        "table": "application_access_directory_v1",
+        "constraint": "assignments_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "assignments",
+        "constraint": "assignments_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "shifts",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "attendance_events",
+        "constraint": "attendance_events_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "attendance_events",
+        "constraint": "attendance_events_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "attendance_events",
+        "constraint": "attendance_events_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "shifts",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "audit_log",
+        "constraint": "availability_exception_reviews_v2_constraint_id_fkey",
+        "columns": "\"constraint_id\"",
+        "referencedTable": "employee_time_constraints_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "availability_exception_reviews_v2",
+        "constraint": "availability_exception_reviews_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "availability_exception_reviews_v2",
+        "constraint": "availability_exception_reviews_v2_hot_day_event_id_fkey",
+        "columns": "\"hot_day_event_id\"",
+        "referencedTable": "workforce_calendar_events_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "availability_exception_reviews_v2",
+        "constraint": "availability_exception_reviews_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "availability_exception_reviews_v2",
+        "constraint": "composite_schedules_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "demand_rules",
+        "constraint": "demand_rules_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "demand_rules",
+        "constraint": "demand_rules_shift_definition_id_fkey",
+        "columns": "\"shift_definition_id\"",
+        "referencedTable": "shift_definitions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_availability",
+        "constraint": "employee_availability_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_availability_history",
+        "constraint": "employee_availability_history_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_availability",
+        "constraint": "employee_capabilities_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_hr_profiles",
+        "constraint": "employee_hr_profiles_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_hr_profiles",
+        "constraint": "employee_locations_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_locations",
+        "constraint": "employee_locations_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_pay_rates_v2",
+        "constraint": "employee_pay_rates_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_pay_rates_v2",
+        "constraint": "employee_preferences_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_requests_v1",
+        "constraint": "employee_requests_v1_constraint_id_fkey",
+        "columns": "\"constraint_id\"",
+        "referencedTable": "employee_time_constraints_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_requests_v1",
+        "constraint": "employee_requests_v1_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_requests_v1",
+        "constraint": "employee_requests_v1_legacy_review_id_fkey",
+        "columns": "\"legacy_review_id\"",
+        "referencedTable": "availability_exception_reviews_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_requests_v1",
+        "constraint": "employee_time_constraints_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_time_constraints_v2",
+        "constraint": "employee_time_constraints_v2_supersedes_id_fkey",
+        "columns": "\"supersedes_id\"",
+        "referencedTable": "employee_time_constraints_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_weekly_work_patterns_v2",
+        "constraint": "employee_weekly_work_patterns_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_weekly_work_patterns_v2",
+        "constraint": "employee_weekly_work_patterns_v2_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_weekly_work_patterns_v2",
+        "constraint": "employee_weekly_work_patterns_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employee_weekly_work_patterns_v2",
+        "constraint": "employee_weekly_work_patterns_v2_supersedes_id_fkey",
+        "columns": "\"supersedes_id\"",
+        "referencedTable": "employee_weekly_work_patterns_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "employees",
+        "constraint": "employer_cost_components_v2_supersedes_id_fkey",
+        "columns": "\"supersedes_id\"",
+        "referencedTable": "employer_cost_components_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "event_demand_changes",
+        "constraint": "event_demand_changes_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_events",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "integration_runs",
+        "constraint": "matrix_conflicts_composite_schedule_id_fkey",
+        "columns": "\"composite_schedule_id\"",
+        "referencedTable": "composite_schedules",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_conflicts",
+        "constraint": "matrix_conflicts_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_conflicts",
+        "constraint": "matrix_conflicts_role_plan_section_id_fkey",
+        "columns": "\"role_plan_section_id\"",
+        "referencedTable": "role_plan_sections",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_demand",
+        "constraint": "matrix_demand_function_id_fkey",
+        "columns": "\"function_id\"",
+        "referencedTable": "matrix_functions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_demand",
+        "constraint": "matrix_demand_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_demand",
+        "constraint": "matrix_demand_shift_template_id_fkey",
+        "columns": "\"shift_template_id\"",
+        "referencedTable": "matrix_shift_templates",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_duties_v2",
+        "constraint": "matrix_duties_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_employee_duties_v2",
+        "constraint": "matrix_employee_duties_v2_profile_fk",
+        "columns": "\"matrix_version_id\", \"employee_id\"",
+        "referencedTable": "matrix_employee_profiles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"employee_id\""
+      },
+      {
+        "table": "matrix_employee_locations_v2",
+        "constraint": "matrix_employee_locations_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_locations_v2",
+        "constraint": "matrix_employee_locations_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_locations_v2",
+        "constraint": "matrix_employee_locations_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_employee_locations_v2",
+        "constraint": "matrix_employee_locations_v2_profile_fk",
+        "columns": "\"matrix_version_id\", \"employee_id\"",
+        "referencedTable": "matrix_employee_profiles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"employee_id\""
+      },
+      {
+        "table": "matrix_employee_profiles_v2",
+        "constraint": "matrix_employee_profiles_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_profiles_v2",
+        "constraint": "matrix_employee_profiles_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_profiles_v2",
+        "constraint": "matrix_employee_roles_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_roles",
+        "constraint": "matrix_employee_roles_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_roles",
+        "constraint": "matrix_employee_roles_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_roles_v2",
+        "constraint": "matrix_employee_roles_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_roles_v2",
+        "constraint": "matrix_employee_roles_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_employee_roles_v2",
+        "constraint": "matrix_employee_roles_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_employee_roles_v2",
+        "constraint": "matrix_employee_roles_v2_profile_fk",
+        "columns": "\"matrix_version_id\", \"employee_id\"",
+        "referencedTable": "matrix_employee_profiles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"employee_id\""
+      },
+      {
+        "table": "matrix_employee_roles_v2",
+        "constraint": "matrix_functions_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_import_runs",
+        "constraint": "matrix_import_runs_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_locations",
+        "constraint": "matrix_locations_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_locations_v2",
+        "constraint": "matrix_locations_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_pay_rule_duties_v2",
+        "constraint": "matrix_pay_rule_duties_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_duties_v2",
+        "constraint": "matrix_pay_rule_duties_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_pay_rule_duties_v2",
+        "constraint": "matrix_pay_rule_duties_v2_matrix_version_id_pay_rule_id_fkey",
+        "columns": "\"matrix_version_id\", \"pay_rule_id\"",
+        "referencedTable": "matrix_pay_rules_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_locations_v2",
+        "constraint": "matrix_pay_rule_locations_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_pay_rule_locations_v2",
+        "constraint": "matrix_pay_rule_locations_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_locations_v2",
+        "constraint": "matrix_pay_rule_locations_v2_matrix_version_id_pay_rule_id_fkey",
+        "columns": "\"matrix_version_id\", \"pay_rule_id\"",
+        "referencedTable": "matrix_pay_rules_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_roles_v2",
+        "constraint": "matrix_pay_rule_roles_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_pay_rule_roles_v2",
+        "constraint": "matrix_pay_rule_roles_v2_matrix_version_id_pay_rule_id_fkey",
+        "columns": "\"matrix_version_id\", \"pay_rule_id\"",
+        "referencedTable": "matrix_pay_rules_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_roles_v2",
+        "constraint": "matrix_pay_rule_roles_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_shifts_v2",
+        "constraint": "matrix_pay_rule_shifts_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_pay_rule_shifts_v2",
+        "constraint": "matrix_pay_rule_shifts_v2_matrix_version_id_pay_rule_id_fkey",
+        "columns": "\"matrix_version_id\", \"pay_rule_id\"",
+        "referencedTable": "matrix_pay_rules_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rule_shifts_v2",
+        "constraint": "matrix_pay_rule_shifts_v2_matrix_version_id_shift_template_fkey",
+        "columns": "\"matrix_version_id\", \"shift_template_id\"",
+        "referencedTable": "matrix_shift_templates_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_pay_rules_v2",
+        "constraint": "matrix_pay_rules_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_role_categories_v2",
+        "constraint": "matrix_role_categories_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_role_duties_v2",
+        "constraint": "matrix_role_duties_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_role_duties_v2",
+        "constraint": "matrix_role_duties_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_role_duties_v2",
+        "constraint": "matrix_role_duties_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_role_functions",
+        "constraint": "matrix_role_functions_function_id_fkey",
+        "columns": "\"function_id\"",
+        "referencedTable": "matrix_functions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_role_functions",
+        "constraint": "matrix_role_functions_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_roles",
+        "constraint": "matrix_roles_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_roles_v2",
+        "constraint": "matrix_roles_v2_category_fk",
+        "columns": "\"matrix_version_id\", \"category_id\"",
+        "referencedTable": "matrix_role_categories_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_roles_v2",
+        "constraint": "matrix_roles_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenario_budgets_v2",
+        "constraint": "matrix_scenario_budgets_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_budgets_v2",
+        "constraint": "matrix_scenario_budgets_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenario_budgets_v2",
+        "constraint": "matrix_scenario_budgets_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_budgets_v2",
+        "constraint": "matrix_scenario_budgets_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_budgets_v2",
+        "constraint": "matrix_scenario_budgets_v2_matrix_version_id_scenario_id_fkey",
+        "columns": "\"matrix_version_id\", \"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_pay_rule_overrides_v2",
+        "constraint": "matrix_scenario_pay_rule_over_matrix_version_id_pay_rule_i_fkey",
+        "columns": "\"matrix_version_id\", \"pay_rule_id\"",
+        "referencedTable": "matrix_pay_rules_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_pay_rule_overrides_v2",
+        "constraint": "matrix_scenario_pay_rule_over_matrix_version_id_scenario_i_fkey",
+        "columns": "\"matrix_version_id\", \"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_pay_rule_overrides_v2",
+        "constraint": "matrix_scenario_pay_rule_overrides_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenario_strategies_v2",
+        "constraint": "matrix_scenario_strategies_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenario_strategies_v2",
+        "constraint": "matrix_scenario_strategies_v2_matrix_version_id_scenario_i_fkey",
+        "columns": "\"matrix_version_id\", \"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenario_strategies_v2",
+        "constraint": "matrix_scenario_strategies_v2_matrix_version_id_strategy_i_fkey",
+        "columns": "\"matrix_version_id\", \"strategy_id\"",
+        "referencedTable": "matrix_strategies_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scenarios",
+        "constraint": "matrix_scenarios_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenarios_v2",
+        "constraint": "matrix_scenarios_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_scenarios_v2",
+        "constraint": "matrix_scenarios_v2_matrix_version_id_parent_scenario_id_fkey",
+        "columns": "\"matrix_version_id\", \"parent_scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_scope_grants_v2",
+        "constraint": "matrix_shift_templates_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "matrix_locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_shift_templates",
+        "constraint": "matrix_shift_templates_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_shift_templates_v2",
+        "constraint": "matrix_shift_templates_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_shift_templates_v2",
+        "constraint": "matrix_shift_templates_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_staffing_rules_v2",
+        "constraint": "matrix_staffing_rules_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_staffing_rules_v2",
+        "constraint": "matrix_staffing_rules_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_staffing_rules_v2",
+        "constraint": "matrix_staffing_rules_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_staffing_rules_v2",
+        "constraint": "matrix_staffing_rules_v2_matrix_version_id_scenario_id_fkey",
+        "columns": "\"matrix_version_id\", \"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_staffing_rules_v2",
+        "constraint": "matrix_staffing_rules_v2_matrix_version_id_shift_template__fkey",
+        "columns": "\"matrix_version_id\", \"shift_template_id\"",
+        "referencedTable": "matrix_shift_templates_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_strategies_v2",
+        "constraint": "matrix_strategies_v2_legacy_optimizer_profile_id_fkey",
+        "columns": "\"legacy_optimizer_profile_id\"",
+        "referencedTable": "optimizer_profiles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_strategies_v2",
+        "constraint": "matrix_strategies_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_strategy_objectives_v2",
+        "constraint": "matrix_strategy_objectives_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_strategy_objectives_v2",
+        "constraint": "matrix_strategy_objectives_v2_matrix_version_id_strategy_i_fkey",
+        "columns": "\"matrix_version_id\", \"strategy_id\"",
+        "referencedTable": "matrix_strategies_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "matrix_versions",
+        "constraint": "matrix_versions_base_version_id_fkey",
+        "columns": "\"base_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "matrix_versions",
+        "constraint": "monthly_budget_lines_v2_revision_id_fkey",
+        "columns": "\"revision_id\"",
+        "referencedTable": "monthly_budget_revisions_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "monthly_budget_revisions_v2",
+        "constraint": "notifications_task_id_fkey",
+        "columns": "\"task_id\"",
+        "referencedTable": "tasks",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_overrides_v2",
+        "constraint": "operational_assignment_overrides_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_overrides_v2",
+        "constraint": "operational_assignment_overrides_v2_issue_id_fkey",
+        "columns": "\"issue_id\"",
+        "referencedTable": "plan_issues_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_overrides_v2",
+        "constraint": "operational_assignment_overrides_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_overrides_v2",
+        "constraint": "operational_assignment_overrides_v2_schedule_id_fkey",
+        "columns": "\"schedule_id\"",
+        "referencedTable": "published_schedules_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_overrides_v2",
+        "constraint": "operational_assignment_overrides_v2_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "plan_shifts_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_replacements_v2",
+        "constraint": "operational_assignment_replacement_replacement_employee_id_fkey",
+        "columns": "\"replacement_employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_replacements_v2",
+        "constraint": "operational_assignment_replacements__standby_assignment_id_fkey",
+        "columns": "\"standby_assignment_id\"",
+        "referencedTable": "published_standby_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_replacements_v2",
+        "constraint": "operational_assignment_replacements_original_assignment_id_fkey",
+        "columns": "\"original_assignment_id\"",
+        "referencedTable": "plan_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_assignment_replacements_v2",
+        "constraint": "operational_events_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_events",
+        "constraint": "operational_program_audience_rules_v1_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_audit_v1",
+        "constraint": "operational_program_audit_v1_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_checklist_items_v1",
+        "constraint": "operational_program_checklist_items_v1_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_events_v1",
+        "constraint": "operational_program_events_v1_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_events_v1",
+        "constraint": "operational_program_events_v1_parent_event_id_fkey",
+        "columns": "\"parent_event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_events_v1",
+        "constraint": "operational_program_inventory_links_v1_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_inventory_links_v1",
+        "constraint": "operational_program_inventory_links_v1_integration_id_fkey",
+        "columns": "\"integration_id\"",
+        "referencedTable": "business_app_integrations_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_participants_v1",
+        "constraint": "operational_program_participants_v1_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "operational_program_participants_v1",
+        "constraint": "operational_program_participants_v1_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "operational_program_events_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_candidates",
+        "constraint": "optimization_candidates_plan_id_fkey",
+        "columns": "\"plan_id\"",
+        "referencedTable": "plans",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_candidates",
+        "constraint": "optimization_candidates_run_id_fkey",
+        "columns": "\"run_id\"",
+        "referencedTable": "optimization_runs",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_run_strategies_v2",
+        "constraint": "optimization_run_strategies_v2_run_id_fkey",
+        "columns": "\"run_id\"",
+        "referencedTable": "optimization_runs_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_run_strategies_v2",
+        "constraint": "optimization_run_strategies_v2_strategy_id_fkey",
+        "columns": "\"strategy_id\"",
+        "referencedTable": "matrix_strategies_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_runs",
+        "constraint": "optimization_runs_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_runs",
+        "constraint": "optimization_runs_profile_id_fkey",
+        "columns": "\"profile_id\"",
+        "referencedTable": "optimizer_profiles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_runs",
+        "constraint": "optimization_runs_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_runs_v2",
+        "constraint": "optimization_runs_v2_scenario_id_fkey",
+        "columns": "\"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimization_runs_v2",
+        "constraint": "optimization_runs_v2_scope_role_id_fkey",
+        "columns": "\"scope_role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "optimizer_profiles",
+        "constraint": "optimizer_profiles_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignment_duties_v2",
+        "constraint": "plan_assignment_duties_v2_assignment_id_fkey",
+        "columns": "\"assignment_id\"",
+        "referencedTable": "plan_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignment_duties_v2",
+        "constraint": "plan_assignment_duties_v2_duty_id_fkey",
+        "columns": "\"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignments_v2",
+        "constraint": "plan_assignments_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignments_v2",
+        "constraint": "plan_assignments_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignments_v2",
+        "constraint": "plan_assignments_v2_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "plan_shifts_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_assignments_v2",
+        "constraint": "plan_assignments_v2_variant_id_fkey",
+        "columns": "\"variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues",
+        "constraint": "plan_issues_plan_id_fkey",
+        "columns": "\"plan_id\"",
+        "referencedTable": "plans",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues",
+        "constraint": "plan_issues_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "shifts",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues_v2",
+        "constraint": "plan_issues_v2_duty_id_fkey",
+        "columns": "\"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues_v2",
+        "constraint": "plan_issues_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues_v2",
+        "constraint": "plan_issues_v2_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "plan_shifts_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_issues_v2",
+        "constraint": "plan_issues_v2_variant_id_fkey",
+        "columns": "\"variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_shifts_v2",
+        "constraint": "plan_shifts_v2_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_shifts_v2",
+        "constraint": "plan_shifts_v2_shift_template_id_fkey",
+        "columns": "\"shift_template_id\"",
+        "referencedTable": "matrix_shift_templates_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_shifts_v2",
+        "constraint": "plan_shifts_v2_variant_id_fkey",
+        "columns": "\"variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_variants_v2",
+        "constraint": "plan_variants_v2_equivalent_to_variant_id_fkey",
+        "columns": "\"equivalent_to_variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_variants_v2",
+        "constraint": "plan_variants_v2_run_id_fkey",
+        "columns": "\"run_id\"",
+        "referencedTable": "optimization_runs_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_variants_v2",
+        "constraint": "plan_variants_v2_run_strategy_id_fkey",
+        "columns": "\"run_strategy_id\"",
+        "referencedTable": "optimization_run_strategies_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_variants_v2",
+        "constraint": "plan_variants_v2_source_variant_id_fkey",
+        "columns": "\"source_variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plan_variants_v2",
+        "constraint": "plan_variants_v2_strategy_id_fkey",
+        "columns": "\"strategy_id\"",
+        "referencedTable": "matrix_strategies_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "plans",
+        "constraint": "plans_parent_plan_id_fkey",
+        "columns": "\"parent_plan_id\"",
+        "referencedTable": "plans",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_role_schedules_v2",
+        "constraint": "published_role_schedules_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_role_schedules_v2",
+        "constraint": "published_role_schedules_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_role_schedules_v2",
+        "constraint": "published_role_schedules_v2_scenario_id_fkey",
+        "columns": "\"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_role_schedules_v2",
+        "constraint": "published_role_schedules_v2_variant_id_fkey",
+        "columns": "\"variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_schedule_variants_v2",
+        "constraint": "published_schedule_variants_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_schedule_variants_v2",
+        "constraint": "published_schedule_variants_v2_schedule_id_fkey",
+        "columns": "\"schedule_id\"",
+        "referencedTable": "published_schedules_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_schedule_variants_v2",
+        "constraint": "published_schedule_variants_v2_variant_id_fkey",
+        "columns": "\"variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_schedules_v2",
+        "constraint": "published_schedules_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_schedules_v2",
+        "constraint": "published_schedules_v2_scenario_id_fkey",
+        "columns": "\"scenario_id\"",
+        "referencedTable": "matrix_scenarios_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_activated_assignment_id_fkey",
+        "columns": "\"activated_assignment_id\"",
+        "referencedTable": "plan_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_activated_shift_id_fkey",
+        "columns": "\"activated_shift_id\"",
+        "referencedTable": "plan_shifts_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_source_role_schedule_id_fkey",
+        "columns": "\"source_role_schedule_id\"",
+        "referencedTable": "published_role_schedules_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_source_schedule_id_fkey",
+        "columns": "\"source_schedule_id\"",
+        "referencedTable": "published_schedules_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "published_standby_assignments_v2",
+        "constraint": "published_standby_assignments_v2_source_variant_id_fkey",
+        "columns": "\"source_variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_draft_variant_id_fkey",
+        "columns": "\"draft_variant_id\"",
+        "referencedTable": "plan_variants_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_duty_id_fkey",
+        "columns": "\"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_incident_id_fkey",
+        "columns": "\"incident_id\"",
+        "referencedTable": "recovery_incidents_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_selected_employee_id_fkey",
+        "columns": "\"selected_employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_shift_id_fkey",
+        "columns": "\"shift_id\"",
+        "referencedTable": "plan_shifts_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_source_assignment_id_fkey",
+        "columns": "\"source_assignment_id\"",
+        "referencedTable": "plan_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_actions_v2",
+        "constraint": "recovery_actions_v2_source_issue_id_fkey",
+        "columns": "\"source_issue_id\"",
+        "referencedTable": "plan_issues_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_ad_hoc_pool_v2",
+        "constraint": "recovery_ad_hoc_pool_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_ad_hoc_pool_v2",
+        "constraint": "recovery_ad_hoc_pool_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incident_rate_revisions_v2",
+        "constraint": "recovery_incident_rate_revisions_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incident_rate_revisions_v2",
+        "constraint": "recovery_incident_rate_revisions_v2_incident_id_fkey",
+        "columns": "\"incident_id\"",
+        "referencedTable": "recovery_incidents_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incident_rate_revisions_v2",
+        "constraint": "recovery_incident_rate_revisions_v2_supersedes_id_fkey",
+        "columns": "\"supersedes_id\"",
+        "referencedTable": "recovery_incident_rate_revisions_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incidents_v2",
+        "constraint": "recovery_incidents_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incidents_v2",
+        "constraint": "recovery_incidents_v2_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incidents_v2",
+        "constraint": "recovery_incidents_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incidents_v2",
+        "constraint": "recovery_incidents_v2_schedule_id_fkey",
+        "columns": "\"schedule_id\"",
+        "referencedTable": "published_schedules_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_incidents_v2",
+        "constraint": "recovery_offer_responses_v2_action_id_fkey",
+        "columns": "\"action_id\"",
+        "referencedTable": "recovery_actions_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_offer_responses_v2",
+        "constraint": "recovery_offer_responses_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_overrides_v2",
+        "constraint": "recovery_overrides_v2_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_overrides_v2",
+        "constraint": "recovery_overrides_v2_incident_id_fkey",
+        "columns": "\"incident_id\"",
+        "referencedTable": "recovery_incidents_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "recovery_overrides_v2",
+        "constraint": "recovery_overrides_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "role_plan_assignments",
+        "constraint": "role_plan_assignments_assignment_id_fkey",
+        "columns": "\"assignment_id\"",
+        "referencedTable": "assignments",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "role_plan_assignments",
+        "constraint": "role_plan_assignments_role_plan_section_id_fkey",
+        "columns": "\"role_plan_section_id\"",
+        "referencedTable": "role_plan_sections",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "role_plan_sections",
+        "constraint": "role_plan_sections_legacy_plan_id_fkey",
+        "columns": "\"legacy_plan_id\"",
+        "referencedTable": "plans",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "role_plan_sections",
+        "constraint": "role_plan_sections_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "role_plan_sections",
+        "constraint": "role_plan_sections_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_definitions",
+        "constraint": "shift_definitions_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_history_v2",
+        "constraint": "shift_swap_history_v2_request_id_fkey",
+        "columns": "\"request_id\"",
+        "referencedTable": "shift_swap_requests_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_accepted_by_employee_id_fkey",
+        "columns": "\"accepted_by_employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_original_assignment_id_fkey",
+        "columns": "\"original_assignment_id\"",
+        "referencedTable": "plan_assignments_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_proposer_employee_id_fkey",
+        "columns": "\"proposer_employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_replacement_id_fkey",
+        "columns": "\"replacement_id\"",
+        "referencedTable": "operational_assignment_replacements_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_role_id_fkey",
+        "columns": "\"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shift_swap_requests_v2",
+        "constraint": "shift_swap_requests_v2_target_employee_id_fkey",
+        "columns": "\"target_employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shifts",
+        "constraint": "shifts_location_id_fkey",
+        "columns": "\"location_id\"",
+        "referencedTable": "locations",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shifts",
+        "constraint": "shifts_plan_id_fkey",
+        "columns": "\"plan_id\"",
+        "referencedTable": "plans",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "shifts",
+        "constraint": "shifts_source_event_id_fkey",
+        "columns": "\"source_event_id\"",
+        "referencedTable": "operational_events",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "solver_feature_flags",
+        "constraint": "tasks_source_event_id_fkey",
+        "columns": "\"source_event_id\"",
+        "referencedTable": "operational_events",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "team_conversation_members_v1",
+        "constraint": "team_conversation_members_v1_conversation_id_fkey",
+        "columns": "\"conversation_id\"",
+        "referencedTable": "team_conversations_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "team_conversation_members_v1",
+        "constraint": "team_conversation_members_v1_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "team_conversations_v1",
+        "constraint": "team_messages_v1_conversation_id_fkey",
+        "columns": "\"conversation_id\"",
+        "referencedTable": "team_conversations_v1",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "team_messages_v1",
+        "constraint": "time_records_employee_id_fkey",
+        "columns": "\"employee_id\"",
+        "referencedTable": "employees",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "user_permissions",
+        "constraint": "workforce_calendar_events_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "workforce_calendar_events_v2",
+        "constraint": "workforce_calendar_events_v2_matrix_version_id_location_id_fkey",
+        "columns": "\"matrix_version_id\", \"location_id\"",
+        "referencedTable": "matrix_locations_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "workforce_event_demand_v2",
+        "constraint": "workforce_event_demand_v2_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "workforce_calendar_events_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "workforce_event_demand_v2",
+        "constraint": "workforce_event_demand_v2_matrix_version_id_duty_id_fkey",
+        "columns": "\"matrix_version_id\", \"duty_id\"",
+        "referencedTable": "matrix_duties_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "workforce_event_demand_v2",
+        "constraint": "workforce_event_demand_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "workforce_event_demand_v2",
+        "constraint": "workforce_event_demand_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "workforce_event_demand_v2",
+        "constraint": "workforce_event_demand_v2_matrix_version_id_shift_template_fkey",
+        "columns": "\"matrix_version_id\", \"shift_template_id\"",
+        "referencedTable": "matrix_shift_templates_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      },
+      {
+        "table": "workforce_hot_day_limits_v2",
+        "constraint": "workforce_hot_day_limits_v2_event_id_fkey",
+        "columns": "\"event_id\"",
+        "referencedTable": "workforce_calendar_events_v2",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "workforce_hot_day_limits_v2",
+        "constraint": "workforce_hot_day_limits_v2_matrix_version_id_fkey",
+        "columns": "\"matrix_version_id\"",
+        "referencedTable": "matrix_versions",
+        "referencedColumns": "\"id\""
+      },
+      {
+        "table": "workforce_hot_day_limits_v2",
+        "constraint": "workforce_hot_day_limits_v2_matrix_version_id_role_id_fkey",
+        "columns": "\"matrix_version_id\", \"role_id\"",
+        "referencedTable": "matrix_roles_v2",
+        "referencedColumns": "\"matrix_version_id\", \"id\""
+      }
+    ]
+  },
+  "views": {
+    "count": 0,
+    "requiresTenantReview": []
+  },
+  "routines": {
+    "count": 544,
+    "requiresTenantReview": [
+      "authorization_private.calendar_event_allowed_uat_v1(\"p_event_id\" \"uuid\")",
+      "authorization_private.calendar_payload_allowed_uat_v1(\"p_location_id\" \"uuid\", \"p_demands\" \"jsonb\", \"p_hot_limits\" \"jsonb\")",
+      "authorization_private.enter_resource_scope_uat_v1()",
+      "authorization_private.matrix_v2_visible_employee_ids_uat_v1()",
+      "public.application_access_bulk_apply_uat_v1(\"p_rows\" \"jsonb\")",
+      "public.application_access_directory_uat_v1()",
+      "public.application_access_materialize_uat_v1(\"p_email\" \"text\", \"p_auth_user_id\" \"uuid\")",
+      "public.application_access_save_uat_v1(\"p_email\" \"text\", \"p_app_role\" \"text\", \"p_role_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_active\" boolean DEFAULT true)",
+      "public.application_finance_visibility_current_uat_v1()",
+      "public.application_finance_visibility_policy_uat_v1()",
+      "public.application_finance_visibility_save_uat_v1(\"p_app_role\" \"text\", \"p_visibility\" \"text\")",
+      "public.assemble_role_plans(\"p_month\" \"date\", \"p_name\" \"text\")",
+      "public.attendance_clock(\"p_action\" \"text\", \"p_location\" \"text\", \"p_latitude\" numeric DEFAULT NULL::numeric, \"p_longitude\" numeric DEFAULT NULL::numeric)",
+      "public.availability_exception_review_before_phase1_uat_v1(\"p_review_id\" \"uuid\", \"p_decision\" \"text\", \"p_reason\" \"text\")",
+      "public.availability_exception_review_uat_v2(\"p_review_id\" \"uuid\", \"p_decision\" \"text\", \"p_reason\" \"text\")",
+      "public.budget_update(\"p_month\" \"date\", \"p_amount\" numeric, \"p_warning_percent\" integer, \"p_hard_limit\" boolean)",
+      "public.can_manage_plans()",
+      "public.can_view_assignment(\"p_employee_id\" \"uuid\", \"p_role\" \"public\".\"employee_role\", \"p_location\" \"public\".\"location_code\")",
+      "public.claim_demo_owner()",
+      "public.complete_workspace(\"p_month\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.complete_workspace_before_b4f101_uat_v1(\"p_month\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.create_operational_event(\"p_location\" \"public\".\"location_code\", \"p_event_type\" \"text\", \"p_title\" \"text\", \"p_description\" \"text\", \"p_starts_at\" timestamp with time zone, \"p_ends_at\" timestamp with time zone, \"p_expected_guests\" integer DEFAULT NULL::integer, \"p_status\" \"public\".\"event_status\" DEFAULT 'DRAFT'::\"public\".\"event_status\", \"p_demand\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.create_role_plan_section(\"p_month\" \"date\", \"p_role_id\" \"uuid\", \"p_name\" \"text\", \"p_scenario\" \"text\" DEFAULT 'BASE'::\"text\", \"p_mode\" \"text\" DEFAULT 'BALANCED'::\"text\", \"p_staffing\" \"text\" DEFAULT 'OPTIMAL'::\"text\")",
+      "public.current_user_access()",
+      "public.current_user_access_v2()",
+      "public.emergency_assign(\"p_shift_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_role\" \"public\".\"employee_role\", \"p_notify\" boolean DEFAULT false)",
+      "public.employee_archive(\"p_employee_id\" \"uuid\", \"p_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_availability_bulk_save_v2(\"p_from\" \"date\", \"p_to\" \"date\", \"p_kind\" \"text\", \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone, \"p_preferred_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_availability_days_save_uat_v3(\"p_dates\" \"date\"[], \"p_kind\" \"text\", \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone, \"p_preferred_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_availability_publication_conflicts_uat_v1(\"p_employee_id\" \"uuid\", \"p_dates\" \"date\"[])",
+      "public.employee_availability_publication_conflicts_uat_v2(\"p_employee_id\" \"uuid\", \"p_dates\" \"date\"[], \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone)",
+      "public.employee_availability_save_month(\"p_month\" \"date\", \"p_entries\" \"jsonb\", \"p_default_remaining_available\" boolean DEFAULT false)",
+      "public.employee_pay_rate_save_v2(\"p_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_base_rate_minor\" bigint, \"p_currency\" \"text\" DEFAULT NULL::\"text\", \"p_contract_type\" \"text\" DEFAULT NULL::\"text\", \"p_active\" boolean DEFAULT true)",
+      "public.employee_portal_workspace(\"p_month\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.employee_request_review_uat_v1(\"p_request_id\" \"uuid\", \"p_decision\" \"text\", \"p_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_request_submit_uat_v1(\"p_request_type\" \"text\", \"p_dates\" \"date\"[], \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone, \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_request_submit_uat_v2(\"p_request_type\" \"text\", \"p_dates\" \"date\"[], \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone, \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_restore(\"p_employee_id\" \"uuid\")",
+      "public.employee_shift_preferences_save_self_v2(\"p_month\" \"date\", \"p_preferences\" \"jsonb\")",
+      "public.employee_shift_preferences_self_v2(\"p_month\" \"date\")",
+      "public.employee_time_constraint_revoke_v2(\"p_id\" \"uuid\")",
+      "public.employee_time_constraint_save_v2(\"p_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_kind\" \"text\", \"p_starts_at\" timestamp with time zone, \"p_ends_at\" timestamp with time zone, \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.employee_time_constraints_self_v2(\"p_month\" \"date\")",
+      "public.employee_update(\"p_employee_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.employee_weekly_work_patterns_replace_before_phase1_uat_v1(\"p_employee_id\" \"uuid\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_patterns\" \"jsonb\", \"p_reason\" \"text\")",
+      "public.employee_weekly_work_patterns_replace_uat_v1(\"p_employee_id\" \"uuid\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_patterns\" \"jsonb\", \"p_reason\" \"text\")",
+      "public.employee_weekly_work_patterns_workspace_uat_v1(\"p_employee_id\" \"uuid\", \"p_on_date\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.employer_cost_component_save_uat_v1(\"p_logical_id\" \"uuid\", \"p_code\" \"text\", \"p_name\" \"text\", \"p_calculation_method\" \"text\", \"p_value\" bigint, \"p_contract_type\" \"text\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_active\" boolean, \"p_reason\" \"text\")",
+      "public.employer_cost_workspace_before_b4f101_uat_v1(\"p_month\" \"date\")",
+      "public.employer_cost_workspace_uat_v1(\"p_month\" \"date\")",
+      "public.generate_plan(\"p_month\" \"date\", \"p_name\" \"text\", \"p_scenario_code\" \"text\" DEFAULT 'BASE'::\"text\", \"p_optimization_mode\" \"text\" DEFAULT 'BALANCED'::\"text\", \"p_staffing_level\" \"text\" DEFAULT 'OPTIMAL'::\"text\")",
+      "public.generate_role_plan(\"p_month\" \"date\", \"p_role_id\" \"uuid\", \"p_name\" \"text\", \"p_scenario\" \"text\" DEFAULT 'BASE'::\"text\", \"p_mode\" \"text\" DEFAULT 'BALANCED'::\"text\", \"p_staffing\" \"text\" DEFAULT 'OPTIMAL'::\"text\")",
+      "public.has_app_role(\"required_role\" \"public\".\"app_role\")",
+      "public.kadromierz_export(\"p_month\" \"date\")",
+      "public.kadromierz_import_preferences(\"p_file_name\" \"text\", \"p_rows\" \"jsonb\")",
+      "public.log_availability_change()",
+      "public.manager_standby_month_uat_v2(\"p_month\" \"date\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.manager_standby_month_uat_v3(\"p_month\" \"date\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.matrix_create_draft(\"p_name\" \"text\" DEFAULT NULL::\"text\")",
+      "public.matrix_import_apply(\"p_file_name\" \"text\", \"p_payload\" \"jsonb\", \"p_requested_permissions\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.matrix_publish_draft(\"p_effective_from\" \"date\")",
+      "public.matrix_register_import(\"p_file_name\" \"text\", \"p_summary\" \"jsonb\", \"p_requested_permissions\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.matrix_save_demand(\"p_shift_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_required\" integer, \"p_scenario\" \"text\" DEFAULT 'BASE'::\"text\")",
+      "public.matrix_save_item(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_save_shift(\"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_scope_grant_save_v2(\"p_id\" \"uuid\", \"p_auth_user_id\" \"uuid\", \"p_app_role\" \"public\".\"app_role\", \"p_role_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_duty_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_active\" boolean DEFAULT true)",
+      "public.matrix_shift_color_preserve_on_clone_uat_v1()",
+      "public.matrix_v2_admin_save(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_alpha16(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_before_b4f118(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_before_categories_uat_v1(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_before_mx_k10(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_before_standby_groups_uat_v1(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_admin_save_before_standby_setting(\"p_kind\" \"text\", \"p_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.matrix_v2_can_manage_employee(\"p_employee_id\" \"uuid\")",
+      "public.matrix_v2_can_manage_legacy_assignment_uat_v1(\"p_assignment_id\" \"uuid\")",
+      "public.matrix_v2_can_manage_legacy_plan_issue_uat_v1(\"p_issue_id\" \"uuid\")",
+      "public.matrix_v2_can_manage_legacy_resource_uat_v1(\"p_role_code\" \"text\" DEFAULT NULL::\"text\", \"p_legacy_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.matrix_v2_can_manage_resource_uat_v1(\"p_role_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.matrix_v2_compare_versions_uat_v2(\"p_left_version_id\" \"uuid\", \"p_right_version_id\" \"uuid\")",
+      "public.matrix_v2_content_document(\"p_matrix_version_id\" \"uuid\")",
+      "public.matrix_v2_create_draft(\"p_name\" \"text\" DEFAULT NULL::\"text\")",
+      "public.matrix_v2_discard_current_draft_uat_v2()",
+      "public.matrix_v2_discard_draft_uat_v1(\"p_matrix_version_id\" \"uuid\")",
+      "public.matrix_v2_duty_archive_preview_uat_v2(\"p_duty_id\" \"uuid\")",
+      "public.matrix_v2_duty_archive_uat_v2(\"p_duty_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.matrix_v2_employee_archive_v2(\"p_employee_id\" \"uuid\", \"p_reason\" \"text\" DEFAULT NULL::\"text\", \"p_archive\" boolean DEFAULT true)",
+      "public.matrix_v2_employee_directory_alpha16(\"p_month\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.matrix_v2_employee_directory_v2()",
+      "public.matrix_v2_employee_save_alpha16(\"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_data\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.matrix_v2_employee_save_uat_v3(\"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_data\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.matrix_v2_employee_save_uat_v4(\"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_data\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.matrix_v2_employee_save_v2(\"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_data\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.matrix_v2_ensure_first_run_uat_v1()",
+      "public.matrix_v2_finance_import_apply_uat_v1(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_finance_import_preview_uat_v1(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_finance_step_skip_uat_v2(\"p_employee_id\" \"uuid\")",
+      "public.matrix_v2_full_import_apply_raw_uat_v1(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_full_import_apply_uat_v1(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_full_import_preview_raw_uat_v1(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_full_import_preview_uat_v1(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_has_any_manager_scope_uat_v1()",
+      "public.matrix_v2_import_apply_alpha16(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_apply_before_mx_k10(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_apply_uat_v2(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_apply_uat_v3(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_import_apply_uat_v4(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_import_apply_uat_v5(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_import_preview_alpha16(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_preview_before_mx_k10(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_preview_uat_v2(\"p_payload\" \"jsonb\")",
+      "public.matrix_v2_import_preview_uat_v3(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_import_preview_uat_v4(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_import_preview_uat_v5(\"p_payload\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_is_iso_4217_currency(\"p_currency\" \"text\")",
+      "public.matrix_v2_is_supported_objective_config(\"p_direction\" \"text\", \"p_parameters\" \"jsonb\")",
+      "public.matrix_v2_is_supported_pay_condition(\"p_condition\" \"jsonb\")",
+      "public.matrix_v2_merge_equivalent_shifts_uat_v2(\"p_apply\" boolean DEFAULT false)",
+      "public.matrix_v2_next_employee_no_v2()",
+      "public.matrix_v2_normalize_shift_periods_uat_v2()",
+      "public.matrix_v2_prevent_last_usable_delete_uat_v1()",
+      "public.matrix_v2_publication_readiness_alpha16(\"p_effective_from\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.matrix_v2_publication_readiness_base_uat006(\"p_effective_from\" \"date\", \"p_schedule_month\" \"date\")",
+      "public.matrix_v2_publication_readiness_before_b4f115(\"p_effective_from\" \"date\", \"p_schedule_month\" \"date\")",
+      "public.matrix_v2_publication_readiness_before_simple_roles_uat_v1(\"p_effective_from\" \"date\", \"p_schedule_month\" \"date\")",
+      "public.matrix_v2_publication_readiness_uat_v2(\"p_effective_from\" \"date\", \"p_schedule_month\" \"date\")",
+      "public.matrix_v2_publish_draft(\"p_effective_from\" \"date\" DEFAULT CURRENT_DATE)",
+      "public.matrix_v2_publish_draft_uat_v2(\"p_effective_from\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_revision_history_uat_v2(\"p_limit\" integer DEFAULT 250)",
+      "public.matrix_v2_scope_allows_resource_for_app_role_uat_v1(\"p_manager_role\" \"public\".\"app_role\", \"p_role_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.matrix_v2_shift_staffing_save_uat_v3(\"p_scenario_id\" \"uuid\", \"p_shift_template_ids\" \"uuid\"[], \"p_role_id\" \"uuid\", \"p_duty_id\" \"uuid\", \"p_operation\" \"text\", \"p_count_value\" integer, \"p_multiplier_basis_points\" integer, \"p_active\" boolean)",
+      "public.matrix_v2_stable_uuid(\"p_value\" \"text\")",
+      "public.matrix_v2_staffing_bulk_adjust_uat_v2(\"p_scenario_id\" \"uuid\", \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_shift_period\" \"text\" DEFAULT NULL::\"text\", \"p_role_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_delta\" integer DEFAULT 1)",
+      "public.matrix_v2_staffing_rules_bulk_save_uat_v2(\"p_scenario_id\" \"uuid\", \"p_shift_template_ids\" \"uuid\"[], \"p_role_id\" \"uuid\", \"p_duty_id\" \"uuid\", \"p_operation\" \"text\", \"p_count_value\" integer, \"p_multiplier_basis_points\" integer, \"p_active\" boolean)",
+      "public.matrix_v2_team_import_apply_uat_v1(\"p_configuration\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_team_import_apply_uat_v1_core_20260824(\"p_configuration\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_team_import_preview_uat_v1(\"p_configuration\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_team_import_preview_uat_v1_core_20260814(\"p_configuration\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_team_import_preview_uat_v1_core_20260824(\"p_configuration\" \"jsonb\", \"p_mode\" \"text\" DEFAULT 'UPDATE'::\"text\")",
+      "public.matrix_v2_workspace(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_workspace_before_ad_hoc_projection_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_workspace_before_b4f52_uat_v1(\"p_month\" \"date\")",
+      "public.matrix_v2_workspace_before_b4f91_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_workspace_before_categories_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_workspace_before_employee_privacy_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_v2_workspace_before_overtime_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.matrix_workspace(\"p_month\" \"date\" DEFAULT NULL::\"date\")",
+      "public.message_center_workspace_uat_v1()",
+      "public.message_conversation_create_uat_v1(\"p_recipient_auth_user_id\" \"uuid\", \"p_subject\" \"text\", \"p_message\" \"text\", \"p_context_type\" \"text\" DEFAULT NULL::\"text\", \"p_context_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.message_display_name_uat_v1(\"p_auth_user_id\" \"uuid\")",
+      "public.message_mark_read_uat_v1(\"p_conversation_id\" \"uuid\")",
+      "public.message_send_uat_v1(\"p_conversation_id\" \"uuid\", \"p_body\" \"text\")",
+      "public.monthly_budgets_get_before_b4f52_uat_v1(\"p_month\" \"date\")",
+      "public.monthly_budgets_get_uat_v1(\"p_month\" \"date\")",
+      "public.monthly_budgets_save_uat_v1(\"p_month\" \"date\", \"p_lines\" \"jsonb\", \"p_note\" \"text\")",
+      "public.operational_program_can_manage_uat_v1()",
+      "public.operational_program_cancel_uat_v1(\"p_event_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.operational_program_integration_save_uat_v1(\"p_base_url\" \"text\", \"p_launch_path_template\" \"text\" DEFAULT '/sessions/new?eventId={eventId}'::\"text\", \"p_active\" boolean DEFAULT true)",
+      "public.operational_program_inventory_ack_uat_v1(\"p_event_id\" \"uuid\", \"p_external_session_id\" \"text\", \"p_external_session_url\" \"text\", \"p_status\" \"text\" DEFAULT 'READY'::\"text\", \"p_error\" \"text\" DEFAULT NULL::\"text\")",
+      "public.operational_program_preview_uat_v1(\"p_month\" \"date\", \"p_starts_at\" timestamp with time zone, \"p_ends_at\" timestamp with time zone, \"p_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_category_ids\" \"uuid\"[] DEFAULT '{}'::\"uuid\"[], \"p_role_ids\" \"uuid\"[] DEFAULT '{}'::\"uuid\"[], \"p_employee_ids\" \"uuid\"[] DEFAULT '{}'::\"uuid\"[], \"p_required_count\" integer DEFAULT 1)",
+      "public.operational_program_save_uat_v1(\"p_event\" \"jsonb\", \"p_audience\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_checklist\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_participant_ids\" \"uuid\"[] DEFAULT '{}'::\"uuid\"[])",
+      "public.operational_program_workspace_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_abort_finalize_v4(\"p_run_id\" \"uuid\", \"p_error\" \"text\")",
+      "public.optimizer_active_workspace_v2(\"p_month\" \"date\")",
+      "public.optimizer_begin_finalize_v4(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidates\" \"jsonb\")",
+      "public.optimizer_candidate_diagnostics_alpha16(\"p_schedule_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_candidate_diagnostics_before_primary_rules_alpha16(\"p_schedule_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_candidate_diagnostics_before_role_scope_alpha16(\"p_schedule_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_checkpoint_v2(\"p_run_id\" \"uuid\", \"p_expected_generation\" integer, \"p_checkpoint\" \"jsonb\", \"p_metrics\" \"jsonb\")",
+      "public.optimizer_commit(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidates\" \"jsonb\")",
+      "public.optimizer_complete_finalize_v4(\"p_run_id\" \"uuid\")",
+      "public.optimizer_configuration_v2(\"p_month\" \"date\")",
+      "public.optimizer_create_leader_variant_uat_v1(\"p_run_id\" \"uuid\", \"p_source_variant_id\" \"uuid\", \"p_name\" \"text\")",
+      "public.optimizer_create_manual_leader_studio_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_solver_version\" \"text\")",
+      "public.optimizer_demand_profiles_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_emergency_assign_alpha16(\"p_schedule_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_allow_soft\" boolean DEFAULT false, \"p_reason\" \"text\" DEFAULT NULL::\"text\", \"p_notify\" boolean DEFAULT false)",
+      "public.optimizer_employee_availability_month_uat_v1(\"p_variant_id\" \"uuid\", \"p_employee_ids\" \"uuid\"[])",
+      "public.optimizer_employee_published_schedule_v2(\"p_month\" \"date\")",
+      "public.optimizer_employee_schedule_uat_v2(\"p_month\" \"date\")",
+      "public.optimizer_employee_schedule_uat_v3(\"p_month\" \"date\")",
+      "public.optimizer_fail_v3(\"p_run_id\" \"uuid\", \"p_error\" \"text\")",
+      "public.optimizer_finalize_v2(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidates\" \"jsonb\")",
+      "public.optimizer_finalize_v3(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidates\" \"jsonb\")",
+      "public.optimizer_generation_quota_uat_v1()",
+      "public.optimizer_job_status_uat_v1(\"p_run_id\" \"uuid\")",
+      "public.optimizer_kadromierz_export_v2(\"p_month\" \"date\")",
+      "public.optimizer_leader_assignment_context_before_b4_details_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_context_before_daily_limit_uat_v2(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_context_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_context_uat_v2(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_context_uat_v3(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_context_uat_v4(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_drag_preview_uat_v1(\"p_variant_id\" \"uuid\", \"p_source_assignment_id\" \"uuid\", \"p_target_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_target_issue_id\" bigint DEFAULT NULL::bigint)",
+      "public.optimizer_leader_assignment_drag_uat_v1(\"p_variant_id\" \"uuid\", \"p_source_assignment_id\" \"uuid\", \"p_target_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_target_issue_id\" bigint DEFAULT NULL::bigint, \"p_reason\" \"text\" DEFAULT 'Przeciągnięcie w Studio lidera'::\"text\")",
+      "public.optimizer_leader_assignment_lock_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_locked\" boolean, \"p_reason\" \"text\")",
+      "public.optimizer_leader_assignment_remove_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.optimizer_leader_assignment_save_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.optimizer_leader_assignment_save_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_reason\" \"text\", \"p_allow_limit_override\" boolean)",
+      "public.optimizer_leader_assignment_save_uat_v2(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_reason\" \"text\", \"p_allow_limit_override\" boolean DEFAULT false, \"p_duty_transfer_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.optimizer_leader_assignment_save_uat_v3(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_reason\" \"text\", \"p_allow_limit_override\" boolean DEFAULT false, \"p_duty_transfer_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_approve_overtime\" boolean DEFAULT false)",
+      "public.optimizer_leader_assignment_save_uat_v4(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_reason\" \"text\", \"p_allow_limit_override\" boolean DEFAULT false, \"p_duty_transfer_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_approve_overtime\" boolean DEFAULT false)",
+      "public.optimizer_leader_assignment_validate_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_allow_limit_override\" boolean DEFAULT false, \"p_duty_transfer_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_approve_overtime\" boolean DEFAULT false)",
+      "public.optimizer_leader_assignment_validate_uat_v2(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\", \"p_allow_limit_override\" boolean DEFAULT false, \"p_duty_transfer_assignment_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_approve_overtime\" boolean DEFAULT false)",
+      "public.optimizer_leader_assignments_bulk_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_ids\" \"uuid\"[], \"p_operation\" \"text\", \"p_reason\" \"text\")",
+      "public.optimizer_leader_checkpoint_create_uat_v1(\"p_variant_id\" \"uuid\", \"p_name\" \"text\")",
+      "public.optimizer_leader_checkpoint_restore_uat_v1(\"p_variant_id\" \"uuid\", \"p_history_seq\" bigint, \"p_reason\" \"text\")",
+      "public.optimizer_leader_draft_validate_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_leader_history_move_uat_v1(\"p_variant_id\" \"uuid\", \"p_direction\" \"text\")",
+      "public.optimizer_leader_history_status_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_leader_refill_apply_uat_v1(\"p_leader_variant_id\" \"uuid\", \"p_source_variant_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.optimizer_leader_refill_request_uat_v1(\"p_variant_id\" \"uuid\", \"p_reason\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_leader_reoptimization_apply_uat_v1(\"p_leader_variant_id\" \"uuid\", \"p_source_variant_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.optimizer_leader_reoptimization_request_uat_v1(\"p_variant_id\" \"uuid\", \"p_mode\" \"text\", \"p_reason\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_leader_variant_for_run_uat_v1(\"p_run_id\" \"uuid\")",
+      "public.optimizer_leader_variant_workspace_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_leader_workflow_status_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_leader_workflow_transition_uat_v1(\"p_variant_id\" \"uuid\", \"p_target_status\" \"text\", \"p_reason\" \"text\")",
+      "public.optimizer_materialize_candidate_v3(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidate\" \"jsonb\")",
+      "public.optimizer_materialize_candidate_v4(\"p_run_id\" \"uuid\", \"p_name\" \"text\", \"p_candidate\" \"jsonb\")",
+      "public.optimizer_materialize_next_v4(\"p_run_id\" \"uuid\")",
+      "public.optimizer_operational_workspace_alpha16(\"p_month\" \"date\")",
+      "public.optimizer_prepare(\"p_month\" \"date\", \"p_profile_code\" \"text\" DEFAULT 'BALANCED'::\"text\", \"p_scenario_code\" \"text\" DEFAULT 'BASE'::\"text\", \"p_seed\" integer DEFAULT NULL::integer)",
+      "public.optimizer_prepare_v2(\"p_month\" \"date\", \"p_profile_code\" \"text\" DEFAULT 'BALANCED'::\"text\", \"p_scenario_code\" \"text\" DEFAULT 'BASE'::\"text\", \"p_seed\" integer DEFAULT NULL::integer)",
+      "public.optimizer_publication_attempt_alpha16(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\")",
+      "public.optimizer_publication_change_preview_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_publication_readiness_alpha16(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\")",
+      "public.optimizer_publish_company_variant_alpha16(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_warning_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.optimizer_publish_company_variant_resolved_uat_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_warning_reason\" \"text\" DEFAULT NULL::\"text\", \"p_role_replacement_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.optimizer_publish_company_variant_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_publish_role_composite_before_phase1_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_variant_ids\" \"uuid\"[], \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_warning_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.optimizer_publish_role_composite_uat_v3(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_variant_ids\" \"uuid\"[], \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_warning_reason\" \"text\" DEFAULT NULL::\"text\")",
+      "public.optimizer_publish_role_composite_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_variant_ids\" \"uuid\"[], \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_publish_role_variant_before_b4f121_uat_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_publish_role_variant_uat_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_published_schedule_alpha16(\"p_schedule_id\" \"uuid\")",
+      "public.optimizer_published_schedule_v2(\"p_schedule_id\" \"uuid\")",
+      "public.optimizer_request_before_nfjob_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_frontend_version\" \"text\")",
+      "public.optimizer_request_cancel_before_nfjob_uat_v1(\"p_run_id\" \"uuid\")",
+      "public.optimizer_request_cancel_v2(\"p_run_id\" \"uuid\")",
+      "public.optimizer_request_job_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_frontend_version\" \"text\")",
+      "public.optimizer_request_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "public.optimizer_request_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_frontend_version\" \"text\")",
+      "public.optimizer_role_categories_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_role_colours_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_role_composite_candidates_before_categories_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\")",
+      "public.optimizer_role_composite_candidates_before_publication_fallback(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\")",
+      "public.optimizer_role_composite_candidates_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\")",
+      "public.optimizer_role_composite_preflight_uat_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_variant_ids\" \"uuid\"[])",
+      "public.optimizer_role_publication_overview_before_categories_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_role_publication_overview_uat_v2(\"p_month\" \"date\")",
+      "public.optimizer_run_state_v2(\"p_run_id\" \"uuid\")",
+      "public.optimizer_runs_catalog_alpha16(\"p_month\" \"date\", \"p_scope_type\" \"text\" DEFAULT 'COMPANY'::\"text\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.optimizer_runs_catalog_before_b4f101_alpha16(\"p_month\" \"date\", \"p_scope_type\" \"text\" DEFAULT 'COMPANY'::\"text\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.optimizer_save_init_v4(\"p_run_id\" \"uuid\", \"p_expected_cursor\" integer, \"p_checkpoint\" \"jsonb\", \"p_metrics\" \"jsonb\")",
+      "public.optimizer_save_state_v3(\"p_run_id\" \"uuid\", \"p_expected_generation\" integer, \"p_checkpoint\" \"jsonb\", \"p_metrics\" \"jsonb\")",
+      "public.optimizer_select_variant_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\")",
+      "public.optimizer_selected_variant_workspace_alpha16(\"p_run_id\" \"uuid\")",
+      "public.optimizer_selected_variant_workspace_v2(\"p_run_id\" \"uuid\")",
+      "public.optimizer_status_v2(\"p_run_id\" \"uuid\")",
+      "public.optimizer_variant_issue_diagnostics_before_b4_details_uat_v2(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_issue_diagnostics_before_capacity_context_uat(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_issue_diagnostics_before_primary_rules_uat_v2(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_issue_diagnostics_before_profile_limits_uat_v(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_issue_diagnostics_before_role_scope_uat_v2(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_issue_diagnostics_uat_v2(\"p_variant_id\" \"uuid\", \"p_issue_id\" bigint)",
+      "public.optimizer_variant_standby_preview_before_shortage_guard_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_variant_standby_preview_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_variant_standby_preview_uat_v2(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_variant_workload_distribution_uat_v1(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_variant_workspace_uat_v2(\"p_variant_id\" \"uuid\")",
+      "public.optimizer_variants_before_b4f52_uat_v1(\"p_month\" \"date\")",
+      "public.optimizer_variants_v2(\"p_run_id\" \"uuid\")",
+      "public.optimizer_variants_v3(\"p_month\" \"date\")",
+      "public.personal_action_workspace_uat_v1()",
+      "public.personal_message_action_route_uat_v1(\"p_auth_user_id\" \"uuid\", \"p_conversation_id\" \"uuid\")",
+      "public.personal_notification_mark_read_uat_v1(\"p_notification_id\" \"uuid\")",
+      "public.personal_profile_save_uat_v1(\"p_display_name\" \"text\", \"p_avatar_mode\" \"text\", \"p_cat_avatar_key\" \"text\" DEFAULT NULL::\"text\", \"p_note_color\" \"text\" DEFAULT '#E8E1D6'::\"text\", \"p_photo_path\" \"text\" DEFAULT NULL::\"text\", \"p_ui_preferences\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.personal_profile_workspace_uat_v1()",
+      "public.personal_request_manager_recipients_uat_v1(\"p_employee_id\" \"uuid\")",
+      "public.plan_workspace(\"p_month\" \"date\" DEFAULT NULL::\"date\", \"p_plan_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.plan_workspace_before_b4f52_uat_v1(\"p_month\" \"date\" DEFAULT NULL::\"date\", \"p_plan_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.preference_save(\"p_employee_id\" \"uuid\", \"p_from\" \"date\", \"p_to\" \"date\", \"p_type\" \"text\", \"p_value\" \"jsonb\")",
+      "public.publish_plan(\"p_plan_id\" \"uuid\")",
+      "public.published_company_calendar_uat_v2(\"p_month\" \"date\")",
+      "public.published_employee_category_calendar_uat_v3(\"p_month\" \"date\")",
+      "public.recovery_action_select_candidate_uat_v1(\"p_action_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_expected_action_version\" integer, \"p_expected_revision\" integer)",
+      "public.recovery_ad_hoc_save_uat_v1(\"p_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_display_name\" \"text\", \"p_email\" \"text\", \"p_phone\" \"text\", \"p_role_id\" \"uuid\", \"p_contract_type\" \"text\", \"p_rate_minor\" bigint, \"p_currency\" \"text\", \"p_available_from\" \"date\", \"p_available_to\" \"date\", \"p_notes\" \"text\")",
+      "public.recovery_center_workspace_before_b4f101_uat_v1(\"p_month\" \"date\")",
+      "public.recovery_center_workspace_before_phase1_uat_v1(\"p_month\" \"date\")",
+      "public.recovery_center_workspace_uat_v1(\"p_month\" \"date\")",
+      "public.recovery_employee_offers_uat_v1(\"p_month\" \"date\")",
+      "public.recovery_incident_apply_draft_uat_v1(\"p_incident_id\" \"uuid\", \"p_expected_revision\" integer)",
+      "public.recovery_incident_detail_before_b4f101_uat_v1(\"p_incident_id\" \"uuid\")",
+      "public.recovery_incident_detail_before_b4f88_uat_v1(\"p_incident_id\" \"uuid\")",
+      "public.recovery_incident_detail_before_phase1_uat_v1(\"p_incident_id\" \"uuid\")",
+      "public.recovery_incident_detail_uat_v1(\"p_incident_id\" \"uuid\")",
+      "public.recovery_incident_prepare_before_phase1_uat_v1(\"p_incident_id\" \"uuid\", \"p_expected_revision\" integer, \"p_mode\" \"text\")",
+      "public.recovery_incident_prepare_uat_v1(\"p_incident_id\" \"uuid\", \"p_expected_revision\" integer, \"p_mode\" \"text\")",
+      "public.recovery_incident_rate_decide_uat_v1(\"p_rate_id\" \"uuid\", \"p_approve\" boolean, \"p_approved_rate_minor\" bigint, \"p_reason\" \"text\")",
+      "public.recovery_incident_rate_propose_before_phase1_uat_v1(\"p_incident_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_rate_minor\" bigint, \"p_currency\" \"text\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_reason\" \"text\")",
+      "public.recovery_incident_rate_propose_uat_v1(\"p_incident_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_rate_minor\" bigint, \"p_currency\" \"text\", \"p_valid_from\" \"date\", \"p_valid_to\" \"date\", \"p_reason\" \"text\")",
+      "public.recovery_incident_save_before_phase1_uat_v1(\"p_month\" \"date\", \"p_expected_revision\" integer, \"p_incident_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_location_id\" \"uuid\", \"p_incident_type\" \"text\", \"p_starts_on\" \"date\", \"p_ends_on\" \"date\", \"p_title\" \"text\", \"p_notes\" \"text\", \"p_mode\" \"text\")",
+      "public.recovery_incident_save_uat_v1(\"p_month\" \"date\", \"p_expected_revision\" integer, \"p_incident_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_location_id\" \"uuid\", \"p_incident_type\" \"text\", \"p_starts_on\" \"date\", \"p_ends_on\" \"date\", \"p_title\" \"text\", \"p_notes\" \"text\", \"p_mode\" \"text\")",
+      "public.recovery_month_budget_save_uat_v1(\"p_month\" \"date\", \"p_amount\" numeric, \"p_warning_percent\" integer, \"p_hard_limit\" boolean)",
+      "public.recovery_offer_respond_uat_v1(\"p_response_id\" \"uuid\", \"p_accept\" boolean, \"p_message\" \"text\")",
+      "public.recovery_override_save_uat_v1(\"p_incident_id\" \"uuid\", \"p_override_type\" \"text\", \"p_employee_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_starts_on\" \"date\", \"p_ends_on\" \"date\", \"p_numeric_value\" bigint, \"p_currency\" \"text\", \"p_justification\" \"text\", \"p_employee_acknowledged\" boolean, \"p_compliance_confirmed\" boolean)",
+      "public.role_plan_assignment_delete(\"p_section_id\" \"uuid\", \"p_assignment_id\" \"uuid\")",
+      "public.role_plan_assignment_save(\"p_section_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_data\" \"jsonb\")",
+      "public.role_plan_refresh_conflicts(\"p_section_id\" \"uuid\")",
+      "public.role_plan_workspace(\"p_section_id\" \"uuid\")",
+      "public.schedule_publication_resolve_uat_v2(\"p_month\" \"date\", \"p_keep_source\" \"text\", \"p_reason\" \"text\")",
+      "public.schedule_publication_resolve_with_standby_uat_v2(\"p_month\" \"date\", \"p_keep_source\" \"text\", \"p_reason\" \"text\")",
+      "public.schedule_publication_status_uat_v2(\"p_month\" \"date\")",
+      "public.shift_candidates(\"p_shift_id\" \"uuid\", \"p_role\" \"public\".\"employee_role\")",
+      "public.shift_minutes(\"p_start\" timestamp with time zone, \"p_end\" timestamp with time zone)",
+      "public.shift_swap_board_uat_v2(\"p_month\" \"date\")",
+      "public.shift_swap_candidates_uat_v2(\"p_assignment_id\" \"uuid\")",
+      "public.shift_swap_employee_decide_uat_v2(\"p_request_id\" \"uuid\", \"p_decision\" \"text\")",
+      "public.shift_swap_leader_decide_before_phase1_uat_v1(\"p_request_id\" \"uuid\", \"p_decision\" \"text\", \"p_reason\" \"text\")",
+      "public.shift_swap_leader_decide_uat_v2(\"p_request_id\" \"uuid\", \"p_decision\" \"text\", \"p_reason\" \"text\")",
+      "public.shift_swap_request_create_uat_v2(\"p_assignment_id\" \"uuid\", \"p_target_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_message\" \"text\" DEFAULT NULL::\"text\")",
+      "public.solver_claim_next_v2(\"p_worker_id\" \"text\", \"p_worker_version\" \"text\", \"p_task_attempt\" integer, \"p_lease_seconds\" integer)",
+      "public.solver_claim_run_v2(\"p_target_run_id\" \"uuid\", \"p_dispatch_nonce\" \"uuid\", \"p_worker_id\" \"text\", \"p_worker_version\" \"text\", \"p_task_attempt\" integer, \"p_lease_seconds\" integer, \"p_gateway_version\" \"text\")",
+      "public.solver_contract_parity_probe_uat_v1(\"p_variant_templates\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.solver_dispatch_inspect_uat_v1(\"p_run_id\" \"uuid\")",
+      "public.solver_dispatch_reserve_uat_v1(\"p_dispatcher_version\" \"text\", \"p_lease_seconds\" integer DEFAULT 60)",
+      "public.solver_dispatch_result_uat_v1(\"p_run_id\" \"uuid\", \"p_dispatch_lease_token\" \"uuid\", \"p_outcome\" \"text\", \"p_northflank_run_id\" \"text\" DEFAULT NULL::\"text\", \"p_http_status\" integer DEFAULT NULL::integer, \"p_error_code\" \"text\" DEFAULT NULL::\"text\", \"p_error_message\" \"text\" DEFAULT NULL::\"text\")",
+      "public.solver_fail_attempt_before_nfjob_uat_v1(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_error_code\" \"text\", \"p_error_message\" \"text\", \"p_retryable\" boolean)",
+      "public.solver_fail_attempt_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_error_code\" \"text\", \"p_error_message\" \"text\", \"p_retryable\" boolean)",
+      "public.solver_feature_flag_set(\"p_engine\" \"text\", \"p_config\" \"jsonb\" DEFAULT '{}'::\"jsonb\")",
+      "public.solver_finalize_before_nfjob_uat_v1(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\")",
+      "public.solver_finalize_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\")",
+      "public.solver_heartbeat_before_nfjob_uat_v1(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_progress\" \"jsonb\")",
+      "public.solver_heartbeat_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_progress\" \"jsonb\")",
+      "public.solver_interrupt_before_nfjob_uat_v1(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_reason\" \"text\")",
+      "public.solver_interrupt_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_reason\" \"text\")",
+      "public.solver_job_contract_probe_uat_v1()",
+      "public.solver_job_dispatcher_control_uat_v1(\"p_enabled\" boolean)",
+      "public.solver_job_reconcile_candidates_uat_v1(\"p_limit\" integer DEFAULT 20)",
+      "public.solver_job_reconcile_uat_v1(\"p_run_id\" \"uuid\", \"p_northflank_run_id\" \"text\", \"p_northflank_status\" \"text\", \"p_container_started_at\" timestamp with time zone DEFAULT NULL::timestamp with time zone, \"p_job_finished_at\" timestamp with time zone DEFAULT NULL::timestamp with time zone, \"p_peak_rss_mb\" numeric DEFAULT NULL::numeric, \"p_average_rss_mb\" numeric DEFAULT NULL::numeric, \"p_peak_cpu_percent\" numeric DEFAULT NULL::numeric, \"p_failure_code\" \"text\" DEFAULT NULL::\"text\")",
+      "public.solver_job_watchdog_uat_v1()",
+      "public.solver_load_snapshot_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\")",
+      "public.solver_save_variant_before_b4f168(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.solver_save_variant_before_b4f169(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.solver_save_variant_before_b4f170(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.solver_save_variant_before_nfjob_uat_v1(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.solver_save_variant_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\")",
+      "public.solver_save_variant_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\", \"p_variant\" \"jsonb\", \"p_gateway_version\" \"text\")",
+      "public.standby_activate_before_phase1_uat_v1(\"p_standby_id\" \"uuid\", \"p_original_assignment_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.standby_activate_uat_v2(\"p_standby_id\" \"uuid\", \"p_original_assignment_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.standby_activate_uat_v3(\"p_standby_id\" \"uuid\", \"p_original_assignment_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.standby_decline_self_uat_v2(\"p_standby_id\" \"uuid\", \"p_reason\" \"text\")",
+      "public.transition_role_plan(\"p_section_id\" \"uuid\", \"p_status\" \"text\")",
+      "public.uat_master_employee_availability_days_save_v2(\"p_employee_id\" \"uuid\", \"p_dates\" \"date\"[], \"p_kind\" \"text\", \"p_all_day\" boolean DEFAULT true, \"p_local_start\" time without time zone DEFAULT NULL::time without time zone, \"p_local_end\" time without time zone DEFAULT NULL::time without time zone, \"p_preferred_location_id\" \"uuid\" DEFAULT NULL::\"uuid\", \"p_note\" \"text\" DEFAULT NULL::\"text\")",
+      "public.uat_master_employee_portal_context_v2(\"p_employee_id\" \"uuid\", \"p_month\" \"date\")",
+      "public.uat_master_employee_shift_preferences_save_v2(\"p_employee_id\" \"uuid\", \"p_month\" \"date\", \"p_preferences\" \"jsonb\")",
+      "public.uat_master_persona_preview_v2()",
+      "public.uat_master_persona_select_v2(\"p_persona\" \"text\", \"p_employee_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "public.uat_matrix_workforce_reset_preview_v2()",
+      "public.uat_matrix_workforce_reset_v2(\"p_confirmation\" \"text\")",
+      "public.workforce_calendar_context_base_b4f89(\"p_month\" \"date\")",
+      "public.workforce_calendar_context_base_uat006(\"p_month\" \"date\")",
+      "public.workforce_calendar_context_uat_v2(\"p_month\" \"date\")",
+      "public.workforce_calendar_context_uat_v3(\"p_month\" \"date\")",
+      "public.workforce_calendar_context_uat_v4(\"p_month\" \"date\")",
+      "public.workforce_calendar_event_range_save_before_phase1_uat_v1(\"p_month\" \"date\", \"p_start_date\" \"date\", \"p_end_date\" \"date\", \"p_event_kind\" \"text\", \"p_title\" \"text\", \"p_description\" \"text\", \"p_location_id\" \"uuid\", \"p_demands\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_hot_limits\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.workforce_calendar_event_range_save_uat_v2(\"p_month\" \"date\", \"p_start_date\" \"date\", \"p_end_date\" \"date\", \"p_event_kind\" \"text\", \"p_title\" \"text\", \"p_description\" \"text\", \"p_location_id\" \"uuid\", \"p_demands\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_hot_limits\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.workforce_calendar_event_save_before_phase1_uat_v1(\"p_event_id\" \"uuid\", \"p_month\" \"date\", \"p_event_date\" \"date\", \"p_event_kind\" \"text\", \"p_title\" \"text\", \"p_description\" \"text\", \"p_location_id\" \"uuid\", \"p_demands\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_hot_limits\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "public.workforce_calendar_event_save_uat_v2(\"p_event_id\" \"uuid\", \"p_month\" \"date\", \"p_event_date\" \"date\", \"p_event_kind\" \"text\", \"p_title\" \"text\", \"p_description\" \"text\", \"p_location_id\" \"uuid\", \"p_demands\" \"jsonb\" DEFAULT '[]'::\"jsonb\", \"p_hot_limits\" \"jsonb\" DEFAULT '[]'::\"jsonb\")",
+      "solver_private.activate_matrix_employee_profiles_v2()",
+      "solver_private.active_ortools_solver_version_v2()",
+      "solver_private.alpha16_can_manage_schedule_v2(\"p_schedule_id\" \"uuid\")",
+      "solver_private.alpha16_enrich_workspace_issues_v2(\"p_workspace\" \"jsonb\", \"p_variant_ids\" \"uuid\"[])",
+      "solver_private.alpha16_preference_level_v2(\"p_employee_id\" \"uuid\", \"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\", \"p_period\" \"text\")",
+      "solver_private.alpha16_shift_period_default_v2()",
+      "solver_private.alpha16_shift_rules_v2(\"p_employee_id\" \"uuid\", \"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\")",
+      "solver_private.apply_integer_operations_v2(\"p_operations\" \"jsonb\")",
+      "solver_private.apply_strategy_semantics_b4f165(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.apply_strategy_semantics_b4f168(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.apply_strategy_semantics_b4f169(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.apply_strategy_semantics_b4f170(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.archive_current_publication_v2(\"p_month\" \"date\", \"p_keep_variant_ids\" \"uuid\"[], \"p_actor\" \"uuid\")",
+      "solver_private.assert_configuration_v2(\"p_condition\" boolean, \"p_error\" \"text\")",
+      "solver_private.assert_employment_pay_rate_period_uat_v1(\"p_employee_id\" \"uuid\", \"p_employment_start\" \"date\", \"p_employment_end\" \"date\", \"p_rate_valid_from\" \"date\", \"p_rate_valid_to\" \"date\")",
+      "solver_private.assert_materialized_variant_metadata_v2(\"p_variant_id\" \"uuid\", \"p_snapshot\" \"jsonb\")",
+      "solver_private.assert_uat_master_persona_v2()",
+      "solver_private.assignment_is_currently_published_v2(\"p_assignment_id\" \"uuid\")",
+      "solver_private.build_run_version_stamp_uat_v1(\"p_run_id\" \"uuid\", \"p_frontend_commit\" \"text\", \"p_execution_mode\" \"text\")",
+      "solver_private.build_snapshot_payload_before_alpha16_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_authoritative_external_uat_v1(\"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_role_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_actor\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4_settings_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4f165(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4f169(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4f170(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4f88_uat_v1(\"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_role_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_actor\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_b4f91_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_categories_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_category_employee_guard_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_explicit_roles_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_final_contract_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_final_slot_contract_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_monthly_budget_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_occurrence_id_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_overtime_pricing_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_overtime_uat_v1(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_primary_shift_invariants_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_before_slot_contract_fix_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.build_snapshot_payload_v2(\"p_run_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\")",
+      "solver_private.bump_planning_revision_v2()",
+      "solver_private.can_access_run_v2(\"p_run_id\" \"uuid\")",
+      "solver_private.can_edit_leader_variant_uat_v1(\"p_variant_id\" \"uuid\")",
+      "solver_private.canonical_json_v2(\"p_value\" \"jsonb\")",
+      "solver_private.capture_leader_variant_history_v2()",
+      "solver_private.changed_variant_employees_uat_v1(\"p_old_variant_ids\" \"uuid\"[], \"p_new_variant_ids\" \"uuid\"[])",
+      "solver_private.employee_for_slot_v2(\"p_employee\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.employee_pay_rate_covers_period_v2(\"p_employee_id\" \"uuid\", \"p_from\" \"date\", \"p_to\" \"date\")",
+      "solver_private.employee_scope_eligible_v2(\"p_employee\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.employee_weekly_pattern_allows_uat_v1(\"p_employee_id\" \"uuid\", \"p_shift_date\" \"date\", \"p_starts_at\" timestamp with time zone, \"p_ends_at\" timestamp with time zone, \"p_role_id\" \"uuid\", \"p_location_id\" \"uuid\", \"p_timezone\" \"text\")",
+      "solver_private.enforce_run_version_stamp_uat_v1()",
+      "solver_private.expected_pay_components_v2(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.generate_published_standby_trigger_v2()",
+      "solver_private.generate_standby_before_shortage_guard_uat_v1(\"p_variant_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_source_schedule_id\" \"uuid\", \"p_source_role_schedule_id\" \"uuid\")",
+      "solver_private.generate_standby_for_variant_before_b4_default_uat_v2(\"p_variant_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_source_schedule_id\" \"uuid\", \"p_source_role_schedule_id\" \"uuid\")",
+      "solver_private.generate_standby_for_variant_uat_v2(\"p_variant_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_source_schedule_id\" \"uuid\", \"p_source_role_schedule_id\" \"uuid\")",
+      "solver_private.guard_active_variant_selection_v2()",
+      "solver_private.guard_employee_pay_rate_employment_uat_v1()",
+      "solver_private.guard_employee_profile_pay_rates_uat_v1()",
+      "solver_private.guard_leader_variant_publication_uat_v1()",
+      "solver_private.guard_legacy_plan_publication_v2()",
+      "solver_private.guard_matrix_child_immutable_v2()",
+      "solver_private.guard_matrix_employee_profile_v2()",
+      "solver_private.guard_matrix_version_immutable_v2()",
+      "solver_private.guard_production_variant_link_v2()",
+      "solver_private.guard_publication_variant_link_v2()",
+      "solver_private.guard_published_variant_assignment_child_v2()",
+      "solver_private.guard_published_variant_direct_child_v2()",
+      "solver_private.guard_published_variant_row_v2()",
+      "solver_private.guard_run_provenance_v2()",
+      "solver_private.guard_strategy_semantics_b4f165()",
+      "solver_private.inherit_employee_overtime_policy_uat_v1()",
+      "solver_private.jsonb_deep_merge_array_v2(\"p_values\" \"jsonb\"[])",
+      "solver_private.jsonb_deep_merge_v2(\"p_base\" \"jsonb\", \"p_override\" \"jsonb\")",
+      "solver_private.leader_overtime_candidate_uat_v1(\"p_variant_id\" \"uuid\", \"p_assignment_id\" \"uuid\", \"p_issue_id\" bigint, \"p_employee_id\" \"uuid\")",
+      "solver_private.leader_variant_snapshot_v2(\"p_variant_id\" \"uuid\")",
+      "solver_private.lease_is_live_v2(\"p_run_id\" \"uuid\", \"p_attempt_id\" \"uuid\", \"p_lease_token\" \"uuid\")",
+      "solver_private.lock_planning_revision_v2()",
+      "solver_private.materialized_variant_payload_v2(\"p_variant_ids\" \"uuid\"[], \"p_snapshot\" \"jsonb\", \"p_strategy_id\" \"uuid\")",
+      "solver_private.matrix_covers_planning_month_uat_v1(\"p_effective_from\" \"date\", \"p_month\" \"date\")",
+      "solver_private.matrix_duty_deactivation_guard_uat006()",
+      "solver_private.matrix_employee_role_semantics_uat_v1()",
+      "solver_private.matrix_role_category_inherit_uat_v1()",
+      "solver_private.matrix_v2_assert_workbook_identity_uat_v1(\"p_configuration\" \"jsonb\")",
+      "solver_private.matrix_v2_discard_decision_uat_v1(\"p_draft_count\" integer, \"p_active_count\" integer)",
+      "solver_private.matrix_v2_full_finance_payload_uat_v1(\"p_finance\" \"jsonb\")",
+      "solver_private.matrix_v2_full_import_configuration_uat_v2(\"p_configuration\" \"jsonb\")",
+      "solver_private.matrix_v2_full_import_phase_before_categories_uat_v1(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_full_import_phase_before_empty_dictionary_guard_uat_v(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_full_import_phase_before_explicit_roles_uat_v1(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_full_import_phase_before_overtime_uat_v1(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_full_import_phase_raw_uat_v1(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_full_import_phase_uat_v1(\"p_configuration\" \"jsonb\", \"p_phase\" \"text\")",
+      "solver_private.matrix_v2_import_normalize_uat_v3(\"p_payload\" \"jsonb\", \"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_reconnect_preserved_profiles_uat_v1(\"p_configuration\" \"jsonb\")",
+      "solver_private.matrix_v2_seed_import_shifts_uat_v1(\"p_configuration\" \"jsonb\")",
+      "solver_private.matrix_v2_seed_required_defaults_before_b4f165(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_seed_required_defaults_before_b4f168(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_seed_required_defaults_before_b4f169(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_seed_required_defaults_before_b4f170(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_seed_required_defaults_uat_v1(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.matrix_v2_team_configuration_uat_v1(\"p_configuration\" \"jsonb\")",
+      "solver_private.matrix_v2_team_import_configuration_uat_v2(\"p_configuration\" \"jsonb\")",
+      "solver_private.mx_k10_legacy_role_duty_payload_v1(\"p_row\" \"jsonb\")",
+      "solver_private.normalize_contract_type_v2(\"p_value\" \"text\")",
+      "solver_private.normalize_initial_matrix_month_uat_v1()",
+      "solver_private.normalize_personal_notification_v1()",
+      "solver_private.optimizer_publish_company_variant_pre_version_fence_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "solver_private.optimizer_publish_role_composite_pre_version_fence_v2(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_variant_ids\" \"uuid\"[], \"p_name\" \"text\", \"p_idempotency_key\" \"text\")",
+      "solver_private.optimizer_request_stamped_uat_v1(\"p_month\" \"date\", \"p_scenario_id\" \"uuid\", \"p_scope_type\" \"text\", \"p_scope_role_id\" \"uuid\", \"p_name\" \"text\", \"p_idempotency_key\" \"text\", \"p_frontend_version\" \"text\", \"p_execution_mode\" \"text\")",
+      "solver_private.optimizer_select_variant_pre_version_fence_v2(\"p_run_id\" \"uuid\", \"p_variant_id\" \"uuid\")",
+      "solver_private.pay_condition_matches_v2(\"p_condition\" \"jsonb\", \"p_snapshot\" \"jsonb\", \"p_employee\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.pay_rule_billable_minutes_v2(\"p_snapshot\" \"jsonb\", \"p_rule\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.pay_rule_matches_v2(\"p_snapshot\" \"jsonb\", \"p_rule\" \"jsonb\", \"p_employee\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.publication_authority_guard_v2()",
+      "solver_private.publication_snapshot_basis_v2(\"p_snapshot\" \"jsonb\")",
+      "solver_private.publication_snapshot_hash_v2(\"p_snapshot\" \"jsonb\")",
+      "solver_private.publication_static_input_hash_v2(\"p_snapshot\" \"jsonb\")",
+      "solver_private.published_variant_is_frozen_v2(\"p_variant_id\" \"uuid\")",
+      "solver_private.rebuild_standby_month_v2(\"p_month\" \"date\")",
+      "solver_private.record_leader_variant_history_v2(\"p_variant_id\" \"uuid\", \"p_revision\" integer, \"p_label\" \"text\", \"p_actor\" \"uuid\")",
+      "solver_private.recover_expired_solver_runs_v2(\"p_limit\" integer DEFAULT 20)",
+      "solver_private.recovery_can_manage_role_uat_v1(\"p_role_id\" \"uuid\")",
+      "solver_private.recovery_can_manage_scope_uat_v1(\"p_role_id\" \"uuid\", \"p_location_id\" \"uuid\")",
+      "solver_private.recovery_candidate_snapshot_uat_v1(\"p_month\" \"date\", \"p_shift_id\" \"uuid\", \"p_role_id\" \"uuid\", \"p_duty_id\" \"uuid\", \"p_excluded_employee_id\" \"uuid\")",
+      "solver_private.recovery_clone_published_variant_uat_v1(\"p_source_variant_id\" \"uuid\", \"p_name\" \"text\")",
+      "solver_private.recovery_published_variants_uat_v1(\"p_month\" \"date\")",
+      "solver_private.redact_workspace_finance_uat_v1(\"p_payload\" \"jsonb\", \"p_visibility\" \"text\" DEFAULT NULL::\"text\")",
+      "solver_private.refresh_leader_variant_uat_v1(\"p_variant_id\" \"uuid\", \"p_actor\" \"uuid\", \"p_reason\" \"text\")",
+      "solver_private.replace_time_constraint_v2(\"p_employee_id\" \"uuid\", \"p_kind\" \"text\", \"p_time_range\" \"tstzrange\", \"p_source\" \"text\", \"p_source_record_key\" \"text\", \"p_note\" \"text\", \"p_actor\" \"uuid\", \"p_updated_at\" timestamp with time zone)",
+      "solver_private.requote_variant_payload_v2(\"p_snapshot\" \"jsonb\", \"p_payload\" \"jsonb\")",
+      "solver_private.reset_retry_outputs_v2(\"p_run_id\" \"uuid\")",
+      "solver_private.resolve_budget_operations_v2(\"p_operations\" \"jsonb\")",
+      "solver_private.resolved_budgets_v2(\"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "solver_private.resolved_demand_v2(\"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "solver_private.resolved_matrix_demand_v2(\"p_month\" \"date\", \"p_matrix_version_id\" \"uuid\", \"p_scenario_id\" \"uuid\", \"p_scope_role_id\" \"uuid\" DEFAULT NULL::\"uuid\")",
+      "solver_private.revalidate_materialized_variant_v2(\"p_variant_id\" \"uuid\", \"p_neutralize_external\" boolean)",
+      "solver_private.revalidate_materialized_variant_v2(\"p_variant_id\" \"uuid\", \"p_neutralize_external\" boolean, \"p_validate_hard\" boolean)",
+      "solver_private.role_composite_consistency_guard_v2()",
+      "solver_private.run_status_payload_v2(\"p_run_id\" \"uuid\")",
+      "solver_private.schedule_primary_conflict_reasons_uat_v2(\"p_schedule_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_shift_id\" \"uuid\")",
+      "solver_private.seed_matrix_employee_profiles_v2()",
+      "solver_private.shift_swap_personal_notifications_v1()",
+      "solver_private.shift_template_is_sequence_edge_uat_v2(\"p_matrix_version_id\" \"uuid\", \"p_shift_template_id\" \"uuid\", \"p_shift_date\" \"date\", \"p_edge\" \"text\")",
+      "solver_private.slot_timezone_v2(\"p_snapshot\" \"jsonb\", \"p_slot\" \"jsonb\")",
+      "solver_private.staffing_duty_link_guard_uat006()",
+      "solver_private.standby_activation_reasons_uat_v2(\"p_standby_id\" \"uuid\", \"p_original_assignment_id\" \"uuid\")",
+      "solver_private.standby_candidates_for_group_day_uat_v1(\"p_variant_id\" \"uuid\", \"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\", \"p_role_ids\" \"uuid\"[], \"p_date\" \"date\")",
+      "solver_private.standby_candidates_for_role_day_uat_v3(\"p_variant_id\" \"uuid\", \"p_matrix_version_id\" \"uuid\", \"p_month\" \"date\", \"p_role_id\" \"uuid\", \"p_date\" \"date\")",
+      "solver_private.strategy_config_hash_uat_v1(\"p_snapshot\" \"jsonb\")",
+      "solver_private.strip_temporal_json_uat_v1(\"p_value\" \"jsonb\")",
+      "solver_private.supersede_previous_logical_role_schedule_uat_v2()",
+      "solver_private.supersede_standby_with_source_v2()",
+      "solver_private.swap_alternate_duty_coverage_uat_v2(\"p_request_id\" \"uuid\", \"p_employee_id\" \"uuid\")",
+      "solver_private.swap_candidate_reasons_direct_uat_v2(\"p_request_id\" \"uuid\", \"p_employee_id\" \"uuid\")",
+      "solver_private.swap_candidate_reasons_uat_v2(\"p_request_id\" \"uuid\", \"p_employee_id\" \"uuid\")",
+      "solver_private.swap_history_coverage_uat006()",
+      "solver_private.sync_employee_availability_v2()",
+      "solver_private.sync_employee_preference_v2()",
+      "solver_private.sync_leader_workflow_published_uat_v1()",
+      "solver_private.uat_master_employee_constraints_v2(\"p_employee_id\" \"uuid\", \"p_month\" \"date\", \"p_matrix\" \"uuid\", \"p_timezone\" \"text\")",
+      "solver_private.uat_master_save_employee_day_v2(\"p_actor\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_day\" \"date\", \"p_kind\" \"text\", \"p_all_day\" boolean, \"p_local_start\" time without time zone, \"p_local_end\" time without time zone, \"p_preferred_location_id\" \"uuid\", \"p_note\" \"text\")",
+      "solver_private.validate_stage_proof_b4f166(\"p_stage_proof\" \"jsonb\")",
+      "solver_private.validate_strategy_semantics_b4f165(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.validate_strategy_semantics_b4f168(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.validate_strategy_semantics_b4f169(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.validate_strategy_semantics_b4f170(\"p_matrix_version_id\" \"uuid\")",
+      "solver_private.validate_variant_before_b4f164_overtime_policy_uat_v1(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.validate_variant_before_daily_limit_period_guard_uat_v1(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.validate_variant_before_final_contract_v2(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.validate_variant_before_leader_limit_override_v2(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.validate_variant_before_primary_shift_invariants_v2(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.validate_variant_v2(\"p_snapshot\" \"jsonb\", \"p_variant\" \"jsonb\")",
+      "solver_private.variant_primary_conflict_reasons_uat_v2(\"p_variant_id\" \"uuid\", \"p_employee_id\" \"uuid\", \"p_shift_id\" \"uuid\")",
+      "solver_private.variant_set_workspace_v2(\"p_variant_ids\" \"uuid\"[], \"p_context\" \"jsonb\", \"p_can_view_finance\" boolean)",
+      "solver_private.version_stamp_set_once_uat_v1(\"p_stamp\" \"jsonb\", \"p_key\" \"text\", \"p_value\" \"jsonb\")"
+    ]
+  },
+  "triggers": {
+    "count": 106,
+    "requiresTenantReview": [
+      "public.assignments:planning_revision_v2_bump",
+      "public.employee_availability:employee_availability_history_trigger",
+      "public.employee_availability:employee_availability_sync_v2",
+      "public.employee_availability:planning_revision_v2_bump",
+      "public.employee_hr_profiles:planning_revision_v2_bump",
+      "public.employee_pay_rates_v2:employee_pay_rate_employment_guard_uat_v1",
+      "public.employee_pay_rates_v2:planning_revision_v2_bump",
+      "public.employee_preferences:employee_preference_sync_v2",
+      "public.employee_preferences:planning_revision_v2_bump",
+      "public.employee_time_constraints_v2:planning_revision_v2_bump",
+      "public.employees:planning_revision_v2_bump",
+      "public.locations:planning_revision_v2_bump",
+      "public.matrix_duties_v2:matrix_duty_deactivation_guard_uat006",
+      "public.matrix_duties_v2:matrix_v2_immutable_guard",
+      "public.matrix_duties_v2:planning_revision_v2_bump",
+      "public.matrix_employee_duties_v2:matrix_v2_immutable_guard",
+      "public.matrix_employee_duties_v2:planning_revision_v2_bump",
+      "public.matrix_employee_locations_v2:matrix_v2_immutable_guard",
+      "public.matrix_employee_locations_v2:planning_revision_v2_bump",
+      "public.matrix_employee_profiles_v2:matrix_employee_overtime_policy_inherit_uat_v1",
+      "public.matrix_employee_profiles_v2:matrix_employee_profile_pay_rate_guard_uat_v1",
+      "public.matrix_employee_profiles_v2:matrix_employee_profiles_v2_immutable",
+      "public.matrix_employee_profiles_v2:matrix_v2_immutable_guard",
+      "public.matrix_employee_profiles_v2:planning_revision_v2_bump",
+      "public.matrix_employee_roles_v2:matrix_employee_role_semantics_uat_v1",
+      "public.matrix_employee_roles_v2:matrix_v2_immutable_guard",
+      "public.matrix_employee_roles_v2:planning_revision_v2_bump",
+      "public.matrix_locations_v2:matrix_v2_immutable_guard",
+      "public.matrix_locations_v2:planning_revision_v2_bump",
+      "public.matrix_pay_rule_duties_v2:matrix_v2_immutable_guard",
+      "public.matrix_pay_rule_duties_v2:planning_revision_v2_bump",
+      "public.matrix_pay_rule_locations_v2:matrix_v2_immutable_guard",
+      "public.matrix_pay_rule_locations_v2:planning_revision_v2_bump",
+      "public.matrix_pay_rule_roles_v2:matrix_v2_immutable_guard",
+      "public.matrix_pay_rule_roles_v2:planning_revision_v2_bump",
+      "public.matrix_pay_rule_shifts_v2:matrix_v2_immutable_guard",
+      "public.matrix_pay_rule_shifts_v2:planning_revision_v2_bump",
+      "public.matrix_pay_rules_v2:matrix_v2_immutable_guard",
+      "public.matrix_pay_rules_v2:planning_revision_v2_bump",
+      "public.matrix_role_duties_v2:matrix_v2_immutable_guard",
+      "public.matrix_role_duties_v2:planning_revision_v2_bump",
+      "public.matrix_roles_v2:matrix_role_category_inherit_uat_v1",
+      "public.matrix_roles_v2:matrix_v2_immutable_guard",
+      "public.matrix_roles_v2:planning_revision_v2_bump",
+      "public.matrix_scenario_budgets_v2:matrix_v2_immutable_guard",
+      "public.matrix_scenario_budgets_v2:planning_revision_v2_bump",
+      "public.matrix_scenario_pay_rule_overrides_v2:matrix_v2_immutable_guard",
+      "public.matrix_scenario_pay_rule_overrides_v2:planning_revision_v2_bump",
+      "public.matrix_scenario_strategies_v2:matrix_v2_immutable_guard",
+      "public.matrix_scenario_strategies_v2:planning_revision_v2_bump",
+      "public.matrix_scenarios_v2:matrix_v2_immutable_guard",
+      "public.matrix_scenarios_v2:planning_revision_v2_bump",
+      "public.matrix_shift_templates_v2:matrix_shift_color_preserve_on_clone_uat_v1",
+      "public.matrix_shift_templates_v2:matrix_shift_templates_v2_alpha16_period",
+      "public.matrix_shift_templates_v2:matrix_v2_immutable_guard",
+      "public.matrix_shift_templates_v2:planning_revision_v2_bump",
+      "public.matrix_staffing_rules_v2:matrix_v2_immutable_guard",
+      "public.matrix_staffing_rules_v2:planning_revision_v2_bump",
+      "public.matrix_staffing_rules_v2:staffing_duty_link_guard_uat006",
+      "public.matrix_strategies_v2:matrix_v2_immutable_guard",
+      "public.matrix_strategies_v2:planning_revision_v2_bump",
+      "public.matrix_strategy_objectives_v2:matrix_v2_immutable_guard",
+      "public.matrix_strategy_objectives_v2:planning_revision_v2_bump",
+      "public.matrix_versions:guard_strategy_semantics_b4f165",
+      "public.matrix_versions:matrix_employee_profiles_v2_activate",
+      "public.matrix_versions:matrix_employee_profiles_v2_seed_draft",
+      "public.matrix_versions:matrix_v2_prevent_last_usable_delete_uat_v1",
+      "public.matrix_versions:normalize_initial_matrix_month_uat_v1",
+      "public.matrix_versions:planning_revision_v2_bump",
+      "public.matrix_versions:zz_matrix_version_immutable_v2",
+      "public.monthly_budgets:planning_revision_v2_bump",
+      "public.notifications:notifications_personal_normalize_v1",
+      "public.optimization_runs_v2:optimization_runs_v2_provenance_immutable",
+      "public.optimization_runs_v2:optimization_runs_v2_version_stamp_immutable_uat_v1",
+      "public.plan_assignment_duties_v2:plan_assignment_duties_v2_publication_freeze",
+      "public.plan_assignment_duties_v2:planning_revision_v2_bump",
+      "public.plan_assignments_v2:plan_assignments_v2_publication_freeze",
+      "public.plan_assignments_v2:planning_revision_v2_bump",
+      "public.plan_issues_v2:plan_issues_v2_publication_freeze",
+      "public.plan_shifts_v2:plan_shifts_v2_publication_freeze",
+      "public.plan_shifts_v2:planning_revision_v2_bump",
+      "public.plan_variants_v2:capture_leader_variant_revision_history_v2",
+      "public.plan_variants_v2:guard_leader_variant_publication_uat_v1",
+      "public.plan_variants_v2:plan_variants_v2_active_solver_selection",
+      "public.plan_variants_v2:plan_variants_v2_publication_freeze",
+      "public.plan_variants_v2:plan_variants_v2_version_stamp_immutable_uat_v1",
+      "public.plan_variants_v2:planning_revision_v2_bump",
+      "public.plan_variants_v2:sync_leader_workflow_published_uat_v1",
+      "public.plans:planning_revision_v2_bump",
+      "public.plans:plans_legacy_publication_cutover_guard",
+      "public.published_role_schedules_v2:published_role_generate_standby_v2",
+      "public.published_role_schedules_v2:published_role_schedule_authority_guard",
+      "public.published_role_schedules_v2:published_role_supersede_logical_predecessor_v2",
+      "public.published_role_schedules_v2:published_role_supersede_standby_v2",
+      "public.published_schedule_variants_v2:planning_revision_v2_bump",
+      "public.published_schedule_variants_v2:published_company_generate_standby_v2",
+      "public.published_schedule_variants_v2:published_schedule_variants_v2_link_freeze",
+      "public.published_schedule_variants_v2:published_schedule_variants_v2_production_only",
+      "public.published_schedules_v2:planning_revision_v2_bump",
+      "public.published_schedules_v2:published_company_supersede_standby_v2",
+      "public.published_schedules_v2:published_schedule_authority_guard",
+      "public.shift_swap_history_v2:shift_swap_history_coverage_uat006",
+      "public.shift_swap_requests_v2:shift_swap_personal_notifications_v1",
+      "public.shifts:planning_revision_v2_bump",
+      "solver_private.plan_assignment_cost_components_v2:plan_assignment_cost_components_v2_publication_freeze",
+      "solver_private.plan_variant_finance_v2:plan_variant_finance_v2_publication_freeze"
+    ]
+  },
+  "policies": {
+    "count": 129,
+    "broadAuthenticatedReads": [
+      {
+        "name": "authenticated_reads_budgets",
+        "table": "monthly_budgets"
+      },
+      {
+        "name": "authenticated_reads_demand_rules",
+        "table": "demand_rules"
+      },
+      {
+        "name": "authenticated_reads_event_demand",
+        "table": "event_demand_changes"
+      },
+      {
+        "name": "authenticated_reads_events",
+        "table": "operational_events"
+      },
+      {
+        "name": "authenticated_reads_locations",
+        "table": "locations"
+      },
+      {
+        "name": "authenticated_reads_roles",
+        "table": "roles"
+      },
+      {
+        "name": "authenticated_reads_shift_definitions",
+        "table": "shift_definitions"
+      },
+      {
+        "name": "solver_feature_flags_read",
+        "table": "solver_feature_flags"
+      },
+      {
+        "name": "workforce_event_demand_authenticated_read_v2",
+        "table": "workforce_event_demand_v2"
+      },
+      {
+        "name": "workforce_events_authenticated_read_v2",
+        "table": "workforce_calendar_events_v2"
+      },
+      {
+        "name": "workforce_hot_limits_authenticated_read_v2",
+        "table": "workforce_hot_day_limits_v2"
+      }
+    ]
+  },
+  "storage": {
+    "bucket": "profile-avatars",
+    "policies": [
+      "profile_avatars_self_delete_v1",
+      "profile_avatars_self_insert_v1",
+      "profile_avatars_self_select_v1",
+      "profile_avatars_self_update_v1"
+    ],
+    "requiredTenantBoundary": "company membership plus user ownership; object path alone is not a company boundary"
+  },
+  "realtime": {
+    "publication": "supabase_realtime",
+    "members": [
+      "public.optimization_run_strategies_v2",
+      "public.optimization_runs_v2"
+    ],
+    "requiredTenantBoundary": "company_id filter enforced before subscription payload delivery"
+  },
+  "flows": [
+    {
+      "name": "auth-and-access",
+      "surfaces": [
+        "application_access_directory_v1",
+        "user_permissions",
+        "current_user_access_v2",
+        "application_access_provision_current_user_v1"
+      ]
+    },
+    {
+      "name": "configuration-and-import",
+      "surfaces": [
+        "matrix_versions",
+        "matrix_*_v2",
+        "matrix_v2_full_import_*",
+        "matrix_v2_complete_workspace"
+      ]
+    },
+    {
+      "name": "solver-and-worker",
+      "surfaces": [
+        "optimization_runs_v2",
+        "optimization_run_strategies_v2",
+        "plan_variants_v2",
+        "solver_private.*"
+      ]
+    },
+    {
+      "name": "publication",
+      "surfaces": [
+        "published_schedules_v2",
+        "published_schedule_variants_v2",
+        "published_role_schedules_v2"
+      ]
+    },
+    {
+      "name": "employee-portal",
+      "surfaces": [
+        "employees",
+        "employee_availability",
+        "shift_swap_*_v2",
+        "employee_*_workspace_v1"
+      ]
+    },
+    {
+      "name": "operations-and-messages",
+      "surfaces": [
+        "workforce_*_v2",
+        "operational_program_*_v1",
+        "team_*_v1",
+        "notifications"
+      ]
+    },
+    {
+      "name": "storage-and-realtime",
+      "surfaces": [
+        "storage.objects/profile-avatars",
+        "supabase_realtime"
+      ]
+    }
+  ],
+  "requiredTwoCompanyCases": [
+    {
+      "case": "overlapping-business-identifiers",
+      "sameValues": [
+        "employee_no=GP-001",
+        "location_code=BAR",
+        "role_code=KELNER",
+        "role_name=Kelner"
+      ],
+      "expected": "independent rows per company"
+    },
+    {
+      "case": "cross-company-read",
+      "expected": "denied for direct table, view, RPC, storage and realtime"
+    },
+    {
+      "case": "cross-company-write",
+      "expected": "denied for insert, update, delete, import, publication and solver persistence"
+    },
+    {
+      "case": "cross-company-object-reference",
+      "expected": "composite tenant FK rejects ids from another company"
+    }
+  ],
+  "migrationGate": {
+    "status": "BLOCKED_FAIL_CLOSED",
+    "missingInputs": [
+      "fresh read-only live catalog from exact UAT project",
+      "explicit company record and owner membership mapping for every existing UAT row",
+      "reviewed classification of every view and SECURITY DEFINER routine",
+      "isolated PostgreSQL/Supabase replay with two authenticated companies"
+    ],
+    "forbiddenUntilResolved": "Do not generate or apply the NOT NULL/backfill/RLS cutover migration."
+  }
+}
