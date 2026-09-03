@@ -5,35 +5,35 @@ import test from "node:test";
 import { canonicalGitBytes, canonicalGitText } from "./helpers/canonical-git-bytes.mjs";
 
 const migration = await readFile(new URL(
-  "../supabase/migrations/20260827160000_phase4a1_scoped_manager_security_hardening.sql",
+  "../supabase/archive/aud003/migrations/20260827160000_phase4a1_scoped_manager_security_hardening.sql",
   import.meta.url,
 ), "utf8");
 const restoredRpcParityWorktree = await readFile(new URL(
-  "../supabase/migrations/20260826224321_restore_frontend_rpc_parity.sql",
+  "../supabase/archive/aud003/migrations/20260826224321_restore_frontend_rpc_parity.sql",
   import.meta.url,
 ));
 const restoredRpcParity = canonicalGitText(
-  "supabase/migrations/20260826224321_restore_frontend_rpc_parity.sql",
+  "supabase/archive/aud003/migrations/20260826224321_restore_frontend_rpc_parity.sql",
   restoredRpcParityWorktree,
 );
 const canonicalEmployeePrivacyWorktree = await readFile(new URL(
-  "../supabase/migrations/20260826201603_employee_workspace_privacy.sql",
+  "../supabase/archive/aud003/migrations/20260826201603_employee_workspace_privacy.sql",
   import.meta.url,
 ));
 const canonicalEmployeePrivacy = canonicalGitBytes(
-  "supabase/migrations/20260826201603_employee_workspace_privacy.sql",
+  "supabase/archive/aud003/migrations/20260826201603_employee_workspace_privacy.sql",
   canonicalEmployeePrivacyWorktree,
 );
 const canonicalAnonymousHardeningWorktree = await readFile(new URL(
-  "../supabase/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
+  "../supabase/archive/aud003/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
   import.meta.url,
 ));
 const canonicalAnonymousHardening = canonicalGitBytes(
-  "supabase/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
+  "supabase/archive/aud003/migrations/20260826210712_explicit_anonymous_schedule_hardening.sql",
   canonicalAnonymousHardeningWorktree,
 );
 const phase3ResourceAuthorization = await readFile(new URL(
-  "../supabase/migrations/20260826140255_resource_scoped_manager_authorization.sql",
+  "../supabase/archive/aud003/migrations/20260826140255_resource_scoped_manager_authorization.sql",
   import.meta.url,
 ), "utf8");
 const sqlContract = await readFile(new URL(
@@ -104,7 +104,7 @@ test("recovered UAT RPC parity migration is the final hardened frontend contract
 });
 
 test("canonical UAT migration IDs are unique, ordered and byte-identical", async () => {
-  const names = (await readdir(new URL("../supabase/migrations/", import.meta.url))).sort();
+  const names = (await readdir(new URL("../supabase/archive/aud003/migrations/", import.meta.url))).sort();
   const canonical = [
     "20260826140255_resource_scoped_manager_authorization.sql",
     "20260826201603_employee_workspace_privacy.sql",
@@ -333,9 +333,9 @@ test("active unrelated employee has isolated valid Matrix memberships", () => {
 
 test("zero-ACTIVE contract check rolls back its temporary archive subtransaction", () => {
   assert.match(sqlContract,
-    /update public\.matrix_versions set status='ARCHIVED'[\s\S]*errcode='P4A11'[\s\S]*errcode='P4A10'[\s\S]*exception when sqlstate 'P4A10'/iu);
+    /savepoint zero_active;[\s\S]*update public\.matrix_versions set status='ARCHIVED'[\s\S]*set local role authenticated;[\s\S]*current_user<>'authenticated'[\s\S]*PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED[\s\S]*rollback to savepoint zero_active;/iu);
   assert.match(sqlContract,
-    /PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK[\s\S]*status='ACTIVE'[\s\S]*PHASE4A_ACTIVE_MATRIX_NOT_RESTORED/iu);
+    /release savepoint zero_active;[\s\S]*set local role authenticated;[\s\S]*status='ACTIVE'[\s\S]*PHASE4A_ACTIVE_MATRIX_NOT_RESTORED/iu);
   assert.doesNotMatch(sqlContract,
     /update public\.matrix_versions set status='ACTIVE',effective_to=null/iu);
   assert.match(sqlContract, /PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK/u);
