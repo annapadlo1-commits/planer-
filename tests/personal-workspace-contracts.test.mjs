@@ -19,7 +19,7 @@ test("B4F-132 keeps schedule and availability in one employee section", async ()
 
 test("B4F-133 applies the accepted absence decision matrix", async () => {
   const [migration,modules]=await Promise.all([
-    read("supabase/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
+    read("supabase/archive/aud003/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
     read("components/ActiveModules.tsx"),
   ]);
   assert.match(migration,/request_type in \('LEAVE','SICKNESS','HARD_UNAVAILABLE'\)/);
@@ -34,7 +34,7 @@ test("B4F-133 applies the accepted absence decision matrix", async () => {
 test("B4F-134 and B4F-135 expose one universal action centre", async () => {
   const [component,app,migration]=await Promise.all([
     read("components/PersonalWorkspace.tsx"),read("app/page.tsx"),
-    read("supabase/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
+    read("supabase/archive/aud003/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
   ]);
   assert.match(app,/<PersonalActionNote compact\/>/);
   assert.match(app,/active==="profil"&&<UniversalPersonalWorkspace management\/>/);
@@ -49,8 +49,8 @@ test("B4F-136, B4F-137 and B4F-146 provide a private universal profile with exac
   const [component,messages,migration,extension,first,second,third]=await Promise.all([
     read("components/PersonalWorkspace.tsx"),
     read("components/MessageCenter.tsx"),
-    read("supabase/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
-    read("supabase/migrations/20260821025820_b4f146_expand_cat_avatar_catalog.sql"),
+    read("supabase/archive/aud003/migrations/20260820225128_b4f131_b4f138_profiles_requests_notifications.sql"),
+    read("supabase/archive/aud003/migrations/20260821025820_b4f146_expand_cat_avatar_catalog.sql"),
     stat(new URL("../public/profile-cats/cats-01-25-v3.png",import.meta.url)),
     stat(new URL("../public/profile-cats/cats-26-50-v3.png",import.meta.url)),
     stat(new URL("../public/profile-cats/cats-51-55-v1.png",import.meta.url)),
@@ -84,7 +84,7 @@ test("B4F-139 and B4F-141 keep one compact Do ogarnięcia note beside Today", as
   const [component,modules,css,migration]=await Promise.all([
     read("components/PersonalWorkspace.tsx"),read("components/ActiveModules.tsx"),
     read("app/personal-workspace.css"),
-    read("supabase/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
+    read("supabase/archive/aud003/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
   ]);
   const home=modules.slice(modules.indexOf("function EmployeeHome"),modules.indexOf("function EmployeePortal"));
   assert.match(component,/DO OGARNIĘCIA/);
@@ -102,7 +102,7 @@ test("B4F-139 and B4F-141 keep one compact Do ogarnięcia note beside Today", as
 test("B4F-142 and B4F-143 expose exact hours for every availability or absence kind", async () => {
   const [modules,css,migration]=await Promise.all([
     read("components/ActiveModules.tsx"),read("app/personal-workspace.css"),
-    read("supabase/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
+    read("supabase/archive/aud003/migrations/20260821021738_employee_action_center_swap_notifications.sql"),
   ]);
   assert.match(modules,/className="availability-all-day"/);
   assert.doesNotMatch(modules,/!\["PREFER_NOT_TO_WORK","LEAVE","SICKNESS"\]\.includes\(kind\)/);

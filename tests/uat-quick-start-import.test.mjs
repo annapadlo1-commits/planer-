@@ -7,47 +7,47 @@ const root = path.resolve(import.meta.dirname, "..");
 const editor = fs.readFileSync(path.join(root, "components", "MatrixV2Editor.tsx"), "utf8");
 const importer = fs.readFileSync(path.join(root, "lib", "matrix-workbook-import.ts"), "utf8");
 const migration = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260810200000_uat_quick_start_import_identity_reconnect.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260810200000_uat_quick_start_import_identity_reconnect.sql"),
   "utf8",
 );
 const reconnectMigration = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260810201500_uat_import_reconnect_preserved_profiles.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260810201500_uat_import_reconnect_preserved_profiles.sql"),
   "utf8",
 );
 const relationAndTimeoutFix = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260810223000_uat_team_import_relation_and_timeout_fix.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260810223000_uat_team_import_relation_and_timeout_fix.sql"),
   "utf8",
 );
 const guidedImportOrderFix = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260810234500_uat_guided_onboarding_import_order_fix.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260810234500_uat_guided_onboarding_import_order_fix.sql"),
   "utf8",
 );
 const selfImportDefaults = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260813143000_uat_quick_start_self_import_defaults.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260813143000_uat_quick_start_self_import_defaults.sql"),
   "utf8",
 );
 const categoryOrderFix = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260813150000_uat_team_import_category_order_fix.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260813150000_uat_team_import_category_order_fix.sql"),
   "utf8",
 );
 const categoryCodeResolution = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260813151000_uat_role_category_code_resolution.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260813151000_uat_role_category_code_resolution.sql"),
   "utf8",
 );
 const previewSafeDelete = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260813170000_uat_quick_start_preview_safe_delete.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260813170000_uat_quick_start_preview_safe_delete.sql"),
   "utf8",
 );
 const employeeRoleAuditColumns = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260813173000_uat_employee_role_audit_columns.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260813173000_uat_employee_role_audit_columns.sql"),
   "utf8",
 );
 const explicitRoleOrderFix = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260815191000_uat_full_import_explicit_role_order.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260815191000_uat_full_import_explicit_role_order.sql"),
   "utf8",
 );
 const emptyDictionaryRowsFix = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260815133914_uat_full_import_empty_dictionary_rows.sql"),
+  path.join(root, "supabase", "archive", "aud003", "migrations", "20260815133914_uat_full_import_empty_dictionary_rows.sql"),
   "utf8",
 );
 

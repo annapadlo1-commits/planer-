@@ -14,6 +14,16 @@ const migrationUrl = new URL(
   import.meta.url,
 );
 
+function assertReadOnlyTimeRpc(source) {
+  // SQL layout is semantic here; preserve all content except checkout CRLF.
+  const sql = source.replaceAll("\r\n", "\n");
+  assert.match(sql, /current_company_time_context_v1\(\)[\s\S]*?\nlanguage plpgsql\nstable\nsecurity definer\nset search_path=''/u);
+  assert.match(sql, /pg_catalog\.pg_timezone_names/u);
+  assert.match(sql, /pg_catalog\.timezone\(v_timezone,statement_timestamp\(\)\)/u);
+  assert.doesNotMatch(sql, /Europe\/Warsaw/u);
+  assert.doesNotMatch(sql, /\b(?:insert|update|delete|truncate)\b/iu);
+}
+
 test("AUD-011 computes the company month at a UTC boundary independently of the user's zone", () => {
   const instant = new Date("2026-09-30T22:30:00.000Z");
   assert.equal(businessMonthAt(instant, "Europe/Warsaw"), "2026-10");
@@ -60,12 +70,19 @@ test("AUD-011 server RPC is read-only, validates IANA and precedes the month wor
   const provider = await readFile(new URL("../components/AppAuthProvider.tsx", import.meta.url), "utf8");
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
-  assert.match(sql, /current_company_time_context_v1\(\)[\s\S]*?\nlanguage plpgsql\nstable\nsecurity definer\nset search_path=''/u);
-  assert.match(sql, /pg_catalog\.pg_timezone_names/u);
-  assert.match(sql, /pg_catalog\.timezone\(v_timezone,statement_timestamp\(\)\)/u);
-  assert.doesNotMatch(sql, /Europe\/Warsaw/u);
-  assert.doesNotMatch(sql, /\b(?:insert|update|delete|truncate)\b/iu);
+  assertReadOnlyTimeRpc(sql);
   assert.ok(provider.indexOf('rpc("current_company_time_context_v1"') < provider.indexOf('rpc("matrix_v2_workspace"'));
   assert.doesNotMatch(provider, /new Date\(\)\.toISOString\(\)\.slice\(0,7\)/u);
   assert.doesNotMatch(page, /new Date\(\)\.toISOString\(\)\.slice\(0,7\)/u);
+});
+
+test("AUD-011 read-only contract accepts LF/CRLF and rejects weakened RPC security", async () => {
+  const lf = (await readFile(migrationUrl, "utf8")).replaceAll("\r\n", "\n");
+  for (const newline of ["\n", "\r\n"]) {
+    const sql = lf.replaceAll("\n", newline);
+    assertReadOnlyTimeRpc(sql);
+    assert.throws(() => assertReadOnlyTimeRpc(sql.replace("stable", "volatile")));
+    assert.throws(() => assertReadOnlyTimeRpc(sql.replace("set search_path=''", "set search_path='public'")));
+    assert.throws(() => assertReadOnlyTimeRpc(`${sql}${newline}delete from public.matrix_versions;`));
+  }
 });

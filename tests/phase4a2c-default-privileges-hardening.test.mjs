@@ -5,7 +5,7 @@ import test from "node:test";
 import { canonicalGitText } from "./helpers/canonical-git-bytes.mjs";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260830180000_phase4a2c_default_privileges_hardening.sql",
+  "../supabase/archive/aud003/migrations/20260830180000_phase4a2c_default_privileges_hardening.sql",
   import.meta.url,
 );
 const contractUrl = new URL(
@@ -168,7 +168,7 @@ const tokenizeStatements = sql => {
 };
 
 test("migration identity follows the synthetic baseline and is unique", async () => {
-  const migrations = await readdir(new URL("../supabase/migrations/", import.meta.url));
+  const migrations = await readdir(new URL("../supabase/archive/aud003/migrations/", import.meta.url));
   const matches = migrations.filter(name => name.startsWith("20260830180000_"));
   assert.deepEqual(matches, [
     "20260830180000_phase4a2c_default_privileges_hardening.sql",

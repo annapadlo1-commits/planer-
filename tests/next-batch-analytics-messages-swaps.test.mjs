@@ -16,7 +16,7 @@ test("analytics dashboard is sourced from the published workspace and supports b
 test("message center is no longer a placeholder and private RPCs are explicitly granted", () => {
   const page = read("app/page.tsx");
   const ui = read("components/MessageCenter.tsx");
-  const migration = read("supabase/migrations/20260812233000_team_communication_uat.sql");
+  const migration = read("supabase/archive/aud003/migrations/20260812233000_team_communication_uat.sql");
   assert.match(page, /<MessageCenter/);
   assert.doesNotMatch(page, /Wiadomości zespołu są następnym rozszerzeniem/);
   assert.match(ui, /message_conversation_create_uat_v1/);

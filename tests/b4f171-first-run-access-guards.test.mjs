@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const migrationUrl=new URL("../supabase/migrations/20260824224431_b4f171_first_run_access_guards.sql",import.meta.url);
+const migrationUrl=new URL("../supabase/archive/aud003/migrations/20260824224431_b4f171_first_run_access_guards.sql",import.meta.url);
 const editorUrl=new URL("../components/MatrixV2Editor.tsx",import.meta.url);
 const authUrl=new URL("../components/AppAuthProvider.tsx",import.meta.url);
 

@@ -9,7 +9,7 @@ import {
 } from "../lib/solver-strategy-contract.ts";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260822160000_b4f165_strategy_source_of_truth.sql",
+  "../supabase/archive/aud003/migrations/20260822160000_b4f165_strategy_source_of_truth.sql",
   import.meta.url,
 );
 

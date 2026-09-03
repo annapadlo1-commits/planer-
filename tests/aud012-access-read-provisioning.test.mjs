@@ -9,6 +9,8 @@ const migrationUrl = new URL(
 const providerUrl = new URL("../components/AppAuthProvider.tsx", import.meta.url);
 
 function sqlFunction(sql, name) {
+  // Function layout is semantic; only checkout CRLF is normalized.
+  sql = sql.replaceAll("\r\n", "\n");
   const start = sql.indexOf(`create or replace function public.${name}`);
   assert.notEqual(start, -1, `${name} must exist`);
   const end = sql.indexOf("\n$$;", start);
@@ -16,16 +18,33 @@ function sqlFunction(sql, name) {
   return sql.slice(start, end + 4);
 }
 
-test("AUD-012 current_user_access_v2 is a stable read with no provisioning mutation", async () => {
-  const sql = await readFile(migrationUrl, "utf8");
+function assertReadOnlyAccessRpc(sql) {
   const readRpc = sqlFunction(sql, "current_user_access_v2()");
-
   assert.match(readRpc, /\nlanguage plpgsql\nstable\nsecurity definer\nset search_path=''\n/u);
   assert.doesNotMatch(readRpc, /\b(?:insert|update|delete|truncate)\b/iu);
   assert.doesNotMatch(readRpc, /application_access_materialize_uat_v1/iu);
   assert.match(readRpc, /'provisioning_available',v_provisioning_available/u);
+  return readRpc;
+}
+
+test("AUD-012 current_user_access_v2 is a stable read with no provisioning mutation", async () => {
+  const sql = await readFile(migrationUrl, "utf8");
+  assertReadOnlyAccessRpc(sql);
   assert.match(sql, /revoke all on function public\.current_user_access_v2\(\) from public,anon;/u);
   assert.match(sql, /grant execute on function public\.current_user_access_v2\(\) to authenticated;/u);
+});
+
+test("AUD-012 read-only contract accepts LF/CRLF and rejects weakened RPC security", async () => {
+  const lf = (await readFile(migrationUrl, "utf8")).replaceAll("\r\n", "\n");
+  const expected = assertReadOnlyAccessRpc(lf);
+  for (const newline of ["\n", "\r\n"]) {
+    const sql = lf.replaceAll("\n", newline);
+    assert.equal(assertReadOnlyAccessRpc(sql), expected);
+    const readRpc = expected.replaceAll("\n", newline);
+    assert.throws(() => assertReadOnlyAccessRpc(readRpc.replace("stable", "volatile")));
+    assert.throws(() => assertReadOnlyAccessRpc(readRpc.replace("set search_path=''", "set search_path='public'")));
+    assert.throws(() => assertReadOnlyAccessRpc(readRpc.replace("v_email text;", "v_email text; delete from public.employees;")));
+  }
 });
 
 test("AUD-012 provisioning is explicit, self-scoped, idempotent and auditable", async () => {

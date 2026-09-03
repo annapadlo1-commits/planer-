@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const migrationUrl=new URL("../supabase/migrations/20260902231357_b4f180_restore_finance_visibility_after_uat_reset.sql",import.meta.url);
+const migrationUrl=new URL("../supabase/archive/aud003/migrations/20260902231357_b4f180_restore_finance_visibility_after_uat_reset.sql",import.meta.url);
 
 test("B4F-180 restores all seven finance policies now and after every isolated UAT reset",async()=>{
   const migration=await readFile(migrationUrl,"utf8");
@@ -40,7 +40,7 @@ test("technical metrics use one column and wrap values without collapsing labels
 test("role publication uses one role anchor, leaves company publication untouched and rejects unauthorized users",async()=>{
   const [panel,publication]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
   ]);
   const rolePublish=publication.slice(publication.indexOf("create or replace function public.optimizer_publish_role_variant_uat_v2"),publication.indexOf("create or replace function public.optimizer_publish_company_variant_resolved_uat_v2"));
   assert.match(panel,/scopeType !== "ROLE"/);

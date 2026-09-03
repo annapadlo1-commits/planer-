@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
 
-const migrationUrl=new URL("../supabase/migrations/20260824231701_b4f173_workbook_identity_guard.sql",import.meta.url);
+const migrationUrl=new URL("../supabase/archive/aud003/migrations/20260824231701_b4f173_workbook_identity_guard.sql",import.meta.url);
 
 test("B4F-173: preview and apply both reject stale or forged workbook identity",async()=>{
   const sql=await readFile(migrationUrl,"utf8");

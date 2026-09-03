@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const componentPath=new URL("../components/MatrixV2Editor.tsx",import.meta.url);
-const migrationPath=new URL("../supabase/migrations/20260805170000_uat006_unified_shift_staffing_workflow.sql",import.meta.url);
+const migrationPath=new URL("../supabase/archive/aud003/migrations/20260805170000_uat006_unified_shift_staffing_workflow.sql",import.meta.url);
 const [component,migration]=await Promise.all([
   readFile(componentPath,"utf8"),
   readFile(migrationPath,"utf8"),

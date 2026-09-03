@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrl=new URL(
-  "../supabase/migrations/20260806190000_b4_full_import_idempotency.sql",
+  "../supabase/archive/aud003/migrations/20260806190000_b4_full_import_idempotency.sql",
   import.meta.url,
 );
 

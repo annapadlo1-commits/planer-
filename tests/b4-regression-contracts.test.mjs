@@ -3,59 +3,59 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260806100000_uat_finance_import_and_variant_preview.sql",
+  "../supabase/archive/aud003/migrations/20260806100000_uat_finance_import_and_variant_preview.sql",
   import.meta.url,
 );
 const fullImportMigrationUrl = new URL(
-  "../supabase/migrations/20260806133000_b4_full_company_roundtrip.sql",
+  "../supabase/archive/aud003/migrations/20260806133000_b4_full_company_roundtrip.sql",
   import.meta.url,
 );
 const fullImportWarningFixMigrationUrl = new URL(
-  "../supabase/migrations/20260806150000_b4_full_import_preview_rate_warning_fix.sql",
+  "../supabase/archive/aud003/migrations/20260806150000_b4_full_import_preview_rate_warning_fix.sql",
   import.meta.url,
 );
 const diagnosticsAndPublicationFixMigrationUrl = new URL(
-  "../supabase/migrations/20260806213000_b4_diagnostics_and_role_publication_fix.sql",
+  "../supabase/archive/aud003/migrations/20260806213000_b4_diagnostics_and_role_publication_fix.sql",
   import.meta.url,
 );
 const workloadDistributionMigrationUrl = new URL(
-  "../supabase/migrations/20260806220000_b4_workload_distribution.sql",
+  "../supabase/archive/aud003/migrations/20260806220000_b4_workload_distribution.sql",
   import.meta.url,
 );
 const workloadDistributionIntervalFixUrl = new URL(
-  "../supabase/migrations/20260806221500_b4_workload_distribution_interval_fix.sql",
+  "../supabase/archive/aud003/migrations/20260806221500_b4_workload_distribution_interval_fix.sql",
   import.meta.url,
 );
 const solverSemanticsMigrationUrl = new URL(
-  "../supabase/migrations/20260806230000_b4_solver_semantics_standby_and_diagnostics.sql",
+  "../supabase/archive/aud003/migrations/20260806230000_b4_solver_semantics_standby_and_diagnostics.sql",
   import.meta.url,
 );
 const accessAndDraftMigrationUrl = new URL(
-  "../supabase/migrations/20260815170000_uat_access_draft_shared_coverage_and_solver_release.sql",
+  "../supabase/archive/aud003/migrations/20260815170000_uat_access_draft_shared_coverage_and_solver_release.sql",
   import.meta.url,
 );
 const sharedCoverageRollbackUrl = new URL(
-  "../supabase/migrations/20260815190000_uat_revert_unapproved_shared_coverage.sql",
+  "../supabase/archive/aud003/migrations/20260815190000_uat_revert_unapproved_shared_coverage.sql",
   import.meta.url,
 );
 const draftCascadeGuardFixUrl = new URL(
-  "../supabase/migrations/20260815193000_uat_matrix_draft_cascade_guard_fix.sql",
+  "../supabase/archive/aud003/migrations/20260815193000_uat_matrix_draft_cascade_guard_fix.sql",
   import.meta.url,
 );
 const workforceDraftCascadeGuardFixUrl = new URL(
-  "../supabase/migrations/20260815194000_uat_matrix_workforce_draft_cascade_guard_fix.sql",
+  "../supabase/archive/aud003/migrations/20260815194000_uat_matrix_workforce_draft_cascade_guard_fix.sql",
   import.meta.url,
 );
 const configurableStandbyMigrationUrl = new URL(
-  "../supabase/migrations/20260816010000_configurable_category_standby_groups_uat.sql",
+  "../supabase/archive/aud003/migrations/20260816010000_configurable_category_standby_groups_uat.sql",
   import.meta.url,
 );
 const discardDraftAdHocFixUrl = new URL(
-  "../supabase/migrations/20260815212630_uat_discard_draft_ad_hoc_fk_fix.sql",
+  "../supabase/archive/aud003/migrations/20260815212630_uat_discard_draft_ad_hoc_fk_fix.sql",
   import.meta.url,
 );
 const localDateWorkloadDiagnosticsUrl = new URL(
-  "../supabase/migrations/20260817202257_b4f79_local_date_workload_diagnostics.sql",
+  "../supabase/archive/aud003/migrations/20260817202257_b4f79_local_date_workload_diagnostics.sql",
   import.meta.url,
 );
 
@@ -189,8 +189,8 @@ test("daily employee shift limit has one configurable source across UI, solver a
     readFile(new URL("../components/MatrixV2Editor.tsx", import.meta.url), "utf8"),
     readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py", import.meta.url), "utf8"),
     readFile(new URL("../solver/src/grafik_solver/validator.py", import.meta.url), "utf8"),
-    readFile(new URL("../supabase/migrations/20260804210000_primary_shift_sequence_invariants.sql", import.meta.url), "utf8"),
-    readFile(new URL("../supabase/migrations/20260805010000_diagnostic_hard_rules_and_actions.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260804210000_primary_shift_sequence_invariants.sql", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260805010000_diagnostic_hard_rules_and_actions.sql", import.meta.url), "utf8"),
   ]);
   assert.match(editor, /name="maximumShiftsPerDay"/);
   assert.match(editor, /Rezerwa per kategoria/);
@@ -425,7 +425,7 @@ test("publishing a leader copy selects and publishes that exact copy atomically"
   const [panel,client,migration]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
   ]);
   const handler=panel.slice(panel.indexOf("async function publishSelectedRole"),panel.indexOf("function startAnother"));
   assert.doesNotMatch(handler,/selectSolverVariant/);
@@ -439,7 +439,7 @@ test("publishing a leader copy selects and publishes that exact copy atomically"
 test("solver honors Matrix strategy budgets and fair-distribution tier order", async () => {
   const [engine,sql,gateway]=await Promise.all([
     readFile(new URL("../solver/src/grafik_solver/cp_sat_engine.py",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260806233000_b4_fair_distribution_priority.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260806233000_b4_fair_distribution_priority.sql",import.meta.url),"utf8"),
     readFile(new URL("../supabase/functions/solver-gateway/contract.ts",import.meta.url),"utf8"),
   ]);
   assert.doesNotMatch(engine,/MAX_RELAXED_STRATEGY_SECONDS/);
@@ -497,7 +497,7 @@ test("calendar comparison can preselect the compared employee for a server-valid
 test("shortage candidates open their calendar and an audited leader-only limit override", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
-  const migration=await readFile(new URL("../supabase/migrations/20260807090000_b4_leader_limit_override_and_candidate_context.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260807090000_b4_leader_limit_override_and_candidate_context.sql",import.meta.url),"utf8");
   assert.match(workspace,/openEmployeeCalendar\(candidate\)/);
   assert.match(workspace,/Zaproponowane godziny/);
   assert.match(workspace,/Przypisz mimo limitu/);
@@ -535,7 +535,7 @@ test("B4F-79 workload diagnostics count company-local days instead of UTC dates"
 });
 
 test("UAT-052 availability uses the company timezone and swap actions stay in flow", async () => {
-  const migration=await readFile(new URL("../supabase/migrations/20260817150626_uat052_availability_local_date_contract.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260817150626_uat052_availability_local_date_contract.sql",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
   assert.match(migration,/at time zone v_timezone\)::date<=day_value\.day_date/);
   assert.match(migration,/upper\(constraint_row\.time_range\)-interval '1 microsecond'\) at time zone v_timezone/);
@@ -546,7 +546,7 @@ test("UAT-052 availability uses the company timezone and swap actions stay in fl
 test("swap discovery starts on the first employee and validates availability plus duty hand-off", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
-  const migration=await readFile(new URL("../supabase/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",import.meta.url),"utf8");
   assert.match(workspace,/Możliwa zamiana/);
   assert.match(workspace,/possible-swap-day/);
   assert.match(workspace,/swap-suggestion-hint/);
@@ -567,7 +567,7 @@ test("employee portal uses one combined schedule and availability calendar", asy
   const modules=await readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8");
   const css=await readFile(new URL("../app/product-journey.css",import.meta.url),"utf8");
   const uatCss=await readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8");
-  const publicationCalendar=await readFile(new URL("../supabase/migrations/20260819200000_b4f87_employee_category_calendar.sql",import.meta.url),"utf8");
+  const publicationCalendar=await readFile(new URL("../supabase/archive/aud003/migrations/20260819200000_b4f87_employee_category_calendar.sql",import.meta.url),"utf8");
   assert.match(modules,/Grafik i dostępność w jednym kalendarzu/);
   assert.match(modules,/employee-combined-calendar/);
   assert.match(css,/\.portal-grid\.portal-top\{grid-template-columns:minmax\(250px,320px\) minmax\(0,1fr\)\}/);
@@ -606,7 +606,7 @@ test("employee portal never calls the owner-only UAT MASTER persona preview", as
 });
 
 test("stand-by is balanced by role and tier after the required schedule", async () => {
-  const migration=await readFile(new URL("../supabase/migrations/20260807151000_b4_standby_fairness_v3.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260807151000_b4_standby_fairness_v3.sql",import.meta.url),"utf8");
   assert.match(migration,/standby_candidates_for_role_day_uat_v3/);
   assert.match(migration,/history\.tier=v_tier/);
   assert.match(migration,/v_tier_counts/);
@@ -619,9 +619,9 @@ test("merged company publication is preflighted, auditable and available on UAT"
   const [client,panel,preflightSql,severitySql,continuitySql]=await Promise.all([
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260809162000_b4_company_preflight_grouped_severity.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260810150416_b4_b5_published_role_composite_selection_continuity.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260809162000_b4_company_preflight_grouped_severity.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260810150416_b4_b5_published_role_composite_selection_continuity.sql",import.meta.url),"utf8"),
   ]);
   assert.match(client,/optimizer_role_composite_preflight_uat_v2/);
   assert.match(client,/optimizer_publish_role_composite_uat_v3/);
@@ -656,7 +656,7 @@ test("merged company publication is preflighted, auditable and available on UAT"
 test("merged company publication recovers category teams from durable publications", async () => {
   const [panel,migration]=await Promise.all([
     readFile(new URL("../components/RoleCompositePanel.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260815192000_uat_role_composite_category_fallback.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260815192000_uat_role_composite_category_fallback.sql",import.meta.url),"utf8"),
   ]);
   assert.match(panel,/candidates\.roles\.length > 0/);
   assert.match(panel,/publishedScenarioGroups\.length === 0/);
@@ -699,7 +699,7 @@ test("selecting a calendar day never forces the page to jump", async () => {
 test("operational events and absence limits accept one audited date range", async () => {
   const [modules,migration]=await Promise.all([
     readFile(new URL("../components/ActiveModules.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260809160000_b4_company_publication_preflight_and_event_ranges.sql",import.meta.url),"utf8"),
   ]);
   assert.match(modules,/workforce_calendar_event_range_save_uat_v2/);
   assert.match(modules,/Od dnia/);
@@ -725,8 +725,8 @@ test("one browser client and server company month prevent transient duplicate co
 
 test("company publication accepts complete disjoint category variants", async () => {
   const [migration,guard]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260816065000_b4f_category_composite_publication.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260816070500_b4f_category_composite_consistency_guard.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260816065000_b4f_category_composite_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260816070500_b4f_category_composite_consistency_guard.sql",import.meta.url),"utf8"),
   ]);
   assert.match(migration,/optimization_snapshots_v2 run_snapshot/);
   assert.match(migration,/run_snapshot\.snapshot->'scope'->'roleIds'/);
@@ -752,7 +752,7 @@ test("cross-section actions preserve their exact destination subtab", async () =
 test("configuration publication uses the company day and keeps failures inside the drawer", async () => {
   const [editor,migration]=await Promise.all([
     readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260811235500_uat_publication_company_timezone_fix.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260811235500_uat_publication_company_timezone_fix.sql",import.meta.url),"utf8"),
   ]);
   assert.match(editor,/matrix_v2_publish_draft_uat_v2/);
   assert.match(editor,/Publikacja nie została wykonana/);
@@ -775,7 +775,7 @@ test("application access is configured independently from schedule employees", a
   const [editor,auth,migration]=await Promise.all([
     readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
     readFile(new URL("../components/AppAuthProvider.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260812001000_uat_application_access_and_full_reset.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260812001000_uat_application_access_and_full_reset.sql",import.meta.url),"utf8"),
   ]);
   assert.match(editor,/5\. Dostępy do aplikacji/);
   assert.match(editor,/Osoba z finansów lub administrator nie musi być pracownikiem/);
@@ -791,7 +791,7 @@ test("application access is configured independently from schedule employees", a
 test("full UAT reset preserves only the owner and creates an empty first-run draft", async () => {
   const [editor,migration]=await Promise.all([
     readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260824224431_b4f171_first_run_access_guards.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260824224431_b4f171_first_run_access_guards.sql",import.meta.url),"utf8"),
   ]);
   assert.match(editor,/Wyczyść UAT i pozostań przy pustej konfiguracji/);
   assert.match(editor,/Nie czyść UAT przed importem/);
@@ -806,8 +806,8 @@ test("full UAT reset preserves only the owner and creates an empty first-run dra
 
 test("initial UAT company setup is effective from the first day of its planning month", async () => {
   const [migration,categoryMigration,page]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260813221000_uat_initial_matrix_month_boundary.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260813222000_uat_role_category_month_boundary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260813221000_uat_initial_matrix_month_boundary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260813222000_uat_role_category_month_boundary.sql",import.meta.url),"utf8"),
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
   ]);
   assert.match(migration,/normalize_initial_matrix_month_uat_v1/);
@@ -843,7 +843,7 @@ test("queued optimizer runs explain the worker queue instead of looking frozen",
     readFile(new URL("../lib/polish-plural.ts",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/uat-overhaul.css",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260813234500_uat_optimizer_queue_transparency.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260813234500_uat_optimizer_queue_transparency.sql",import.meta.url),"utf8"),
   ]);
   assert.match(panel,/Zlecenie zapisano w kolejce/);
   assert.match(panel,/To zadanie jest pierwsze w kolejce/);
@@ -862,7 +862,7 @@ test("queued optimizer runs explain the worker queue instead of looking frozen",
 });
 
 test("duty-only shifts do not inherit unrelated role-wide duty minima", async () => {
-  const migration=await readFile(new URL("../supabase/migrations/20260812194000_b4f_duty_only_shift_demand_fix.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260812194000_b4f_duty_only_shift_demand_fix.sql",import.meta.url),"utf8");
   assert.match(migration,/minimum_requirements as/);
   assert.match(migration,/and rd\.shift_obligation and rd\.shift_period=ro\.shift_period/);
   assert.match(migration,/where ro\.generic_count>0/);

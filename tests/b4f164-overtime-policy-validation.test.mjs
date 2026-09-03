@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260822083354_b4f164_overtime_policy_validation.sql",
+  "../supabase/archive/aud003/migrations/20260822083354_b4f164_overtime_policy_validation.sql",
   import.meta.url,
 );
 

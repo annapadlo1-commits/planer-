@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { canonicalGitBytes } from "./helpers/canonical-git-bytes.mjs";
 
 const inventory = JSON.parse(await readFile(new URL("../supabase/tenant-isolation-inventory.json", import.meta.url), "utf8"));
 
@@ -33,14 +34,27 @@ test("AUD-008 migration gate stays fail-closed until live mapping and replay exi
   assert.match(inventory.requiredTwoCompanyCases[0].sameValues.join(" "), /GP-001.*BAR.*KELNER.*Kelner/u);
 });
 
-test("AUD-008 checked-in inventory is byte-identical to deterministic reconstruction", async () => {
+test("AUD-008 canonical Git inventory is byte-identical to deterministic reconstruction", async () => {
   const root = new URL("..", import.meta.url);
   const generated = execFileSync(process.execPath, ["scripts/tenant-isolation-inventory.mjs"], {
     cwd: root,
-    encoding: "utf8",
   });
-  const checkedIn = await readFile(new URL("../supabase/tenant-isolation-inventory.json", import.meta.url), "utf8");
-  assert.equal(generated, checkedIn);
+  const checkedIn = await readFile(new URL("../supabase/tenant-isolation-inventory.json", import.meta.url));
+  assert.deepEqual(generated, canonicalGitBytes("supabase/tenant-isolation-inventory.json", checkedIn));
+});
+
+test("AUD-008 accepts LF/CRLF checkout bytes but rejects every other inventory change", async () => {
+  const repoPath = "supabase/tenant-isolation-inventory.json";
+  const checkedIn = await readFile(new URL(`../${repoPath}`, import.meta.url));
+  const canonical = canonicalGitBytes(repoPath, checkedIn);
+  for (const newline of ["\n", "\r\n"]) {
+    const variant = Buffer.from(canonical.toString("utf8").replaceAll("\n", newline));
+    assert.deepEqual(canonicalGitBytes(repoPath, variant), canonical);
+    assert.throws(
+      () => canonicalGitBytes(repoPath, Buffer.concat([variant, Buffer.from(" ")])),
+      /Worktree content differs from canonical Git blob beyond CRLF/u,
+    );
+  }
 });
 
 test("AUD-008 global allowlist matches every destructive UAT reset contract", async () => {
@@ -48,7 +62,7 @@ test("AUD-008 global allowlist matches every destructive UAT reset contract", as
     "20260812001000_uat_application_access_and_full_reset.sql",
     "20260813143000_uat_quick_start_self_import_defaults.sql",
     "20260824224431_b4f171_first_run_access_guards.sql",
-  ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8")));
+  ].map(name => readFile(new URL(`../supabase/archive/aud003/migrations/${name}`, import.meta.url), "utf8")));
   for (const sql of migrations) {
     assert.match(sql, /tablename not in \('uat_environment_controls','solver_feature_flags'\)/u);
   }

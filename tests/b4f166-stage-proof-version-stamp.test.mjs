@@ -5,10 +5,10 @@ import test from "node:test";
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 const migration = read(
-  "supabase/migrations/20260822173000_b4f166_stage_proof_version_stamp.sql",
+  "supabase/archive/aud003/migrations/20260822173000_b4f166_stage_proof_version_stamp.sql",
 );
 const postgresRegexFix = read(
-  "supabase/migrations/20260822180000_b4f166_postgres_version_stamp_regex_fix.sql",
+  "supabase/archive/aud003/migrations/20260822180000_b4f166_postgres_version_stamp_regex_fix.sql",
 );
 const gatewayContract = read("supabase/functions/solver-gateway/contract.ts");
 const gatewayEntrypoint = read("supabase/functions/solver-gateway/index.ts");

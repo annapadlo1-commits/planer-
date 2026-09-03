@@ -127,7 +127,7 @@ test("live parity gate refuses a catalog from any project other than UAT", () =>
 });
 
 test("restored staffing RPC is fail-closed, atomic and rejects an invalid final count", () => {
-  const sql = readFileSync(new URL("../supabase/migrations/20260826224321_restore_frontend_rpc_parity.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../supabase/archive/aud003/migrations/20260826224321_restore_frontend_rpc_parity.sql", import.meta.url), "utf8");
   assert.match(sql, new RegExp(`function public\\.${RESTORED_STAFFING_RPC}\\(`));
   const auth = sql.indexOf("if auth.uid() is null");
   const roleGuard = sql.indexOf("public.has_app_role('OWNER')");

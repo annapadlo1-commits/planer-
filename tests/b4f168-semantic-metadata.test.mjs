@@ -8,11 +8,11 @@ import {
 } from "../lib/solver-strategy-contract.ts";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260822200000_b4f168_remove_obsolete_solver_metadata.sql",
+  "../supabase/archive/aud003/migrations/20260822200000_b4f168_remove_obsolete_solver_metadata.sql",
   import.meta.url,
 );
 const stampMigrationUrl = new URL(
-  "../supabase/migrations/20260822203000_b4f168_database_stamp.sql",
+  "../supabase/archive/aud003/migrations/20260822203000_b4f168_database_stamp.sql",
   import.meta.url,
 );
 

@@ -41,7 +41,7 @@ test("frontend and importer enforce the same additional-role rule",async()=>{
 });
 
 test("solver snapshot never converts a capability into an employee role",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260816183000_explicit_employee_roles_only_uat.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260816183000_explicit_employee_roles_only_uat.sql",import.meta.url),"utf8");
   assert.match(migration,/where not \(grant_row\.value \? 'sourceDutyId'\)/);
   assert.match(migration,/jsonb_array_length\(v_grants\) > 0/);
   assert.match(migration,/role eligibility comes only from explicit employee role grants/i);
