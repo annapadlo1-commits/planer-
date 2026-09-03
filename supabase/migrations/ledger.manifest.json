@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "c0b6c4aba5419651992dc931fcd890e5a3439a5d",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "3db77eb6ca14f40a1a47fcda3e1f47be3ecd8d9afd67e52e1b03fd377189a71d",
+  "aggregateSha256": "c0a00e658f05d28244bd5a9240e2f69c8d02daceca156d2e9fe02f8bea662a84",
   "entries": [
     {
       "version": "0001",
@@ -1828,6 +1828,14 @@
       "canonicalBytes": 1723,
       "canonicalSha256": "2dd560b8fddb7c79c8bcc278d7009d242d99672ea281c328ac83330e412ceae9",
       "gitBlobSha1": "d534838f177b70e618579d378289b64cdf9aec6d"
+    },
+    {
+      "version": "20260903130000",
+      "name": "aud012_separate_access_read_from_provisioning",
+      "file": "20260903130000_aud012_separate_access_read_from_provisioning.sql",
+      "canonicalBytes": 8514,
+      "canonicalSha256": "ac2b24e476defd8d7878b36eb1ca992251526f6f9c460ba1a954e2d65414378e",
+      "gitBlobSha1": "5c12fcbdfce8c23cd8f20fcbd1b880e8f7b4e15a"
     }
   ]
 }

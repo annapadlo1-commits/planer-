@@ -28,12 +28,14 @@ type LiveSummary = {
 };
 
 type AppAccess = {
+  provisioning_available?: boolean;
   roles?: { app_role: string; scope_role?: string | null; scope_location?: string | null }[];
   employee?: {
     employee_no: string;
     first_name: string;
     last_name: string;
     primary_role: string;
+    active: boolean;
   } | null;
 };
 
@@ -151,6 +153,20 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     if(result.error){
       setLoading(false);
       setWorkspaceIssue("WORKSPACE_LOAD_FAILED");
+      return;
+    }
+    await loadLiveData(user);
+    setLoading(false);
+  },[loadLiveData,supabase,user]);
+
+  const provisionCurrentAccess=useCallback(async()=>{
+    if(!supabase||!user)return;
+    setLoading(true);
+    setError("");
+    const result=await supabase.rpc("application_access_provision_current_user_v1");
+    if(result.error){
+      setLoading(false);
+      setError("Nie udało się aktywować nadanego dostępu. Poproś właściciela o sprawdzenie adresu e-mail w Administracji i spróbuj ponownie.");
       return;
     }
     await loadLiveData(user);
@@ -400,7 +416,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
           <span className="login-lock"><ShieldCheck size={24} /></span>
           <p className="eyebrow">KONTO AKTYWNE</p>
           <h1>Oczekuje na nadanie dostępu</h1>
-          <p>Konto <strong>{user.email}</strong> zostało rozpoznane, ale nie ma jeszcze przypisanej roli ani zespołu. Właściciel może nadać dostęp w Administracji.</p>
+          <p>{access.provisioning_available
+            ? <>Dostęp dla konta <strong>{user.email}</strong> został nadany. Aktywuj go świadomie, aby powiązać konto z właściwą rolą i profilem pracownika.</>
+            : <>Konto <strong>{user.email}</strong> zostało rozpoznane, ale nie ma jeszcze przypisanej roli ani zespołu. Właściciel może nadać dostęp w Administracji.</>}</p>
+          {access.provisioning_available&&<button className="primary-button" onClick={()=>void provisionCurrentAccess()}>Aktywuj nadany dostęp</button>}
           <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
           <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
         </section>
