@@ -709,7 +709,7 @@ test("operational events and absence limits accept one audited date range", asyn
   assert.match(migration,/generate_series\(p_start_date,\s*p_end_date,\s*interval '1 day'\)/);
 });
 
-test("one browser client and synchronous month context prevent transient duplicate configuration", async () => {
+test("one browser client and server company month prevent transient duplicate configuration", async () => {
   const [client,page,workspace]=await Promise.all([
     readFile(new URL("../lib/supabase/client.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/page.tsx",import.meta.url),"utf8"),
@@ -718,7 +718,8 @@ test("one browser client and synchronous month context prevent transient duplica
   assert.match(client,/let browserClient/);
   assert.match(client,/if \(browserClient === undefined\) browserClient = createBrowserClient/);
   assert.match(page,/\[selectedMonth,setSelectedMonth\]=useState\(\(\)=>/);
-  assert.match(page,/const fromUrl=new URLSearchParams\(window\.location\.search\)\.get\("month"\)/);
+  assert.match(page,/initialBusinessMonth\(\s*currentCompanyMonth,/);
+  assert.doesNotMatch(page,/new Date\(\)\.toISOString\(\)\.slice\(0,7\)/);
   assert.match(workspace,/setLeaderEmployeeId\(candidate\.employeeId\);setLeaderFeedback\(""\);setLeaderLimitWarning\(""\)/);
 });
 
