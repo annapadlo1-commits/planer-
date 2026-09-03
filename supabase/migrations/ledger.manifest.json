@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "c0b6c4aba5419651992dc931fcd890e5a3439a5d",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "0b715e1057a27baca60e4280e713220d6400113683f7660789313e7e4c5fad06",
+  "aggregateSha256": "c9aed676af92cae66318c5123007558d76f12a080ab77faa0f13422acd180ad9",
   "entries": [
     {
       "version": "0001",
@@ -1804,6 +1804,14 @@
       "canonicalBytes": 1581,
       "canonicalSha256": "2f534dd0d5aefb47a48cca9bb091bff57c731e2243cb8eac7c39721e513775cb",
       "gitBlobSha1": "558886076cbfd61118fb11d916fc12aec3776e6b"
+    },
+    {
+      "version": "20260903095601",
+      "name": "aud015_optimize_confirmed_rls_initplans",
+      "file": "20260903095601_aud015_optimize_confirmed_rls_initplans.sql",
+      "canonicalBytes": 5050,
+      "canonicalSha256": "4bb2f704cbc11f3eb8e3a39eb034f949ada3ff7f1619ef5a1ff765ea6a808c04",
+      "gitBlobSha1": "f0ffd1b5d75ca7a8ebe023a36737313cb2388c1d"
     },
     {
       "version": "20260903100000",
