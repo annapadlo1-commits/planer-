@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { checkArchive } from "./aud003/check-archive.mjs";
 
 const UAT_PROJECT_REF = "nhthrtpkfpmufmrmdyjg";
-const CANONICAL_BASE_SHA = "c0b6c4aba5419651992dc931fcd890e5a3439a5d";
+const CANONICAL_BASE_SHA = "92bc2c8bcbba780d251f5a37a7e56767ecdb6386";
 
 function option(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -95,6 +96,10 @@ function compareCatalog(manifest, payload) {
 }
 
 const current = await buildManifest();
+if (!option("--migration-dir")) {
+  const archive = await checkArchive(root);
+  process.stdout.write(`MIGRATION_ARCHIVE_MATCHED ${archive.archived} LIVE_PROVENANCE ${archive.liveRows}\n`);
+}
 if (writeMode) {
   await writeFile(manifestPath, `${JSON.stringify(current, null, 2)}\n`, "utf8");
   process.stdout.write(`MIGRATION_LEDGER_WRITTEN ${current.entries.length} ${current.aggregateSha256}\n`);

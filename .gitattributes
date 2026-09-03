@@ -1,0 +1,5 @@
+# AUD-003: preserve exact evidence bytes only; do not renormalize other files.
+supabase/archive/aud003/migrations/*.sql -text
+supabase/archive/aud003/legacy-ledger.manifest.json -text
+supabase/migrations/20260903090000_aud003_canonical_uat_baseline.sql -text
+supabase/baseline/aud003/generated-baseline.sql -text
