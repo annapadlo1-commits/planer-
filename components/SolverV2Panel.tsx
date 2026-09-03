@@ -25,6 +25,7 @@ import {
   getPublicationChangePreview,
   getPublicationReadiness,
   getPublicationAuthorityStatus,
+  getLatestRecoverableSolverRunId,
   getLeaderVariantForRun,
   getLeaderVariantWorkspace,
   getLeaderHistoryStatus,
@@ -343,11 +344,12 @@ export function SolverV2Panel({
   const [publicationWarningReason,setPublicationWarningReason]=useState("");
   const [publicationReplacementReason,setPublicationReplacementReason]=useState("");
   const [refreshing,setRefreshing]=useState(false);
+  const [serverRecoveryBusy,setServerRecoveryBusy]=useState(false);
   const [lastStatusCheck,setLastStatusCheck]=useState("");
   const statusFingerprintRef=useRef("");
 
   const active = Boolean(run && !isSolverRunTerminal(run.status));
-  const recovering = Boolean(pollingRunId && !run);
+  const recovering = serverRecoveryBusy || Boolean(pollingRunId && !run);
   const canOpenManualStudio = engine === "ORTOOLS_V2" && allowStart && !recovering && !active && !leaderVariant;
   const generatedSelectedVariant = (leaderVariant ? variants.find(variant=>variant.id===leaderVariant.sourceVariantId) : null)
     ?? variants.find(variant => variant.selected)
@@ -512,6 +514,7 @@ export function SolverV2Panel({
     let disposed = false;
     setRun(null);
     setPollingRunId(null);
+    setServerRecoveryBusy(false);
     setMemoryPromptOpen(false);
     setMemoryGameOpen(false);
     setStrategies([]);
@@ -531,6 +534,26 @@ export function SolverV2Panel({
     statusFingerprintRef.current="";
     const recovered = skipRecovery ? null : (initialRunId ?? recoverSolverRun(context));
     if (recovered) setPollingRunId(recovered);
+    else if (!skipRecovery && supabase && selectedScenario?.id && expectedSolverVersion && engine !== "ALPHA15") {
+      setServerRecoveryBusy(true);
+      void getLatestRecoverableSolverRunId(supabase, {
+        month,
+        scenarioId:selectedScenario.id,
+        scopeType,
+        scopeRoleId,
+        engine,
+        solverVersion:expectedSolverVersion,
+      }).then(serverRunId => {
+        if (disposed || !serverRunId) return;
+        rememberSolverRun(context, serverRunId);
+        setPollingRunId(serverRunId);
+        setMessage("Odzyskano z serwera generowanie zapisane przed wylogowaniem. Aktualny postęp zostanie odświeżony automatycznie.");
+      }).catch(() => {
+        if (!disposed) setPollWarning("Nie udało się sprawdzić zapisanych generowań. Otwórz kategorię ponownie albo użyj przycisku „Sprawdź status”.");
+      }).finally(() => {
+        if (!disposed) setServerRecoveryBusy(false);
+      });
+    }
     const publishedScheduleId = engine === "ORTOOLS_V2" ? recoverPublishedSchedule(context) : null;
     if (publishedScheduleId && supabase) {
       void getPublishedSchedule(supabase, publishedScheduleId)
@@ -551,7 +574,7 @@ export function SolverV2Panel({
         });
     }
     return () => { disposed = true; };
-  }, [context, engine, month, supabase, initialRunId, skipRecovery]);
+  }, [context, engine, expectedSolverVersion, month, selectedScenario?.id, scopeRoleId, scopeType, supabase, initialRunId, skipRecovery]);
 
   useEffect(()=>{
     if(!supabase||engine!=="ORTOOLS_V2"||!selectedVariant||selectedVariant.status==="PUBLISHED"||!leaderPublicationReady){
@@ -592,7 +615,7 @@ export function SolverV2Panel({
   },[supabase,leaderVariant?.id,leaderVariant?.revision,leaderVariant?.status]);
 
   async function start() {
-    if (!supabase || pollingRunId || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount === 0 || !name.trim()) return;
+    if (!supabase || serverRecoveryBusy || pollingRunId || !expectedSolverVersion || !selectedScenario?.id || selectedScenario.strategyCount === 0 || !name.trim()) return;
     setBusy(true);
     setMessage("");
     setPollWarning("");
@@ -1259,7 +1282,7 @@ export function SolverV2Panel({
             {variant.totalCostMinor !== undefined && variant.totalCostMinor !== null
               && <span><CircleDollarSign/><small>Koszt</small><strong>{money(variant.totalCostMinor, variant.currency)}</strong></span>}
           </div>
-          <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span></div>
+          <div className="solver-v2-coverage-detail"><span><small>Pokrycie wymaganej obsady</small><strong>{variant.assignmentCount + variant.unfilledCount > 0 ? `${Math.round(variant.assignmentCount / (variant.assignmentCount + variant.unfilledCount) * 1000) / 10}%` : "100%"}</strong></span><span><small>Koszt jednego przydziału</small><strong>{variant.totalCostMinor != null && variant.assignmentCount ? money(Math.round(variant.totalCostMinor / variant.assignmentCount), variant.currency) : "—"}</strong></span><span><small>Budżet</small><strong>{variant.budgetMinor!=null?money(variant.budgetMinor,variant.currency):"Nie ustawiono limitu"}</strong></span></div>
           {variant.fairnessTarget?.applicable&&<div className={`solver-v2-notice ${variant.fairnessTarget.met?"":"warning"}`} role="status">
             {variant.fairnessTarget.met?<Check/>:<AlertTriangle/>}<span><strong>{variant.fairnessTarget.met?"Docelowy poziom wyrównania osiągnięty":"Nie udało się osiągnąć docelowego poziomu wyrównania"}</strong><small>{variant.fairnessTarget.met?"Grafik spełnia twarde zasady, najlepszą możliwą obsadę i oba cele jakości fairness.":fairnessTargetExplanation(variant)}</small><small>Najniższa realizacja: {fairnessPercent(variant.fairnessTarget.actualMinimumBps)} / cel {fairnessPercent(variant.fairnessTarget.targetMinimumBps)} • rozstęp: {fairnessSpread(variant.fairnessTarget.actualSpreadBps)} / cel maks. {fairnessSpread(variant.fairnessTarget.targetMaximumSpreadBps)} • próby: {variant.fairnessTarget.attemptCount}</small></span>
           </div>}
@@ -1267,7 +1290,7 @@ export function SolverV2Panel({
             <summary><span>Jak silnik ocenił ten wariant?</span><small>Techniczne wskaźniki i wyjaśnienia</small></summary>
             <dl className="solver-v2-analysis">
               {presentSolverVariantMetrics(variant.metrics).map(metric=><div key={metric.code}><dt>{metric.label}<small>{metric.explanation}</small></dt><dd>{metric.value}</dd></div>)}
-              {variant.budgetMinor!==undefined&&variant.budgetMinor!==null&&<div><dt>Budżet<small>Limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{money(variant.budgetMinor,variant.currency)}</dd></div>}
+              <div><dt>Budżet<small>Osobny limit kosztu zapisany dla wybranego wariantu biznesowego.</small></dt><dd>{variant.budgetMinor!=null?money(variant.budgetMinor,variant.currency):"Nie ustawiono limitu"}</dd></div>
               {variant.stageProof.length>0&&<div><dt>Dowód etapów optymalizacji<small>Status, wynik, zamrożona granica, tolerancja, budżet, czas i użycie fallbacku są zapisane dla każdego etapu.</small></dt><dd>{solverStageProofLabel(variant)}</dd></div>}
               {Object.keys(variant.versionStamp).length>0&&<div><dt>Identyfikatory wersji przebiegu<small>Wersje komponentów i konfiguracji, na których dokładnie powstał ten wariant.</small></dt><dd>{solverVersionStampLabel(variant)}</dd></div>}
             </dl>
