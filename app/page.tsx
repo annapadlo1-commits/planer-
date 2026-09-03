@@ -47,6 +47,7 @@ import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,typ
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import { userSafeErrorMessage } from "@/lib/user-safe-error";
 import { initialBusinessMonth } from "@/lib/company-time";
+import { useProductPersona } from "@/lib/product-persona";
 import {
   beginMonthWorkspaceLoad,
   canStartMonthWorkspaceLoad,
@@ -61,14 +62,10 @@ import {
 import {
   employeeNavigation,
   canManageSchedule,
-  isEmployeePersona,
   managementNavigationForRoles,
   pathForSection,
   sectionFromPath,
-  type ProductSection,
-  type SetupFocus,
-  type SetupSection,
-  type SetupStepKey,
+  type ProductSection, type SetupFocus, type SetupSection, type SetupStepKey,
 } from "@/lib/product-journey";
  type NavKey = "centrum"|"generator"|"zespoly"|"scalanie"|"matrix"|"grafik"|"kalendarz"|"wydarzenia"|"kadra"|"hr"|"finanse"|"portal"|"czas"|"integracje"|"alerty"|"naprawy"|"wiadomosci"|"budzet"|"profil";
 type Modal = "plan"|"shift"|null;
@@ -137,7 +134,7 @@ export default function GrafikPro() {
   const { user, access, connected, summary, companyTimezone, currentCompanyMonth, refresh, signOut }=useAppAuth();
   const router=useRouter();
   const pathname=usePathname();
-  const employeeShell=isEmployeePersona(access?.roles);
+  const {activePersona,employeeShell,personas,selectPersona}=useProductPersona(access?.roles,access?.employee);
   const productNavigation=employeeShell?employeeNavigation:managementNavigationForRoles(access?.roles);
   const requestedPrimarySection=sectionFromPath(pathname,employeeShell);
   const primarySection=productNavigation.some(item=>item.key===requestedPrimarySection)
@@ -206,6 +203,7 @@ export default function GrafikPro() {
   const activeCurrency=isOrtools?solverConfiguration?.currency??"": "PLN";
   const solverTimezone=solverConfiguration?.engine==="SHADOW"?solverConfiguration.timezone??"":activeTimezone;
   const selectedMonthLabel=monthLabel(selectedMonth);
+  const switchPersona=(next:"employee"|"management")=>{if(!personas.includes(next)||next===activePersona)return;setMobileNavigationOpen(false);setRecoveryFocus(null);setModal(null);setSelectedShift(null);setMonthlyBudgetOpen(false);setPlanScope({type:"COMPANY",category:null});setActiveState(next==="employee"?"portal":"centrum");selectPersona(next);router.push(`${next==="employee"?pathForSection("today"):pathForSection("start")}?month=${selectedMonth}`);};
   const setActive=useCallback((next:NavKey)=>{
     const section=legacySection[next];
     const navigatesToAnotherSection=sectionFromPath(pathname,employeeShell)!==section;
@@ -515,7 +513,7 @@ export default function GrafikPro() {
     return {...complete,roles:solverConfiguration.roles.map(item=>({id:item.id,code:item.code,name:item.name,active:true}))};
   },[complete,solverConfiguration]);
   const employeePortalIdentity=useMemo<EmployeePortalIdentity|undefined>(()=>{
-    if(!access?.employee)return undefined;
+    if(!access?.employee?.active)return undefined;
     const profile=complete?.employees.find(employee=>employee.employeeNo===access.employee?.employee_no);
     return {
       id:profile?.id??"",
@@ -542,7 +540,7 @@ export default function GrafikPro() {
   return <main className="app-shell product-shell" data-persona={employeeShell?"employee":"management"}>
     <aside id="product-navigation" className={`sidebar product-sidebar ${mobileNavigationOpen?"open":""}`} aria-label="Główna nawigacja">
       <div className="brand"><img className="brand-lockup" src="/brand/szafunek-lockup-transparent.png" alt="SZAFUNEK"/><button type="button" className="icon-button mobile-close" aria-label="Zamknij menu" onClick={()=>setMobileNavigationOpen(false)}><X size={20}/></button></div>
-      <div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>
+      {personas.length>1?<div className="persona-switch" aria-label="Wybierz zakres pracy"><button type="button" aria-pressed={activePersona==="employee"} onClick={()=>switchPersona("employee")}><Users/> Pracownik</button><button type="button" aria-pressed={activePersona==="management"} onClick={()=>switchPersona("management")}><ShieldCheck/> Zarządzanie</button></div>:<div className="persona-pill">{employeeShell?<><Users/> PANEL PRACOWNIKA</>:<><ShieldCheck/> PANEL ZARZĄDZAJĄCY</>}</div>}
       <nav>{productNavigation.map(item=>{const Icon=productIcons[item.key];return <button key={item.key} className={primarySection===item.key?"active":""} onClick={()=>{setMobileNavigationOpen(false);openProductSection(item.key);}}><Icon/><span>{item.label}</span><small>{item.description}</small></button>;})}</nav>
       <div className="sidebar-footer">
         <div className="profile"><span>{(user?.email||"GP").slice(0,2).toUpperCase()}</span><div><strong>{access?.employee?`${access.employee.first_name} ${access.employee.last_name}`:user?.email}</strong><small>{({OWNER:"Właściciel",ADMIN:"Administrator",HR_FINANCE:"Kadry i finanse",ROLE_MANAGER:"Menadżer roli",LOCATION_MANAGER:"Menadżer lokalu",VERIFIER:"Weryfikator",EMPLOYEE:"Pracownik"} as Record<string,string>)[access?.roles?.[0]?.app_role||""]||"Użytkownik"}</small></div></div>

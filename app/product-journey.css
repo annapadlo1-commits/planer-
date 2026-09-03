@@ -14,6 +14,10 @@
 .product-shell .product-sidebar nav button.active{color:#fff;background:linear-gradient(90deg,rgba(135,150,129,.42),rgba(255,255,255,.08));box-shadow:inset 3px 0 #A6B3A0}
 .product-shell .product-sidebar nav button.active small{color:#C4D2C4}
 .persona-pill{display:flex;align-items:center;gap:7px;margin:0 7px 13px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;color:#C4D2C4;background:rgba(255,255,255,.05);font-size:9px;font-weight:800;letter-spacing:.08em}
+.persona-switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:0 7px 13px;padding:4px;border:1px solid rgba(255,255,255,.12);border-radius:13px;background:rgba(255,255,255,.05)}
+.persona-switch button{min-width:0;border:0;border-radius:9px;padding:8px 5px;background:transparent;color:#A6B3A0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;font-size:8px;font-weight:800;letter-spacing:.04em}
+.persona-switch button svg{width:14px;height:14px;flex:0 0 auto}
+.persona-switch button[aria-pressed="true"]{color:#fff;background:rgba(135,150,129,.55);box-shadow:0 3px 10px rgba(0,0,0,.13)}
 .product-topbar-copy{min-width:190px}.product-topbar-copy>small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
 .product-shell .topbar .primary-button:disabled{opacity:.45;filter:grayscale(.35);box-shadow:none;cursor:not-allowed}
 [id^="configuration-step-"]{scroll-margin-top:108px}
