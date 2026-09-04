@@ -25,6 +25,16 @@ import {
 } from "@/lib/app-color-palette";
 import { QUICK_WORKBOOK_SHEETS, referenceLabel } from "@/lib/workbook-contract";
 import {
+  contractTypeLabel,
+  localToday,
+  money,
+  operationLabel,
+  payMethodLabel,
+  plural,
+  scenarioHasActiveStrategy,
+  shortTime as time,
+} from "@/lib/matrix-v2-editor-utils";
+import {
   authorizeGoogleDriveFile,
   beginGoogleDriveImportAuthorization,
   beginGoogleDriveRedirectAuthorization,
@@ -89,64 +99,6 @@ type FinanceAccessPolicy={appRole:string;visibility:FinanceVisibility;updatedAt?
 type FinanceAccessPolicyPayload={levels:FinanceVisibility[];policies:FinanceAccessPolicy[]};
 type AccessImportRow={row:number;email:string;appRole:string;roleId:string|null;locationId:string|null;active:boolean};
 type AccessImportPreview={rows:AccessImportRow[];errors:string[];fileName:string};
-
-const operationLabel: Record<string, string> = {
-  SET: "Ustaw", ADD: "Dodaj", MULTIPLY: "Pomnóż", REMOVE: "Usuń wymaganie",
-};
-const payMethodLabel: Record<string, string> = {
-  FIXED_PER_SHIFT: "Stała kwota za zmianę",
-  PER_HOUR: "Kwota za godzinę",
-  PERCENT_BASE: "Procent stawki podstawowej",
-  MULTIPLIER: "Mnożnik stawki",
-  SHIFT_DURATION_THRESHOLD_PER_HOUR: "Dodatek po długości zmiany",
-  MONTHLY_THRESHOLD_PER_HOUR: "Dodatek po progu miesięcznym",
-};
-function time(value?: string | null) { return value ? value.slice(0, 5) : "—"; }
-function money(value: number | null | undefined, currency: string) {
-  if (value === undefined || value === null) return "—";
-  try {
-    return new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(value / 100);
-  } catch {
-    return `${new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 2 }).format(value / 100)} ${currency}`;
-  }
-}
-function plural(value: number, one: string, few: string, many: string) {
-  if (value === 1) return `${value} ${one}`;
-  if (value >= 2 && value <= 4) return `${value} ${few}`;
-  return `${value} ${many}`;
-}
-function contractTypeLabel(value?:string|null){return ({UMOWA_O_PRACE:"Umowa o pracę",CZESC_ETATU:"Część etatu",ZLECENIE:"Umowa zlecenie",B2B:"B2B",INNE:"Inna"} as Record<string,string>)[value??"INNE"]??"Inna";}
-function localToday(timezone:string){
-  const parts=Object.fromEntries(new Intl.DateTimeFormat("en",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()).filter(part=>part.type!=="literal").map(part=>[part.type,part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function scenarioHasActiveStrategy(
-  scenarioId: string,
-  scenarios: MatrixV2Workspace["scenarios"],
-  links: MatrixV2Workspace["scenarioStrategies"],
-  activeStrategyIds: Set<string>,
-) {
-  const scenarioById = new Map(scenarios.map(scenario => [scenario.id, scenario]));
-  const resolved = new Map<string, boolean>();
-  const visited = new Set<string>();
-  let current = scenarioById.get(scenarioId);
-  let depth = 0;
-
-  while (current) {
-    if (depth > 32 || visited.has(current.id)) return false;
-    const currentId = current.id;
-    visited.add(currentId);
-    for (const link of links.filter(item => item.scenario_id === currentId)) {
-      if (!resolved.has(link.strategy_id)) resolved.set(link.strategy_id, link.active);
-    }
-    if (!current.parent_scenario_id) break;
-    current = scenarioById.get(current.parent_scenario_id);
-    depth += 1;
-  }
-
-  return [...resolved].some(([strategyId, active]) => active && activeStrategyIds.has(strategyId));
-}
 
 export function MatrixV2Editor({
   month, data, reload, notify, fail, focusEmployeeId, initialTab, createEmployeeRequest, onCreateEmployeeOpened, onOpenOperationalCalendar,

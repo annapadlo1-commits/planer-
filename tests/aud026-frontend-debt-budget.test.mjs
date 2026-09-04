@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const budgets = new Map([
-  ["components/MatrixV2Editor.tsx", 2_842],
+  ["components/MatrixV2Editor.tsx", 2_794],
   ["components/ActiveModules.tsx", 1_262],
   ["components/SolverV2Workspace.tsx", 959],
   ["app/page.tsx", 746],
@@ -32,4 +32,13 @@ test("the legacy global important-declaration debt cannot increase", async () =>
     importantDeclarations.length <= 2_114,
     `brand-streetart.css has ${importantDeclarations.length} !important declarations; scope or remove the new rule`,
   );
+});
+
+test("Matrix editor formatting and strategy traversal stay outside the React monolith", async () => {
+  const editor = await source("components/MatrixV2Editor.tsx");
+  const utilities = await source("lib/matrix-v2-editor-utils.ts");
+  assert.match(editor, /from "@\/lib\/matrix-v2-editor-utils"/u);
+  assert.doesNotMatch(editor, /function scenarioHasActiveStrategy/u);
+  assert.match(utilities, /export function scenarioHasActiveStrategy/u);
+  assert.match(utilities, /depth > 32 \|\| visited\.has\(current\.id\)/u);
 });
