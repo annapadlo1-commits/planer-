@@ -10,7 +10,20 @@ BEGIN
   SELECT count(*) INTO n FROM pg_policies WHERE schemaname='public'
   AND policyname IN ('employee_reads_own_assignments','employee_reads_own_attendance','availability_manage','availability_read','availability_history_read','authenticated_reads_employee_capabilities','hr_read','authenticated_reads_employee_locations','employee_reads_self','user_reads_own_tasks','users_read_own_permissions')
   AND qual ~ 'SELECT auth.uid\(\)';
-  IF n<>11 THEN RAISE EXCEPTION 'AUD015_INITPLANS_MISSING:%',n; END IF;
+  IF n<>10 THEN RAISE EXCEPTION 'AUD015_SELECT_INITPLANS_MISSING:%',n; END IF;
+  SELECT count(*) INTO n FROM pg_policies WHERE schemaname='public'
+  AND tablename='employee_availability'
+  AND policyname IN ('availability_manage_insert','availability_manage_update','availability_manage_delete')
+  AND (coalesce(qual,'') ~ 'SELECT auth.uid\(\)' OR coalesce(with_check,'') ~ 'SELECT auth.uid\(\)');
+  IF n<>3 THEN RAISE EXCEPTION 'AUD015_WRITE_INITPLANS_MISSING:%',n; END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname='public'
+      AND (
+        regexp_replace(coalesce(qual,''), '\(\s*SELECT\s+auth\.uid\(\)(\s+AS\s+uid)?\s*\)', '', 'gi') ~ 'auth.uid\(\)'
+        OR regexp_replace(coalesce(with_check,''), '\(\s*SELECT\s+auth\.uid\(\)(\s+AS\s+uid)?\s*\)', '', 'gi') ~ 'auth.uid\(\)'
+      )
+  ) THEN RAISE EXCEPTION 'AUD015_RAW_AUTH_UID_REMAINS'; END IF;
   IF (SELECT provolatile FROM pg_proc WHERE oid='public.current_user_access_v2()'::regprocedure)<>'s'
   OR (SELECT provolatile FROM pg_proc WHERE oid='public.current_company_time_context_v1()'::regprocedure)<>'s'
   THEN RAISE EXCEPTION 'READ_RPC_NOT_STABLE'; END IF;

@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 const output=process.argv[2];
 assert.ok(output && !output.includes('://'),'LOCAL_OUTPUT_REQUIRED');
 let query=await readFile('scripts/aud003/capture-uat-catalog.sql','utf8');
-const ledger=/ledger as \([\s\S]*?\n\)\nselect/u;
+const ledger=/ledger as \([\s\S]*?\r?\n\)\r?\nselect/u;
 assert.ok(ledger.test(query));
 query=query.replace(ledger,`ledger as (
  select null::text as version,null::text as name,0 as statement_count,0 as sql_bytes,null::text as sql_md5,null::text as sql_sha256,null::text as canonical_sql_sha256 where false

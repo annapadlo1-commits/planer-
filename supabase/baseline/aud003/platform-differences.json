@@ -8,7 +8,7 @@
       "kind": "MISSING_LOCAL",
       "sourceSha256": "249f49df66599c381d76f1147e4c0a7e23db31820c5794c6952ced2aba1ffc74",
       "localSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
-      "explanation": "Remote historical ledger is evidence, not replayed into an empty local database. Local seven-entry execution ledger is initialized separately after baseline comparison."
+      "explanation": "Remote historical ledger is evidence, not replayed into an empty local database. The separately hashed active execution ledger is applied only after baseline comparison."
     },
     {
       "section": "schemas",

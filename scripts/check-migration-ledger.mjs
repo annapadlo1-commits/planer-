@@ -97,7 +97,7 @@ function compareCatalog(manifest, payload) {
 
 const current = await buildManifest();
 if (!option("--migration-dir")) {
-  const archive = await checkArchive(root);
+  const archive = await checkArchive(root, current);
   process.stdout.write(`MIGRATION_ARCHIVE_MATCHED ${archive.archived} LIVE_PROVENANCE ${archive.liveRows}\n`);
 }
 if (writeMode) {

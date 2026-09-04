@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "92bc2c8bcbba780d251f5a37a7e56767ecdb6386",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "612b98236a8aea290a6295776e51cb79556121460e9d9751d1bee174b61d85e7",
+  "aggregateSha256": "5c09e1d7066537be176dd3c5b2f8db1f025ab3385d22cab6afad383c8b8ff100",
   "entries": [
     {
       "version": "20260903090000",
@@ -60,6 +60,22 @@
       "canonicalBytes": 1946,
       "canonicalSha256": "9bc917230d908d56a91b7f5545726ecb0f0fc5c78ee14f8e5317dc6114f6d722",
       "gitBlobSha1": "fe66c82c52479294aa105b6f0c9c3439cad89551"
+    },
+    {
+      "version": "20260905100000",
+      "name": "aud015_consolidate_permissive_policies",
+      "file": "20260905100000_aud015_consolidate_permissive_policies.sql",
+      "canonicalBytes": 57118,
+      "canonicalSha256": "32d11a281119814b2e82c3b5693cbb7344cc692f8bbecad14981c9e66f8da40e",
+      "gitBlobSha1": "549a7a6c48148186e4785f1fec54a789a2beb143"
+    },
+    {
+      "version": "20260905110000",
+      "name": "aud014_priority_foreign_key_indexes",
+      "file": "20260905110000_aud014_priority_foreign_key_indexes.sql",
+      "canonicalBytes": 876,
+      "canonicalSha256": "3e12693ca3207c63ffb686f92740fe79fa46c7c6c71c1bec837a707a0cc09e02",
+      "gitBlobSha1": "fe5b21ec78564b2f1ece10245249f0a8add86368"
     }
   ]
 }
