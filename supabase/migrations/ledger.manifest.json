@@ -3,15 +3,15 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "92bc2c8bcbba780d251f5a37a7e56767ecdb6386",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "b0e512030b1bba65ddec47e6661bb3e9939a13f103c81ab5894f16386acc78ac",
+  "aggregateSha256": "612b98236a8aea290a6295776e51cb79556121460e9d9751d1bee174b61d85e7",
   "entries": [
     {
       "version": "20260903090000",
       "name": "aud003_canonical_uat_baseline",
       "file": "20260903090000_aud003_canonical_uat_baseline.sql",
-      "canonicalBytes": 2534489,
-      "canonicalSha256": "e368f4a571d195ba724d2e8bdc2827d69d0b708156ac1439ee9216b72bd2b76c",
-      "gitBlobSha1": "704c02cc1fd99a2ede68d05b48f39f8bc8af902a"
+      "canonicalBytes": 2536637,
+      "canonicalSha256": "aaae0e8f7a0db076eaee0f8f4397aa0bc7db144fc23a89293df489807ade7bd1",
+      "gitBlobSha1": "6fa5e84f32b16e2241b093d1d20330a79853a516"
     },
     {
       "version": "20260903095601",

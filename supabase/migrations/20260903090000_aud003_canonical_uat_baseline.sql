@@ -11689,29 +11689,29 @@ CREATE OR REPLACE FUNCTION public.matrix_v2_workspace_before_overtime_uat_v1(p_m
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare v_result jsonb; v_matrix uuid; v_employees jsonb; v_employee jsonb;
-begin
-  v_result:=public.matrix_v2_workspace_before_categories_uat_v1(p_month);
-  v_matrix:=(v_result->'matrixVersion'->>'id')::uuid;
-  v_result:=jsonb_set(v_result,'{roleCategories}',coalesce((select jsonb_agg(to_jsonb(category) order by category.sort_order,category.code)
-    from public.matrix_role_categories_v2 category where category.matrix_version_id=v_matrix),'[]'::jsonb),true);
-  v_result:=jsonb_set(v_result,'{roles}',coalesce((select jsonb_agg(to_jsonb(role_row) order by role_row.sort_order,role_row.code)
-    from public.matrix_roles_v2 role_row where role_row.matrix_version_id=v_matrix),'[]'::jsonb),true);
-  v_employees:='[]'::jsonb;
-  for v_employee in select value from jsonb_array_elements(coalesce(v_result->'employees','[]'::jsonb)) loop
-    v_employee:=v_employee||coalesce((select jsonb_build_object(
-      'employmentStage',profile.employment_stage,'probationEnd',profile.probation_end
-    ) from public.matrix_employee_profiles_v2 profile
-      where profile.matrix_version_id=v_matrix and profile.employee_id=(v_employee->>'id')::uuid),'{}'::jsonb);
-    v_employees:=v_employees||jsonb_build_array(v_employee);
-  end loop;
-  v_result:=jsonb_set(v_result,'{employees}',v_employees,true);
-  v_result:=jsonb_set(v_result,'{adHocWorkers}',coalesce((select jsonb_agg(to_jsonb(pool) order by pool.display_name,pool.id)
-    from public.recovery_ad_hoc_pool_v2 pool where pool.active),'[]'::jsonb),true);
-  return v_result;
-end;
-$function$;
+AS E'\r
+declare v_result jsonb; v_matrix uuid; v_employees jsonb; v_employee jsonb;\r
+begin\r
+  v_result:=public.matrix_v2_workspace_before_categories_uat_v1(p_month);\r
+  v_matrix:=(v_result->''matrixVersion''->>''id'')::uuid;\r
+  v_result:=jsonb_set(v_result,''{roleCategories}'',coalesce((select jsonb_agg(to_jsonb(category) order by category.sort_order,category.code)\r
+    from public.matrix_role_categories_v2 category where category.matrix_version_id=v_matrix),''[]''::jsonb),true);\r
+  v_result:=jsonb_set(v_result,''{roles}'',coalesce((select jsonb_agg(to_jsonb(role_row) order by role_row.sort_order,role_row.code)\r
+    from public.matrix_roles_v2 role_row where role_row.matrix_version_id=v_matrix),''[]''::jsonb),true);\r
+  v_employees:=''[]''::jsonb;\r
+  for v_employee in select value from jsonb_array_elements(coalesce(v_result->''employees'',''[]''::jsonb)) loop\r
+    v_employee:=v_employee||coalesce((select jsonb_build_object(\r
+      ''employmentStage'',profile.employment_stage,''probationEnd'',profile.probation_end\r
+    ) from public.matrix_employee_profiles_v2 profile\r
+      where profile.matrix_version_id=v_matrix and profile.employee_id=(v_employee->>''id'')::uuid),''{}''::jsonb);\r
+    v_employees:=v_employees||jsonb_build_array(v_employee);\r
+  end loop;\r
+  v_result:=jsonb_set(v_result,''{employees}'',v_employees,true);\r
+  v_result:=jsonb_set(v_result,''{adHocWorkers}'',coalesce((select jsonb_agg(to_jsonb(pool) order by pool.display_name,pool.id)\r
+    from public.recovery_ad_hoc_pool_v2 pool where pool.active),''[]''::jsonb),true);\r
+  return v_result;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION public.matrix_workspace(p_month date DEFAULT NULL::date)
  RETURNS jsonb
@@ -17932,33 +17932,33 @@ CREATE OR REPLACE FUNCTION public.optimizer_role_composite_candidates_before_pub
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare v_raw jsonb; v_matrix uuid; v_roles jsonb; v_missing jsonb;
-begin
-  v_raw:=public.optimizer_role_composite_candidates_before_categories_uat_v1(p_month,p_scenario_id);
-  select id into v_matrix from public.matrix_versions where status in('ACTIVE','ARCHIVED') and schema_version>=2
-    and effective_from<=date_trunc('month',p_month)::date order by effective_from desc,version desc limit 1;
-  select coalesce(jsonb_agg(jsonb_build_object(
-    'id',anchor.id,'name',category.name,'sortOrder',category.sort_order,
-    'variant',coalesce((select item.value->'variant' from jsonb_array_elements(coalesce(v_raw->'roles','[]'::jsonb)) item where item.value->>'id'=anchor.id::text limit 1),'null'::jsonb)
-  ) order by category.sort_order,category.code),'[]'::jsonb),
-  coalesce(jsonb_agg(anchor.id) filter(where not exists(
-    select 1 from jsonb_array_elements(coalesce(v_raw->'roles','[]'::jsonb)) item
-    where item.value->>'id'=anchor.id::text and jsonb_typeof(item.value->'variant')='object'
-  )),'[]'::jsonb)
-  into v_roles,v_missing
-  from public.matrix_role_categories_v2 category
-  cross join lateral(select role_row.id from public.matrix_roles_v2 role_row
-    where role_row.matrix_version_id=v_matrix and role_row.category_id=category.id and role_row.active
-    order by case when exists(select 1 from public.matrix_staffing_rules_v2 staffing
-      where staffing.matrix_version_id=v_matrix and staffing.role_id=role_row.id and staffing.active) then 0 else 1 end,
-      role_row.sort_order,role_row.code limit 1) anchor
-  where category.matrix_version_id=v_matrix and category.active
-    and exists(select 1 from jsonb_array_elements(coalesce(v_raw->'roles','[]'::jsonb)) raw_role
-      join public.matrix_roles_v2 demanded on demanded.id=(raw_role.value->>'id')::uuid
-      where demanded.category_id=category.id);
-  return jsonb_set(jsonb_set(jsonb_set(v_raw,'{roles}',v_roles,true),'{missingRoleIds}',v_missing,true),'{ready}',to_jsonb(jsonb_array_length(v_missing)=0 and jsonb_array_length(v_roles)>0),true);
-end; $function$;
+AS E'\r
+declare v_raw jsonb; v_matrix uuid; v_roles jsonb; v_missing jsonb;\r
+begin\r
+  v_raw:=public.optimizer_role_composite_candidates_before_categories_uat_v1(p_month,p_scenario_id);\r
+  select id into v_matrix from public.matrix_versions where status in(''ACTIVE'',''ARCHIVED'') and schema_version>=2\r
+    and effective_from<=date_trunc(''month'',p_month)::date order by effective_from desc,version desc limit 1;\r
+  select coalesce(jsonb_agg(jsonb_build_object(\r
+    ''id'',anchor.id,''name'',category.name,''sortOrder'',category.sort_order,\r
+    ''variant'',coalesce((select item.value->''variant'' from jsonb_array_elements(coalesce(v_raw->''roles'',''[]''::jsonb)) item where item.value->>''id''=anchor.id::text limit 1),''null''::jsonb)\r
+  ) order by category.sort_order,category.code),''[]''::jsonb),\r
+  coalesce(jsonb_agg(anchor.id) filter(where not exists(\r
+    select 1 from jsonb_array_elements(coalesce(v_raw->''roles'',''[]''::jsonb)) item\r
+    where item.value->>''id''=anchor.id::text and jsonb_typeof(item.value->''variant'')=''object''\r
+  )),''[]''::jsonb)\r
+  into v_roles,v_missing\r
+  from public.matrix_role_categories_v2 category\r
+  cross join lateral(select role_row.id from public.matrix_roles_v2 role_row\r
+    where role_row.matrix_version_id=v_matrix and role_row.category_id=category.id and role_row.active\r
+    order by case when exists(select 1 from public.matrix_staffing_rules_v2 staffing\r
+      where staffing.matrix_version_id=v_matrix and staffing.role_id=role_row.id and staffing.active) then 0 else 1 end,\r
+      role_row.sort_order,role_row.code limit 1) anchor\r
+  where category.matrix_version_id=v_matrix and category.active\r
+    and exists(select 1 from jsonb_array_elements(coalesce(v_raw->''roles'',''[]''::jsonb)) raw_role\r
+      join public.matrix_roles_v2 demanded on demanded.id=(raw_role.value->>''id'')::uuid\r
+      where demanded.category_id=category.id);\r
+  return jsonb_set(jsonb_set(jsonb_set(v_raw,''{roles}'',v_roles,true),''{missingRoleIds}'',v_missing,true),''{ready}'',to_jsonb(jsonb_array_length(v_missing)=0 and jsonb_array_length(v_roles)>0),true);\r
+end; ';
 
 CREATE OR REPLACE FUNCTION public.optimizer_role_composite_candidates_v2(p_month date, p_scenario_id uuid)
  RETURNS jsonb
@@ -18179,18 +18179,18 @@ CREATE OR REPLACE FUNCTION public.optimizer_role_publication_overview_uat_v2(p_m
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare v_raw jsonb; v_roles jsonb;
-begin
-  v_raw:=public.optimizer_role_publication_overview_before_categories_uat_v1(p_month);
-  select coalesce(jsonb_agg(item.value||jsonb_build_object('role',jsonb_build_object(
-    'id',role_row.id,'name',coalesce(category.name,role_row.name)
-  )) order by item.ordinality),'[]'::jsonb) into v_roles
-  from jsonb_array_elements(coalesce(v_raw->'roles','[]'::jsonb)) with ordinality item(value,ordinality)
-  left join public.matrix_roles_v2 role_row on role_row.id=(item.value->'role'->>'id')::uuid
-  left join public.matrix_role_categories_v2 category on category.id=role_row.category_id;
-  return jsonb_set(v_raw,'{roles}',v_roles,true);
-end; $function$;
+AS E'\r
+declare v_raw jsonb; v_roles jsonb;\r
+begin\r
+  v_raw:=public.optimizer_role_publication_overview_before_categories_uat_v1(p_month);\r
+  select coalesce(jsonb_agg(item.value||jsonb_build_object(''role'',jsonb_build_object(\r
+    ''id'',role_row.id,''name'',coalesce(category.name,role_row.name)\r
+  )) order by item.ordinality),''[]''::jsonb) into v_roles\r
+  from jsonb_array_elements(coalesce(v_raw->''roles'',''[]''::jsonb)) with ordinality item(value,ordinality)\r
+  left join public.matrix_roles_v2 role_row on role_row.id=(item.value->''role''->>''id'')::uuid\r
+  left join public.matrix_role_categories_v2 category on category.id=role_row.category_id;\r
+  return jsonb_set(v_raw,''{roles}'',v_roles,true);\r
+end; ';
 
 CREATE OR REPLACE FUNCTION public.optimizer_run_state_v2(p_run_id uuid)
  RETURNS jsonb
@@ -23283,42 +23283,42 @@ CREATE OR REPLACE FUNCTION public.solver_save_variant_before_b4f169(p_run_id uui
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_result jsonb;
-  v_variant_id uuid;
-  v_version_stamp jsonb;
-begin
-  v_result:=public.solver_save_variant_before_b4f168(
-    p_run_id,p_attempt_id,p_lease_token,p_variant,p_gateway_version
-  );
-  v_variant_id:=nullif(v_result->>'variantId','')::uuid;
-  if v_variant_id is null then raise exception 'VARIANT_ID_MISSING'; end if;
-
-  select v.version_stamp into v_version_stamp
-  from public.plan_variants_v2 v
-  where v.id=v_variant_id and v.run_id=p_run_id;
-  if v_version_stamp is null then raise exception 'VERSION_STAMP_MISSING'; end if;
-
-  v_version_stamp:=jsonb_set(
-    v_version_stamp,
-    '{database,schemaVersion}',
-    to_jsonb('20260822203000_b4f168_database_stamp'::text),
-    true
-  );
-
-  update public.plan_variants_v2 v
-  set version_stamp=v_version_stamp
-  where v.id=v_variant_id and v.run_id=p_run_id;
-
-  update public.optimization_runs_v2 r
-  set version_stamp=v_version_stamp,
-      updated_at=now()
-  where r.id=p_run_id;
-
-  return jsonb_set(v_result,'{versionStamp}',v_version_stamp,true);
-end;
-$function$;
+AS E'\r
+declare\r
+  v_result jsonb;\r
+  v_variant_id uuid;\r
+  v_version_stamp jsonb;\r
+begin\r
+  v_result:=public.solver_save_variant_before_b4f168(\r
+    p_run_id,p_attempt_id,p_lease_token,p_variant,p_gateway_version\r
+  );\r
+  v_variant_id:=nullif(v_result->>''variantId'','''')::uuid;\r
+  if v_variant_id is null then raise exception ''VARIANT_ID_MISSING''; end if;\r
+\r
+  select v.version_stamp into v_version_stamp\r
+  from public.plan_variants_v2 v\r
+  where v.id=v_variant_id and v.run_id=p_run_id;\r
+  if v_version_stamp is null then raise exception ''VERSION_STAMP_MISSING''; end if;\r
+\r
+  v_version_stamp:=jsonb_set(\r
+    v_version_stamp,\r
+    ''{database,schemaVersion}'',\r
+    to_jsonb(''20260822203000_b4f168_database_stamp''::text),\r
+    true\r
+  );\r
+\r
+  update public.plan_variants_v2 v\r
+  set version_stamp=v_version_stamp\r
+  where v.id=v_variant_id and v.run_id=p_run_id;\r
+\r
+  update public.optimization_runs_v2 r\r
+  set version_stamp=v_version_stamp,\r
+      updated_at=now()\r
+  where r.id=p_run_id;\r
+\r
+  return jsonb_set(v_result,''{versionStamp}'',v_version_stamp,true);\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION public.solver_save_variant_before_b4f170(p_run_id uuid, p_attempt_id uuid, p_lease_token uuid, p_variant jsonb, p_gateway_version text)
  RETURNS jsonb
@@ -23344,37 +23344,37 @@ CREATE OR REPLACE FUNCTION public.solver_save_variant_before_nfjob_uat_v1(p_run_
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_result jsonb;
-  v_variant_id uuid;
-  v_version_stamp jsonb;
-begin
-  v_result:=public.solver_save_variant_before_b4f169(
-    p_run_id,p_attempt_id,p_lease_token,p_variant,p_gateway_version
-  );
-  v_variant_id:=nullif(v_result->>'variantId','')::uuid;
-  if v_variant_id is null then raise exception 'VARIANT_ID_MISSING'; end if;
-
-  select v.version_stamp into v_version_stamp
-  from public.plan_variants_v2 v
-  where v.id=v_variant_id and v.run_id=p_run_id;
-  if v_version_stamp is null then raise exception 'VERSION_STAMP_MISSING'; end if;
-  v_version_stamp:=jsonb_set(
-    v_version_stamp,
-    '{database,schemaVersion}',
-    to_jsonb('20260822220000_b4f169_deterministic_fairness_quality_gate'::text),
-    true
-  );
-  update public.plan_variants_v2 v
-  set version_stamp=v_version_stamp
-  where v.id=v_variant_id and v.run_id=p_run_id;
-  update public.optimization_runs_v2 r
-  set version_stamp=v_version_stamp,updated_at=now()
-  where r.id=p_run_id;
-  return jsonb_set(v_result,'{versionStamp}',v_version_stamp,true);
-end;
-$function$;
+AS E'\r
+declare\r
+  v_result jsonb;\r
+  v_variant_id uuid;\r
+  v_version_stamp jsonb;\r
+begin\r
+  v_result:=public.solver_save_variant_before_b4f169(\r
+    p_run_id,p_attempt_id,p_lease_token,p_variant,p_gateway_version\r
+  );\r
+  v_variant_id:=nullif(v_result->>''variantId'','''')::uuid;\r
+  if v_variant_id is null then raise exception ''VARIANT_ID_MISSING''; end if;\r
+\r
+  select v.version_stamp into v_version_stamp\r
+  from public.plan_variants_v2 v\r
+  where v.id=v_variant_id and v.run_id=p_run_id;\r
+  if v_version_stamp is null then raise exception ''VERSION_STAMP_MISSING''; end if;\r
+  v_version_stamp:=jsonb_set(\r
+    v_version_stamp,\r
+    ''{database,schemaVersion}'',\r
+    to_jsonb(''20260822220000_b4f169_deterministic_fairness_quality_gate''::text),\r
+    true\r
+  );\r
+  update public.plan_variants_v2 v\r
+  set version_stamp=v_version_stamp\r
+  where v.id=v_variant_id and v.run_id=p_run_id;\r
+  update public.optimization_runs_v2 r\r
+  set version_stamp=v_version_stamp,updated_at=now()\r
+  where r.id=p_run_id;\r
+  return jsonb_set(v_result,''{versionStamp}'',v_version_stamp,true);\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION public.solver_save_variant_v2(p_run_id uuid, p_attempt_id uuid, p_lease_token uuid, p_variant jsonb)
  RETURNS jsonb
@@ -25117,74 +25117,74 @@ CREATE OR REPLACE FUNCTION solver_private.apply_strategy_semantics_b4f168(p_matr
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-begin
-  -- Reuse the already tested hierarchy/descriptions, then remove only the
-  -- unsupported objective from the new draft.
-  perform solver_private.apply_strategy_semantics_b4f165(p_matrix_version_id);
-
-  delete from public.matrix_strategy_objectives_v2 o
-  where o.matrix_version_id=p_matrix_version_id
-    and o.metric_code='HOME_LOCATION_VIOLATIONS';
-
-  update public.matrix_versions mv
-  set settings=coalesce(mv.settings,'{}'::jsonb)||jsonb_build_object(
-    'strategySemanticsVersion','B4F168_V1'
-  )
-  where mv.id=p_matrix_version_id;
-
-  perform solver_private.validate_strategy_semantics_b4f168(
-    p_matrix_version_id
-  );
-end;
-$function$;
+AS E'\r
+begin\r
+  -- Reuse the already tested hierarchy/descriptions, then remove only the\r
+  -- unsupported objective from the new draft.\r
+  perform solver_private.apply_strategy_semantics_b4f165(p_matrix_version_id);\r
+\r
+  delete from public.matrix_strategy_objectives_v2 o\r
+  where o.matrix_version_id=p_matrix_version_id\r
+    and o.metric_code=''HOME_LOCATION_VIOLATIONS'';\r
+\r
+  update public.matrix_versions mv\r
+  set settings=coalesce(mv.settings,''{}''::jsonb)||jsonb_build_object(\r
+    ''strategySemanticsVersion'',''B4F168_V1''\r
+  )\r
+  where mv.id=p_matrix_version_id;\r
+\r
+  perform solver_private.validate_strategy_semantics_b4f168(\r
+    p_matrix_version_id\r
+  );\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.apply_strategy_semantics_b4f169(p_matrix_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-begin
-  -- The draft already inherits the active B4F168 contract. Re-applying the
-  -- older B4F165 base would temporarily require the HOME objective that v20
-  -- intentionally removed, so validate the inherited state and advance it.
-  perform solver_private.validate_strategy_semantics_b4f168(
-    p_matrix_version_id
-  );
-
-  -- B4F-169 derives seeds from the immutable business snapshot. Remove any
-  -- inherited technical seed from this new Matrix version only.
-  update public.matrix_strategies_v2 s
-  set solver_options=coalesce(s.solver_options,'{}'::jsonb)-'randomSeed'
-  where s.matrix_version_id=p_matrix_version_id;
-
-  update public.matrix_scenario_strategies_v2 ss
-  set solver_overrides=coalesce(ss.solver_overrides,'{}'::jsonb)-'randomSeed'
-  where ss.matrix_version_id=p_matrix_version_id;
-
-  update public.matrix_versions mv
-  set settings=(coalesce(mv.settings,'{}'::jsonb)-'randomSeed')
-    ||jsonb_build_object(
-      'strategySemanticsVersion','B4F169_V1',
-      'mandatoryProductGuards',jsonb_build_array(
-        'HARD_CONSTRAINTS','COVERAGE','ROLE_BACKUP','OVERTIME','ZERO_HOURS',
-        'PRIMARY_ROLE','MAX_MIN_FAIRNESS','FAIRNESS_SPREAD',
-        'FAIRNESS_QUALITY_GATE'
-      ),
-      'fairnessQualityGate',jsonb_build_object(
-        'minimumEstimatedAchievableTargetUtilizationBps',700,
-        'maximumEstimatedAchievableTargetUtilizationSpreadBps',300,
-        'maxAttempts',3
-      )
-    )
-  where mv.id=p_matrix_version_id;
-
-  perform solver_private.validate_strategy_semantics_b4f169(
-    p_matrix_version_id
-  );
-end;
-$function$;
+AS E'\r
+begin\r
+  -- The draft already inherits the active B4F168 contract. Re-applying the\r
+  -- older B4F165 base would temporarily require the HOME objective that v20\r
+  -- intentionally removed, so validate the inherited state and advance it.\r
+  perform solver_private.validate_strategy_semantics_b4f168(\r
+    p_matrix_version_id\r
+  );\r
+\r
+  -- B4F-169 derives seeds from the immutable business snapshot. Remove any\r
+  -- inherited technical seed from this new Matrix version only.\r
+  update public.matrix_strategies_v2 s\r
+  set solver_options=coalesce(s.solver_options,''{}''::jsonb)-''randomSeed''\r
+  where s.matrix_version_id=p_matrix_version_id;\r
+\r
+  update public.matrix_scenario_strategies_v2 ss\r
+  set solver_overrides=coalesce(ss.solver_overrides,''{}''::jsonb)-''randomSeed''\r
+  where ss.matrix_version_id=p_matrix_version_id;\r
+\r
+  update public.matrix_versions mv\r
+  set settings=(coalesce(mv.settings,''{}''::jsonb)-''randomSeed'')\r
+    ||jsonb_build_object(\r
+      ''strategySemanticsVersion'',''B4F169_V1'',\r
+      ''mandatoryProductGuards'',jsonb_build_array(\r
+        ''HARD_CONSTRAINTS'',''COVERAGE'',''ROLE_BACKUP'',''OVERTIME'',''ZERO_HOURS'',\r
+        ''PRIMARY_ROLE'',''MAX_MIN_FAIRNESS'',''FAIRNESS_SPREAD'',\r
+        ''FAIRNESS_QUALITY_GATE''\r
+      ),\r
+      ''fairnessQualityGate'',jsonb_build_object(\r
+        ''minimumEstimatedAchievableTargetUtilizationBps'',700,\r
+        ''maximumEstimatedAchievableTargetUtilizationSpreadBps'',300,\r
+        ''maxAttempts'',3\r
+      )\r
+    )\r
+  where mv.id=p_matrix_version_id;\r
+\r
+  perform solver_private.validate_strategy_semantics_b4f169(\r
+    p_matrix_version_id\r
+  );\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.apply_strategy_semantics_b4f170(p_matrix_version_id uuid)
  RETURNS void
@@ -25442,86 +25442,86 @@ CREATE OR REPLACE FUNCTION solver_private.build_run_version_stamp_uat_v1(p_run_i
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_run public.optimization_runs_v2%rowtype;
-  v_snapshot jsonb;
-  v_build solver_private.solver_runtime_builds_uat_v1%rowtype;
-  v_matrix_version integer;
-  v_matrix_hash text;
-  v_semantics text;
-  v_strategy_hash text;
-begin
-  if p_execution_mode not in ('SERVICE','JOB') then
-    raise exception 'EXECUTION_MODE_INVALID';
-  end if;
-  if length(coalesce(p_frontend_commit,'')) not between 1 and 500
-    or p_frontend_commit !~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]*$' then
-    raise exception 'FRONTEND_VERSION_INVALID';
-  end if;
-
-  select r.* into v_run
-  from public.optimization_runs_v2 r
-  where r.id=p_run_id;
-  if v_run.id is null then raise exception 'RUN_NOT_FOUND'; end if;
-
-  select s.snapshot,mv.version,mv.content_hash,
-    mv.settings->>'strategySemanticsVersion'
-  into v_snapshot,v_matrix_version,v_matrix_hash,v_semantics
-  from solver_private.optimization_snapshots_v2 s
-  join public.matrix_versions mv on mv.id=v_run.matrix_version_id
-  where s.run_id=v_run.id;
-
-  select * into v_build
-  from solver_private.solver_runtime_builds_uat_v1 b
-  where b.solver_version=v_run.solver_version
-    and b.execution_mode=p_execution_mode;
-  if v_build.solver_version is null then
-    if p_execution_mode='JOB' then
-      raise exception 'JOB_RUNTIME_PROVENANCE_MISSING';
-    end if;
-    raise exception 'SERVICE_RUNTIME_PROVENANCE_MISSING';
-  end if;
-  v_strategy_hash:=solver_private.strategy_config_hash_uat_v1(v_snapshot);
-
-  return jsonb_build_object(
-    'schemaVersion',1,
-    'frontendCommit',p_frontend_commit,
-    'solverCommit',v_build.solver_commit,
-    'solverImageDigest',v_build.solver_image_digest,
-    'solverBuildId',v_build.solver_build_id,
-    'gatewayVersion',null,
-    'strategyConfigVersion',v_strategy_hash,
-    'databaseMigrationVersion','20260824215911_uat_northflank_job_mode_provenance',
-    'snapshotSchemaVersion',v_run.snapshot_schema_version,
-    'executionMode',p_execution_mode,
-    'northflankRunId',null,
-    'dispatcherVersion',null,
-    'frontend',jsonb_build_object('buildId',p_frontend_commit),
-    'solver',jsonb_build_object(
-      'configuredVersion',v_run.solver_version,
-      'commit',v_build.solver_commit,
-      'buildId',v_build.solver_build_id,
-      'imageDigest',v_build.solver_image_digest
-    ),
-    'gateway',jsonb_build_object('deploymentId',null),
-    'database',jsonb_build_object(
-      'schemaVersion','20260824215911_uat_northflank_job_mode_provenance'
-    ),
-    'strategyConfig',jsonb_build_object(
-      'matrixVersionId',v_run.matrix_version_id,
-      'matrixVersion',v_matrix_version,
-      'contentHash',v_matrix_hash,
-      'strategySemanticsVersion',v_semantics,
-      'snapshotHash',v_strategy_hash
-    ),
-    'snapshot',jsonb_build_object(
-      'schemaVersion',v_run.snapshot_schema_version,
-      'snapshotHash',v_run.snapshot_hash
-    )
-  );
-end;
-$function$;
+AS E'\r
+declare\r
+  v_run public.optimization_runs_v2%rowtype;\r
+  v_snapshot jsonb;\r
+  v_build solver_private.solver_runtime_builds_uat_v1%rowtype;\r
+  v_matrix_version integer;\r
+  v_matrix_hash text;\r
+  v_semantics text;\r
+  v_strategy_hash text;\r
+begin\r
+  if p_execution_mode not in (''SERVICE'',''JOB'') then\r
+    raise exception ''EXECUTION_MODE_INVALID'';\r
+  end if;\r
+  if length(coalesce(p_frontend_commit,'''')) not between 1 and 500\r
+    or p_frontend_commit !~ ''^[A-Za-z0-9][A-Za-z0-9._:@/-]*$'' then\r
+    raise exception ''FRONTEND_VERSION_INVALID'';\r
+  end if;\r
+\r
+  select r.* into v_run\r
+  from public.optimization_runs_v2 r\r
+  where r.id=p_run_id;\r
+  if v_run.id is null then raise exception ''RUN_NOT_FOUND''; end if;\r
+\r
+  select s.snapshot,mv.version,mv.content_hash,\r
+    mv.settings->>''strategySemanticsVersion''\r
+  into v_snapshot,v_matrix_version,v_matrix_hash,v_semantics\r
+  from solver_private.optimization_snapshots_v2 s\r
+  join public.matrix_versions mv on mv.id=v_run.matrix_version_id\r
+  where s.run_id=v_run.id;\r
+\r
+  select * into v_build\r
+  from solver_private.solver_runtime_builds_uat_v1 b\r
+  where b.solver_version=v_run.solver_version\r
+    and b.execution_mode=p_execution_mode;\r
+  if v_build.solver_version is null then\r
+    if p_execution_mode=''JOB'' then\r
+      raise exception ''JOB_RUNTIME_PROVENANCE_MISSING'';\r
+    end if;\r
+    raise exception ''SERVICE_RUNTIME_PROVENANCE_MISSING'';\r
+  end if;\r
+  v_strategy_hash:=solver_private.strategy_config_hash_uat_v1(v_snapshot);\r
+\r
+  return jsonb_build_object(\r
+    ''schemaVersion'',1,\r
+    ''frontendCommit'',p_frontend_commit,\r
+    ''solverCommit'',v_build.solver_commit,\r
+    ''solverImageDigest'',v_build.solver_image_digest,\r
+    ''solverBuildId'',v_build.solver_build_id,\r
+    ''gatewayVersion'',null,\r
+    ''strategyConfigVersion'',v_strategy_hash,\r
+    ''databaseMigrationVersion'',''20260824215911_uat_northflank_job_mode_provenance'',\r
+    ''snapshotSchemaVersion'',v_run.snapshot_schema_version,\r
+    ''executionMode'',p_execution_mode,\r
+    ''northflankRunId'',null,\r
+    ''dispatcherVersion'',null,\r
+    ''frontend'',jsonb_build_object(''buildId'',p_frontend_commit),\r
+    ''solver'',jsonb_build_object(\r
+      ''configuredVersion'',v_run.solver_version,\r
+      ''commit'',v_build.solver_commit,\r
+      ''buildId'',v_build.solver_build_id,\r
+      ''imageDigest'',v_build.solver_image_digest\r
+    ),\r
+    ''gateway'',jsonb_build_object(''deploymentId'',null),\r
+    ''database'',jsonb_build_object(\r
+      ''schemaVersion'',''20260824215911_uat_northflank_job_mode_provenance''\r
+    ),\r
+    ''strategyConfig'',jsonb_build_object(\r
+      ''matrixVersionId'',v_run.matrix_version_id,\r
+      ''matrixVersion'',v_matrix_version,\r
+      ''contentHash'',v_matrix_hash,\r
+      ''strategySemanticsVersion'',v_semantics,\r
+      ''snapshotHash'',v_strategy_hash\r
+    ),\r
+    ''snapshot'',jsonb_build_object(\r
+      ''schemaVersion'',v_run.snapshot_schema_version,\r
+      ''snapshotHash'',v_run.snapshot_hash\r
+    )\r
+  );\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.build_snapshot_payload_before_alpha16_v2(p_run_id uuid, p_month date, p_matrix_version_id uuid, p_scenario_id uuid, p_scope_type text, p_scope_role_id uuid)
  RETURNS jsonb
@@ -26453,79 +26453,79 @@ CREATE OR REPLACE FUNCTION solver_private.build_snapshot_payload_before_b4f170(p
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_snapshot jsonb;
-  v_seed_document jsonb;
-  v_seed_strategies jsonb;
-  v_runtime_strategies jsonb;
-  v_matrix_settings jsonb;
-  v_semantics_version text;
-  v_business_seed integer;
-begin
-  v_snapshot:=solver_private.build_snapshot_payload_before_b4f169(
-    p_run_id,p_month,p_matrix_version_id,p_scenario_id,p_scope_type,p_scope_role_id
-  );
-  select mv.settings into v_matrix_settings
-  from public.matrix_versions mv
-  where mv.id=p_matrix_version_id;
-  v_semantics_version:=v_matrix_settings->>'strategySemanticsVersion';
-
-  select coalesce(jsonb_agg(item.value-'randomSeed' order by item.ordinality),'[]'::jsonb)
-  into v_seed_strategies
-  from jsonb_array_elements(v_snapshot->'strategies')
-    with ordinality item(value,ordinality);
-
-  v_seed_document:=v_snapshot-'runId';
-  v_seed_document:=jsonb_set(
-    v_seed_document,
-    '{settings}',
-    coalesce(v_seed_document->'settings','{}'::jsonb)-'randomSeed',
-    true
-  );
-  v_seed_document:=jsonb_set(
-    v_seed_document,'{strategies}',v_seed_strategies,true
-  );
-  v_business_seed:=(
-    hashtextextended(v_seed_document::text,169) & 2147483647
-  )::integer;
-
-  v_snapshot:=jsonb_set(
-    v_snapshot,
-    '{settings}',
-    coalesce(v_snapshot->'settings','{}'::jsonb)||jsonb_build_object(
-      'randomSeed',v_business_seed,
-      'randomSeedSource','BUSINESS_SNAPSHOT_B4F169_V1'
-    ),
-    true
-  );
-
-  if v_semantics_version='B4F169_V1' then
-    perform solver_private.validate_strategy_semantics_b4f169(
-      p_matrix_version_id
-    );
-    select coalesce(jsonb_agg(
-      jsonb_set(
-        item.value,'{randomSeed}',to_jsonb(v_business_seed),true
-      ) order by item.ordinality
-    ),'[]'::jsonb)
-    into v_runtime_strategies
-    from jsonb_array_elements(v_snapshot->'strategies')
-      with ordinality item(value,ordinality);
-    v_snapshot:=jsonb_set(
-      v_snapshot,'{strategies}',v_runtime_strategies,true
-    );
-    v_snapshot:=jsonb_set(
-      v_snapshot,
-      '{settings,fairnessQualityGate}',
-      v_matrix_settings->'fairnessQualityGate',
-      true
-    );
-  end if;
-
-  return v_snapshot;
-end;
-$function$;
+AS E'\r
+declare\r
+  v_snapshot jsonb;\r
+  v_seed_document jsonb;\r
+  v_seed_strategies jsonb;\r
+  v_runtime_strategies jsonb;\r
+  v_matrix_settings jsonb;\r
+  v_semantics_version text;\r
+  v_business_seed integer;\r
+begin\r
+  v_snapshot:=solver_private.build_snapshot_payload_before_b4f169(\r
+    p_run_id,p_month,p_matrix_version_id,p_scenario_id,p_scope_type,p_scope_role_id\r
+  );\r
+  select mv.settings into v_matrix_settings\r
+  from public.matrix_versions mv\r
+  where mv.id=p_matrix_version_id;\r
+  v_semantics_version:=v_matrix_settings->>''strategySemanticsVersion'';\r
+\r
+  select coalesce(jsonb_agg(item.value-''randomSeed'' order by item.ordinality),''[]''::jsonb)\r
+  into v_seed_strategies\r
+  from jsonb_array_elements(v_snapshot->''strategies'')\r
+    with ordinality item(value,ordinality);\r
+\r
+  v_seed_document:=v_snapshot-''runId'';\r
+  v_seed_document:=jsonb_set(\r
+    v_seed_document,\r
+    ''{settings}'',\r
+    coalesce(v_seed_document->''settings'',''{}''::jsonb)-''randomSeed'',\r
+    true\r
+  );\r
+  v_seed_document:=jsonb_set(\r
+    v_seed_document,''{strategies}'',v_seed_strategies,true\r
+  );\r
+  v_business_seed:=(\r
+    hashtextextended(v_seed_document::text,169) & 2147483647\r
+  )::integer;\r
+\r
+  v_snapshot:=jsonb_set(\r
+    v_snapshot,\r
+    ''{settings}'',\r
+    coalesce(v_snapshot->''settings'',''{}''::jsonb)||jsonb_build_object(\r
+      ''randomSeed'',v_business_seed,\r
+      ''randomSeedSource'',''BUSINESS_SNAPSHOT_B4F169_V1''\r
+    ),\r
+    true\r
+  );\r
+\r
+  if v_semantics_version=''B4F169_V1'' then\r
+    perform solver_private.validate_strategy_semantics_b4f169(\r
+      p_matrix_version_id\r
+    );\r
+    select coalesce(jsonb_agg(\r
+      jsonb_set(\r
+        item.value,''{randomSeed}'',to_jsonb(v_business_seed),true\r
+      ) order by item.ordinality\r
+    ),''[]''::jsonb)\r
+    into v_runtime_strategies\r
+    from jsonb_array_elements(v_snapshot->''strategies'')\r
+      with ordinality item(value,ordinality);\r
+    v_snapshot:=jsonb_set(\r
+      v_snapshot,''{strategies}'',v_runtime_strategies,true\r
+    );\r
+    v_snapshot:=jsonb_set(\r
+      v_snapshot,\r
+      ''{settings,fairnessQualityGate}'',\r
+      v_matrix_settings->''fairnessQualityGate'',\r
+      true\r
+    );\r
+  end if;\r
+\r
+  return v_snapshot;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.build_snapshot_payload_before_b4f88_uat_v1(p_matrix_version_id uuid, p_month date, p_scenario_id uuid, p_scope_role_id uuid, p_scope_type text, p_actor uuid)
  RETURNS jsonb
@@ -27575,112 +27575,112 @@ CREATE OR REPLACE FUNCTION solver_private.build_snapshot_payload_before_monthly_
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_snapshot jsonb;
-  v_category uuid;
-  v_role_ids jsonb;
-  v_slot_ids jsonb;
-  v_employees jsonb:='[]'::jsonb;
-  v_employee jsonb;
-  v_grants jsonb;
-  v_external jsonb;
-  v_employee_id uuid;
-begin
-  if p_scope_type<>'ROLE' or p_scope_role_id is null then
-    return solver_private.build_snapshot_payload_before_categories_uat_v1(
-      p_run_id,p_month,p_matrix_version_id,p_scenario_id,p_scope_type,p_scope_role_id);
-  end if;
-  select category_id into v_category from public.matrix_roles_v2
-    where id=p_scope_role_id and matrix_version_id=p_matrix_version_id and active;
-  if v_category is null then raise exception 'SCOPE_CATEGORY_NOT_FOUND'; end if;
-  select jsonb_agg(id::text) into v_role_ids from public.matrix_roles_v2
-    where matrix_version_id=p_matrix_version_id and category_id=v_category and active;
-  v_snapshot:=solver_private.build_snapshot_payload_before_categories_uat_v1(
-    p_run_id,p_month,p_matrix_version_id,p_scenario_id,'COMPANY',null);
-  v_snapshot:=jsonb_set(v_snapshot,'{roles}',coalesce((select jsonb_agg(value order by ordinality)
-    from jsonb_array_elements(coalesce(v_snapshot->'roles','[]'::jsonb)) with ordinality
-    where value->>'id' in(select jsonb_array_elements_text(v_role_ids))),'[]'::jsonb),true);
-  v_snapshot:=jsonb_set(v_snapshot,'{demand}',coalesce((select jsonb_agg(value order by ordinality)
-    from jsonb_array_elements(coalesce(v_snapshot->'demand','[]'::jsonb)) with ordinality
-    where value->>'roleId' in(select jsonb_array_elements_text(v_role_ids))),'[]'::jsonb),true);
-  v_snapshot:=jsonb_set(v_snapshot,'{slots}',coalesce((select jsonb_agg(value order by ordinality)
-    from jsonb_array_elements(coalesce(v_snapshot->'slots','[]'::jsonb)) with ordinality
-    where value->>'roleId' in(select jsonb_array_elements_text(v_role_ids))),'[]'::jsonb),true);
-  select coalesce(jsonb_agg(value->>'slotId'),'[]'::jsonb) into v_slot_ids
-    from jsonb_array_elements(coalesce(v_snapshot->'slots','[]'::jsonb));
-  v_snapshot:=jsonb_set(v_snapshot,'{baselineAssignments}',coalesce((select jsonb_agg(value order by ordinality)
-    from jsonb_array_elements(coalesce(v_snapshot->'baselineAssignments','[]'::jsonb)) with ordinality
-    where value->>'slotId' in(select jsonb_array_elements_text(v_slot_ids))),'[]'::jsonb),true);
-  v_snapshot:=jsonb_set(v_snapshot,'{lockedAssignments}',coalesce((select jsonb_agg(value order by ordinality)
-    from jsonb_array_elements(coalesce(v_snapshot->'lockedAssignments','[]'::jsonb)) with ordinality
-    where value->>'slotId' in(select jsonb_array_elements_text(v_slot_ids))),'[]'::jsonb),true);
-
-  for v_employee in select value from jsonb_array_elements(coalesce(v_snapshot->'employees','[]'::jsonb)) loop
-    v_employee_id:=(v_employee->>'id')::uuid;
-    select coalesce(jsonb_agg(grant_row order by grant_row->>'assignmentMode',grant_row->>'backupPriority',grant_row->>'roleId'),'[]'::jsonb)
-    into v_grants from (
-      select jsonb_strip_nulls(jsonb_build_object(
-        'roleId',employee_role.role_id,'validFrom',employee_role.valid_from,'validTo',employee_role.valid_to,
-        'assignmentMode',employee_role.assignment_mode,'backupPriority',employee_role.backup_priority
-      )) grant_row
-      from public.matrix_employee_roles_v2 employee_role
-      where employee_role.matrix_version_id=p_matrix_version_id and employee_role.employee_id=v_employee_id
-        and employee_role.active and employee_role.role_id in(select value::uuid from jsonb_array_elements_text(v_role_ids))
-      union
-      select jsonb_build_object(
-        'roleId',fallback_role.id,'assignmentMode','BACKUP','backupPriority',100,'sourceDutyId',employee_duty.duty_id
-      )
-      from public.matrix_employee_duties_v2 employee_duty
-      join public.matrix_duties_v2 duty on duty.id=employee_duty.duty_id and duty.matrix_version_id=p_matrix_version_id and duty.active
-      join public.matrix_roles_v2 fallback_role on fallback_role.matrix_version_id=p_matrix_version_id
-        and fallback_role.category_id=v_category and fallback_role.active and upper(fallback_role.code)=upper(duty.code)
-      where employee_duty.matrix_version_id=p_matrix_version_id and employee_duty.employee_id=v_employee_id and employee_duty.active
-        and exists(select 1 from public.matrix_employee_roles_v2 base_role
-          join public.matrix_roles_v2 configured_role on configured_role.id=base_role.role_id and configured_role.category_id=v_category
-          where base_role.matrix_version_id=p_matrix_version_id and base_role.employee_id=v_employee_id and base_role.active)
-    ) grants;
-    if jsonb_array_length(v_grants)>0 then
-      v_employee:=jsonb_set(v_employee,'{roleGrants}',v_grants,true);
-      v_employee:=jsonb_set(v_employee,'{roleIds}',coalesce((select jsonb_agg(distinct value->>'roleId') from jsonb_array_elements(v_grants)),'[]'::jsonb),true);
-      v_employees:=v_employees||jsonb_build_array(v_employee);
-    end if;
-  end loop;
-  v_snapshot:=jsonb_set(v_snapshot,'{employees}',v_employees,true);
-  -- A category is generated as one atomic unit, while already selected plans
-  -- from other categories remain hard time blocks for the same employees.
-  with ranked as (
-    select variant.id,
-      row_number() over(partition by anchor.category_id order by
-        coalesce(variant.selected_at,variant.created_at) desc,variant.id desc) selection_rank
-    from public.plan_variants_v2 variant
-    join public.optimization_runs_v2 run on run.id=variant.run_id
-    join public.matrix_roles_v2 anchor on anchor.id=run.scope_role_id
-    where run.month=date_trunc('month',p_month)::date
-      and run.matrix_version_id=p_matrix_version_id and run.scenario_id=p_scenario_id
-      and run.request_engine='ORTOOLS_V2' and run.scope_type='ROLE'
-      and anchor.category_id is distinct from v_category and variant.selected
-  ), blocks as (
-    select assignment.employee_id,shift.starts_at,shift.ends_at
-    from ranked
-    join public.plan_assignments_v2 assignment on assignment.variant_id=ranked.id
-    join public.plan_shifts_v2 shift on shift.id=assignment.shift_id
-    where ranked.selection_rank=1
-  )
-  select coalesce(jsonb_agg(jsonb_build_object(
-    'employeeId',blocks.employee_id,'start',blocks.starts_at,'end',blocks.ends_at
-  ) order by blocks.employee_id,blocks.starts_at),'[]'::jsonb) into v_external
-  from blocks where exists(select 1 from jsonb_array_elements(v_employees) employee
-    where employee.value->>'id'=blocks.employee_id::text);
-  v_snapshot:=jsonb_set(v_snapshot,'{externalAssignments}',
-    coalesce(v_snapshot->'externalAssignments','[]'::jsonb)||coalesce(v_external,'[]'::jsonb),true);
-  v_snapshot:=jsonb_set(v_snapshot,'{scope}',jsonb_build_object(
-    'type','CATEGORY','roleId',p_scope_role_id,'categoryId',v_category,
-    'roleIds',v_role_ids,'categoryName',(select name from public.matrix_role_categories_v2 where id=v_category)
-  ),true);
-  return v_snapshot;
-end;
-$function$;
+AS E'\r
+declare\r
+  v_snapshot jsonb;\r
+  v_category uuid;\r
+  v_role_ids jsonb;\r
+  v_slot_ids jsonb;\r
+  v_employees jsonb:=''[]''::jsonb;\r
+  v_employee jsonb;\r
+  v_grants jsonb;\r
+  v_external jsonb;\r
+  v_employee_id uuid;\r
+begin\r
+  if p_scope_type<>''ROLE'' or p_scope_role_id is null then\r
+    return solver_private.build_snapshot_payload_before_categories_uat_v1(\r
+      p_run_id,p_month,p_matrix_version_id,p_scenario_id,p_scope_type,p_scope_role_id);\r
+  end if;\r
+  select category_id into v_category from public.matrix_roles_v2\r
+    where id=p_scope_role_id and matrix_version_id=p_matrix_version_id and active;\r
+  if v_category is null then raise exception ''SCOPE_CATEGORY_NOT_FOUND''; end if;\r
+  select jsonb_agg(id::text) into v_role_ids from public.matrix_roles_v2\r
+    where matrix_version_id=p_matrix_version_id and category_id=v_category and active;\r
+  v_snapshot:=solver_private.build_snapshot_payload_before_categories_uat_v1(\r
+    p_run_id,p_month,p_matrix_version_id,p_scenario_id,''COMPANY'',null);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{roles}'',coalesce((select jsonb_agg(value order by ordinality)\r
+    from jsonb_array_elements(coalesce(v_snapshot->''roles'',''[]''::jsonb)) with ordinality\r
+    where value->>''id'' in(select jsonb_array_elements_text(v_role_ids))),''[]''::jsonb),true);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{demand}'',coalesce((select jsonb_agg(value order by ordinality)\r
+    from jsonb_array_elements(coalesce(v_snapshot->''demand'',''[]''::jsonb)) with ordinality\r
+    where value->>''roleId'' in(select jsonb_array_elements_text(v_role_ids))),''[]''::jsonb),true);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{slots}'',coalesce((select jsonb_agg(value order by ordinality)\r
+    from jsonb_array_elements(coalesce(v_snapshot->''slots'',''[]''::jsonb)) with ordinality\r
+    where value->>''roleId'' in(select jsonb_array_elements_text(v_role_ids))),''[]''::jsonb),true);\r
+  select coalesce(jsonb_agg(value->>''slotId''),''[]''::jsonb) into v_slot_ids\r
+    from jsonb_array_elements(coalesce(v_snapshot->''slots'',''[]''::jsonb));\r
+  v_snapshot:=jsonb_set(v_snapshot,''{baselineAssignments}'',coalesce((select jsonb_agg(value order by ordinality)\r
+    from jsonb_array_elements(coalesce(v_snapshot->''baselineAssignments'',''[]''::jsonb)) with ordinality\r
+    where value->>''slotId'' in(select jsonb_array_elements_text(v_slot_ids))),''[]''::jsonb),true);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{lockedAssignments}'',coalesce((select jsonb_agg(value order by ordinality)\r
+    from jsonb_array_elements(coalesce(v_snapshot->''lockedAssignments'',''[]''::jsonb)) with ordinality\r
+    where value->>''slotId'' in(select jsonb_array_elements_text(v_slot_ids))),''[]''::jsonb),true);\r
+\r
+  for v_employee in select value from jsonb_array_elements(coalesce(v_snapshot->''employees'',''[]''::jsonb)) loop\r
+    v_employee_id:=(v_employee->>''id'')::uuid;\r
+    select coalesce(jsonb_agg(grant_row order by grant_row->>''assignmentMode'',grant_row->>''backupPriority'',grant_row->>''roleId''),''[]''::jsonb)\r
+    into v_grants from (\r
+      select jsonb_strip_nulls(jsonb_build_object(\r
+        ''roleId'',employee_role.role_id,''validFrom'',employee_role.valid_from,''validTo'',employee_role.valid_to,\r
+        ''assignmentMode'',employee_role.assignment_mode,''backupPriority'',employee_role.backup_priority\r
+      )) grant_row\r
+      from public.matrix_employee_roles_v2 employee_role\r
+      where employee_role.matrix_version_id=p_matrix_version_id and employee_role.employee_id=v_employee_id\r
+        and employee_role.active and employee_role.role_id in(select value::uuid from jsonb_array_elements_text(v_role_ids))\r
+      union\r
+      select jsonb_build_object(\r
+        ''roleId'',fallback_role.id,''assignmentMode'',''BACKUP'',''backupPriority'',100,''sourceDutyId'',employee_duty.duty_id\r
+      )\r
+      from public.matrix_employee_duties_v2 employee_duty\r
+      join public.matrix_duties_v2 duty on duty.id=employee_duty.duty_id and duty.matrix_version_id=p_matrix_version_id and duty.active\r
+      join public.matrix_roles_v2 fallback_role on fallback_role.matrix_version_id=p_matrix_version_id\r
+        and fallback_role.category_id=v_category and fallback_role.active and upper(fallback_role.code)=upper(duty.code)\r
+      where employee_duty.matrix_version_id=p_matrix_version_id and employee_duty.employee_id=v_employee_id and employee_duty.active\r
+        and exists(select 1 from public.matrix_employee_roles_v2 base_role\r
+          join public.matrix_roles_v2 configured_role on configured_role.id=base_role.role_id and configured_role.category_id=v_category\r
+          where base_role.matrix_version_id=p_matrix_version_id and base_role.employee_id=v_employee_id and base_role.active)\r
+    ) grants;\r
+    if jsonb_array_length(v_grants)>0 then\r
+      v_employee:=jsonb_set(v_employee,''{roleGrants}'',v_grants,true);\r
+      v_employee:=jsonb_set(v_employee,''{roleIds}'',coalesce((select jsonb_agg(distinct value->>''roleId'') from jsonb_array_elements(v_grants)),''[]''::jsonb),true);\r
+      v_employees:=v_employees||jsonb_build_array(v_employee);\r
+    end if;\r
+  end loop;\r
+  v_snapshot:=jsonb_set(v_snapshot,''{employees}'',v_employees,true);\r
+  -- A category is generated as one atomic unit, while already selected plans\r
+  -- from other categories remain hard time blocks for the same employees.\r
+  with ranked as (\r
+    select variant.id,\r
+      row_number() over(partition by anchor.category_id order by\r
+        coalesce(variant.selected_at,variant.created_at) desc,variant.id desc) selection_rank\r
+    from public.plan_variants_v2 variant\r
+    join public.optimization_runs_v2 run on run.id=variant.run_id\r
+    join public.matrix_roles_v2 anchor on anchor.id=run.scope_role_id\r
+    where run.month=date_trunc(''month'',p_month)::date\r
+      and run.matrix_version_id=p_matrix_version_id and run.scenario_id=p_scenario_id\r
+      and run.request_engine=''ORTOOLS_V2'' and run.scope_type=''ROLE''\r
+      and anchor.category_id is distinct from v_category and variant.selected\r
+  ), blocks as (\r
+    select assignment.employee_id,shift.starts_at,shift.ends_at\r
+    from ranked\r
+    join public.plan_assignments_v2 assignment on assignment.variant_id=ranked.id\r
+    join public.plan_shifts_v2 shift on shift.id=assignment.shift_id\r
+    where ranked.selection_rank=1\r
+  )\r
+  select coalesce(jsonb_agg(jsonb_build_object(\r
+    ''employeeId'',blocks.employee_id,''start'',blocks.starts_at,''end'',blocks.ends_at\r
+  ) order by blocks.employee_id,blocks.starts_at),''[]''::jsonb) into v_external\r
+  from blocks where exists(select 1 from jsonb_array_elements(v_employees) employee\r
+    where employee.value->>''id''=blocks.employee_id::text);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{externalAssignments}'',\r
+    coalesce(v_snapshot->''externalAssignments'',''[]''::jsonb)||coalesce(v_external,''[]''::jsonb),true);\r
+  v_snapshot:=jsonb_set(v_snapshot,''{scope}'',jsonb_build_object(\r
+    ''type'',''CATEGORY'',''roleId'',p_scope_role_id,''categoryId'',v_category,\r
+    ''roleIds'',v_role_ids,''categoryName'',(select name from public.matrix_role_categories_v2 where id=v_category)\r
+  ),true);\r
+  return v_snapshot;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.build_snapshot_payload_before_occurrence_id_v2(p_run_id uuid, p_month date, p_matrix_version_id uuid, p_scenario_id uuid, p_scope_type text, p_scope_role_id uuid)
  RETURNS jsonb
@@ -28284,65 +28284,65 @@ CREATE OR REPLACE FUNCTION solver_private.enforce_run_version_stamp_uat_v1()
  RETURNS trigger
  LANGUAGE plpgsql
  SET search_path TO ''
-AS $function$
-declare
-  v_key text;
-  v_old jsonb;
-  v_new jsonb;
-  v_mode text;
-  v_northflank_run_id text;
-  v_dispatcher_version text;
-  v_phase text;
-begin
-  if new.version_stamp is null or jsonb_typeof(new.version_stamp)<>'object' then
-    raise exception 'VERSION_STAMP_INVALID';
-  end if;
-  if tg_op='UPDATE' then
-    foreach v_key in array array[
-      'schemaVersion','frontendCommit','solverCommit','solverImageDigest',
-      'solverBuildId','gatewayVersion','strategyConfigVersion',
-      'databaseMigrationVersion','snapshotSchemaVersion','executionMode',
-      'northflankRunId','dispatcherVersion'
-    ] loop
-      v_old:=old.version_stamp->v_key;
-      v_new:=new.version_stamp->v_key;
-      if v_old is not null and v_old<>'null'::jsonb
-        and v_new is distinct from v_old then
-        raise exception 'VERSION_STAMP_IMMUTABLE_%',upper(v_key);
-      end if;
-    end loop;
-  end if;
-
-  if new.version_stamp ? 'executionMode' then
-    v_mode:=new.version_stamp->>'executionMode';
-    v_northflank_run_id:=new.version_stamp->>'northflankRunId';
-    v_dispatcher_version:=new.version_stamp->>'dispatcherVersion';
-    v_phase:=coalesce(to_jsonb(new)->>'phase','READY');
-    if coalesce((new.version_stamp->>'schemaVersion')::integer,0)<>1
-      or v_mode not in ('SERVICE','JOB')
-      or coalesce(new.version_stamp->>'frontendCommit','')=''
-      or coalesce(new.version_stamp->>'solverCommit','') !~ '^[0-9a-f]{40}$'
-      or coalesce(new.version_stamp->>'solverBuildId','')=''
-      or coalesce(new.version_stamp->>'strategyConfigVersion','')
-        !~ '^[0-9a-f]{64}$'
-      or coalesce(new.version_stamp->>'databaseMigrationVersion','')=''
-      or coalesce((new.version_stamp->>'snapshotSchemaVersion')::integer,0)<=0
-    then raise exception 'VERSION_STAMP_INCOMPLETE'; end if;
-
-    if v_mode='SERVICE' and (
-      v_northflank_run_id is not null or v_dispatcher_version is not null
-    ) then
-      raise exception 'SERVICE_VERSION_STAMP_JOB_PROVENANCE_FORBIDDEN';
-    end if;
-    if v_mode='JOB'
-      and v_phase in ('STARTING','RUNNING','SOLVING','VALIDATING','READY')
-      and v_northflank_run_id is null then
-      raise exception 'JOB_VERSION_STAMP_NORTHFLANK_RUN_ID_REQUIRED';
-    end if;
-  end if;
-  return new;
-end;
-$function$;
+AS E'\r
+declare\r
+  v_key text;\r
+  v_old jsonb;\r
+  v_new jsonb;\r
+  v_mode text;\r
+  v_northflank_run_id text;\r
+  v_dispatcher_version text;\r
+  v_phase text;\r
+begin\r
+  if new.version_stamp is null or jsonb_typeof(new.version_stamp)<>''object'' then\r
+    raise exception ''VERSION_STAMP_INVALID'';\r
+  end if;\r
+  if tg_op=''UPDATE'' then\r
+    foreach v_key in array array[\r
+      ''schemaVersion'',''frontendCommit'',''solverCommit'',''solverImageDigest'',\r
+      ''solverBuildId'',''gatewayVersion'',''strategyConfigVersion'',\r
+      ''databaseMigrationVersion'',''snapshotSchemaVersion'',''executionMode'',\r
+      ''northflankRunId'',''dispatcherVersion''\r
+    ] loop\r
+      v_old:=old.version_stamp->v_key;\r
+      v_new:=new.version_stamp->v_key;\r
+      if v_old is not null and v_old<>''null''::jsonb\r
+        and v_new is distinct from v_old then\r
+        raise exception ''VERSION_STAMP_IMMUTABLE_%'',upper(v_key);\r
+      end if;\r
+    end loop;\r
+  end if;\r
+\r
+  if new.version_stamp ? ''executionMode'' then\r
+    v_mode:=new.version_stamp->>''executionMode'';\r
+    v_northflank_run_id:=new.version_stamp->>''northflankRunId'';\r
+    v_dispatcher_version:=new.version_stamp->>''dispatcherVersion'';\r
+    v_phase:=coalesce(to_jsonb(new)->>''phase'',''READY'');\r
+    if coalesce((new.version_stamp->>''schemaVersion'')::integer,0)<>1\r
+      or v_mode not in (''SERVICE'',''JOB'')\r
+      or coalesce(new.version_stamp->>''frontendCommit'','''')=''''\r
+      or coalesce(new.version_stamp->>''solverCommit'','''') !~ ''^[0-9a-f]{40}$''\r
+      or coalesce(new.version_stamp->>''solverBuildId'','''')=''''\r
+      or coalesce(new.version_stamp->>''strategyConfigVersion'','''')\r
+        !~ ''^[0-9a-f]{64}$''\r
+      or coalesce(new.version_stamp->>''databaseMigrationVersion'','''')=''''\r
+      or coalesce((new.version_stamp->>''snapshotSchemaVersion'')::integer,0)<=0\r
+    then raise exception ''VERSION_STAMP_INCOMPLETE''; end if;\r
+\r
+    if v_mode=''SERVICE'' and (\r
+      v_northflank_run_id is not null or v_dispatcher_version is not null\r
+    ) then\r
+      raise exception ''SERVICE_VERSION_STAMP_JOB_PROVENANCE_FORBIDDEN'';\r
+    end if;\r
+    if v_mode=''JOB''\r
+      and v_phase in (''STARTING'',''RUNNING'',''SOLVING'',''VALIDATING'',''READY'')\r
+      and v_northflank_run_id is null then\r
+      raise exception ''JOB_VERSION_STAMP_NORTHFLANK_RUN_ID_REQUIRED'';\r
+    end if;\r
+  end if;\r
+  return new;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.expected_pay_components_v2(p_snapshot jsonb, p_variant jsonb)
  RETURNS TABLE(slot_id text, employee_id text, rule_id text, calculation_type text, cost_units bigint)
@@ -29623,31 +29623,31 @@ CREATE OR REPLACE FUNCTION solver_private.matrix_role_category_inherit_uat_v1()
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare v_source record; v_category uuid;
-begin
-  if new.category_id is not null then return new; end if;
-  select category.logical_id,category.code,category.name,category.description,
-    category.color,category.sort_order,category.active
-  into v_source
-  from public.matrix_roles_v2 source_role
-  join public.matrix_role_categories_v2 category on category.id=source_role.category_id
-  where source_role.logical_id=new.logical_id and source_role.matrix_version_id<>new.matrix_version_id
-  order by source_role.updated_at desc limit 1;
-  if v_source.code is null then return new; end if;
-  insert into public.matrix_role_categories_v2(
-    matrix_version_id,logical_id,code,name,description,color,sort_order,active
-  ) values(
-    new.matrix_version_id,v_source.logical_id,v_source.code,v_source.name,
-    v_source.description,v_source.color,v_source.sort_order,v_source.active
-  ) on conflict(matrix_version_id,code) do update set
-    name=excluded.name,description=excluded.description,color=excluded.color,
-    sort_order=excluded.sort_order,active=excluded.active,updated_at=now()
-  returning id into v_category;
-  new.category_id:=v_category;
-  return new;
-end;
-$function$;
+AS E'\r
+declare v_source record; v_category uuid;\r
+begin\r
+  if new.category_id is not null then return new; end if;\r
+  select category.logical_id,category.code,category.name,category.description,\r
+    category.color,category.sort_order,category.active\r
+  into v_source\r
+  from public.matrix_roles_v2 source_role\r
+  join public.matrix_role_categories_v2 category on category.id=source_role.category_id\r
+  where source_role.logical_id=new.logical_id and source_role.matrix_version_id<>new.matrix_version_id\r
+  order by source_role.updated_at desc limit 1;\r
+  if v_source.code is null then return new; end if;\r
+  insert into public.matrix_role_categories_v2(\r
+    matrix_version_id,logical_id,code,name,description,color,sort_order,active\r
+  ) values(\r
+    new.matrix_version_id,v_source.logical_id,v_source.code,v_source.name,\r
+    v_source.description,v_source.color,v_source.sort_order,v_source.active\r
+  ) on conflict(matrix_version_id,code) do update set\r
+    name=excluded.name,description=excluded.description,color=excluded.color,\r
+    sort_order=excluded.sort_order,active=excluded.active,updated_at=now()\r
+  returning id into v_category;\r
+  new.category_id:=v_category;\r
+  return new;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.matrix_v2_assert_workbook_identity_uat_v1(p_configuration jsonb)
  RETURNS jsonb
@@ -30789,28 +30789,28 @@ CREATE OR REPLACE FUNCTION solver_private.matrix_v2_seed_required_defaults_befor
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-begin
-  perform solver_private.matrix_v2_seed_required_defaults_before_b4f168(
-    p_matrix_version_id
-  );
-  perform solver_private.apply_strategy_semantics_b4f168(p_matrix_version_id);
-end;
-$function$;
+AS E'\r
+begin\r
+  perform solver_private.matrix_v2_seed_required_defaults_before_b4f168(\r
+    p_matrix_version_id\r
+  );\r
+  perform solver_private.apply_strategy_semantics_b4f168(p_matrix_version_id);\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.matrix_v2_seed_required_defaults_before_b4f170(p_matrix_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-begin
-  perform solver_private.matrix_v2_seed_required_defaults_before_b4f169(
-    p_matrix_version_id
-  );
-  perform solver_private.apply_strategy_semantics_b4f169(p_matrix_version_id);
-end;
-$function$;
+AS E'\r
+begin\r
+  perform solver_private.matrix_v2_seed_required_defaults_before_b4f169(\r
+    p_matrix_version_id\r
+  );\r
+  perform solver_private.apply_strategy_semantics_b4f169(p_matrix_version_id);\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.matrix_v2_seed_required_defaults_uat_v1(p_matrix_version_id uuid)
  RETURNS void
@@ -34571,234 +34571,234 @@ CREATE OR REPLACE FUNCTION solver_private.validate_strategy_semantics_b4f168(p_m
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_expected_guards constant jsonb :=
-    '["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD"]'::jsonb;
-  v_settings jsonb;
-  v_semantics_version text;
-begin
-  select mv.settings into v_settings
-  from public.matrix_versions mv
-  where mv.id=p_matrix_version_id;
-  v_semantics_version:=v_settings->>'strategySemanticsVersion';
-
-  if v_semantics_version not in ('B4F165_V1','B4F168_V1')
-    or v_settings->'mandatoryProductGuards'<>v_expected_guards
-    or coalesce(
-      (v_settings->>'configurableObjectivesStartAfterMandatoryGuards')::boolean,
-      false
-    ) is not true then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: MATRIX_DECLARATION';
-  end if;
-
-  if (
-    select count(distinct s.code)
-    from public.matrix_strategies_v2 s
-    where s.matrix_version_id=p_matrix_version_id and s.active
-      and s.code in ('BALANCED','MIN_COST','PREFERENCES')
-  )<>3 then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: BUILT_IN_STRATEGIES';
-  end if;
-
-  if v_semantics_version='B4F168_V1' and exists(
-    select 1
-    from public.matrix_strategy_objectives_v2 o
-    where o.matrix_version_id=p_matrix_version_id
-      and o.metric_code='HOME_LOCATION_VIOLATIONS'
-  ) then
-    raise exception
-      'STRATEGY_SEMANTICS_MISMATCH: HOME_LOCATION_VIOLATIONS_IS_OBSOLETE';
-  end if;
-
-  if exists(
-    with expected(strategy_code,metric_code,tier) as (values
-      ('BALANCED','UNFILLED',1),
-      ('BALANCED','TOTAL_COST',2),
-      ('BALANCED','PREFERENCE_VIOLATIONS',2),
-      ('BALANCED','OVERTIME_MINUTES',2),
-      ('BALANCED','NOMINAL_DEVIATION_MINUTES',2),
-      ('BALANCED','LOAD_SPREAD_MINUTES',2),
-      ('BALANCED','WEEKEND_SPREAD',2),
-      ('BALANCED','BASELINE_CHANGES',2),
-      ('MIN_COST','UNFILLED',1),
-      ('MIN_COST','TOTAL_COST',2),
-      ('MIN_COST','OVERTIME_MINUTES',3),
-      ('MIN_COST','PREFERENCE_VIOLATIONS',4),
-      ('MIN_COST','NOMINAL_DEVIATION_MINUTES',5),
-      ('MIN_COST','LOAD_SPREAD_MINUTES',5),
-      ('MIN_COST','WEEKEND_SPREAD',5),
-      ('MIN_COST','BASELINE_CHANGES',6),
-      ('PREFERENCES','UNFILLED',1),
-      ('PREFERENCES','LOAD_SPREAD_MINUTES',2),
-      ('PREFERENCES','NOMINAL_DEVIATION_MINUTES',3),
-      ('PREFERENCES','PREFERENCE_VIOLATIONS',4),
-      ('PREFERENCES','WEEKEND_SPREAD',5),
-      ('PREFERENCES','TOTAL_COST',6),
-      ('PREFERENCES','OVERTIME_MINUTES',7),
-      ('PREFERENCES','BASELINE_CHANGES',7)
-    ), legacy_home(strategy_code,metric_code,tier) as (values
-      ('BALANCED','HOME_LOCATION_VIOLATIONS',2),
-      ('MIN_COST','HOME_LOCATION_VIOLATIONS',3),
-      ('PREFERENCES','HOME_LOCATION_VIOLATIONS',6)
-    ), versioned_expected as (
-      select * from expected
-      union all
-      select * from legacy_home where v_semantics_version='B4F165_V1'
-    )
-    select 1
-    from versioned_expected e
-    left join public.matrix_strategies_v2 s
-      on s.matrix_version_id=p_matrix_version_id and s.active
-      and s.code=e.strategy_code
-    left join public.matrix_strategy_objectives_v2 o
-      on o.matrix_version_id=p_matrix_version_id and o.strategy_id=s.id
-      and o.active and o.metric_code=e.metric_code
-    where o.id is null or o.tier<>e.tier or o.weight<=0
-      or upper(o.direction) not in ('MIN','MINIMIZE')
-  ) then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: OBJECTIVE_TIERS';
-  end if;
-end;
-$function$;
+AS E'\r
+declare\r
+  v_expected_guards constant jsonb :=\r
+    ''["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD"]''::jsonb;\r
+  v_settings jsonb;\r
+  v_semantics_version text;\r
+begin\r
+  select mv.settings into v_settings\r
+  from public.matrix_versions mv\r
+  where mv.id=p_matrix_version_id;\r
+  v_semantics_version:=v_settings->>''strategySemanticsVersion'';\r
+\r
+  if v_semantics_version not in (''B4F165_V1'',''B4F168_V1'')\r
+    or v_settings->''mandatoryProductGuards''<>v_expected_guards\r
+    or coalesce(\r
+      (v_settings->>''configurableObjectivesStartAfterMandatoryGuards'')::boolean,\r
+      false\r
+    ) is not true then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: MATRIX_DECLARATION'';\r
+  end if;\r
+\r
+  if (\r
+    select count(distinct s.code)\r
+    from public.matrix_strategies_v2 s\r
+    where s.matrix_version_id=p_matrix_version_id and s.active\r
+      and s.code in (''BALANCED'',''MIN_COST'',''PREFERENCES'')\r
+  )<>3 then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: BUILT_IN_STRATEGIES'';\r
+  end if;\r
+\r
+  if v_semantics_version=''B4F168_V1'' and exists(\r
+    select 1\r
+    from public.matrix_strategy_objectives_v2 o\r
+    where o.matrix_version_id=p_matrix_version_id\r
+      and o.metric_code=''HOME_LOCATION_VIOLATIONS''\r
+  ) then\r
+    raise exception\r
+      ''STRATEGY_SEMANTICS_MISMATCH: HOME_LOCATION_VIOLATIONS_IS_OBSOLETE'';\r
+  end if;\r
+\r
+  if exists(\r
+    with expected(strategy_code,metric_code,tier) as (values\r
+      (''BALANCED'',''UNFILLED'',1),\r
+      (''BALANCED'',''TOTAL_COST'',2),\r
+      (''BALANCED'',''PREFERENCE_VIOLATIONS'',2),\r
+      (''BALANCED'',''OVERTIME_MINUTES'',2),\r
+      (''BALANCED'',''NOMINAL_DEVIATION_MINUTES'',2),\r
+      (''BALANCED'',''LOAD_SPREAD_MINUTES'',2),\r
+      (''BALANCED'',''WEEKEND_SPREAD'',2),\r
+      (''BALANCED'',''BASELINE_CHANGES'',2),\r
+      (''MIN_COST'',''UNFILLED'',1),\r
+      (''MIN_COST'',''TOTAL_COST'',2),\r
+      (''MIN_COST'',''OVERTIME_MINUTES'',3),\r
+      (''MIN_COST'',''PREFERENCE_VIOLATIONS'',4),\r
+      (''MIN_COST'',''NOMINAL_DEVIATION_MINUTES'',5),\r
+      (''MIN_COST'',''LOAD_SPREAD_MINUTES'',5),\r
+      (''MIN_COST'',''WEEKEND_SPREAD'',5),\r
+      (''MIN_COST'',''BASELINE_CHANGES'',6),\r
+      (''PREFERENCES'',''UNFILLED'',1),\r
+      (''PREFERENCES'',''LOAD_SPREAD_MINUTES'',2),\r
+      (''PREFERENCES'',''NOMINAL_DEVIATION_MINUTES'',3),\r
+      (''PREFERENCES'',''PREFERENCE_VIOLATIONS'',4),\r
+      (''PREFERENCES'',''WEEKEND_SPREAD'',5),\r
+      (''PREFERENCES'',''TOTAL_COST'',6),\r
+      (''PREFERENCES'',''OVERTIME_MINUTES'',7),\r
+      (''PREFERENCES'',''BASELINE_CHANGES'',7)\r
+    ), legacy_home(strategy_code,metric_code,tier) as (values\r
+      (''BALANCED'',''HOME_LOCATION_VIOLATIONS'',2),\r
+      (''MIN_COST'',''HOME_LOCATION_VIOLATIONS'',3),\r
+      (''PREFERENCES'',''HOME_LOCATION_VIOLATIONS'',6)\r
+    ), versioned_expected as (\r
+      select * from expected\r
+      union all\r
+      select * from legacy_home where v_semantics_version=''B4F165_V1''\r
+    )\r
+    select 1\r
+    from versioned_expected e\r
+    left join public.matrix_strategies_v2 s\r
+      on s.matrix_version_id=p_matrix_version_id and s.active\r
+      and s.code=e.strategy_code\r
+    left join public.matrix_strategy_objectives_v2 o\r
+      on o.matrix_version_id=p_matrix_version_id and o.strategy_id=s.id\r
+      and o.active and o.metric_code=e.metric_code\r
+    where o.id is null or o.tier<>e.tier or o.weight<=0\r
+      or upper(o.direction) not in (''MIN'',''MINIMIZE'')\r
+  ) then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: OBJECTIVE_TIERS'';\r
+  end if;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.validate_strategy_semantics_b4f169(p_matrix_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
-AS $function$
-declare
-  v_legacy_guards constant jsonb :=
-    '["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD"]'::jsonb;
-  v_current_guards constant jsonb :=
-    '["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD","FAIRNESS_QUALITY_GATE"]'::jsonb;
-  v_settings jsonb;
-  v_gate jsonb;
-  v_semantics_version text;
-begin
-  select mv.settings into v_settings
-  from public.matrix_versions mv
-  where mv.id=p_matrix_version_id;
-  v_semantics_version:=v_settings->>'strategySemanticsVersion';
-  v_gate:=v_settings->'fairnessQualityGate';
-
-  if v_semantics_version not in ('B4F165_V1','B4F168_V1','B4F169_V1')
-    or v_settings->'mandatoryProductGuards'<>(case
-      when v_semantics_version='B4F169_V1' then v_current_guards
-      else v_legacy_guards
-    end)
-    or coalesce(
-      (v_settings->>'configurableObjectivesStartAfterMandatoryGuards')::boolean,
-      false
-    ) is not true then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: MATRIX_DECLARATION';
-  end if;
-
-  if v_semantics_version='B4F169_V1' then
-    if jsonb_typeof(v_gate) is distinct from 'object' then
-      raise exception 'STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE';
-    end if;
-    if (select count(*) from jsonb_object_keys(v_gate))<>3
-      or exists(
-      select 1 from jsonb_object_keys(v_gate) key
-      where key not in (
-        'minimumEstimatedAchievableTargetUtilizationBps',
-        'maximumEstimatedAchievableTargetUtilizationSpreadBps',
-        'maxAttempts'
-      )
-      ) then
-      raise exception 'STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE';
-    end if;
-    if coalesce(
-      v_gate->>'minimumEstimatedAchievableTargetUtilizationBps',''
-    ) !~ '^[0-9]+$'
-    or coalesce(
-      v_gate->>'maximumEstimatedAchievableTargetUtilizationSpreadBps',''
-    ) !~ '^[0-9]+$'
-    or coalesce(v_gate->>'maxAttempts','') !~ '^[0-9]+$'
-    then
-      raise exception 'STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE';
-    end if;
-    if (v_gate->>'minimumEstimatedAchievableTargetUtilizationBps')::integer
-        not between 0 and 1000
-      or (v_gate->>'maximumEstimatedAchievableTargetUtilizationSpreadBps')::integer
-        not between 0 and 1000
-      or (v_gate->>'maxAttempts')::integer not between 1 and 3
-    then
-      raise exception 'STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE';
-    end if;
-  end if;
-
-  if (
-    select count(distinct s.code)
-    from public.matrix_strategies_v2 s
-    where s.matrix_version_id=p_matrix_version_id and s.active
-      and s.code in ('BALANCED','MIN_COST','PREFERENCES')
-  )<>3 then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: BUILT_IN_STRATEGIES';
-  end if;
-
-  if v_semantics_version in ('B4F168_V1','B4F169_V1') and exists(
-    select 1
-    from public.matrix_strategy_objectives_v2 o
-    where o.matrix_version_id=p_matrix_version_id
-      and o.metric_code='HOME_LOCATION_VIOLATIONS'
-  ) then
-    raise exception
-      'STRATEGY_SEMANTICS_MISMATCH: HOME_LOCATION_VIOLATIONS_IS_OBSOLETE';
-  end if;
-
-  if exists(
-    with expected(strategy_code,metric_code,tier) as (values
-      ('BALANCED','UNFILLED',1),
-      ('BALANCED','TOTAL_COST',2),
-      ('BALANCED','PREFERENCE_VIOLATIONS',2),
-      ('BALANCED','OVERTIME_MINUTES',2),
-      ('BALANCED','NOMINAL_DEVIATION_MINUTES',2),
-      ('BALANCED','LOAD_SPREAD_MINUTES',2),
-      ('BALANCED','WEEKEND_SPREAD',2),
-      ('BALANCED','BASELINE_CHANGES',2),
-      ('MIN_COST','UNFILLED',1),
-      ('MIN_COST','TOTAL_COST',2),
-      ('MIN_COST','OVERTIME_MINUTES',3),
-      ('MIN_COST','PREFERENCE_VIOLATIONS',4),
-      ('MIN_COST','NOMINAL_DEVIATION_MINUTES',5),
-      ('MIN_COST','LOAD_SPREAD_MINUTES',5),
-      ('MIN_COST','WEEKEND_SPREAD',5),
-      ('MIN_COST','BASELINE_CHANGES',6),
-      ('PREFERENCES','UNFILLED',1),
-      ('PREFERENCES','LOAD_SPREAD_MINUTES',2),
-      ('PREFERENCES','NOMINAL_DEVIATION_MINUTES',3),
-      ('PREFERENCES','PREFERENCE_VIOLATIONS',4),
-      ('PREFERENCES','WEEKEND_SPREAD',5),
-      ('PREFERENCES','TOTAL_COST',6),
-      ('PREFERENCES','OVERTIME_MINUTES',7),
-      ('PREFERENCES','BASELINE_CHANGES',7)
-    ), legacy_home(strategy_code,metric_code,tier) as (values
-      ('BALANCED','HOME_LOCATION_VIOLATIONS',2),
-      ('MIN_COST','HOME_LOCATION_VIOLATIONS',3),
-      ('PREFERENCES','HOME_LOCATION_VIOLATIONS',6)
-    ), versioned_expected as (
-      select * from expected
-      union all
-      select * from legacy_home where v_semantics_version='B4F165_V1'
-    )
-    select 1
-    from versioned_expected e
-    left join public.matrix_strategies_v2 s
-      on s.matrix_version_id=p_matrix_version_id and s.active
-      and s.code=e.strategy_code
-    left join public.matrix_strategy_objectives_v2 o
-      on o.matrix_version_id=p_matrix_version_id and o.strategy_id=s.id
-      and o.active and o.metric_code=e.metric_code
-    where o.id is null or o.tier<>e.tier or o.weight<=0
-      or upper(o.direction) not in ('MIN','MINIMIZE')
-  ) then
-    raise exception 'STRATEGY_SEMANTICS_MISMATCH: OBJECTIVE_TIERS';
-  end if;
-end;
-$function$;
+AS E'\r
+declare\r
+  v_legacy_guards constant jsonb :=\r
+    ''["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD"]''::jsonb;\r
+  v_current_guards constant jsonb :=\r
+    ''["HARD_CONSTRAINTS","COVERAGE","ROLE_BACKUP","OVERTIME","ZERO_HOURS","PRIMARY_ROLE","MAX_MIN_FAIRNESS","FAIRNESS_SPREAD","FAIRNESS_QUALITY_GATE"]''::jsonb;\r
+  v_settings jsonb;\r
+  v_gate jsonb;\r
+  v_semantics_version text;\r
+begin\r
+  select mv.settings into v_settings\r
+  from public.matrix_versions mv\r
+  where mv.id=p_matrix_version_id;\r
+  v_semantics_version:=v_settings->>''strategySemanticsVersion'';\r
+  v_gate:=v_settings->''fairnessQualityGate'';\r
+\r
+  if v_semantics_version not in (''B4F165_V1'',''B4F168_V1'',''B4F169_V1'')\r
+    or v_settings->''mandatoryProductGuards''<>(case\r
+      when v_semantics_version=''B4F169_V1'' then v_current_guards\r
+      else v_legacy_guards\r
+    end)\r
+    or coalesce(\r
+      (v_settings->>''configurableObjectivesStartAfterMandatoryGuards'')::boolean,\r
+      false\r
+    ) is not true then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: MATRIX_DECLARATION'';\r
+  end if;\r
+\r
+  if v_semantics_version=''B4F169_V1'' then\r
+    if jsonb_typeof(v_gate) is distinct from ''object'' then\r
+      raise exception ''STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE'';\r
+    end if;\r
+    if (select count(*) from jsonb_object_keys(v_gate))<>3\r
+      or exists(\r
+      select 1 from jsonb_object_keys(v_gate) key\r
+      where key not in (\r
+        ''minimumEstimatedAchievableTargetUtilizationBps'',\r
+        ''maximumEstimatedAchievableTargetUtilizationSpreadBps'',\r
+        ''maxAttempts''\r
+      )\r
+      ) then\r
+      raise exception ''STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE'';\r
+    end if;\r
+    if coalesce(\r
+      v_gate->>''minimumEstimatedAchievableTargetUtilizationBps'',''''\r
+    ) !~ ''^[0-9]+$''\r
+    or coalesce(\r
+      v_gate->>''maximumEstimatedAchievableTargetUtilizationSpreadBps'',''''\r
+    ) !~ ''^[0-9]+$''\r
+    or coalesce(v_gate->>''maxAttempts'','''') !~ ''^[0-9]+$''\r
+    then\r
+      raise exception ''STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE'';\r
+    end if;\r
+    if (v_gate->>''minimumEstimatedAchievableTargetUtilizationBps'')::integer\r
+        not between 0 and 1000\r
+      or (v_gate->>''maximumEstimatedAchievableTargetUtilizationSpreadBps'')::integer\r
+        not between 0 and 1000\r
+      or (v_gate->>''maxAttempts'')::integer not between 1 and 3\r
+    then\r
+      raise exception ''STRATEGY_SEMANTICS_MISMATCH: FAIRNESS_QUALITY_GATE'';\r
+    end if;\r
+  end if;\r
+\r
+  if (\r
+    select count(distinct s.code)\r
+    from public.matrix_strategies_v2 s\r
+    where s.matrix_version_id=p_matrix_version_id and s.active\r
+      and s.code in (''BALANCED'',''MIN_COST'',''PREFERENCES'')\r
+  )<>3 then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: BUILT_IN_STRATEGIES'';\r
+  end if;\r
+\r
+  if v_semantics_version in (''B4F168_V1'',''B4F169_V1'') and exists(\r
+    select 1\r
+    from public.matrix_strategy_objectives_v2 o\r
+    where o.matrix_version_id=p_matrix_version_id\r
+      and o.metric_code=''HOME_LOCATION_VIOLATIONS''\r
+  ) then\r
+    raise exception\r
+      ''STRATEGY_SEMANTICS_MISMATCH: HOME_LOCATION_VIOLATIONS_IS_OBSOLETE'';\r
+  end if;\r
+\r
+  if exists(\r
+    with expected(strategy_code,metric_code,tier) as (values\r
+      (''BALANCED'',''UNFILLED'',1),\r
+      (''BALANCED'',''TOTAL_COST'',2),\r
+      (''BALANCED'',''PREFERENCE_VIOLATIONS'',2),\r
+      (''BALANCED'',''OVERTIME_MINUTES'',2),\r
+      (''BALANCED'',''NOMINAL_DEVIATION_MINUTES'',2),\r
+      (''BALANCED'',''LOAD_SPREAD_MINUTES'',2),\r
+      (''BALANCED'',''WEEKEND_SPREAD'',2),\r
+      (''BALANCED'',''BASELINE_CHANGES'',2),\r
+      (''MIN_COST'',''UNFILLED'',1),\r
+      (''MIN_COST'',''TOTAL_COST'',2),\r
+      (''MIN_COST'',''OVERTIME_MINUTES'',3),\r
+      (''MIN_COST'',''PREFERENCE_VIOLATIONS'',4),\r
+      (''MIN_COST'',''NOMINAL_DEVIATION_MINUTES'',5),\r
+      (''MIN_COST'',''LOAD_SPREAD_MINUTES'',5),\r
+      (''MIN_COST'',''WEEKEND_SPREAD'',5),\r
+      (''MIN_COST'',''BASELINE_CHANGES'',6),\r
+      (''PREFERENCES'',''UNFILLED'',1),\r
+      (''PREFERENCES'',''LOAD_SPREAD_MINUTES'',2),\r
+      (''PREFERENCES'',''NOMINAL_DEVIATION_MINUTES'',3),\r
+      (''PREFERENCES'',''PREFERENCE_VIOLATIONS'',4),\r
+      (''PREFERENCES'',''WEEKEND_SPREAD'',5),\r
+      (''PREFERENCES'',''TOTAL_COST'',6),\r
+      (''PREFERENCES'',''OVERTIME_MINUTES'',7),\r
+      (''PREFERENCES'',''BASELINE_CHANGES'',7)\r
+    ), legacy_home(strategy_code,metric_code,tier) as (values\r
+      (''BALANCED'',''HOME_LOCATION_VIOLATIONS'',2),\r
+      (''MIN_COST'',''HOME_LOCATION_VIOLATIONS'',3),\r
+      (''PREFERENCES'',''HOME_LOCATION_VIOLATIONS'',6)\r
+    ), versioned_expected as (\r
+      select * from expected\r
+      union all\r
+      select * from legacy_home where v_semantics_version=''B4F165_V1''\r
+    )\r
+    select 1\r
+    from versioned_expected e\r
+    left join public.matrix_strategies_v2 s\r
+      on s.matrix_version_id=p_matrix_version_id and s.active\r
+      and s.code=e.strategy_code\r
+    left join public.matrix_strategy_objectives_v2 o\r
+      on o.matrix_version_id=p_matrix_version_id and o.strategy_id=s.id\r
+      and o.active and o.metric_code=e.metric_code\r
+    where o.id is null or o.tier<>e.tier or o.weight<=0\r
+      or upper(o.direction) not in (''MIN'',''MINIMIZE'')\r
+  ) then\r
+    raise exception ''STRATEGY_SEMANTICS_MISMATCH: OBJECTIVE_TIERS'';\r
+  end if;\r
+end;\r
+';
 
 CREATE OR REPLACE FUNCTION solver_private.validate_strategy_semantics_b4f170(p_matrix_version_id uuid)
  RETURNS void

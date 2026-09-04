@@ -10,6 +10,21 @@ const object = (schema, name) => `${q(schema)}.${q(name)}`;
 const role = name => name === "" ? "PUBLIC" : q(name);
 const privileges = { a: "INSERT", r: "SELECT", w: "UPDATE", d: "DELETE", D: "TRUNCATE", x: "REFERENCES", t: "TRIGGER", m: "MAINTAIN", X: "EXECUTE", U: "USAGE", C: "CREATE" };
 
+// pg_get_functiondef can contain CRLF inside a dollar-quoted body. Encode CR
+// in an escape string rather than normalize the body: PostgreSQL must recover
+// the exact original prosrc, including CR in literals/comments and backslashes.
+export function formatRoutineDefinition(definition) {
+  const sql = definition.trimEnd();
+  if (!sql.includes("\r")) return sql;
+  const match = /\bAS (\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$)([\s\S]*)\1$/u.exec(sql);
+  assert.ok(match, "CR_ROUTINE_REQUIRES_DOLLAR_QUOTED_BODY");
+  assert.equal(match[2].includes(match[1]), false, "AMBIGUOUS_ROUTINE_BODY_DELIMITER");
+  const prefix = sql.slice(0, match.index);
+  assert.equal(prefix.includes("\r"), false, "CR_OUTSIDE_ROUTINE_BODY");
+  const escaped = match[2].replaceAll("\\", "\\\\").replaceAll("'", "''").replaceAll("\r", "\\r");
+  return `${prefix}AS E'${escaped}'`;
+}
+
 function aclStatements(kind, target, acl, owner) {
   const parsed = acl.map(item => {
     const match = item.match(/^([^=]*)=([A-Za-z*]*)\/([^/]+)$/u);
@@ -97,7 +112,7 @@ export function buildBaseline(capture) {
   for (const routine of capture.routines) {
     assert.ok(appSchemas.includes(routine.schema));
     assert.equal(routine.owner, "postgres");
-    const definition = routine.definition.trimEnd();
+    const definition = formatRoutineDefinition(routine.definition);
     lines.push(definition.endsWith(';') ? definition : `${definition};`);
   }
   for (const column of capture.columns) {

@@ -17,7 +17,7 @@
     "historicalLocalOnly": 181
   },
   "baseline": "supabase/migrations/20260903090000_aud003_canonical_uat_baseline.sql",
-  "baselineSha256": "2210f8436eb7d5dde033aae671dff98d6b166c3d60f97a5166ea3fa85e85d7db",
+  "baselineSha256": "aaae0e8f7a0db076eaee0f8f4397aa0bc7db144fc23a89293df489807ade7bd1",
   "chronology": "Baseline version is a logical pre-audit ordering key (09:00), not the capture time. CLI scaffold was renamed before any application.",
   "coverageMeaning": "Current state is covered by independently replayed captured schema; this is NOT an assertion that every historical statement was applied or semantically equivalent. Historical SQL is not replayed. Remote ledger untouched.",
   "liveRows": [
