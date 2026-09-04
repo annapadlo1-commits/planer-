@@ -26,7 +26,7 @@ from grafik_solver.cp_sat_engine import (
     coverage_minimum_is_proven,
 )
 from grafik_solver.eligibility import EligibilityIndex
-from grafik_solver.lifecycle import WorkerRuntime
+from grafik_solver.lifecycle import WorkerRuntime, validate_run_strategy_contract
 from grafik_solver.models import Assignment, Snapshot, SnapshotError
 from grafik_solver.pay_rules import quote_assignment
 from grafik_solver.rpc import Claim, Heartbeat, RpcError, SnapshotEnvelope
@@ -940,6 +940,10 @@ class SnapshotTests(unittest.TestCase):
                 "SOLVER_GATEWAY_TOKEN": "g" * 64,
                 "WORKER_ID": "free-host-worker-test",
                 "SOLVER_VERSION": "ORTOOLS_V2_2026_08_02",
+                "SOLVER_CONTRACT_VERSION": "SOLVER_CONTRACT_V2",
+                "SOLVER_SOURCE_SHA": "a" * 40,
+                "SOLVER_IMAGE_DIGEST": "sha256:" + "b" * 64,
+                "SOLVER_BUILD_TIMESTAMP": "2026-09-03T10:15:30Z",
                 "WORKER_TASK_ATTEMPT": "2",
                 "POLL_INTERVAL_SECONDS": "7",
                 "MAX_RUNS": "3",
@@ -3145,6 +3149,43 @@ class SolverTests(unittest.TestCase):
             rpc.claim_requests[0]["worker_version"], "ORTOOLS_V2_2026_08_02"
         )
 
+    def test_current_snapshot_contract_requires_exactly_three_canonical_strategies(
+        self,
+    ) -> None:
+        current = copy.deepcopy(self.raw)
+        current["settings"]["strategySemanticsVersion"] = "B4F170_V1"
+        template = current["strategies"][0]
+        current["strategies"] = [
+            {
+                **copy.deepcopy(template),
+                "id": f"strategy-{code.lower()}",
+                "code": code,
+                "sortOrder": index,
+            }
+            for index, code in enumerate(("BALANCED", "MIN_COST", "PREFERENCES"))
+        ]
+        validate_run_strategy_contract(Snapshot.from_dict(current))
+
+        invalid_sets = [
+            current["strategies"][:2],
+            [*current["strategies"], copy.deepcopy(current["strategies"][0])],
+            [
+                *current["strategies"][:2],
+                {**copy.deepcopy(current["strategies"][2]), "code": "OTHER"},
+            ],
+        ]
+        for strategies in invalid_sets:
+            with (
+                self.subTest(codes=[item["code"] for item in strategies]),
+                self.assertRaisesRegex(
+                    SnapshotError,
+                    "STRATEGY_SET_MISMATCH.*BALANCED.*MIN_COST.*PREFERENCES",
+                ),
+            ):
+                raw = copy.deepcopy(current)
+                raw["strategies"] = strategies
+                validate_run_strategy_contract(Snapshot.from_dict(raw))
+
     def test_worker_treats_structured_finalization_failure_as_failed_run(self) -> None:
         rpc = _FakeRpc(self.raw)
         rpc.finalization_value = {
@@ -3177,6 +3218,39 @@ class SolverTests(unittest.TestCase):
         self.assertTrue(rpc.finalized)
         self.assertFalse(rpc.failed)
         self.assertIn("RUN_VARIANTS_INCOMPLETE", "\n".join(logs.output))
+
+    def test_worker_validates_every_variant_before_persisting_the_batch(self) -> None:
+        invalid_second = replace(
+            self.variants[1],
+            strategy_id="strategy-not-present-in-snapshot",
+        )
+        rpc = _FakeRpc(self.raw)
+        config = WorkerConfig(
+            solver_gateway_url=(
+                "https://example.supabase.co/functions/v1/solver-gateway"
+            ),
+            solver_gateway_token="g" * 64,
+            solver_version="ORTOOLS_V2_2026_08_02",
+            worker_id="test-worker",
+            task_attempt=1,
+            poll_interval_seconds=1,
+            max_runs=1,
+            idle_exit_seconds=0,
+            rpc_timeout_seconds=1,
+            heartbeat_seconds=60,
+            lease_seconds=90,
+            solver_max_seconds=30,
+        )
+        runtime = WorkerRuntime(
+            config,
+            rpc=rpc,
+            engine=_FakeEngine((self.variants[0], invalid_second)),
+        )
+
+        self.assertEqual(runtime.run_once(), 1)
+        self.assertEqual(rpc.saved, [])
+        self.assertTrue(rpc.failed)
+        self.assertFalse(rpc.finalized)
 
     def test_worker_heartbeat_filters_engine_only_diagnostics(self) -> None:
         rpc = _FakeRpc(self.raw)
@@ -3825,6 +3899,9 @@ class _FakeRpc:
 
     def save_variant(self, _claim, variant):
         self.saved.append(variant)
+
+    def save_variants(self, _claim, variants):
+        self.saved.extend(variants)
 
     def finalize(self, _claim):
         self.finalized = True

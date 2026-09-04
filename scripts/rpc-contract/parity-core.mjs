@@ -46,14 +46,15 @@ export function classifyInventory(frontendInventory, definitions) {
   const matrix = frontendInventory.map((rpc) => {
     const named = definitions.filter((definition) => definition.name === rpc.name);
     const publicDefinitions = named.filter((definition) => schemaOf(definition) === "public");
-    // A wrapper can select both the RPC name and payload conditionally. The AST
-    // inventory records every reachable payload branch, so a definition is
-    // compatible when at least one branch represents a valid PostgREST call.
-    const compatible = publicDefinitions.filter((definition) => rpc.payloadShapes.some((shape) => callShapeMatches(definition, shape)));
+    const matchesByPayload = rpc.payloadShapes.map((shape) =>
+      publicDefinitions.filter((definition) => callShapeMatches(definition, shape)));
+    const compatible = [...new Set(matchesByPayload.flat())];
+    const everyPayloadMatches = matchesByPayload.length > 0
+      && matchesByPayload.every((matches) => matches.length > 0);
     let classification = "MATCHED";
     if (named.length === 0) classification = "MISSING";
     else if (publicDefinitions.length === 0) classification = "WRONG_SCHEMA";
-    else if (compatible.length === 0) classification = "SIGNATURE_MISMATCH";
+    else if (!everyPayloadMatches) classification = "SIGNATURE_MISMATCH";
     else if (compatible.some((definition) => !authExecute(definition))) classification = "AUTH_GRANT_MISMATCH";
     else if (compatible.some((definition) => anonExecute(definition) || publicExecute(definition))) classification = "UNEXPECTED_ANON";
 
@@ -62,7 +63,7 @@ export function classifyInventory(frontendInventory, definitions) {
       classification,
       exists: named.length > 0,
       publicSchema: publicDefinitions.length > 0,
-      signatureMatch: compatible.length > 0,
+      signatureMatch: everyPayloadMatches,
       authenticatedExecute: compatible.length > 0 && compatible.every(authExecute),
       anonymousExecute: compatible.some((definition) => anonExecute(definition) || publicExecute(definition)),
       frontendPayloads: rpc.payloadShapes,

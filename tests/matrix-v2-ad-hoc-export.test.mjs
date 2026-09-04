@@ -21,7 +21,7 @@ test("ad-hoc export uses the projected workspace role code when the stored role 
 
 test("workspace RPC projects global ad-hoc rows by logical role identity", async () => {
   const sql = await readFile(
-    new URL("../supabase/migrations/20260816013000_uat_ad_hoc_export_role_projection.sql", import.meta.url),
+    new URL("../supabase/archive/aud003/migrations/20260816013000_uat_ad_hoc_export_role_projection.sql", import.meta.url),
     "utf8",
   );
 

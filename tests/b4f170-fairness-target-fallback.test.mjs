@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const files = await Promise.all([
-  readFile("supabase/migrations/20260824160525_b4f170_fairness_target_best_valid_fallback.sql", "utf8"),
+  readFile("supabase/archive/aud003/migrations/20260824160525_b4f170_fairness_target_best_valid_fallback.sql", "utf8"),
   readFile("solver/src/grafik_solver/lifecycle.py", "utf8"),
   readFile("solver/src/grafik_solver/models.py", "utf8"),
   readFile("solver/src/grafik_solver/cp_sat_engine.py", "utf8"),

@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("F4 makes employment and pay-rate periods one bidirectional DB invariant", async () => {
   const migration = await read(
-    "supabase/migrations/20260820081703_f4_employment_pay_rate_bidirectional_invariant.sql",
+    "supabase/archive/aud003/migrations/20260820081703_f4_employment_pay_rate_bidirectional_invariant.sql",
   );
   assert.match(
     migration,
@@ -46,7 +46,7 @@ test("F4 makes employment and pay-rate periods one bidirectional DB invariant", 
 
 test("F4 closes the externally callable alpha16 employee writer", async () => {
   const [migration, alpha16Contract] = await Promise.all([
-    read("supabase/migrations/20260820081703_f4_employment_pay_rate_bidirectional_invariant.sql"),
+    read("supabase/archive/aud003/migrations/20260820081703_f4_employment_pay_rate_bidirectional_invariant.sql"),
     read("supabase/tests/alpha16_contract.sql"),
   ]);
   assert.match(

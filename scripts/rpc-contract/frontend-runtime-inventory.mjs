@@ -66,29 +66,103 @@ function resolveInitializer(file, node, seen = new Set()) {
   return node;
 }
 
-function staticStrings(file, node) {
+function booleanFormula(file, node, seen = new Set()) {
+  node = unwrap(node);
+  if (!node) return { kind: "constant", value: false };
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return { kind: "constant", value: true };
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return { kind: "constant", value: false };
+  if (ts.isIdentifier(node)) {
+    const next = constInitializers.get(file)?.get(node.text);
+    if (next && !seen.has(node.text)) {
+      const nextSeen = new Set(seen);
+      nextSeen.add(node.text);
+      return booleanFormula(file, next, nextSeen);
+    }
+    return { kind: "atom", key: `identifier:${node.text}` };
+  }
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+    return { kind: "not", operand: booleanFormula(file, node.operand, seen) };
+  }
+  if (ts.isBinaryExpression(node)) {
+    if (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      return { kind: "and", left: booleanFormula(file, node.left, seen), right: booleanFormula(file, node.right, seen) };
+    }
+    if (node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+      return { kind: "or", left: booleanFormula(file, node.left, seen), right: booleanFormula(file, node.right, seen) };
+    }
+  }
+  const source = sourceFiles.get(file);
+  const expression = source ? node.getText(source).replace(/\s+/gu, " ") : String(node.kind);
+  return { kind: "atom", key: `expression:${expression}` };
+}
+
+function negate(formula) {
+  return { kind: "not", operand: formula };
+}
+
+function collectAtoms(formula, atoms) {
+  if (formula.kind === "atom") atoms.add(formula.key);
+  else if (formula.kind === "not") collectAtoms(formula.operand, atoms);
+  else if (formula.kind === "and" || formula.kind === "or") {
+    collectAtoms(formula.left, atoms);
+    collectAtoms(formula.right, atoms);
+  }
+}
+
+function evaluateFormula(formula, assignment) {
+  if (formula.kind === "constant") return formula.value;
+  if (formula.kind === "atom") return assignment.get(formula.key) ?? false;
+  if (formula.kind === "not") return !evaluateFormula(formula.operand, assignment);
+  if (formula.kind === "and") return evaluateFormula(formula.left, assignment) && evaluateFormula(formula.right, assignment);
+  return evaluateFormula(formula.left, assignment) || evaluateFormula(formula.right, assignment);
+}
+
+function conditionsAreSatisfiable(conditions) {
+  const atomSet = new Set();
+  for (const condition of conditions) collectAtoms(condition, atomSet);
+  const atoms = [...atomSet];
+  if (atoms.length > 16) return true;
+  for (let mask = 0; mask < 2 ** atoms.length; mask += 1) {
+    const assignment = new Map(atoms.map((atom, index) => [atom, Boolean(mask & (2 ** index))]));
+    if (conditions.every((condition) => evaluateFormula(condition, assignment))) return true;
+  }
+  return false;
+}
+
+function staticStringVariants(file, node, conditions = []) {
   node = resolveInitializer(file, node);
-  if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) return [node.text];
+  if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
+    return [{ value: node.text, conditions }];
+  }
   if (node && ts.isConditionalExpression(node)) {
-    return [...new Set([...staticStrings(file, node.whenTrue), ...staticStrings(file, node.whenFalse)])];
+    const condition = booleanFormula(file, node.condition);
+    return [
+      ...staticStringVariants(file, node.whenTrue, [...conditions, condition]),
+      ...staticStringVariants(file, node.whenFalse, [...conditions, negate(condition)]),
+    ];
   }
   return [];
 }
 
-function payloadVariants(file, node) {
-  if (!node) return [{ keys: [], dynamic: false }];
+function payloadVariants(file, node, conditions = []) {
+  if (!node) return [{ keys: [], dynamic: false, conditions }];
   node = resolveInitializer(file, node);
   if (node && ts.isConditionalExpression(node)) {
-    return [...payloadVariants(file, node.whenTrue), ...payloadVariants(file, node.whenFalse)];
+    const condition = booleanFormula(file, node.condition);
+    return [
+      ...payloadVariants(file, node.whenTrue, [...conditions, condition]),
+      ...payloadVariants(file, node.whenFalse, [...conditions, negate(condition)]),
+    ];
   }
-  if (!node || !ts.isObjectLiteralExpression(node)) return [{ keys: [], dynamic: true }];
-  let variants = [{ keys: [], dynamic: false }];
+  if (!node || !ts.isObjectLiteralExpression(node)) return [{ keys: [], dynamic: true, conditions }];
+  let variants = [{ keys: [], dynamic: false, conditions }];
   for (const property of node.properties) {
     if (ts.isSpreadAssignment(property)) {
       const spreadVariants = payloadVariants(file, property.expression);
       variants = variants.flatMap((base) => spreadVariants.map((spread) => ({
         keys: [...new Set([...base.keys, ...spread.keys])].sort(),
         dynamic: base.dynamic || spread.dynamic,
+        conditions: [...base.conditions, ...spread.conditions],
       })));
       continue;
     }
@@ -147,14 +221,18 @@ const unresolved = [];
 for (const [file, source] of sourceFiles) {
   const wrappers = wrappersByFile.get(file) ?? new Map();
   const relative = path.relative(root, file).replaceAll("\\", "/");
-  function add(name, node, payloads, via) {
+  function add(nameVariant, node, payloads, via) {
     const position = source.getLineAndCharacterOfPosition(node.getStart(source));
-    calls.push({ name, file: relative, line: position.line + 1, payloadVariants: payloads, via });
+    const correlatedPayloads = payloads
+      .filter((payload) => conditionsAreSatisfiable([...nameVariant.conditions, ...payload.conditions]))
+      .map(({ keys, dynamic }) => ({ keys, dynamic }))
+      .filter((payload, index, all) => all.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(payload)) === index);
+    calls.push({ name: nameVariant.value, file: relative, line: position.line + 1, payloadVariants: correlatedPayloads, via });
   }
   function visit(node) {
     if (ts.isCallExpression(node)) {
       if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "rpc") {
-        const names = staticStrings(file, node.arguments[0]);
+        const names = staticStringVariants(file, node.arguments[0]);
         const isWrapperBody = [...wrappers.values()].some((wrapper) => {
           const first = unwrap(node.arguments[0]);
           return first && ts.isIdentifier(first) && wrapper.rpcNameIndex >= 0;
@@ -166,7 +244,7 @@ for (const [file, source] of sourceFiles) {
         }
       } else if (ts.isIdentifier(node.expression) && wrappers.has(node.expression.text)) {
         const wrapper = wrappers.get(node.expression.text);
-        const names = staticStrings(file, node.arguments[wrapper.rpcNameIndex]);
+        const names = staticStringVariants(file, node.arguments[wrapper.rpcNameIndex]);
         if (names.length) for (const name of names) add(name, node, payloadVariants(file, wrapper.payloadIndex >= 0 ? node.arguments[wrapper.payloadIndex] : undefined), `wrapper:${node.expression.text}`);
         else {
           const position = source.getLineAndCharacterOfPosition(node.getStart(source));

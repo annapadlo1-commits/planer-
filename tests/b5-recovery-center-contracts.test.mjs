@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const migrationUrl=new URL("../supabase/migrations/20260809210000_b4plus_b5_recovery_center.sql",import.meta.url);
-const applyMigrationUrl=new URL("../supabase/migrations/20260809223000_b5_recovery_draft_application.sql",import.meta.url);
-const draftFixMigrationUrl=new URL("../supabase/migrations/20260810103000_b5_recovery_draft_selection_fix.sql",import.meta.url);
-const candidateFixMigrationUrl=new URL("../supabase/migrations/20260810111500_b5_recovery_candidate_parity_fix.sql",import.meta.url);
+const migrationUrl=new URL("../supabase/archive/aud003/migrations/20260809210000_b4plus_b5_recovery_center.sql",import.meta.url);
+const applyMigrationUrl=new URL("../supabase/archive/aud003/migrations/20260809223000_b5_recovery_draft_application.sql",import.meta.url);
+const draftFixMigrationUrl=new URL("../supabase/archive/aud003/migrations/20260810103000_b5_recovery_draft_selection_fix.sql",import.meta.url);
+const candidateFixMigrationUrl=new URL("../supabase/archive/aud003/migrations/20260810111500_b5_recovery_candidate_parity_fix.sql",import.meta.url);
 
 test("B5 recovery schema is RLS protected and exposes the complete audited workflow",async()=>{
   const sql=await readFile(migrationUrl,"utf8");

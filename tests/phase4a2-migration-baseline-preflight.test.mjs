@@ -3,15 +3,21 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { canonicalGitBytes } from "./helpers/canonical-git-bytes.mjs";
 
 const manifest = JSON.parse(await readFile(new URL(
   "../docs/phase4a2-uat-migration-reconciliation.json",
   import.meta.url,
 ), "utf8"));
-const preflight = await readFile(new URL(
+const preflightWorktree = await readFile(new URL(
   "../docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql",
   import.meta.url,
-), "utf8");
+));
+const preflightBytes = canonicalGitBytes(
+  "docs/PHASE4A2_UAT_BASELINE_READ_ONLY_PREFLIGHT.sql",
+  preflightWorktree,
+);
+const preflight = preflightBytes.toString("utf8");
 const runbook = await readFile(new URL(
   "../docs/PHASE4A2_MIGRATION_BASELINE_RECOVERY_2026-08-28.md",
   import.meta.url,
@@ -187,7 +193,7 @@ test("Phase 4A.2 pins the reviewed source and isolated UAT", () => {
 });
 
 test("preflight artifact bytes, file hash and Git blob are pinned", () => {
-  const bytes = Buffer.from(preflight, "utf8");
+  const bytes = preflightBytes;
   const gitBlob = createHash("sha1")
     .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`, "utf8"), bytes]))
     .digest("hex");

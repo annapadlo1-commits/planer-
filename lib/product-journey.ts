@@ -7,6 +7,8 @@ import type {
 export type ManagementSection = "start" | "team" | "schedule" | "operations" | "analytics" | "settings" | "profile";
 export type EmployeeSection = "today" | "my-schedule" | "company-schedule" | "swaps" | "messages" | "profile";
 export type ProductSection = ManagementSection | EmployeeSection;
+export type AppPersona = "employee" | "management";
+export type PersonaEmployee = { active?: boolean } | null | undefined;
 export type SetupSection = "structure" | "workforce" | "strategies" | "finance";
 export type SetupStepKey = "company" | "roles" | "shifts" | "employees" | "variants" | "readiness" | "publication";
 export type SetupStepState = "complete" | "current" | "blocked";
@@ -118,6 +120,36 @@ export function canManageSchedule(roles: { app_role: string }[] | null | undefin
 export function isEmployeePersona(roles: { app_role: string }[] | null | undefined) {
   const names = roles?.map(role => role.app_role) ?? [];
   return names.length > 0 && !names.some(role => MANAGEMENT_ROLES.has(role));
+}
+
+export function availablePersonas(
+  roles: { app_role: string }[] | null | undefined,
+  employee: PersonaEmployee,
+): AppPersona[] {
+  const personas: AppPersona[] = [];
+  if (employee?.active === true) personas.push("employee");
+  if (roles?.some(role => MANAGEMENT_ROLES.has(role.app_role))) personas.push("management");
+  return personas;
+}
+
+export function defaultPersonaForAccess(
+  roles: { app_role: string }[] | null | undefined,
+  employee: PersonaEmployee,
+): AppPersona | null {
+  const personas = availablePersonas(roles, employee);
+  return personas.includes("employee") ? "employee" : personas[0] ?? null;
+}
+
+export function reconcilePersona(
+  activePersona: AppPersona,
+  roles: { app_role: string }[] | null | undefined,
+  employee: PersonaEmployee,
+  selectedExplicitly: boolean,
+): AppPersona | null {
+  const personas = availablePersonas(roles, employee);
+  const safeDefault = defaultPersonaForAccess(roles, employee);
+  if (selectedExplicitly && personas.includes(activePersona)) return activePersona;
+  return safeDefault;
 }
 
 export function sectionFromPath(pathname: string, employee: boolean): ProductSection {

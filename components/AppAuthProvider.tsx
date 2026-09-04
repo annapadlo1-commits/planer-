@@ -11,6 +11,7 @@ import {
   SESSION_CHECK_FAILED_MESSAGE,
   SESSION_EXPIRED_MESSAGE,
 } from "@/lib/auth-session";
+import { parseCompanyTimeContext } from "@/lib/company-time";
 import {
   applicationEnvironmentLabel,
   createSupabaseBrowserClient,
@@ -18,6 +19,7 @@ import {
   supabaseEnvironmentGuard,
   supabaseProjectRef,
 } from "@/lib/supabase/client";
+import { userSafeErrorMessage } from "@/lib/user-safe-error";
 
 type LiveSummary = {
   employees: number;
@@ -27,16 +29,18 @@ type LiveSummary = {
 };
 
 type AppAccess = {
+  provisioning_available?: boolean;
   roles?: { app_role: string; scope_role?: string | null; scope_location?: string | null }[];
   employee?: {
     employee_no: string;
     first_name: string;
     last_name: string;
     primary_role: string;
+    active: boolean;
   } | null;
 };
 
-type WorkspaceIssue = "MISSING_CONFIGURATION" | "WORKSPACE_LOAD_FAILED" | null;
+type WorkspaceIssue = "MISSING_CONFIGURATION" | "TIMEZONE_CONFIGURATION_FAILED" | "WORKSPACE_LOAD_FAILED" | null;
 
 function isMissingCompanyConfiguration(error: { code?: string; message?: string } | null) {
   const value = `${error?.code ?? ""}|${error?.message ?? ""}`.toUpperCase();
@@ -51,6 +55,8 @@ type AuthContextValue = {
   access: AppAccess | null;
   summary: LiveSummary | null;
   error: string;
+  companyTimezone: string;
+  currentCompanyMonth: string;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -63,6 +69,8 @@ const AuthContext = createContext<AuthContextValue>({
   access: null,
   summary: null,
   error: "",
+  companyTimezone: "",
+  currentCompanyMonth: "",
   refresh: async () => undefined,
   signOut: async () => undefined,
 });
@@ -80,6 +88,8 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<AppAccess | null>(null);
   const [summary, setSummary] = useState<LiveSummary | null>(null);
   const [error, setError] = useState("");
+  const [companyTimezone, setCompanyTimezone] = useState("");
+  const [currentCompanyMonth, setCurrentCompanyMonth] = useState("");
   const [workspaceIssue, setWorkspaceIssue] = useState<WorkspaceIssue>(null);
   const [sessionCheckError, setSessionCheckError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
@@ -95,6 +105,8 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     setAccess(null);
     setSummary(null);
     setError("");
+    setCompanyTimezone("");
+    setCurrentCompanyMonth("");
     setWorkspaceIssue(null);
     setAuthNotice(notice);
   }, []);
@@ -115,8 +127,36 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       const nextAccess=(accessResult.data || null) as AppAccess | null;
       setAccess(nextAccess);
 
+      if(!nextAccess?.roles?.length){
+        setSummary(null);
+        setCompanyTimezone("");
+        setCurrentCompanyMonth("");
+        return true;
+      }
+
+      const companyTimeResult=await supabase.rpc("current_company_time_context_v1");
+      if(companyTimeResult.error){
+        setSummary(null);
+        setCompanyTimezone("");
+        setCurrentCompanyMonth("");
+        setWorkspaceIssue("TIMEZONE_CONFIGURATION_FAILED");
+        return false;
+      }
+      let companyTime;
+      try{
+        companyTime=parseCompanyTimeContext(companyTimeResult.data);
+      }catch{
+        setSummary(null);
+        setCompanyTimezone("");
+        setCurrentCompanyMonth("");
+        setWorkspaceIssue("TIMEZONE_CONFIGURATION_FAILED");
+        return false;
+      }
+      setCompanyTimezone(companyTime.timezone);
+      setCurrentCompanyMonth(companyTime.currentMonth);
+
       const matrixResult=await supabase.rpc("matrix_v2_workspace",{
-        p_month:`${new Date().toISOString().slice(0,7)}-01`,
+        p_month:`${companyTime.currentMonth}-01`,
       });
       if(matrixResult.error){
         setSummary(null);
@@ -137,6 +177,8 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (cause) {
       setAccess(null);
       setSummary(null);
+      setCompanyTimezone("");
+      setCurrentCompanyMonth("");
       setWorkspaceIssue(null);
       setError("Nie udało się potwierdzić aktualnego zakresu dostępu. Spróbuj ponownie.");
       return false;
@@ -150,6 +192,20 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     if(result.error){
       setLoading(false);
       setWorkspaceIssue("WORKSPACE_LOAD_FAILED");
+      return;
+    }
+    await loadLiveData(user);
+    setLoading(false);
+  },[loadLiveData,supabase,user]);
+
+  const provisionCurrentAccess=useCallback(async()=>{
+    if(!supabase||!user)return;
+    setLoading(true);
+    setError("");
+    const result=await supabase.rpc("application_access_provision_current_user_v1");
+    if(result.error){
+      setLoading(false);
+      setError("Nie udało się aktywować nadanego dostępu. Poproś właściciela o sprawdzenie adresu e-mail w Administracji i spróbuj ponownie.");
       return;
     }
     await loadLiveData(user);
@@ -277,12 +333,14 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     configured,
-    connected: Boolean(user && access && summary && !error && !workspaceIssue && !sessionCheckError && !offline),
+    connected: Boolean(user && access && summary && companyTimezone && currentCompanyMonth && !error && !workspaceIssue && !sessionCheckError && !offline),
     loading,
     user,
     access,
     summary,
     error,
+    companyTimezone,
+    currentCompanyMonth,
     refresh,
     signOut,
   };
@@ -377,6 +435,21 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (workspaceIssue === "TIMEZONE_CONFIGURATION_FAILED" && access) {
+    return (
+      <main className="access-pending">
+        <section>
+          <span className="login-lock"><Database size={24} /></span>
+          <p className="eyebrow">STREFA CZASOWA FIRMY</p>
+          <h1>Nie można bezpiecznie wybrać miesiąca</h1>
+          <p>Brakuje poprawnej strefy IANA firmy albo serwer zwrócił niepełny kontekst czasu. Przejdź do Konfiguracja firmy → Firma i lokale, popraw strefę, opublikuj konfigurację i spróbuj ponownie.</p>
+          <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
+          <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
+        </section>
+      </main>
+    );
+  }
+
   if (error || !access) {
     return (
       <main className="access-pending">
@@ -399,7 +472,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
           <span className="login-lock"><ShieldCheck size={24} /></span>
           <p className="eyebrow">KONTO AKTYWNE</p>
           <h1>Oczekuje na nadanie dostępu</h1>
-          <p>Konto <strong>{user.email}</strong> zostało rozpoznane, ale nie ma jeszcze przypisanej roli ani zespołu. Właściciel może nadać dostęp w Administracji.</p>
+          <p>{access.provisioning_available
+            ? <>Dostęp dla konta <strong>{user.email}</strong> został nadany. Aktywuj go świadomie, aby powiązać konto z właściwą rolą i profilem pracownika.</>
+            : <>Konto <strong>{user.email}</strong> zostało rozpoznane, ale nie ma jeszcze przypisanej roli ani zespołu. Właściciel może nadać dostęp w Administracji.</>}</p>
+          {access.provisioning_available&&<button className="primary-button" onClick={()=>void provisionCurrentAccess()}>Aktywuj nadany dostęp</button>}
           <button className="secondary-button" onClick={() => void refresh()}>Sprawdź ponownie</button>
           <button className="login-switch" onClick={() => void signOut()}>Wyloguj się</button>
         </section>
@@ -449,7 +525,15 @@ function LoginScreen({ notice = "" }: { notice?: string }) {
     setBusy(false);
     if (result.error) {
       setIsError(true);
-      setMessage(result.error.message);
+      setMessage(userSafeErrorMessage(result.error, {
+        context: mode === "login" ? "auth-login" : "auth-signup",
+        summary: mode === "login"
+          ? "Nie udało się zalogować."
+          : "Nie udało się utworzyć konta.",
+        nextStep: mode === "login"
+          ? "Sprawdź e-mail i hasło, a następnie spróbuj ponownie."
+          : "Sprawdź e-mail i wymagania hasła, a następnie spróbuj ponownie.",
+      }));
       return;
     }
     if (mode === "signup" && !result.data.session) {

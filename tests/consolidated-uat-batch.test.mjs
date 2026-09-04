@@ -8,7 +8,7 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 test("merge fallback keeps the publication action visible with a durable variant id", async () => {
   const [client,migration,panel]=await Promise.all([
     read("lib/solver-v2.ts"),
-    read("supabase/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
+    read("supabase/archive/aud003/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
     read("components/RoleCompositePanel.tsx"),
   ]);
   assert.match(client,/PUBLISHED_ROLE_VARIANT/);
@@ -22,8 +22,8 @@ test("automatic generation honors global overtime consent and prices the individ
   const [model,engine,pricing,migration,approvalMigration,editor,workspace,client]=await Promise.all([
     read("solver/src/grafik_solver/models.py"),read("solver/src/grafik_solver/cp_sat_engine.py"),
     read("solver/src/grafik_solver/pay_rules.py"),
-    read("supabase/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
-    read("supabase/migrations/20260816004500_leader_overtime_approval_uat.sql"),
+    read("supabase/archive/aud003/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
+    read("supabase/archive/aud003/migrations/20260816004500_leader_overtime_approval_uat.sql"),
     read("components/MatrixV2Editor.tsx"),read("components/SolverV2Workspace.tsx"),read("lib/solver-v2.ts"),
   ]);
   assert.match(model,/overtime_policy: str = "NEVER"/);
@@ -46,7 +46,7 @@ test("automatic generation honors global overtime consent and prices the individ
 
 test("monthly planning budgets are cumulative, revisioned and enforce HARD TARGET or MONITORING", async () => {
   const [migration,page,drawer,model,engine]=await Promise.all([
-    read("supabase/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
+    read("supabase/archive/aud003/migrations/20260816001553_consolidated_uat_overtime_budget_and_composite.sql"),
     read("app/page.tsx"),read("components/MonthlyBudgetDrawer.tsx"),
     read("solver/src/grafik_solver/models.py"),read("solver/src/grafik_solver/cp_sat_engine.py"),
   ]);
@@ -78,7 +78,7 @@ test("workbooks contain a per-sheet field dictionary and explicit overtime choic
 
 test("standby is configured as category groups and never consumes shortage capacity", async () => {
   const [migration,editor,workspace,client]=await Promise.all([
-    read("supabase/migrations/20260816010000_configurable_category_standby_groups_uat.sql"),
+    read("supabase/archive/aud003/migrations/20260816010000_configurable_category_standby_groups_uat.sql"),
     read("components/MatrixV2Editor.tsx"),read("components/SolverV2Workspace.tsx"),read("lib/solver-v2.ts"),
   ]);
   assert.match(migration,/standbyGroups/);
@@ -135,7 +135,7 @@ test("merge summary filters and opens the metric-specific detail in place", asyn
 
 test("category snapshots keep every employee reference inside the retained workforce", async () => {
   const [migration,panel,page,client]=await Promise.all([
-    read("supabase/migrations/20260816080000_uat_category_snapshot_employee_reference_guard.sql"),
+    read("supabase/archive/aud003/migrations/20260816080000_uat_category_snapshot_employee_reference_guard.sql"),
     read("components/SolverV2Panel.tsx"),
     read("app/page.tsx"),
     read("lib/solver-v2.ts"),
@@ -153,7 +153,7 @@ test("category snapshots keep every employee reference inside the retained workf
 
 test("daily shift validation ignores external assignments outside the selected month", async () => {
   const migration=await read(
-    "supabase/migrations/20260816083000_uat_variant_daily_limit_period_guard.sql",
+    "supabase/archive/aud003/migrations/20260816083000_uat_variant_daily_limit_period_guard.sql",
   );
   assert.match(migration,/v_period_start date:=\(p_snapshot->>'periodStart'\)::date/);
   assert.match(migration,/v_period_end date:=\(p_snapshot->>'periodEnd'\)::date/);
@@ -167,7 +167,7 @@ test("daily shift validation ignores external assignments outside the selected m
 
 test("B4F-91 versions permanent work patterns across UI, snapshot, solver and leader edits",async()=>{
   const [migration,editor,models,eligibility,client]=await Promise.all([
-    read("supabase/migrations/20260818074124_b4f91_weekly_work_patterns.sql"),
+    read("supabase/archive/aud003/migrations/20260818074124_b4f91_weekly_work_patterns.sql"),
     read("components/MatrixV2Editor.tsx"),read("solver/src/grafik_solver/models.py"),
     read("solver/src/grafik_solver/eligibility.py"),read("lib/solver-v2.ts"),
   ]);
@@ -184,7 +184,7 @@ test("B4F-91 versions permanent work patterns across UI, snapshot, solver and le
 
 test("B4F-88 keeps wages, employer on-costs and incident proposals semantically separate",async()=>{
   const [migration,models,pricing,engine,validator,drawer]=await Promise.all([
-    read("supabase/migrations/20260818093000_b4f88_full_employer_cost_engine.sql"),
+    read("supabase/archive/aud003/migrations/20260818093000_b4f88_full_employer_cost_engine.sql"),
     read("solver/src/grafik_solver/models.py"),read("solver/src/grafik_solver/pay_rules.py"),
     read("solver/src/grafik_solver/cp_sat_engine.py"),read("solver/src/grafik_solver/validator.py"),
     read("components/MonthlyBudgetDrawer.tsx"),
@@ -204,7 +204,7 @@ test("B4F-88 keeps wages, employer on-costs and incident proposals semantically 
 
 test("B4F-83 scopes persistent availability filters by category role and location",async()=>{
   const [migration,modules,page]=await Promise.all([
-    read("supabase/migrations/20260818214442_b4f83_scoped_availability_summary.sql"),
+    read("supabase/archive/aud003/migrations/20260818214442_b4f83_scoped_availability_summary.sql"),
     read("components/ActiveModules.tsx"),read("app/page.tsx"),
   ]);
   assert.match(migration,/workforce_calendar_context_uat_v4/);
@@ -252,7 +252,7 @@ test("B4F-84 exposes staffing risk by day role and location before and after pub
 
 test("B4F-89 offers only role-aware shifts that physically occur in the selected dates",async()=>{
   const [migration,modules]=await Promise.all([
-    read("supabase/migrations/20260818231501_b4f89_role_aware_event_shifts.sql"),
+    read("supabase/archive/aud003/migrations/20260818231501_b4f89_role_aware_event_shifts.sql"),
     read("components/ActiveModules.tsx"),
   ]);
   assert.match(migration,/'roleIds'/);

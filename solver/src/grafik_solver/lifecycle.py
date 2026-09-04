@@ -24,6 +24,9 @@ LOGGER = logging.getLogger(__name__)
 
 _MAX_RANDOM_SEED = 2_147_483_647
 _FAIRNESS_RETRY_SEED_STEP = 104_729
+_CANONICAL_STRATEGY_CODES = frozenset(
+    {"BALANCED", "MIN_COST", "PREFERENCES"}
+)
 
 
 _HEARTBEAT_PROGRESS_KEYS = frozenset(
@@ -44,10 +47,34 @@ class RpcProtocol(Protocol):
     def claim(self, **kwargs: Any) -> Claim | None: ...
     def load_snapshot(self, claim: Claim) -> Any: ...
     def heartbeat(self, claim: Claim, progress: Mapping[str, Any]) -> Any: ...
-    def save_variant(self, claim: Claim, variant: Mapping[str, Any]) -> Any: ...
+    def save_variants(
+        self, claim: Claim, variants: tuple[Mapping[str, Any], ...]
+    ) -> Any: ...
     def finalize(self, claim: Claim) -> Any: ...
     def interrupt(self, claim: Claim, reason: str) -> Any: ...
     def fail_attempt(self, claim: Claim, **kwargs: Any) -> Any: ...
+
+
+def validate_run_strategy_contract(snapshot: Snapshot) -> None:
+    """Reject incomplete current strategy contracts before any solver work.
+
+    Legacy unversioned fixtures remain parseable for isolated engine tests. A
+    snapshot emitted by the versioned database contract must contain the exact
+    product set once each, so neither an older nor an alternative producer can
+    silently reduce the variants persisted for a run.
+    """
+
+    if snapshot.settings.strategy_semantics_version is None:
+        return
+    codes = tuple(strategy.code.upper() for strategy in snapshot.strategies)
+    if (
+        len(codes) != len(_CANONICAL_STRATEGY_CODES)
+        or set(codes) != _CANONICAL_STRATEGY_CODES
+    ):
+        raise SnapshotError(
+            "STRATEGY_SET_MISMATCH: current snapshot contract requires "
+            "BALANCED, MIN_COST and PREFERENCES exactly once"
+        )
 
 
 @dataclass
@@ -215,6 +242,10 @@ class WorkerRuntime:
         return self.rpc.claim(
             worker_id=self.config.worker_id,
             worker_version=self.config.solver_version,
+            contract_version=self.config.contract_version,
+            source_sha=self.config.source_sha,
+            image_digest=self.config.image_digest,
+            build_timestamp=self.config.build_timestamp,
             task_attempt=self.config.task_attempt,
             lease_seconds=self.config.lease_seconds,
         )
@@ -542,6 +573,7 @@ class WorkerRuntime:
             snapshot = Snapshot.from_dict(envelope.snapshot)
             if snapshot.run_id != claim.run_id:
                 raise SnapshotError("Claimed run and snapshot run identifiers differ")
+            validate_run_strategy_contract(snapshot)
 
             self._set_progress(
                 phase="SOLVING",
@@ -555,21 +587,33 @@ class WorkerRuntime:
                 raise OptimizationCancelled(self._stop.get_reason() or "INTERRUPTED")
 
             self._set_progress(phase="VALIDATING", progress=91, completedStrategies=0)
-            for index, variant in enumerate(variants, start=1):
+            reports = []
+            for variant in variants:
                 if self._stop.event.is_set():
                     raise OptimizationCancelled(
                         self._stop.get_reason() or "INTERRUPTED"
                     )
                 report = validate_variant(snapshot, variant)
                 report.raise_for_errors()
-                self.rpc.save_variant(claim, variant.to_dict())
-                self._set_progress(
-                    phase="SAVING",
-                    progress=91 + (7 * index // len(variants)),
-                    completedStrategies=index,
-                    assignmentCount=report.assignment_count,
-                    unfilledCount=report.unfilled_count,
-                )
+                reports.append(report)
+            self._set_progress(
+                phase="SAVING",
+                progress=94,
+                completedStrategies=0,
+                assignmentCount=sum(report.assignment_count for report in reports),
+                unfilledCount=sum(report.unfilled_count for report in reports),
+            )
+            self.rpc.save_variants(
+                claim,
+                tuple(variant.to_dict() for variant in variants),
+            )
+            self._set_progress(
+                phase="SAVING",
+                progress=98,
+                completedStrategies=len(variants),
+                assignmentCount=sum(report.assignment_count for report in reports),
+                unfilledCount=sum(report.unfilled_count for report in reports),
+            )
             if self._stop.event.is_set():
                 raise OptimizationCancelled(self._stop.get_reason() or "INTERRUPTED")
             self._set_progress(

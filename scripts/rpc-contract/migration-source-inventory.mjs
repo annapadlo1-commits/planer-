@@ -164,7 +164,11 @@ function parseFunctionSpecs(text) {
     }
     const close = findClosingParen(cleaned, open);
     const parts = normalizeIdentifier(cleaned.slice(0, open)).split(".");
-    return { schema: parts.length > 1 ? parts.at(-2) : "public", name: parts.at(-1), types: splitTopLevel(cleaned.slice(open + 1, close)).map(normalizeType) };
+    // PostgreSQL pg_get_function_identity_arguments includes argument names.
+    // GRANT/REVOKE accept both named arguments and bare types. Parse them with
+    // the same mode/type rules as CREATE, not as a type named "p_rows jsonb".
+    const parsed = parseCreate(`create function ${cleaned.slice(0, close + 1)} returns void language sql`);
+    return { schema: parts.length > 1 ? parts.at(-2) : "public", name: parts.at(-1), types: parsed.args.map(arg => arg.type) };
   });
 }
 
@@ -192,6 +196,16 @@ for (const file of files) {
     }
     const drop = statement.match(/^drop\s+function\s+(?:if\s+exists\s+)?([\s\S]*?);?$/i);
     if (drop) { for (const spec of parseFunctionSpecs(drop[1])) for (const key of matchingKeys(spec)) functions.delete(key); continue; }
+    const rename = statement.match(/^alter\s+function\s+([\s\S]*?)\s+rename\s+to\s+([\w"]+)\s*;?$/i);
+    if (rename) {
+      for (const spec of parseFunctionSpecs(rename[1])) for (const key of matchingKeys(spec)) {
+        const definition = { ...functions.get(key), name: normalizeIdentifier(rename[2]) };
+        functions.delete(key);
+        definition.key = keyOf(definition);
+        functions.set(definition.key, definition);
+      }
+      continue;
+    }
     const privilege = statement.match(/^(grant|revoke)\s+(?:all(?:\s+privileges)?|execute)\s+on\s+function\s+([\s\S]*?)\s+(?:to|from)\s+([\s\S]*?);?$/i);
     if (privilege) {
       const grant = privilege[1].toLowerCase() === "grant";

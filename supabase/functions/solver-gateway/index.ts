@@ -19,7 +19,12 @@ const supabaseSecretKey = resolveSupabaseSecretKey(
   Deno.env.get("SUPABASE_SECRET_KEYS"),
 );
 const solverGatewayToken = requireEnvironment("SOLVER_GATEWAY_TOKEN");
-const gatewayVersion = Deno.env.get("DENO_DEPLOYMENT_ID")?.trim() || "local";
+const gatewayDeploymentId = Deno.env.get("DENO_DEPLOYMENT_ID")?.trim() || "local";
+const gatewaySourceSha = requireEnvironment("GATEWAY_SOURCE_SHA");
+if (!/^[0-9a-f]{40}$/u.test(gatewaySourceSha)) {
+  throw new Error("GATEWAY_SOURCE_SHA must be an exact lowercase Git SHA");
+}
+const gatewayVersion = `${gatewayDeploymentId}@${gatewaySourceSha}`;
 if (solverGatewayToken === supabaseSecretKey) {
   throw new Error("Gateway token must be independent from the Supabase secret key");
 }

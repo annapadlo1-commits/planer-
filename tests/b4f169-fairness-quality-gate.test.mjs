@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";
 
-const migration=readFileSync("supabase/migrations/20260822220000_b4f169_deterministic_fairness_quality_gate.sql","utf8");
+const migration=readFileSync("supabase/archive/aud003/migrations/20260822220000_b4f169_deterministic_fairness_quality_gate.sql","utf8");
 const models=readFileSync("solver/src/grafik_solver/models.py","utf8");
 const lifecycle=readFileSync("solver/src/grafik_solver/lifecycle.py","utf8");
 const engine=readFileSync("solver/src/grafik_solver/cp_sat_engine.py","utf8");

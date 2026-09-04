@@ -1,0 +1,9 @@
+{
+  "projectRef": "nhthrtpkfpmufmrmdyjg",
+  "capturedAtUtc": "2026-09-03T21:43:44.384652",
+  "transaction": "REPEATABLE READ READ ONLY",
+  "ledgerCount": 256,
+  "scope": "Non-internal triggers on relations outside public/authorization_private/solver_private which invoke routines inside those application schemas",
+  "crossSchemaAppTriggers": [],
+  "reason": "Final review of capture boundaries; no missing cross-schema application trigger found. This extra read does not replace the earlier coherent catalog snapshot."
+}

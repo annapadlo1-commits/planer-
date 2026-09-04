@@ -12,9 +12,11 @@ from typing import Any
 ALLOWED_GATEWAY_ACTIONS = frozenset(
     {
         "solver_claim_next_v2",
+        "solver_claim_next_v3",
         "solver_load_snapshot_v2",
         "solver_heartbeat_v2",
         "solver_save_variant_v2",
+        "solver_save_variants_v2",
         "solver_finalize_v2",
         "solver_interrupt_v2",
         "solver_fail_attempt_v2",
@@ -199,21 +201,31 @@ class SolverGatewayClient:
         *,
         worker_id: str,
         worker_version: str,
+        contract_version: str,
+        source_sha: str,
+        image_digest: str,
+        build_timestamp: str,
         task_attempt: int,
         lease_seconds: int,
     ) -> Claim | None:
         raw = _row(
             self.call(
-                "solver_claim_next_v2",
+                "solver_claim_next_v3",
                 {
                     "p_worker_id": worker_id,
                     "p_worker_version": worker_version,
+                    "p_worker_build_manifest": {
+                        "contractVersion": contract_version,
+                        "sourceSha": source_sha,
+                        "imageDigest": image_digest,
+                        "buildTimestamp": build_timestamp,
+                    },
                     "p_task_attempt": task_attempt,
                     "p_lease_seconds": lease_seconds,
                 },
             )
         )
-        return self._claim_from(raw, "solver_claim_next_v2")
+        return self._claim_from(raw, "solver_claim_next_v3")
 
     @staticmethod
     def _claim_from(raw: Mapping[str, Any] | None, action: str) -> Claim | None:
@@ -284,6 +296,19 @@ class SolverGatewayClient:
                 "p_attempt_id": claim.attempt_id,
                 "p_lease_token": claim.lease_token,
                 "p_variant": dict(variant),
+            },
+        )
+
+    def save_variants(
+        self, claim: Claim, variants: tuple[Mapping[str, Any], ...]
+    ) -> Any:
+        return self.call(
+            "solver_save_variants_v2",
+            {
+                "p_run_id": claim.run_id,
+                "p_attempt_id": claim.attempt_id,
+                "p_lease_token": claim.lease_token,
+                "p_variants": [dict(variant) for variant in variants],
             },
         )
 

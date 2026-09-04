@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260806173000_b4_leader_variant_and_demand_profiles.sql",
+  "../supabase/archive/aud003/migrations/20260806173000_b4_leader_variant_and_demand_profiles.sql",
   import.meta.url,
 );
 
@@ -108,7 +108,7 @@ test("the UI exposes a persistent, editable leader workflow before publication",
 });
 
 test("leader history is durable, atomic and protected behind authenticated RPC",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818201340_leader_studio_history.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818201340_leader_studio_history.sql",import.meta.url),"utf8");
   assert.match(migration,/leader_variant_history_v2/);
   assert.match(migration,/leader_variant_history_cursor_v2/);
   assert.match(migration,/deferrable initially deferred/);
@@ -121,7 +121,7 @@ test("leader history is durable, atomic and protected behind authenticated RPC",
 });
 
 test("Studio drag operations move or swap assignments atomically and revalidate the month",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818202834_leader_studio_atomic_drag_operations.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818202834_leader_studio_atomic_drag_operations.sql",import.meta.url),"utf8");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(migration,/optimizer_leader_assignment_drag_uat_v1/);
   assert.match(migration,/pg_advisory_xact_lock/);
@@ -136,7 +136,7 @@ test("Studio drag operations move or swap assignments atomically and revalidate 
 });
 
 test("leader can pin and unpin an assignment without exposing the protected table",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818203634_leader_studio_assignment_lock.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818203634_leader_studio_assignment_lock.sql",import.meta.url),"utf8");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(migration,/optimizer_leader_assignment_lock_uat_v1/);
   assert.match(migration,/leaderLocked/);
@@ -150,7 +150,7 @@ test("leader can pin and unpin an assignment without exposing the protected tabl
 });
 
 test("Studio preflights the exact drag transaction and always rolls the preview back",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818210100_leader_studio_drag_preflight.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818210100_leader_studio_drag_preflight.sql",import.meta.url),"utf8");
   const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(migration,/optimizer_leader_assignment_drag_preview_uat_v1/);
@@ -164,7 +164,7 @@ test("Studio preflights the exact drag transaction and always rolls the preview 
 });
 
 test("leader workflow is durable, audited and owner-gated before merge",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818215500_leader_studio_workflow.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818215500_leader_studio_workflow.sql",import.meta.url),"utf8");
   const panel=await readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8");
   assert.match(migration,/leader_workflow_status in \('DRAFT','REVIEW','LEADER_APPROVED','READY_TO_MERGE','PUBLISHED'\)/);
   assert.match(migration,/LEADER_WORKFLOW_TRANSITION_INVALID/);
@@ -178,7 +178,7 @@ test("leader workflow is durable, audited and owner-gated before merge",async()=
 });
 
 test("bulk Studio operations affect exactly the visible filtered assignment range in one revision",async()=>{
-  const migration=await readFile(new URL("../supabase/migrations/20260818223000_leader_studio_bulk_assignments.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818223000_leader_studio_bulk_assignments.sql",import.meta.url),"utf8");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(migration,/optimizer_leader_assignments_bulk_uat_v1/);
   assert.match(migration,/pg_advisory_xact_lock/);
@@ -199,8 +199,8 @@ test("bulk Studio operations affect exactly the visible filtered assignment rang
 
 test("B4F-93 opens an auditable leader studio without dispatching the generator", async () => {
   const [sql,authoritySql,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260818183433_b4f93_authoritative_external_assignments.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260818143000_b4f93_manual_leader_studio.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260818183433_b4f93_authoritative_external_assignments.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -269,7 +269,7 @@ test("Studio lidera filters candidates and supports uninterrupted draft editing"
 });
 
 test("the owner configures finance visibility by application role in one access policy", async () => {
-  const migration=await readFile(new URL("../supabase/migrations/20260818190421_studio_finance_visibility_policy.sql",import.meta.url),"utf8");
+  const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260818190421_studio_finance_visibility_policy.sql",import.meta.url),"utf8");
   const editor=await readFile(new URL("../components/MatrixV2Editor.tsx",import.meta.url),"utf8");
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
   assert.match(migration,/visibility in \('NONE','BUDGET_ONLY','AGGREGATE','FULL'\)/);
@@ -287,7 +287,7 @@ test("the owner configures finance visibility by application role in one access 
 
 test("B4F-101 enforces finance visibility in the server payload, not only in React",async()=>{
   const [migration,client,workspace]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819103000_b4f101_server_finance_redaction.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819103000_b4f101_server_finance_redaction.sql",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
   ]);
@@ -309,7 +309,7 @@ test("B4F-101 enforces finance visibility in the server payload, not only in Rea
 });
 
 test("B4F-101 closes legacy workspace, employer-cost and recovery finance routes",async()=>{
-  const sql=await readFile(new URL("../supabase/migrations/20260819123000_b4f101_close_legacy_finance_routes.sql",import.meta.url),"utf8");
+  const sql=await readFile(new URL("../supabase/archive/aud003/migrations/20260819123000_b4f101_close_legacy_finance_routes.sql",import.meta.url),"utf8");
   for(const name of ["complete_workspace","employer_cost_workspace_uat_v1","recovery_center_workspace_uat_v1","recovery_incident_detail_uat_v1"]){
     assert.match(sql,new RegExp(`create function public\\.${name}`));
   }
@@ -321,7 +321,7 @@ test("B4F-101 closes legacy workspace, employer-cost and recovery finance routes
 });
 
 test("B4F-52 closes the remaining legacy finance RPC and optimizer bypasses",async()=>{
-  const sql=await readFile(new URL("../supabase/migrations/20260819150415_b4f52_close_remaining_finance_routes.sql",import.meta.url),"utf8");
+  const sql=await readFile(new URL("../supabase/archive/aud003/migrations/20260819150415_b4f52_close_remaining_finance_routes.sql",import.meta.url),"utf8");
   for(const name of ["plan_workspace","matrix_v2_workspace","monthly_budgets_get_uat_v1","optimizer_variants_v3"]){
     assert.match(sql,new RegExp(`create function public\\.${name}`));
   }
@@ -338,7 +338,7 @@ test("B4F-52 closes the remaining legacy finance RPC and optimizer bypasses",asy
 
 test("B4F-101 blocks every publication route until a leader copy is ready to merge",async()=>{
   const [sql,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -356,7 +356,7 @@ test("B4F-101 blocks every publication route until a leader copy is ready to mer
 
 test("B4F-101 previews exact changed people and notifies only affected linked accounts",async()=>{
   const [sql,panel,client,styles]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819130000_b4f101_enforce_ready_to_merge_publication.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/solver-v2.css",import.meta.url),"utf8"),
@@ -382,7 +382,7 @@ test("B4F-101 previews exact changed people and notifies only affected linked ac
 
 test("B4F-95 checks the whole Studio draft without mutation before an audited workflow decision",async()=>{
   const [migration,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819110000_b4f95_final_draft_validation.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819110000_b4f95_final_draft_validation.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -401,9 +401,9 @@ test("B4F-95 checks the whole Studio draft without mutation before an audited wo
 
 test("B4F-100 fills only remaining vacancies and preserves every existing leader decision",async()=>{
   const [migration,runContract,inputHashContract,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260819070912_b4f100_leader_refill_run_contract.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260819082931_b4f100_leader_optimizer_input_hash.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260818220459_b4f100_leader_refill_remaining.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819070912_b4f100_leader_refill_run_contract.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819082931_b4f100_leader_optimizer_input_hash.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -452,7 +452,7 @@ test("B4F-100 fills only remaining vacancies and preserves every existing leader
 
 test("B4F-100 can improve cost or fairness and prepare a proposal without changing explicit locks",async()=>{
   const [migration,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819072223_b4f100_leader_reoptimization_modes.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819072223_b4f100_leader_reoptimization_modes.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -501,7 +501,7 @@ test("B4F-107 keeps optional generator tools compact until the leader expands on
 
 test("B4F-74 binds the Studio impact to one revision and one authoritative monthly balance",async()=>{
   const [migration,workspace,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819183425_b4f74_leader_impact_summary.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819183425_b4f74_leader_impact_summary.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -609,8 +609,8 @@ test("Studio touch pairs an employee and an exact target in either order without
 
 test("B4F-100 stores named checkpoints and restores them as a new audited draft revision",async()=>{
   const [migration,identityRestore,panel,client]=await Promise.all([
-    readFile(new URL("../supabase/migrations/20260819065501_b4f100_leader_named_checkpoints.sql",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260819074736_b4f100_leader_history_identity_restore.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819065501_b4f100_leader_named_checkpoints.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260819074736_b4f100_leader_history_identity_restore.sql",import.meta.url),"utf8"),
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
     readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8"),
   ]);
@@ -683,7 +683,7 @@ test("Studio role filter and employee pool never occupy the same side-panel spac
 test("B4F-121 closes only the Studio window and publishes the exact leader variant atomically",async()=>{
   const [panel,migration,contract]=await Promise.all([
     readFile(new URL("../components/SolverV2Panel.tsx",import.meta.url),"utf8"),
-    readFile(new URL("../supabase/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
+    readFile(new URL("../supabase/archive/aud003/migrations/20260820191910_b4f121_atomic_leader_publication.sql",import.meta.url),"utf8"),
     readFile(new URL("../supabase/tests/b4f121_atomic_leader_publication_contract.sql",import.meta.url),"utf8"),
   ]);
   assert.match(panel,/const \[leaderStudioOpen,setLeaderStudioOpen\]=useState\(false\)/);
@@ -713,7 +713,7 @@ test("Studio distinguishes a hard overtime refusal from leader-approved overtime
 
 test("current standby preview remains callable while the broken v3 employee wrapper is retired",async()=>{
   const migration=await readFile(new URL(
-    "../supabase/migrations/20260819132000_b4f100_standby_preview_contract_cleanup.sql",
+    "../supabase/archive/aud003/migrations/20260819132000_b4f100_standby_preview_contract_cleanup.sql",
     import.meta.url,
   ),"utf8");
   assert.match(migration,/optimizer_variant_standby_preview_uat_v2/);

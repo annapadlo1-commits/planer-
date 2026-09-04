@@ -1,0 +1,23 @@
+{
+  "package": "exceljs",
+  "upstreamVersion": "4.4.0",
+  "patchedVersion": "4.4.0-szafunek.1",
+  "source": "https://registry.npmjs.org/exceljs/-/exceljs-4.4.0.tgz",
+  "sourceHashes": {
+    "md5": "0a9112273b426b0c82e380f963c9f4e9",
+    "sha256": "8adac13d192ce80e11304732d3ab96708b2c64bb54771b5da4f946e5eea55a18",
+    "sha512": "5dcb6f29a10c6a3d488bda033aa6d6ffa7b5817927498e20fda2c20e270e5ea044e0cd27456914bb43d3a7ef943cdce8158d7604d1cc7ecfd569d2884ba965be"
+  },
+  "patchedArchive": "exceljs-4.4.0-szafunek.1.tgz",
+  "patchedArchiveHashes": {
+    "md5": "a2e68cd9e8c01b3f10306bfbb5423df5",
+    "sha256": "0f7da7f9c35c75db5c699e0c781411c8d9d0c122f96d4149f9624d40eba4f3b5",
+    "sha512": "d88af4a4678263369924e5513aeffebc8c1a9e6bad8cc05af12b33ed69ce7550c1024663bafef503c5d87d0172fb003e01c13bbe28b3e4c7fb3ae8e3aa46164e"
+  },
+  "changes": [
+    "package version changed to 4.4.0-szafunek.1",
+    "exceljs dependency uuid changed from ^8.3.0 to exact 11.1.1"
+  ],
+  "securityScope": "No ExcelJS workbook source or generated bundle was changed; only the vulnerable transitive UUID dependency used by the Node entry point was replaced.",
+  "verifiedAt": "2026-09-03"
+}

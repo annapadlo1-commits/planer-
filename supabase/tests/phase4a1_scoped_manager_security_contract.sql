@@ -4,6 +4,16 @@
 
 begin;
 
+-- MRG-RVW-03: privileged setup only, never remote/UAT seed helpers.
+-- Multi-company isolation is NOT represented by locations or Matrix versions:
+-- AUD-008 / B4F-175 requires a separately approved tenant model.
+do $$ begin
+  if exists(select 1 from auth.users) or exists(select 1 from public.employees)
+    or exists(select 1 from public.matrix_versions)
+    or exists(select 1 from public.uat_environment_controls where enabled)
+  then raise exception 'PHASE4A_EMPTY_LOCAL_FIXTURE_REQUIRED'; end if;
+end $$;
+
 do $$
 declare v_policy record;v_definition text;
 begin
@@ -97,17 +107,30 @@ $$;
 -- EXACTLY ONE. The catalog guards above prove MORE THAN ONE uses the same
 -- fail-closed <> 1 branch even where uniqueness constraints prevent fixtures.
 set local role authenticated;
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000003'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ROLE_X|authenticated';
   if public.matrix_v2_can_manage_legacy_resource_uat_v1('NO_SUCH_ROLE',null,null) then
     raise exception 'PHASE4A_ZERO_ROLE_MAPPING_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ZERO_ROLE_MAPPING_ALLOWED';
   if public.matrix_v2_can_manage_legacy_resource_uat_v1(
     null,'ffffffff-ffff-4fff-8fff-ffffffffffff',null) then
     raise exception 'PHASE4A_ZERO_LOCATION_MAPPING_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ZERO_LOCATION_MAPPING_ALLOWED';
 end $$;
 reset role;
 
 -- Real application roles used by the RLS matrix.
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),
+  set_config('request.jwt.claims','{}',true);
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
   raw_app_meta_data,raw_user_meta_data,is_super_admin,created_at,updated_at)
 select '00000000-0000-0000-0000-000000000000',id,'authenticated','authenticated',email,'',now(),
@@ -255,9 +278,42 @@ insert into public.matrix_employee_locations_v2(
    'f4a11000-0000-4000-8000-000000000003'::uuid,
    'f4a14000-0000-4000-8000-000000000003'::uuid,true,false,true,true);
 
-select solver_private.matrix_v2_seed_required_defaults_uat_v1(
-  'f4a12000-0000-4000-8000-000000000001'
-);
+-- Minimal synthetic strategy metadata required by the real activation trigger.
+-- Tiers/weights follow the existing B4F165/168/169/170 contract; no solver runs.
+insert into public.matrix_strategies_v2(
+  matrix_version_id,logical_id,code,name,solver_code,solver_options,legacy_weights,sort_order,active)
+select 'f4a12000-0000-4000-8000-000000000001',
+  ('f4a17000-0000-4000-8000-00000000000'||sort_order)::uuid,
+  code,code,'CP_SAT','{"maxTimeSeconds":120}'::jsonb,'{}'::jsonb,sort_order,true
+from (values ('BALANCED',1),('MIN_COST',2),('PREFERENCES',3)) s(code,sort_order);
+
+insert into public.matrix_strategy_objectives_v2(
+  matrix_version_id,strategy_id,tier,sort_order,metric_code,direction,weight,tolerance,parameters,active)
+select s.matrix_version_id,s.id,e.tier,e.sort_order,e.metric,'MINIMIZE',e.weight,0,'{}',true
+from public.matrix_strategies_v2 s
+join (values
+  ('BALANCED','UNFILLED',1,1,1000000),('BALANCED','TOTAL_COST',2,2,1000),
+  ('BALANCED','PREFERENCE_VIOLATIONS',2,3,80000),('BALANCED','OVERTIME_MINUTES',2,4,250000),
+  ('BALANCED','NOMINAL_DEVIATION_MINUTES',2,5,30000),('BALANCED','LOAD_SPREAD_MINUTES',2,6,40000),
+  ('BALANCED','WEEKEND_SPREAD',2,7,25000),('BALANCED','BASELINE_CHANGES',2,9,20000),
+  ('MIN_COST','UNFILLED',1,1,1000000),('MIN_COST','TOTAL_COST',2,2,10000),
+  ('MIN_COST','OVERTIME_MINUTES',3,4,500000),('MIN_COST','PREFERENCE_VIOLATIONS',4,3,30000),
+  ('MIN_COST','NOMINAL_DEVIATION_MINUTES',5,5,20000),('MIN_COST','LOAD_SPREAD_MINUTES',5,6,15000),
+  ('MIN_COST','WEEKEND_SPREAD',5,7,10000),('MIN_COST','BASELINE_CHANGES',6,9,10000),
+  ('PREFERENCES','UNFILLED',1,1,1000000),('PREFERENCES','LOAD_SPREAD_MINUTES',2,6,200000),
+  ('PREFERENCES','NOMINAL_DEVIATION_MINUTES',3,5,150000),('PREFERENCES','PREFERENCE_VIOLATIONS',4,3,250000),
+  ('PREFERENCES','WEEKEND_SPREAD',5,7,180000),('PREFERENCES','TOTAL_COST',6,2,500),
+  ('PREFERENCES','OVERTIME_MINUTES',7,4,100000),('PREFERENCES','BASELINE_CHANGES',7,9,10000)
+) e(code,metric,tier,sort_order,weight) on e.code=s.code
+where s.matrix_version_id='f4a12000-0000-4000-8000-000000000001';
+update public.matrix_versions set settings=settings || jsonb_build_object(
+  'strategySemanticsVersion','B4F170_V1',
+  'configurableObjectivesStartAfterMandatoryGuards',true,
+  'mandatoryProductGuards',jsonb_build_array('HARD_CONSTRAINTS','COVERAGE','ROLE_BACKUP','OVERTIME',
+    'ZERO_HOURS','PRIMARY_ROLE','MAX_MIN_FAIRNESS','FAIRNESS_SPREAD','FAIRNESS_QUALITY_TARGET'),
+  'fairnessQualityTarget',jsonb_build_object('minimumEstimatedAchievableTargetUtilizationBps',700,
+    'maximumEstimatedAchievableTargetUtilizationSpreadBps',300,'maxAttempts',3))
+where id='f4a12000-0000-4000-8000-000000000001';
 update public.matrix_versions set status='ARCHIVED',
   effective_to=greatest(effective_from,current_date-1) where status='ACTIVE';
 update public.matrix_versions set status='ACTIVE',activated_at=now(),published_at=now()
@@ -287,7 +343,7 @@ insert into public.employee_availability(id,employee_id,work_date,available,note
   ('f4a15000-0000-4000-8000-000000000002','f4a11000-0000-4000-8000-000000000002',current_date,true,'B'),
   ('f4a15000-0000-4000-8000-000000000003','f4a11000-0000-4000-8000-000000000003',current_date,true,'N');
 
-set local session_replication_role=replica;
+-- No FK/trigger bypass: the empty local baseline has no DEFAULT_ENGINE flag.
 insert into public.plans(id,month,name,scenario_code,optimization_mode,staffing_level,status,version,
   generated_at,published_at) values
   (
@@ -298,7 +354,6 @@ insert into public.plans(id,month,name,scenario_code,optimization_mode,staffing_
   'f4a16000-0000-4000-8000-000000000002'::uuid,date_trunc('month',current_date)::date,
   'Phase 4A draft plan'::text,'PHASE4A_DRAFT'::text,'BALANCED'::text,'AUDIT'::text,
   'DRAFT'::public.plan_status,1::integer,now()::timestamptz,null::timestamptz);
-set local session_replication_role=origin;
 insert into public.shifts(id,plan_id,location_id,shift_date,shift_code,starts_at,ends_at,status)
 select 'f4a16100-0000-4000-8000-000000000001'::uuid,
   'f4a16000-0000-4000-8000-000000000001'::uuid,
@@ -341,8 +396,17 @@ from public.locations where code='PAWILONY';
 select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000003'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ROLE_X|authenticated';
   if not public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',
       (select id from public.locations where code='KRUCZA'),
       'f4a11000-0000-4000-8000-000000000001')
@@ -353,40 +417,61 @@ do $$ begin
     or public.matrix_v2_can_manage_legacy_resource_uat_v1(null,null,
       'f4a11000-0000-4000-8000-000000000004')
   then raise exception 'PHASE4A_ROLE_X_BOUNDARY_INVALID'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ROLE_X_BOUNDARY_INVALID';
   if (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_ROLE_X_AVAILABILITY_READ_LEAK'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ROLE_X_AVAILABILITY_READ_LEAK';
   if (select count(*) from public.assignments)<>2 then
     raise exception 'PHASE4A_ROLE_X_ASSIGNMENT_READ_LEAK'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ROLE_X_ASSIGNMENT_READ_LEAK';
   update public.employee_availability set note='ROLE X'
     where employee_id='f4a11000-0000-4000-8000-000000000001';
   if found is false then raise exception 'PHASE4A_ROLE_X_LEGAL_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ROLE_X_LEGAL_WRITE_DENIED';
   update public.employee_availability set note='LEAK'
     where employee_id='f4a11000-0000-4000-8000-000000000002';
   if found then raise exception 'PHASE4A_ROLE_X_CROSS_WRITE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ROLE_X_CROSS_WRITE_ALLOWED';
 end $$;
 
 -- ZERO active Matrix must deny. The normal one-ACTIVE path is proven above.
 reset role;
-do $$
-begin
-  begin
-    update public.matrix_versions set status='ARCHIVED',
-      effective_to=greatest(effective_from,current_date-1)
-    where id='f4a12000-0000-4000-8000-000000000001';
-
-    if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
-      raise exception using
-        errcode='P4A11',message='PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED';
-    end if;
-
-    -- The expected sentinel rolls back this inner subtransaction, including
-    -- ACTIVE -> ARCHIVED, without an illegal ARCHIVED -> ACTIVE transition.
-    raise exception using
-      errcode='P4A10',message='PHASE4A_ZERO_ACTIVE_MATRIX_ROLLBACK';
-  exception when sqlstate 'P4A10' then
-    null;
-  end;
-
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),
+  set_config('request.jwt.claims','{}',true);
+savepoint zero_active;
+update public.matrix_versions set status='ARCHIVED',
+  effective_to=greatest(effective_from,current_date-1)
+where id='f4a12000-0000-4000-8000-000000000001';
+set local role authenticated;
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
+do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000003'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ROLE_X|authenticated';
+  if public.matrix_v2_can_manage_legacy_resource_uat_v1('KELNER',null,null) then
+    raise exception 'PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ZERO_ACTIVE_MATRIX_ALLOWED';
+end $$;
+rollback to savepoint zero_active;
+release savepoint zero_active;
+set local role authenticated;
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000003',true);
+do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000003'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ROLE_X|authenticated';
   if not exists(
     select 1 from public.matrix_versions
     where id='f4a12000-0000-4000-8000-000000000001' and status='ACTIVE'
@@ -394,122 +479,240 @@ begin
     raise exception using
       errcode='P4A12',message='PHASE4A_ACTIVE_MATRIX_NOT_RESTORED';
   end if;
-end;
-$$;
+  raise notice 'RLS_ASSERT|ROLE_X|PHASE4A_ACTIVE_MATRIX_NOT_RESTORED';
+end $$;
 set local role authenticated;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000005',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000005'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|LOCATION_A|authenticated';
   if (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_LOCATION_A_AVAILABILITY_READ_LEAK'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_AVAILABILITY_READ_LEAK';
   if (select count(*) from public.assignments)<>1 then
     raise exception 'PHASE4A_LOCATION_A_ASSIGNMENT_READ_LEAK'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_ASSIGNMENT_READ_LEAK';
   if exists(select 1 from public.assignments
       where id='f4a16200-0000-4000-8000-000000000003')
     or exists(select 1 from public.plan_issues
       where id='f4a16400-0000-4000-8000-000000000001')
   then raise exception 'PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_DRAFT_SHIFT_LOCATION_LEAK';
   if exists(select 1 from public.shifts
       where id='f4a16100-0000-4000-8000-000000000003')
   then raise exception 'PHASE4A_LOCATION_A_DRAFT_SHIFT_VISIBLE'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_DRAFT_SHIFT_VISIBLE';
   update public.operational_events set title='Phase 4A event A updated'
     where id='f4a16300-0000-4000-8000-000000000001';
   if not found then raise exception 'PHASE4A_LOCATION_A_EVENT_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_EVENT_WRITE_DENIED';
   update public.operational_events set title='LEAK'
     where id='f4a16300-0000-4000-8000-000000000002';
   if found then raise exception 'PHASE4A_LOCATION_A_CROSS_EVENT_WRITE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_A|PHASE4A_LOCATION_A_CROSS_EVENT_WRITE_ALLOWED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000004',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000004'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ROLE_Y|authenticated';
   if (select count(*) from public.assignments)<>1
     or (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_ROLE_Y_BOUNDARY_INVALID'; end if;
+  raise notice 'RLS_ASSERT|ROLE_Y|PHASE4A_ROLE_Y_BOUNDARY_INVALID';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000006',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000006'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|LOCATION_B|authenticated';
   if (select count(*) from public.assignments)<>2
     or not exists(select 1 from public.assignments
       where id='f4a16200-0000-4000-8000-000000000003')
     or not exists(select 1 from public.plan_issues
       where id='f4a16400-0000-4000-8000-000000000001') then
     raise exception 'PHASE4A_LOCATION_B_BOUNDARY_INVALID'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_B|PHASE4A_LOCATION_B_BOUNDARY_INVALID';
   if exists(select 1 from public.shifts
       where id='f4a16100-0000-4000-8000-000000000003')
   then raise exception 'PHASE4A_LOCATION_B_DRAFT_SHIFT_VISIBLE'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_B|PHASE4A_LOCATION_B_DRAFT_SHIFT_VISIBLE';
   update public.operational_events set title='Phase 4A event B updated'
     where id='f4a16300-0000-4000-8000-000000000002';
   if not found then raise exception 'PHASE4A_LOCATION_B_EVENT_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_B|PHASE4A_LOCATION_B_EVENT_WRITE_DENIED';
   update public.operational_events set title='LEAK B'
     where id='f4a16300-0000-4000-8000-000000000001';
   if found then raise exception 'PHASE4A_LOCATION_B_CROSS_EVENT_WRITE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|LOCATION_B|PHASE4A_LOCATION_B_CROSS_EVENT_WRITE_ALLOWED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000007',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000007'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|EMPLOYEE_A|authenticated';
   if (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_EMPLOYEE_SELF_READ_INVALID'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_A|PHASE4A_EMPLOYEE_SELF_READ_INVALID';
   if (select count(*) from public.assignments)<>2 then
     raise exception 'PHASE4A_EMPLOYEE_SELF_ASSIGNMENT_READ_INVALID'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_A|PHASE4A_EMPLOYEE_SELF_ASSIGNMENT_READ_INVALID';
   update public.employee_availability set note='SELF'
     where employee_id='f4a11000-0000-4000-8000-000000000001';
   if found is false then raise exception 'PHASE4A_EMPLOYEE_SELF_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_A|PHASE4A_EMPLOYEE_SELF_WRITE_DENIED';
+  update public.employee_availability set note='EMPLOYEE A LEAK'
+    where employee_id='f4a11000-0000-4000-8000-000000000002';
+  if found then raise exception 'PHASE4A_EMPLOYEE_A_CROSS_WRITE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_A|PHASE4A_EMPLOYEE_A_CROSS_WRITE_ALLOWED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000008',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000008'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|EMPLOYEE_B|authenticated';
   if (select count(*) from public.assignments)<>1
     or (select count(*) from public.employee_availability)<>1 then
     raise exception 'PHASE4A_EMPLOYEE_B_SELF_BOUNDARY_INVALID'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_B|PHASE4A_EMPLOYEE_B_SELF_BOUNDARY_INVALID';
+  update public.employee_availability set note='EMPLOYEE B LEAK'
+    where employee_id='f4a11000-0000-4000-8000-000000000001';
+  if found then raise exception 'PHASE4A_EMPLOYEE_B_CROSS_WRITE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|EMPLOYEE_B|PHASE4A_EMPLOYEE_B_CROSS_WRITE_ALLOWED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000001',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000001'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|OWNER|authenticated';
   if (select count(*) from public.assignments)<>3 then
     raise exception 'PHASE4A_OWNER_GLOBAL_ACCESS_DENIED'; end if;
+  raise notice 'RLS_ASSERT|OWNER|PHASE4A_OWNER_GLOBAL_ACCESS_DENIED';
   update public.operational_events set title='Phase 4A owner write'
     where id='f4a16300-0000-4000-8000-000000000001';
   if not found then raise exception 'PHASE4A_OWNER_EVENT_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|OWNER|PHASE4A_OWNER_EVENT_WRITE_DENIED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000002',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000002'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ADMIN|authenticated';
   if (select count(*) from public.assignments)<>3 then
     raise exception 'PHASE4A_ADMIN_GLOBAL_ACCESS_DENIED'; end if;
+  raise notice 'RLS_ASSERT|ADMIN|PHASE4A_ADMIN_GLOBAL_ACCESS_DENIED';
   update public.operational_events set title='Phase 4A admin write'
     where id='f4a16300-0000-4000-8000-000000000002';
   if not found then raise exception 'PHASE4A_ADMIN_EVENT_WRITE_DENIED'; end if;
+  raise notice 'RLS_ASSERT|ADMIN|PHASE4A_ADMIN_EVENT_WRITE_DENIED';
 end $$;
 
+reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+set local role authenticated;
+select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.jwt.claim.sub','f4a10000-0000-4000-8000-000000000009',true);
 do $$ begin
+  if current_user<>'authenticated' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from 'f4a10000-0000-4000-8000-000000000009'::uuid
+    or current_setting('request.jwt.claim.role',true)<>'authenticated'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|NO_ROLE|authenticated';
   if exists(select 1 from public.employee_availability) then
     raise exception 'PHASE4A_NO_ROLE_READ_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_NO_ROLE_READ_ALLOWED';
   if exists(select 1 from public.assignments) then
     raise exception 'PHASE4A_NO_ROLE_RESOURCE_READ_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_NO_ROLE_RESOURCE_READ_ALLOWED';
   if (select count(*) from public.operational_events)<>2 then
     raise exception 'PHASE4A_LEGACY_GLOBAL_EVENT_READ_CONTRACT_CHANGED'; end if;
+  raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_LEGACY_GLOBAL_EVENT_READ_CONTRACT_CHANGED';
   update public.operational_events set title='NO ROLE LEAK';
   if found then raise exception 'PHASE4A_NO_ROLE_EVENT_UPDATE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_NO_ROLE_EVENT_UPDATE_ALLOWED';
   delete from public.operational_events;
   if found then raise exception 'PHASE4A_NO_ROLE_EVENT_DELETE_ALLOWED'; end if;
+  raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_NO_ROLE_EVENT_DELETE_ALLOWED';
   begin
     insert into public.operational_events(location_id,event_type,title,starts_at,ends_at,status)
     select id,'EVENT','NO ROLE INSERT',current_date,current_date+interval '1 hour','DRAFT'
     from public.locations where code='KRUCZA';
     raise exception 'PHASE4A_NO_ROLE_EVENT_INSERT_ALLOWED';
-  exception when insufficient_privilege then null; end;
+  exception when insufficient_privilege then
+    raise notice 'RLS_ASSERT|NO_ROLE|PHASE4A_NO_ROLE_EVENT_INSERT_ALLOWED'; end;
 end $$;
 
 reset role;
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
 set local role anon;
+select set_config('request.jwt.claim.role','anon',true);
 do $$ begin
+  if current_user<>'anon' or exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls))
+    or auth.uid() is distinct from null::uuid
+    or current_setting('request.jwt.claim.role',true)<>'anon'
+  then raise exception 'PHASE4A_ACTOR_CONTEXT_INVALID'; end if;
+  raise notice 'RLS_CONTEXT|ANON|anon';
   begin
     perform 1 from public.assignments limit 1;
     raise exception 'PHASE4A_ANON_ASSIGNMENT_SELECT_ALLOWED';
-  exception when insufficient_privilege then null; end;
+  exception when insufficient_privilege then
+    raise notice 'RLS_ASSERT|ANON|PHASE4A_ANON_ASSIGNMENT_SELECT_ALLOWED'; end;
 end $$;
 reset role;
 
+select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claim.role','',true),set_config('request.jwt.claims','{}',true);
+do $$ begin
+  if exists(select 1 from public.uat_environment_controls where enabled) then
+    raise exception 'PHASE4A_UAT_DESTRUCTIVE_FLAG_CHANGED'; end if;
+end $$;
 rollback;

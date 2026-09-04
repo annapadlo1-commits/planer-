@@ -9,7 +9,7 @@ import {
 } from "./contract.ts";
 
 const TOKEN = "solver-gateway-test-token".padEnd(64, "x");
-const GATEWAY_VERSION = "solver-gateway-test-deployment";
+const GATEWAY_VERSION = `solver-gateway-test-deployment@${"c".repeat(40)}`;
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
@@ -23,6 +23,12 @@ const gatewaySource = await readFile(
 const claimArgs = {
   p_worker_id: "free-host-worker-1:42",
   p_worker_version: "ORTOOLS_V2_2026_08_02",
+  p_worker_build_manifest: {
+    contractVersion: "SOLVER_CONTRACT_V2",
+    sourceSha: "a".repeat(40),
+    imageDigest: `sha256:${"b".repeat(64)}`,
+    buildTimestamp: "2026-09-03T10:15:30Z",
+  },
   p_task_attempt: 1,
   p_lease_seconds: 90,
 };
@@ -94,9 +100,11 @@ function normalizedVariant() {
 test("exposes only provider-neutral worker actions", () => {
   assert.deepEqual(ALLOWED_ACTIONS, [
     "solver_claim_next_v2",
+    "solver_claim_next_v3",
     "solver_load_snapshot_v2",
     "solver_heartbeat_v2",
     "solver_save_variant_v2",
+    "solver_save_variants_v2",
     "solver_finalize_v2",
     "solver_interrupt_v2",
     "solver_fail_attempt_v2",
@@ -106,11 +114,11 @@ test("exposes only provider-neutral worker actions", () => {
 test("forwards a valid pull claim with exact arguments", async () => {
   const calls = [];
   const response = await handlerWith(calls)(
-    gatewayRequest("solver_claim_next_v2", claimArgs),
+    gatewayRequest("solver_claim_next_v3", claimArgs),
   );
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [
-    { action: "solver_claim_next_v2", args: claimArgs },
+    { action: "solver_claim_next_v3", args: claimArgs },
   ]);
 });
 
@@ -120,7 +128,7 @@ test("rejects removed dispatcher actions and unknown arguments", async () => {
   assert.equal(removed.status, 400);
   assert.deepEqual(await removed.json(), { error: "ACTION_NOT_ALLOWED" });
 
-  const unknown = await handler(gatewayRequest("solver_claim_next_v2", {
+  const unknown = await handler(gatewayRequest("solver_claim_next_v3", {
     ...claimArgs,
     p_run_id: RUN_ID,
   }));
@@ -138,7 +146,7 @@ test("rejects invalid pull claim boundaries", async () => {
     { ...claimArgs, p_lease_seconds: 29 },
     { ...claimArgs, p_lease_seconds: 901 },
   ]) {
-    const response = await handler(gatewayRequest("solver_claim_next_v2", args));
+    const response = await handler(gatewayRequest("solver_claim_next_v3", args));
     assert.equal(response.status, 400);
   }
 });
@@ -147,7 +155,7 @@ test("requires the dedicated worker token", async () => {
   const handler = handlerWith();
   for (const token of ["", "wrong-token".padEnd(64, "x")]) {
     const response = await handler(
-      gatewayRequest("solver_claim_next_v2", claimArgs, token),
+      gatewayRequest("solver_claim_next_v3", claimArgs, token),
     );
     assert.equal(response.status, 401);
   }
@@ -232,6 +240,66 @@ test("accepts normalized objective metadata emitted by the worker", async () => 
     action: "solver_save_variant_v2",
     args: { ...args, p_gateway_version: GATEWAY_VERSION },
   }]);
+});
+
+test("forwards one exact canonical variant batch to PostgreSQL", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variants = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variants: variants,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variants_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variants_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects incomplete, duplicate and foreign strategy batches", async () => {
+  const handler = handlerWith();
+  const canonical = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  for (const variants of [
+    canonical.slice(0, 2),
+    [canonical[0], canonical[1], canonical[0]],
+    [canonical[0], canonical[1], { ...canonical[2], strategyCode: "OTHER" }],
+  ]) {
+    const response = await handler(gatewayRequest("solver_save_variants_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variants: variants,
+    }));
+    assert.equal(response.status, 400);
+  }
 });
 
 test("uses only the named Supabase secret key and fails closed", () => {

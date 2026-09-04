@@ -1,0 +1,19 @@
+{
+  "format": "aud003-capture-consistency-v1",
+  "before": {
+    "captured_at_utc": "2026-09-03 18:49:59.095333",
+    "project_ref": "nhthrtpkfpmufmrmdyjg",
+    "ledger_count": 256,
+    "ledger_sha256": "29ff62d4b8cc12f926246f4f5513d38ea5b7c562239f05c0184e923d58bea47d"
+  },
+  "captureAtUtc": "2026-09-03T18:57:09.596292",
+  "after": {
+    "captured_at_utc": "2026-09-03 19:10:22.277982",
+    "project_ref": "nhthrtpkfpmufmrmdyjg",
+    "ledger_count": 256,
+    "ledger_sha256": "29ff62d4b8cc12f926246f4f5513d38ea5b7c562239f05c0184e923d58bea47d"
+  },
+  "ledgerUnchanged": true,
+  "transactionReadOnly": "on",
+  "sourceUatSha": "16d93bc5ddfd0de7ac3ab566076471f1718e4f85"
+}

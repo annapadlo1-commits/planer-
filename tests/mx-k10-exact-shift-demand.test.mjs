@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migrationPath=new URL(
-  "../supabase/migrations/20260820081631_mx_k10_exact_shift_demand_only.sql",
+  "../supabase/archive/aud003/migrations/20260820081631_mx_k10_exact_shift_demand_only.sql",
   import.meta.url,
 );
 const sqlContractPath=new URL(
