@@ -83,3 +83,55 @@ export function scenarioHasActiveStrategy(
 
   return [...resolved].some(([strategyId, active]) => active && activeStrategyIds.has(strategyId));
 }
+
+export function activeBusinessObjectives(data: MatrixV2Workspace, strategyId: string) {
+  return data.strategyObjectives.filter(objective =>
+    objective.strategy_id === strategyId
+    && objective.active
+    && objective.metric_code !== "HOME_LOCATION_VIOLATIONS"
+  );
+}
+
+export function strategySignature(data: MatrixV2Workspace, strategyId: string) {
+  return activeBusinessObjectives(data, strategyId).map(objective => ({
+    metric: objective.metric_code,
+    tier: objective.tier,
+    direction: objective.direction,
+    weight: objective.weight,
+    tolerance: objective.tolerance,
+    parameters: objective.parameters ?? {},
+  })).sort((left, right) => left.tier - right.tier || left.metric.localeCompare(right.metric))
+    .map(value => JSON.stringify(value))
+    .join("|");
+}
+
+export function strategyRelativeLevel(data: MatrixV2Workspace, strategyId: string, metric: string) {
+  const strategies = data.strategies.filter(strategy => strategy.active);
+  const values = strategies.map(strategy => {
+    const objective = activeBusinessObjectives(data, strategy.id).find(item => item.metric_code === metric);
+    return { strategyId: strategy.id, tier: objective?.tier ?? 101, weight: objective?.weight ?? 0 };
+  });
+  const current = values.find(value => value.strategyId === strategyId) ?? { tier: 101, weight: 0 };
+  const ordered = [...values].sort((left, right) => left.tier - right.tier || right.weight - left.weight);
+  const best = ordered[0];
+  const worst = ordered.at(-1)!;
+  if (values.every(value => value.tier === best.tier && value.weight === best.weight)) {
+    return { className: "same", label: "Taki sam nacisk" };
+  }
+  if (current.tier === best.tier && current.weight === best.weight) {
+    return { className: "high", label: "Najwyższy priorytet" };
+  }
+  if (current.tier === worst.tier && current.weight === worst.weight) {
+    return { className: "low", label: "Najniższy priorytet" };
+  }
+  return { className: "medium", label: "Pośredni nacisk" };
+}
+
+export function strategyDistinguishers(data: MatrixV2Workspace, strategyId: string) {
+  return activeBusinessObjectives(data, strategyId)
+    .filter(objective => objective.metric_code !== "UNFILLED")
+    .map(objective => ({ objective, level: strategyRelativeLevel(data, strategyId, objective.metric_code) }))
+    .filter(item => item.level.className === "high")
+    .sort((left, right) => right.objective.weight - left.objective.weight)
+    .slice(0, 3);
+}
