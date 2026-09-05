@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { supabaseEnvironmentGuard } from "@/lib/supabase/client";
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -8,14 +9,14 @@ export async function createSupabaseServerClient() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url || !key) return null;
+  if (!url || !key || !supabaseEnvironmentGuard().allowed) return null;
 
   return createServerClient(url, key, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, _cacheHeaders) {
         try {
           cookiesToSet.forEach(({ name, value, options }) =>
             cookieStore.set(name, value, options),

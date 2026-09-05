@@ -19,8 +19,9 @@ STATIC_CALCULATION_TYPES = {
     "MULTIPLIER",
     "SHIFT_DURATION_THRESHOLD_PER_HOUR",
 }
+BASE_OVERRIDE_CALCULATION_TYPE = "BASE_RATE_OVERRIDE"
 DYNAMIC_CALCULATION_TYPES = {"MONTHLY_THRESHOLD_PER_HOUR"}
-SUPPORTED_CALCULATION_TYPES = STATIC_CALCULATION_TYPES | DYNAMIC_CALCULATION_TYPES
+SUPPORTED_CALCULATION_TYPES = STATIC_CALCULATION_TYPES | DYNAMIC_CALCULATION_TYPES | {BASE_OVERRIDE_CALCULATION_TYPE}
 SUPPORTED_OPERATORS = {
     "EQ",
     "NE",
@@ -40,12 +41,14 @@ class PayComponent:
     rule_id: str
     calculation_type: str
     cost_units: int
+    cost_category: str = "WAGE"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "ruleId": self.rule_id,
             "calculationType": self.calculation_type,
             "costUnits": self.cost_units,
+            "costCategory": self.cost_category,
         }
 
 
@@ -263,6 +266,8 @@ def validate_pay_rules(snapshot: Snapshot) -> None:
             raise SnapshotError(
                 f"Unsupported pay calculation type: {rule.calculation_type}"
             )
+        if rule.calculation_type == BASE_OVERRIDE_CALCULATION_TYPE:
+            _integer(rule.values, "rateMinorPerHour", "rate_minor_per_hour")
         if rule.stacking_mode not in {"STACK", "MAX", "FIRST"}:
             raise SnapshotError(f"Unsupported stacking mode: {rule.stacking_mode}")
         previous_mode = group_modes.setdefault(rule.stacking_group, rule.stacking_mode)
@@ -325,10 +330,28 @@ def applicable_static_rules(
 
 def quote_assignment(snapshot: Snapshot, employee: Employee, slot: Slot) -> PayQuote:
     base_rate_minor, _contract_code = employee.pay_rate_on(slot.date)
+    overrides = sorted(
+        (
+            rule for rule in snapshot.pay_rules
+            if rule.calculation_type == BASE_OVERRIDE_CALCULATION_TYPE
+            and rule_matches(snapshot, rule, employee, slot)
+        ),
+        key=lambda rule: (rule.priority, rule.id),
+    )
+    if len(overrides) > 1:
+        raise SnapshotError(
+            f"Multiple approved base-rate overrides match {employee.id}/{slot.id}"
+        )
+    if overrides:
+        base_rate_minor = _integer(
+            overrides[0].values, "rateMinorPerHour", "rate_minor_per_hour"
+        )
     base_units = base_rate_minor * slot.duration_minutes
     components = [
         PayComponent(
-            rule_id="BASE", calculation_type="BASE_HOURLY", cost_units=base_units
+            rule_id=(overrides[0].id if overrides else "BASE"),
+            calculation_type=(BASE_OVERRIDE_CALCULATION_TYPE if overrides else "BASE_HOURLY"),
+            cost_units=base_units,
         )
     ]
     for rule, cost_units in applicable_static_rules(snapshot, employee, slot):
@@ -337,6 +360,7 @@ def quote_assignment(snapshot: Snapshot, employee: Employee, slot: Slot) -> PayQ
                 rule_id=rule.id,
                 calculation_type=rule.calculation_type,
                 cost_units=cost_units,
+                cost_category=rule.cost_category,
             )
         )
     return PayQuote(
@@ -357,15 +381,23 @@ def matching_monthly_rules(
 
 
 def monthly_threshold_cost_units(
-    rule: PayRule, selected_minutes: int
+    rule: PayRule, selected_minutes: int, employee: Employee | None = None
 ) -> tuple[int, PayComponent]:
-    threshold = _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+    threshold_source = str(rule.values.get("thresholdSource", rule.values.get("threshold_source", "FIXED"))).upper()
+    threshold = (
+        employee.nominal_monthly_minutes
+        if threshold_source == "EMPLOYEE_NOMINAL" and employee is not None
+        else _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+    )
+    if threshold is None:
+        raise SnapshotError("Employee nominal is required by an overtime pay rule")
     rate = _integer(rule.values, "rateMinorPerHour", "rate_minor_per_hour")
     cost_units = max(selected_minutes - threshold, 0) * rate
     return cost_units, PayComponent(
         rule_id=rule.id,
         calculation_type=rule.calculation_type,
         cost_units=cost_units,
+        cost_category=rule.cost_category,
     )
 
 
@@ -379,8 +411,9 @@ def quote_variant_dynamic_components(
         for rule in matching_monthly_rules(snapshot, employee, slot):
             minutes_by_rule_employee[(rule.id, employee.id)] += slot.duration_minutes
     components: list[PayComponent] = []
-    for (rule_id, _employee_id), minutes in sorted(minutes_by_rule_employee.items()):
-        cost_units, component = monthly_threshold_cost_units(rules[rule_id], minutes)
+    employees = {employee.id: employee for employee in snapshot.employees}
+    for (rule_id, employee_id), minutes in sorted(minutes_by_rule_employee.items()):
+        cost_units, component = monthly_threshold_cost_units(rules[rule_id], minutes, employees[employee_id])
         if cost_units:
             components.append(component)
     return tuple(components)
@@ -416,7 +449,10 @@ def quote_selected_assignments(
                 for employee, slot in employee_items
                 if rule_matches(snapshot, rule, employee, slot)
             ]
-            threshold = _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+            threshold_source = str(rule.values.get("thresholdSource", rule.values.get("threshold_source", "FIXED"))).upper()
+            threshold = employee_items[0][0].nominal_monthly_minutes if threshold_source == "EMPLOYEE_NOMINAL" else _integer(rule.values, "thresholdMinutes", "threshold_minutes")
+            if threshold is None:
+                raise SnapshotError("Employee nominal is required by an overtime pay rule")
             rate = _integer(rule.values, "rateMinorPerHour", "rate_minor_per_hour")
             cumulative = 0
             for employee, slot in matching:
@@ -430,6 +466,7 @@ def quote_selected_assignments(
                             rule_id=rule_id,
                             calculation_type=rule.calculation_type,
                             cost_units=chargeable_minutes * rate,
+                            cost_category=rule.cost_category,
                         )
                     )
 

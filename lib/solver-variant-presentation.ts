@@ -1,0 +1,138 @@
+export type SolverVariantMetricPresentation = {
+  code: string;
+  label: string;
+  value: string;
+  explanation: string;
+};
+
+const HIDDEN_METRICS = new Set([
+  "UNFILLED",
+  "TOTAL_COST",
+  // This is an obsolete technical invariant. A permanent work location is not
+  // a supported business concept in the current configuration model.
+  "HOME_LOCATION_VIOLATIONS",
+  "NOMINAL_TARGET_EMPLOYEE_COUNT",
+  "LOAD_UTILIZATION_TARGET_COUNT",
+  "LOAD_UTILIZATION_EXPLICIT_TARGET_COUNT",
+  "LOAD_UTILIZATION_FALLBACK_COUNT",
+  "ROLE_LOAD_FAIRNESS_SCORE",
+  "ROLE_LOAD_SPREAD_SUM_BPS",
+  "ROLE_LOAD_FAIRNESS_ROLE_COUNT",
+  "ROLE_WEEKEND_FAIRNESS_SCORE",
+  "ROLE_WEEKEND_SPREAD_SUM",
+  "ACHIEVABLE_TARGET_MINUTES_TOTAL",
+  "ESTIMATED_ACHIEVABLE_TARGET_MINUTES_TOTAL",
+  "ESTIMATED_ACHIEVABLE_TARGET_METHOD_VERSION",
+  "MANDATORY_PRODUCT_GUARDS_VERSION",
+]);
+
+const ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION =
+  "Szacunek uwzględniający dostępność, kwalifikacje i podstawowe limity czasu pracy. W złożonych przypadkach kolizji zmian, odpoczynku lub limitów kolejnych dni rzeczywista możliwa liczba godzin może być niższa.";
+
+const METRICS: Record<string, { label: string; explanation: string; unit?: "MINUTES" }> = {
+  MATRIX_RUNTIME_SEMANTICS_MATCH: {
+    label: "Zgodność konfiguracji ze sposobem działania silnika",
+    explanation: "Silnik potwierdził, że wykonał poziomy celów zapisane w opublikowanej konfiguracji — bez ukrytej zmiany kolejności strategii.",
+  },
+  PREFERENCE_VIOLATIONS: {
+    label: "Niespełnione prośby pracowników",
+    explanation: "Ile miękkich preferencji dostępności nie udało się spełnić. Mniej oznacza wariant bliższy prośbom zespołu.",
+  },
+  NOMINAL_DEVIATION_MINUTES: {
+    label: "Różnica względem planowanych godzin",
+    explanation: "Łączna różnica między przydzielonym czasem a miesięcznym wymiarem osób, które mają ustawiony wymiar. Mniej oznacza lepsze dopasowanie.",
+    unit: "MINUTES",
+  },
+  UNDER_TARGET_MINUTES: {
+    label: "Godziny brakujące do indywidualnych celów",
+    explanation: "Łączny czas brakujący do miesięcznych celów godzinowych po rozdzieleniu całej wymaganej obsady. W niedoborze strukturalnym wartość może pozostać dodatnia mimo sprawiedliwego podziału.",
+    unit: "MINUTES",
+  },
+  MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS: {
+    label: "Najniższa realizacja szacowanego osiągalnego celu",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wariant równy najpierw maksymalizuje najniższą procentową realizację tego szacunku.`,
+  },
+  MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS: {
+    label: "Najniższa realizacja szacowanego osiągalnego celu",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wariant równy najpierw maksymalizuje najniższą procentową realizację tego szacunku.`,
+  },
+  ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: {
+    label: "Rozstęp realizacji szacowanych osiągalnych celów",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wartość pokazuje różnicę między najwyższą i najniższą procentową realizacją szacunku; mniej oznacza równiejszy podział.`,
+  },
+  ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS: {
+    label: "Rozstęp realizacji szacowanych osiągalnych celów",
+    explanation: `${ESTIMATED_ACHIEVABLE_TARGET_EXPLANATION} Wartość pokazuje różnicę między najwyższą i najniższą procentową realizacją szacunku; mniej oznacza równiejszy podział.`,
+  },
+  OVERTIME_MINUTES: {
+    label: "Planowane nadgodziny",
+    explanation: "Łączny czas ponad miesięczny wymiar pracy. Mniej oznacza mniejsze ryzyko nadgodzin.",
+    unit: "MINUTES",
+  },
+  LOAD_SPREAD_MINUTES: {
+    label: "Historyczna różnica czasu pracy",
+    explanation: "Ten starszy wynik porównuje surowe minuty i nie uwzględnia różnych wymiarów pracy. Wygeneruj wariant ponownie, aby otrzymać miarodajne porównanie procentowe.",
+    unit: "MINUTES",
+  },
+  LOAD_UTILIZATION_SPREAD_BPS: {
+    label: "Największa różnica wykorzystania wymiaru w jednej roli",
+    explanation: "To różnica w punktach procentowych wykorzystania indywidualnego wymiaru, a nie procent różnicy godzin min–max. Przykład: 90% i 100% wymiaru daje 10 p.p., niezależnie od surowej liczby godzin. Mniej oznacza równiejszy podział wewnątrz każdej roli.",
+  },
+  WEEKEND_SPREAD: {
+    label: "Największa różnica weekendów w jednej roli",
+    explanation: "Największa różnica liczby weekendowych przydziałów między osobami wykonującymi tę samą rolę. Mniej oznacza równiejszy podział weekendów wewnątrz każdej roli.",
+  },
+  BASELINE_CHANGES: {
+    label: "Przydziały inne niż w grafiku bazowym",
+    explanation: "Liczba przydziałów zmienionych względem wskazanego grafiku bazowego. Mniej oznacza mniej zmian dla zespołu.",
+  },
+};
+
+function finiteNumber(value: unknown): number | null {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+export function formatDurationMinutes(value: unknown): string {
+  const minutes = finiteNumber(value);
+  if (minutes === null) return "—";
+  const rounded = Math.round(Math.abs(minutes));
+  const sign = minutes < 0 ? "−" : "";
+  const hours = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  if (!hours) return `${sign}${remainder} min`;
+  if (!remainder) return `${sign}${hours} godz.`;
+  return `${sign}${hours} godz. ${remainder} min`;
+}
+
+export function presentSolverVariantMetrics(metrics: Record<string, unknown>): SolverVariantMetricPresentation[] {
+  return Object.entries(metrics).flatMap(([code, rawValue]) => {
+    if (HIDDEN_METRICS.has(code)) return [];
+    const definition = METRICS[code];
+    if (!definition) return [];
+    const nominalTargetCount = finiteNumber(metrics.NOMINAL_TARGET_EMPLOYEE_COUNT) ?? 0;
+    const utilizationTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_TARGET_COUNT) ?? 0;
+    const fallbackTargetCount = finiteNumber(metrics.LOAD_UTILIZATION_FALLBACK_COUNT) ?? 0;
+    const value = code === "MATRIX_RUNTIME_SEMANTICS_MATCH"
+      ? finiteNumber(rawValue) === 1 ? "Potwierdzona" : "Niepotwierdzona"
+      : code === "NOMINAL_DEVIATION_MINUTES" && nominalTargetCount === 0
+      ? "Brak wymiarów"
+      : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
+        ? "Brak danych"
+        : code === "MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS" || code === "MIN_ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_BPS"
+          ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })}%`
+          : code === "LOAD_UTILIZATION_SPREAD_BPS" || code === "ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS" || code === "ESTIMATED_ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS"
+          ? `${((finiteNumber(rawValue) ?? 0) / 10).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} p.p.`
+          : definition.unit === "MINUTES"
+      ? formatDurationMinutes(rawValue)
+      : finiteNumber(rawValue)?.toLocaleString("pl-PL") ?? "—";
+    const explanation = code === "NOMINAL_DEVIATION_MINUTES" && nominalTargetCount === 0
+      ? "Nie ustawiono miesięcznego wymiaru żadnej osoby, więc zero nie oznacza idealnego dopasowania. Uzupełnij wymiary w danych pracowników i wygeneruj grafik ponownie."
+      : code === "LOAD_UTILIZATION_SPREAD_BPS" && utilizationTargetCount < 2
+        ? "Do porównania potrzeba co najmniej dwóch osób z miesięcznym wymiarem lub limitem czasu pracy."
+        : code === "LOAD_UTILIZATION_SPREAD_BPS" && fallbackTargetCount > 0
+          ? `${definition.explanation} ${fallbackTargetCount.toLocaleString("pl-PL")} osób bez twardego wymiaru uczestniczy w porównaniu przez wspólną bazę sprawiedliwego podziału.`
+          : definition.explanation;
+    return [{ code, label: definition.label, explanation, value }];
+  });
+}

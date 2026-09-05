@@ -4,6 +4,7 @@ import {
   type AllowedAction,
   createGatewayHandler,
   type JsonObject,
+  resolveSupabaseSecretKey,
   type RpcResult,
 } from "./contract.ts";
 
@@ -14,10 +15,18 @@ function requireEnvironment(name: string): string {
 }
 
 const supabaseUrl = requireEnvironment("SUPABASE_URL").replace(/\/+$/u, "");
-const serviceRoleKey = requireEnvironment("SUPABASE_SERVICE_ROLE_KEY");
+const supabaseSecretKey = resolveSupabaseSecretKey(
+  Deno.env.get("SUPABASE_SECRET_KEYS"),
+);
 const solverGatewayToken = requireEnvironment("SOLVER_GATEWAY_TOKEN");
-if (solverGatewayToken === serviceRoleKey) {
-  throw new Error("Gateway token must be independent from the service role key");
+const gatewayDeploymentId = Deno.env.get("DENO_DEPLOYMENT_ID")?.trim() || "local";
+const gatewaySourceSha = requireEnvironment("GATEWAY_SOURCE_SHA");
+if (!/^[0-9a-f]{40}$/u.test(gatewaySourceSha)) {
+  throw new Error("GATEWAY_SOURCE_SHA must be an exact lowercase Git SHA");
+}
+const gatewayVersion = `${gatewayDeploymentId}@${gatewaySourceSha}`;
+if (solverGatewayToken === supabaseSecretKey) {
+  throw new Error("Gateway token must be independent from the Supabase secret key");
 }
 
 const parsedSupabaseUrl = new URL(supabaseUrl);
@@ -40,24 +49,43 @@ const invokeRpc = async (
     redirect: "error",
     headers: {
       Accept: "application/json",
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: supabaseSecretKey,
       "Content-Type": "application/json",
       "User-Agent": "grafik-solver-gateway/0.1",
     },
     body: JSON.stringify(args),
     signal: AbortSignal.timeout(30_000),
   });
+  if (response.ok) {
+    return {
+      status: response.status,
+      body: response.body,
+      contentType: response.headers.get("content-type"),
+    };
+  }
+  // PostgREST returns PostgreSQL exceptions as JSON.  Forward only a strict
+  // machine code (never details, hints or SQL text) so the worker can persist
+  // the real failure instead of the useless "HTTP 400" seen in UAT.
+  let errorCode: string | null = null;
+  try {
+    const upstream = await response.json() as { message?: unknown };
+    const message = typeof upstream.message === "string" ? upstream.message : "";
+    if (/^[A-Z][A-Z0-9_:-]{0,99}$/u.test(message)) errorCode = message;
+  } catch {
+    errorCode = null;
+  }
   return {
     status: response.status,
-    body: response.ok ? response.body : null,
+    body: null,
     contentType: response.headers.get("content-type"),
+    errorCode,
   };
 };
 
 Deno.serve(
   createGatewayHandler({
     solverGatewayToken,
+    gatewayVersion,
     invokeRpc,
   }),
 );

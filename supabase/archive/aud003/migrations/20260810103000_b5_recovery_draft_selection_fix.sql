@@ -1,0 +1,115 @@
+-- B5 UAT corrective migration: a published role variant can remain the source
+-- of a recovery draft while the editor selection is moved to the new copy.
+-- The published schedule reference remains untouched.
+
+create or replace function solver_private.recovery_clone_published_variant_uat_v1(
+  p_source_variant_id uuid,
+  p_name text
+) returns uuid
+language plpgsql security definer set search_path=''
+as $$
+declare
+  v_actor uuid:=auth.uid();
+  v_source public.plan_variants_v2%rowtype;
+  v_run public.optimization_runs_v2%rowtype;
+  v_id uuid:=gen_random_uuid();
+begin
+  if v_actor is null then raise exception 'AUTH_REQUIRED'; end if;
+  select * into v_source from public.plan_variants_v2 where id=p_source_variant_id for update;
+  select * into v_run from public.optimization_runs_v2 where id=v_source.run_id for update;
+  if v_source.id is null or v_run.id is null or v_run.scope_type<>'ROLE'
+    or v_source.status not in ('READY','SELECTED','PUBLISHED')
+    or v_source.hard_violations<>0 then raise exception 'VALID_ROLE_VARIANT_REQUIRED'; end if;
+  if not solver_private.recovery_can_manage_scope_uat_v1(v_run.scope_role_id,null)
+    then raise exception 'ROLE_SCOPE_FORBIDDEN'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('leader-copy:'||v_run.id::text,0));
+
+  update public.plan_variants_v2 set status='ARCHIVED',selected=false
+  where run_id=v_run.id and variant_kind='LEADER_COPY' and status in ('READY','SELECTED');
+  update public.plan_variants_v2 set selected=false
+  where run_id=v_run.id and selected;
+  update public.plan_variants_v2 set
+    status=case when status='SELECTED' then 'READY' else status end
+  where run_id=v_run.id and variant_kind='GENERATED';
+
+  insert into public.plan_variants_v2(
+    id,run_id,run_strategy_id,strategy_id,name,status,hard_violations,
+    assignment_count,unfilled_count,solver_status,solution_hash,objective_bound,
+    metrics,recommended,selected,equivalent_to_variant_id,snapshot_hash,
+    selected_at,selected_by,variant_kind,source_variant_id,revision,last_edited_at,last_edited_by
+  ) values(
+    v_id,v_source.run_id,v_source.run_strategy_id,v_source.strategy_id,trim(p_name),'SELECTED',0,
+    v_source.assignment_count,v_source.unfilled_count,v_source.solver_status,v_source.solution_hash,
+    v_source.objective_bound,coalesce(v_source.metrics,'{}'::jsonb)||jsonb_build_object(
+      'leaderCopy',true,'recoveryDraft',true,'recoverySourceVariantId',v_source.id),
+    false,true,v_source.equivalent_to_variant_id,v_source.snapshot_hash,now(),v_actor,
+    'LEADER_COPY',v_source.id,0,now(),v_actor
+  );
+
+  insert into public.plan_shifts_v2(
+    id,variant_id,slot_group_key,shift_template_id,location_id,shift_date,
+    starts_at,ends_at,source_type,source_id,created_at
+  ) select public.matrix_v2_stable_uuid('LEADER_SHIFT:'||v_id::text||':'||source.id::text),
+    v_id,source.slot_group_key,source.shift_template_id,source.location_id,source.shift_date,
+    source.starts_at,source.ends_at,source.source_type,source.source_id,now()
+  from public.plan_shifts_v2 source where source.variant_id=v_source.id;
+
+  insert into public.plan_assignments_v2(
+    id,variant_id,shift_id,slot_key,employee_id,role_id,locked,explanation,created_at
+  ) select public.matrix_v2_stable_uuid('LEADER_ASSIGNMENT:'||v_id::text||':'||source.id::text),
+    v_id,public.matrix_v2_stable_uuid('LEADER_SHIFT:'||v_id::text||':'||source.shift_id::text),
+    source.slot_key,source.employee_id,source.role_id,source.locked,
+    coalesce(source.explanation,'{}'::jsonb)||jsonb_build_object(
+      'sourceVariantId',v_source.id,'sourceAssignmentId',source.id,'edited',false,'recoveryDraft',true),now()
+  from public.plan_assignments_v2 source where source.variant_id=v_source.id;
+
+  insert into public.plan_assignment_duties_v2(assignment_id,duty_id)
+  select public.matrix_v2_stable_uuid('LEADER_ASSIGNMENT:'||v_id::text||':'||source.id::text),duty.duty_id
+  from public.plan_assignments_v2 source
+  join public.plan_assignment_duties_v2 duty on duty.assignment_id=source.id
+  where source.variant_id=v_source.id;
+
+  insert into public.plan_issues_v2(
+    variant_id,shift_id,slot_key,issue_code,severity,role_id,duty_id,
+    required_count,assigned_count,message,metadata,created_at
+  ) select v_id,
+    case when source.shift_id is null then null else
+      public.matrix_v2_stable_uuid('LEADER_SHIFT:'||v_id::text||':'||source.shift_id::text) end,
+    source.slot_key,source.issue_code,source.severity,source.role_id,source.duty_id,
+    source.required_count,source.assigned_count,source.message,
+    coalesce(source.metadata,'{}'::jsonb)||jsonb_build_object('sourceIssueId',source.id,'recoveryDraft',true),now()
+  from public.plan_issues_v2 source where source.variant_id=v_source.id;
+
+  insert into solver_private.plan_assignment_cost_components_v2(
+    assignment_id,pay_rule_id,component_code,amount_minor,quantity_minutes,calculation_basis,created_at
+  ) select public.matrix_v2_stable_uuid('LEADER_ASSIGNMENT:'||v_id::text||':'||assignment.id::text),
+    component.pay_rule_id,component.component_code,component.amount_minor,component.quantity_minutes,
+    component.calculation_basis,now()
+  from public.plan_assignments_v2 assignment
+  join solver_private.plan_assignment_cost_components_v2 component on component.assignment_id=assignment.id
+  where assignment.variant_id=v_source.id;
+
+  insert into solver_private.plan_variant_finance_v2(
+    variant_id,base_cost_units,additions_cost_units,total_cost_units,base_cost_minor,
+    additions_cost_minor,total_cost_minor,currency,budget_minor,hard_budget_exceeded,breakdown
+  ) select v_id,finance.base_cost_units,finance.additions_cost_units,finance.total_cost_units,
+    finance.base_cost_minor,finance.additions_cost_minor,finance.total_cost_minor,finance.currency,
+    finance.budget_minor,finance.hard_budget_exceeded,
+    coalesce(finance.breakdown,'{}'::jsonb)||jsonb_build_object('sourceVariantId',v_source.id,'recoveryDraft',true)
+  from solver_private.plan_variant_finance_v2 finance where finance.variant_id=v_source.id;
+
+  insert into public.audit_log(actor_id,entity_type,entity_id,action,new_data)
+  values(v_actor,'plan_variant_v2',v_id::text,'CREATE_RECOVERY_LEADER_COPY',
+    jsonb_build_object('runId',v_run.id,'sourceVariantId',v_source.id,'name',trim(p_name),
+      'publishedScheduleChanged',false));
+  return v_id;
+end;
+$$;
+
+revoke all on function solver_private.recovery_clone_published_variant_uat_v1(uuid,text)
+  from public,anon,authenticated;
+
+comment on function solver_private.recovery_clone_published_variant_uat_v1(uuid,text) is
+  'Clones a published role variant into the sole selected leader draft without changing any published schedule reference.';
+
+notify pgrst,'reload schema';

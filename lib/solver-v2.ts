@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { solverRunRecoveryCandidates } from "./solver-run-recovery.ts";
 
 export type SolverEngine = "ALPHA15" | "ORTOOLS_V2" | "SHADOW";
 export type SolverScope = "COMPANY" | "ROLE";
@@ -10,9 +11,22 @@ export type SolverScenario = {
   description?: string;
   strategyCount: number;
   isDefault: boolean;
+  validFrom?: string | null;
+  validTo?: string | null;
+  profileMode?: "BASELINE" | "PERIOD";
 };
 
-export type SolverRole = { id: string; code: string; name: string };
+export type SolverRole = { id: string; code: string; name: string; color?: string | null; logicalId?: string | null };
+export type SolverRoleCategory = {
+  id: string;
+  code: string;
+  name: string;
+  color?: string | null;
+  sortOrder: number;
+  anchorRoleId: string;
+  roleIds: string[];
+  roleNames: string[];
+};
 export type SolverLocation = { id: string; code: string; name: string };
 
 export type SolverConfiguration = {
@@ -20,7 +34,9 @@ export type SolverConfiguration = {
   enabled: boolean;
   solverVersion: string | null;
   matrixVersionId: string | null;
+  matrixEffectiveFrom: string | null;
   scenarios: SolverScenario[];
+  roleCategories: SolverRoleCategory[];
   roles: SolverRole[];
   locations: SolverLocation[];
   currency: string | null;
@@ -38,6 +54,13 @@ export type SolverRun = {
   scopeType?: SolverScope;
   scopeRoleId?: string | null;
   failureMessage?: string | null;
+  createdAt?: string;
+  queuedAt?: string;
+  startedAt?: string | null;
+  heartbeatAt?: string | null;
+  queuePosition?: number | null;
+  waitingSeconds?: number;
+  runningSeconds?: number | null;
   updatedAt?: string;
 };
 
@@ -50,6 +73,22 @@ export type SolverStrategyProgress = {
 };
 
 export type SolverStatus = { run: SolverRun; strategies: SolverStrategyProgress[] };
+
+export type SolverFairnessTarget = {
+  applicable: boolean;
+  met: boolean;
+  targetMinimumBps: number;
+  targetMaximumSpreadBps: number;
+  actualMinimumBps: number;
+  actualSpreadBps: number;
+  failureReasons: Array<"MINIMUM_BELOW_TARGET" | "SPREAD_ABOVE_TARGET">;
+  attemptCount: number;
+  selectedAttempt: number;
+  fallbackUsed: boolean;
+  timeoutFallbackUsed: boolean;
+  provenUnattainable: boolean;
+  classification: string;
+};
 
 export type SolverVariant = {
   id: string;
@@ -67,6 +106,9 @@ export type SolverVariant = {
   selected: boolean;
   equivalentToVariantId?: string | null;
   metrics: Record<string, unknown>;
+  stageProof: Record<string, unknown>[];
+  versionStamp: Record<string, unknown>;
+  fairnessTarget: SolverFairnessTarget | null;
 };
 
 export type SolverVariants = { runId: string; variants: SolverVariant[] };
@@ -92,6 +134,10 @@ export type SolverWorkspaceContext = {
   matrixVersionId: string;
   publishedAt?: string | null;
   archivedAt?: string | null;
+  variantKind?: "GENERATED" | "LEADER_COPY";
+  sourceVariantId?: string | null;
+  revision?: number;
+  lastEditedAt?: string | null;
 };
 
 export type SolverWorkspaceVariant = {
@@ -129,6 +175,7 @@ export type SolverWorkspaceAssignment = {
 };
 
 export type SolverWorkspaceShift = {
+  id: string;
   slotGroupKey: string;
   date: string;
   startsAt: string;
@@ -165,7 +212,221 @@ export type SolverWorkspace = {
   shifts: SolverWorkspaceShift[];
   issues: SolverWorkspaceIssue[];
   finance: SolverWorkspaceFinance | null;
+  budgetStatus: { configured: boolean; withinBudget: boolean | null } | null;
 };
+
+export type SolverWorkloadDistributionRow = {
+  variantRevision: number;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  roleNames: string[];
+  eligibleLocationIds: string[];
+  plannedMinutes: number;
+  externalMinutes: number;
+  totalMonthlyMinutes: number;
+  overtimeMinutes: number;
+  shiftCount: number;
+  nominalMonthlyMinutes: number;
+  maximumMonthlyMinutes: number;
+  differenceMinutes: number;
+  hardUnavailableDays: number;
+  availableWindowDays: number;
+  preferenceViolations: number;
+  costMinor: number | null;
+  assignmentImpacts: Array<{
+    roleId: string;
+    locationId: string;
+    plannedMinutes: number;
+    costMinor: number | null;
+    preferenceViolations: number;
+  }>;
+  reasonCode: "AVAILABILITY_LIMITED" | "AVAILABILITY_WINDOW_LIMITED" | "MAXIMUM_REACHED" | "TARGET_NOT_SET" | "SOLVER_DISTRIBUTION" | "ABOVE_NOMINAL" | "ON_TARGET" | string;
+  locations: { id: string; name: string; minutes: number; shiftCount: number }[];
+};
+
+export type SolverWorkloadDistribution = {
+  variantId: string;
+  revision: number;
+  employees: SolverWorkloadDistributionRow[];
+};
+
+export async function getVariantWorkloadDistribution(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkloadDistribution> {
+  const payload=record(await rpc(client,"optimizer_variant_workload_distribution_uat_v1",{
+    p_variant_id:variantId,
+  }));
+  const responseVariantId=String(payload.variantId??payload.variant_id??"").trim();
+  if(!responseVariantId)throw new Error("WORKLOAD_VARIANT_ID_INVALID");
+  if(responseVariantId!==variantId){
+    throw new Error(`WORKLOAD_VARIANT_MISMATCH:${variantId}:${responseVariantId}`);
+  }
+  const variantRevision=requiredRevisionOf(payload,"WORKLOAD_REVISION_INVALID");
+  if(!Array.isArray(payload.employees))throw new Error("WORKLOAD_EMPLOYEES_INVALID");
+  const employees=payload.employees.map(value=>{
+    const row=record(value);
+    return {
+      variantRevision,
+      employeeId:String(row.employeeId??""),
+      employeeNo:String(row.employeeNo??""),
+      employeeName:String(row.employeeName??""),
+      roleNames:Array.isArray(row.roleNames)?row.roleNames.map(String):[],
+      eligibleLocationIds:Array.isArray(row.eligibleLocationIds)?row.eligibleLocationIds.map(String):[],
+      plannedMinutes:numberOf(row,"plannedMinutes","planned_minutes"),
+      externalMinutes:numberOf(row,"externalMinutes","external_minutes"),
+      totalMonthlyMinutes:numberOf(row,"totalMonthlyMinutes","total_monthly_minutes",
+        numberOf(row,"plannedMinutes","planned_minutes")),
+      overtimeMinutes:numberOf(row,"overtimeMinutes","overtime_minutes"),
+      shiftCount:numberOf(row,"shiftCount","shift_count"),
+      nominalMonthlyMinutes:numberOf(row,"nominalMonthlyMinutes","nominal_monthly_minutes"),
+      maximumMonthlyMinutes:numberOf(row,"maximumMonthlyMinutes","maximum_monthly_minutes"),
+      differenceMinutes:numberOf(row,"differenceMinutes","difference_minutes"),
+      hardUnavailableDays:numberOf(row,"hardUnavailableDays","hard_unavailable_days"),
+      availableWindowDays:numberOf(row,"availableWindowDays","available_window_days"),
+      preferenceViolations:numberOf(row,"preferenceViolations","preference_violations"),
+      costMinor:nullableNumberOf(row,"costMinor","cost_minor"),
+      assignmentImpacts:Array.isArray(row.assignmentImpacts)?row.assignmentImpacts.map(value=>{
+        const impact=record(value);
+        return {
+          roleId:String(impact.roleId??""),
+          locationId:String(impact.locationId??""),
+          plannedMinutes:numberOf(impact,"plannedMinutes","planned_minutes"),
+          costMinor:nullableNumberOf(impact,"costMinor","cost_minor"),
+          preferenceViolations:numberOf(impact,"preferenceViolations","preference_violations"),
+        };
+      }):[],
+      reasonCode:String(row.reasonCode??"SOLVER_DISTRIBUTION"),
+      locations:Array.isArray(row.locations)?row.locations.map(value=>{
+        const location=record(value);
+        return {id:String(location.id??""),name:String(location.name??""),minutes:numberOf(location,"minutes","minutes"),shiftCount:numberOf(location,"shiftCount","shift_count")};
+      }):[],
+    };
+  });
+  return {variantId:responseVariantId,revision:variantRevision,employees};
+}
+
+export type SolverLeaderVariant = {
+  id: string;
+  sourceVariantId: string;
+  name: string;
+  status: string;
+  revision: number;
+  assignmentCount: number;
+  unfilledCount: number;
+  lastEditedAt?: string | null;
+};
+
+export type SolverLeaderAssignmentContext = {
+  variantId: string;
+  assignmentId: string | null;
+  issueId: string | null;
+  slotKey: string;
+  currentEmployeeId: string | null;
+  role: { id: string; name: string };
+  duty: { id: string; name: string } | null;
+  shift: {
+    id: string; date: string; startsAt: string; endsAt: string;
+    locationId: string; locationName: string; shiftName: string;
+  };
+  candidates: {
+    employeeId: string; employeeNo: string; employeeName: string; current: boolean;
+    roleName?: string; locationName?: string; dutyName?: string | null;
+    dutyMatch: boolean; dutyCoverageMode: "DIRECT"|"TRANSFER"|"NOT_COVERED";
+    dutyTransferAssignmentId: string|null; dutyTransferEmployeeId: string|null;
+    dutyTransferEmployeeName: string|null;
+    availabilityStatus: "AVAILABLE"|"SOFT_AVOID"|"HARD_UNAVAILABLE"|"SHIFT_CONFLICT"|"OUTSIDE_AVAILABLE_WINDOW"|string;
+    suggestionEligible: boolean;
+    overtimePolicy: "NEVER"|"APPROVAL_REQUIRED"|"ALLOWED";
+    nominalMonthlyMinutes: number;
+    currentMonthlyMinutes: number;
+    projectedMonthlyMinutes: number;
+    overtimeBeforeMinutes: number;
+    overtimeAfterMinutes: number;
+    addedOvertimeMinutes: number;
+    currentTotalCostMinor: number;
+    projectedTotalCostMinor: number;
+    addedCostMinor: number;
+    currency: string;
+    overtimeApprovalRequired: boolean;
+    overtimeBlocked: boolean;
+  }[];
+};
+
+export type SolverManagerStandby = {
+  id: string;
+  date: string;
+  tier: 1 | 2;
+  status: "PREVIEW" | "PLANNED" | "ACTIVATED" | "DECLINED";
+  roleId: string;
+  roleName: string;
+  groupCode: string | null;
+  groupName: string | null;
+  eligibleRoleIds: string[];
+  eligibleRoleNames: string[];
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  sourceType: "COMPANY" | "ROLE";
+  activatedShiftId: string | null;
+};
+
+export type SolverEmployeeDayAvailability={
+  employeeId:string;date:string;scheduled:boolean;status:string;label:string;
+};
+
+export async function getManagerStandbyMonth(
+  client: SupabaseClient,
+  month: string,
+  scopeRoleId?: string | null,
+): Promise<SolverManagerStandby[]> {
+  const value = await rpc(client, "manager_standby_month_uat_v3", {
+    p_month: month,
+    p_scope_role_id: scopeRoleId ?? null,
+  });
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    const row = record(item);
+    return {
+      id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
+      status: String(row.status) as SolverManagerStandby["status"],
+      roleId: String(row.roleId), roleName: String(row.roleName),
+      groupCode: row.groupCode ? String(row.groupCode) : null,
+      groupName: row.groupName ? String(row.groupName) : null,
+      eligibleRoleIds: Array.isArray(row.eligibleRoleIds) ? row.eligibleRoleIds.map(String) : [],
+      eligibleRoleNames: Array.isArray(row.eligibleRoleNames) ? row.eligibleRoleNames.map(String) : [],
+      employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
+      employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
+      activatedShiftId: row.activatedShiftId ? String(row.activatedShiftId) : null,
+    };
+  });
+}
+
+export async function getVariantStandbyPreview(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverManagerStandby[]> {
+  const value = await rpc(client, "optimizer_variant_standby_preview_uat_v2", {
+    p_variant_id: variantId,
+  });
+  if (!Array.isArray(value)) return [];
+  return value.map(item => {
+    const row = record(item);
+    return {
+      id: String(row.id), date: String(row.date), tier: Number(row.tier) as 1 | 2,
+      status: "PREVIEW" as const,
+      roleId: String(row.roleId), roleName: String(row.roleName),
+      groupCode: row.groupCode ? String(row.groupCode) : null,
+      groupName: row.groupName ? String(row.groupName) : null,
+      eligibleRoleIds: Array.isArray(row.eligibleRoleIds) ? row.eligibleRoleIds.map(String) : [],
+      eligibleRoleNames: Array.isArray(row.eligibleRoleNames) ? row.eligibleRoleNames.map(String) : [],
+      employeeId: String(row.employeeId), employeeNo: String(row.employeeNo),
+      employeeName: String(row.employeeName), sourceType: String(row.sourceType) as "COMPANY" | "ROLE",
+      activatedShiftId: null,
+    };
+  });
+}
 
 export type SolverCandidateDiagnostic = {
   employeeId: string;
@@ -202,6 +463,45 @@ export type SolverCandidateDiagnostics = {
   };
   candidates: SolverCandidateDiagnostic[];
   summary: { considered: number; eligible: number; warning: number; blocked: number };
+};
+
+export type SolverVariantIssueDiagnostics = {
+  variantId: string;
+  issueId: string;
+  publishedScheduleId: string | null;
+  shift: { date: string; startsAt: string; endsAt: string; shiftPeriod: string };
+  summary: {
+    considered: number;
+    eligible: number;
+    blocked: number;
+    reasons: { code: string; count: number }[];
+  };
+  decisionContext: {
+    code: string;
+    standbyTiers: number;
+    message: string;
+  } | null;
+  candidates: {
+    employeeId: string;
+    employeeNo: string;
+    employeeName: string;
+    roleMatch: boolean;
+    locationMatch: boolean;
+    dutyMatch: boolean;
+    hasDeclaredWindow: boolean;
+    coversShift: boolean;
+    reasons: string[];
+    blockingDetails?: Array<{
+      code: string;
+      label: string;
+      startsAt?: string | null;
+      endsAt?: string | null;
+      shiftName?: string | null;
+      locationName?: string | null;
+      note?: string | null;
+      createdAt?: string | null;
+    }>;
+  }[];
 };
 
 export type SolverPublicationReadiness = {
@@ -333,11 +633,55 @@ export type SolverEmployeePublishedAssignment = {
   coworkers?: { name: string; role: string; capability?: string }[];
 };
 
+export type SolverEmployeeStandby = {
+  id: string;
+  date: string;
+  tier: 1 | 2;
+  status: "PLANNED" | "ACTIVATED" | "DECLINED" | "CANCELLED" | "SUPERSEDED";
+  roleId: string;
+  roleName: string;
+  activatedShiftId?: string;
+};
+
+export type SolverEmployeePublishedSchedule = {
+  assignments: SolverEmployeePublishedAssignment[];
+  standby: SolverEmployeeStandby[];
+};
+
 export type SolverPublication = {
   scheduleId: string;
   status: string;
   sourceType: string;
   reused: boolean;
+  changed?: number;
+  notified?: number;
+};
+
+export type SolverPublicationChangePreview = {
+  variantId: string;
+  baselineType: "ROLE" | "ROLE_PUBLICATIONS" | "COMPANY";
+  baselineFound: boolean;
+  changedCount: number;
+  notificationCount: number;
+  people: Array<{
+    employeeId: string;
+    employeeNo: string;
+    name: string;
+    changeType: "ADDED" | "REMOVED" | "CHANGED";
+    beforeAssignmentCount: number;
+    afterAssignmentCount: number;
+    willNotify: boolean;
+  }>;
+};
+
+export type SolverPublicationAuthorityStatus = {
+  month: string;
+  conflict: boolean;
+  company: null | { id: string; name: string; sourceType: string; publishedAt: string };
+  roles: Array<{ id: string; roleId: string; roleName: string; variantId: string; name: string; publishedAt: string }>;
+  conflicts: Array<{ reason: string; roleId: string; roleName: string; roleScheduleId: string; companyScheduleId: string }>;
+  resolved?: boolean;
+  keptSource?: "COMPANY" | "ROLES";
 };
 
 export type SolverRoleCompositeVariant = {
@@ -363,6 +707,57 @@ export type SolverRoleCompositeCandidates = {
   roles: SolverRoleCompositeRole[];
   missingRoleIds: string[];
   ready: boolean;
+};
+
+export type SolverRoleCompositeGap = {
+  issueId: string;
+  variantId: string;
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  location: string;
+  role: string;
+  duty?: string;
+  requiredCount: number;
+  assignedCount: number;
+  missingCount: number;
+  critical: boolean;
+  message: string;
+};
+
+export type SolverRoleCompositePreflight = {
+  month: string;
+  scenarioId: string;
+  totalGaps: number;
+  criticalGaps: number;
+  gaps: SolverRoleCompositeGap[];
+};
+
+export type SolverRolePublicationOverview = {
+  month: string;
+  totals: {
+    publishedRoles: number;
+    assignmentCount: number;
+    unfilledCount: number;
+    overtimeMinutes: number;
+    totalCostMinor: number;
+    scheduledMinutes: number;
+  };
+  roles: Array<{
+    publicationId: string;
+    name: string;
+    publishedAt: string;
+    role: { id: string; name: string };
+    scenario: { id: string; name: string };
+    variantId: string;
+    assignmentCount: number;
+    unfilledCount: number;
+    overtimeMinutes: number;
+    totalCostMinor: number;
+    currency: string;
+    teamSize: number;
+    scheduledMinutes: number;
+  }>;
 };
 
 export type RunStorageContext = {
@@ -403,6 +798,14 @@ function valueOf<T>(source: Record<string, unknown>, camel: string, snake: strin
 function numberOf(source: Record<string, unknown>, camel: string, snake: string, fallback = 0) {
   const value = Number(valueOf(source, camel, snake, fallback));
   return Number.isFinite(value) ? value : fallback;
+}
+
+function requiredRevisionOf(source:Record<string,unknown>,errorCode:string){
+  const raw=source.revision;
+  if(raw===undefined||raw===null||raw==="")throw new Error(errorCode);
+  const revision=Number(raw);
+  if(!Number.isSafeInteger(revision)||revision<0)throw new Error(errorCode);
+  return revision;
 }
 
 function nullableNumberOf(source: Record<string, unknown>, camel: string, snake: string) {
@@ -486,6 +889,7 @@ function normalizeWorkspaceShift(value: unknown): SolverWorkspaceShift {
   const location = record(source.location);
   const assignments = Array.isArray(source.assignments) ? source.assignments : [];
   return {
+    id: String(valueOf(source, "id", "id", "")),
     slotGroupKey: String(valueOf(source, "slotGroupKey", "slot_group_key", "")),
     date: String(valueOf(source, "date", "date", "")),
     startsAt: String(valueOf(source, "startsAt", "starts_at", "")),
@@ -504,13 +908,17 @@ function normalizeWorkspaceIssue(value: unknown): SolverWorkspaceIssue {
   const shift = record(source.shift);
   const shiftLocation = record(shift.location);
   const shiftTemplate = record(shift.shiftTemplate);
+  const code = String(valueOf(source, "code", "issue_code", "UNFILLED"));
+  const rawMessage = String(valueOf(source, "message", "message", "Nieobsadzone miejsce"));
   return {
     id: String(valueOf(source, "id", "id", "")),
     variantId: String(valueOf(source, "variantId", "variant_id", "")),
     slotKey: valueOf<string | null>(source, "slotKey", "slot_key", null),
-    code: String(valueOf(source, "code", "issue_code", "UNFILLED")),
+    code,
     severity: String(valueOf(source, "severity", "severity", "WARNING")),
-    message: String(valueOf(source, "message", "message", "Nieobsadzone miejsce")),
+    message: code === "UNFILLED_SLOT"
+      ? "Nieobsadzone miejsce w wymaganej obsadzie."
+      : rawMessage.replace(/Matrix/gi,"konfiguracja firmy"),
     requiredCount: nullableNumberOf(source, "requiredCount", "required_count"),
     assignedCount: nullableNumberOf(source, "assignedCount", "assigned_count"),
     role: source.role ? normalizeNamedEntity(source.role) : null,
@@ -553,11 +961,23 @@ function normalizeWorkspace(value: unknown): SolverWorkspace {
       matrixVersionId: String(valueOf(context, "matrixVersionId", "matrix_version_id", "")),
       publishedAt: valueOf<string | null | undefined>(context, "publishedAt", "published_at", undefined),
       archivedAt: valueOf<string | null | undefined>(context, "archivedAt", "archived_at", undefined),
+      variantKind: valueOf<"GENERATED" | "LEADER_COPY" | undefined>(context, "variantKind", "variant_kind", undefined),
+      sourceVariantId: valueOf<string | null | undefined>(context, "sourceVariantId", "source_variant_id", undefined),
+      revision: Number(valueOf(context, "revision", "revision", 0)),
+      lastEditedAt: valueOf<string | null | undefined>(context, "lastEditedAt", "last_edited_at", undefined),
     },
     variants: variants.map(normalizeWorkspaceVariant),
     shifts: shifts.map(normalizeWorkspaceShift),
     issues: issues.map(normalizeWorkspaceIssue),
     finance: normalizeWorkspaceFinance(payload.finance),
+    budgetStatus: payload.budgetStatus && typeof payload.budgetStatus === "object" && !Array.isArray(payload.budgetStatus)
+      ? {
+          configured: Boolean(record(payload.budgetStatus).configured),
+          withinBudget: record(payload.budgetStatus).withinBudget === null
+            ? null
+            : Boolean(record(payload.budgetStatus).withinBudget),
+        }
+      : null,
   };
 }
 
@@ -566,8 +986,13 @@ function normalizeRoleCompositeVariant(value: unknown, containerValue?: unknown)
   const source = record(value);
   const container = record(containerValue);
   const run = record(container.run);
-  if (!source.strategy) throw new Error("ROLE_COMPOSITE_STRATEGY_MISSING");
-  const strategy = normalizeNamedEntity(source.strategy);
+  // A composite may be rebuilt from an already published role schedule. Older
+  // publications did not persist the strategy envelope, but the variant id is
+  // still a valid, server-revalidated merge anchor. Do not hide the whole
+  // publication action only because optional display metadata is absent.
+  const strategy = source.strategy
+    ? normalizeNamedEntity(source.strategy)
+    : { id: "PUBLISHED_ROLE_VARIANT", name: "Opublikowany wariant zespołu" };
   if (!strategy.id || !strategy.name) throw new Error("ROLE_COMPOSITE_STRATEGY_INVALID");
   return {
     id: String(valueOf(source, "id", "id", "")),
@@ -633,6 +1058,13 @@ function normalizeRun(value: unknown): SolverRun {
     scopeType: valueOf<SolverScope | undefined>(run, "scopeType", "scope_type", undefined),
     scopeRoleId: valueOf<string | null | undefined>(run, "scopeRoleId", "scope_role_id", undefined),
     failureMessage: valueOf<string | null | undefined>(run, "failureMessage", "failure_message", undefined),
+    createdAt: valueOf<string | undefined>(run, "createdAt", "created_at", undefined),
+    queuedAt: valueOf<string | undefined>(run, "queuedAt", "queued_at", undefined),
+    startedAt: valueOf<string | null | undefined>(run, "startedAt", "started_at", undefined),
+    heartbeatAt: valueOf<string | null | undefined>(run, "heartbeatAt", "heartbeat_at", undefined),
+    queuePosition: valueOf<number | null | undefined>(run, "queuePosition", "queue_position", undefined),
+    waitingSeconds: numberOf(run, "waitingSeconds", "waiting_seconds"),
+    runningSeconds: valueOf<number | null | undefined>(run, "runningSeconds", "running_seconds", undefined),
     updatedAt: valueOf<string | undefined>(run, "updatedAt", "updated_at", undefined),
   };
 }
@@ -649,6 +1081,40 @@ function normalizeStrategy(value: unknown): SolverStrategyProgress {
   };
 }
 
+function normalizeFairnessTarget(
+  metrics: Record<string, unknown>,
+  stageProof: Record<string, unknown>[],
+): SolverFairnessTarget | null {
+  if (!Object.hasOwn(metrics, "FAIRNESS_TARGET_MET")) return null;
+  const minimumFailed = Number(metrics.FAIRNESS_TARGET_FAILURE_MINIMUM ?? 0) === 1;
+  const spreadFailed = Number(metrics.FAIRNESS_TARGET_FAILURE_SPREAD ?? 0) === 1;
+  const targetStage = stageProof.find(
+    stage => stage.name === "FAIRNESS_QUALITY_TARGET",
+  );
+  return {
+    applicable: Number(metrics.LOAD_UTILIZATION_TARGET_COUNT ?? 0) > 0,
+    met: Number(metrics.FAIRNESS_TARGET_MET) === 1,
+    targetMinimumBps: Number(metrics.FAIRNESS_TARGET_MINIMUM_BPS ?? 0),
+    targetMaximumSpreadBps: Number(
+      metrics.FAIRNESS_TARGET_MAXIMUM_SPREAD_BPS ?? 0,
+    ),
+    actualMinimumBps: Number(metrics.FAIRNESS_TARGET_ACTUAL_MINIMUM_BPS ?? 0),
+    actualSpreadBps: Number(metrics.FAIRNESS_TARGET_ACTUAL_SPREAD_BPS ?? 0),
+    failureReasons: [
+      ...(minimumFailed ? ["MINIMUM_BELOW_TARGET" as const] : []),
+      ...(spreadFailed ? ["SPREAD_ABOVE_TARGET" as const] : []),
+    ],
+    attemptCount: Number(metrics.FAIRNESS_TARGET_ATTEMPT_COUNT ?? 0),
+    selectedAttempt: Number(metrics.FAIRNESS_TARGET_SELECTED_ATTEMPT ?? 0),
+    fallbackUsed: Number(metrics.FAIRNESS_TARGET_FALLBACK_USED ?? 0) === 1,
+    timeoutFallbackUsed:
+      Number(metrics.FAIRNESS_TARGET_TIMEOUT_FALLBACK_USED ?? 0) === 1,
+    provenUnattainable:
+      Number(metrics.FAIRNESS_TARGET_PROVEN_UNATTAINABLE ?? 0) === 1,
+    classification: String(targetStage?.status ?? "UNKNOWN"),
+  };
+}
+
 function normalizeVariant(value: unknown): SolverVariant {
   const source = record(value);
   if (!source.strategy) throw new Error("VARIANT_STRATEGY_MISSING");
@@ -660,6 +1126,10 @@ function normalizeVariant(value: unknown): SolverVariant {
   const cost = source.totalCostMinor ?? source.total_cost_minor;
   const budget = source.budgetMinor ?? source.budget_minor;
   const finance = record(source.finance);
+  const stageProof = valueOf<unknown>(source, "stageProof", "stage_proof", []);
+  const versionStamp = valueOf<unknown>(source, "versionStamp", "version_stamp", {});
+  const normalizedStageProof = Array.isArray(stageProof) ? stageProof.map(record) : [];
+  const fairnessTarget = normalizeFairnessTarget(metrics, normalizedStageProof);
   return {
     id: String(valueOf(source, "id", "id", "")),
     name: String(valueOf(source, "name", "name", valueOf(strategy, "name", "name", "Wariant"))),
@@ -683,12 +1153,24 @@ function normalizeVariant(value: unknown): SolverVariant {
     selected: Boolean(valueOf(source, "selected", "selected", false)),
     equivalentToVariantId: valueOf<string | null | undefined>(source, "equivalentToVariantId", "equivalent_to_variant_id", undefined),
     metrics,
+    stageProof: Array.isArray(stageProof) ? stageProof.map(record) : [],
+    versionStamp: record(versionStamp),
+    fairnessTarget,
   };
 }
 
 async function rpc(client: SupabaseClient, name: string, args: Record<string, unknown>) {
   const result = await client.rpc(name, args);
-  if (result.error) throw new Error(result.error.message);
+  if (result.error) {
+    const parts = [
+      `RPC_${name.toUpperCase()}`,
+      result.error.code,
+      result.error.message,
+      result.error.details,
+      result.error.hint,
+    ].filter(value => Boolean(String(value ?? "").trim()));
+    throw new Error(parts.join(":"));
+  }
   return result.data as unknown;
 }
 
@@ -721,7 +1203,9 @@ export async function loadSolverConfiguration(
       enabled,
       solverVersion: null,
       matrixVersionId: null,
+      matrixEffectiveFrom: null,
       scenarios: [LEGACY_DEFAULT_SCENARIO],
+      roleCategories: [],
       roles: [],
       locations: [],
       currency: null,
@@ -756,6 +1240,19 @@ export async function loadSolverConfiguration(
     || typeof settings.requireOptimal !== "boolean"
   ) throw new Error("SOLVER_MATRIX_SETTINGS_INVALID");
 
+  const profilePayload = record(await rpc(client, "optimizer_demand_profiles_uat_v1", {
+    p_month: monthStart,
+  }));
+  const profileRows = Array.isArray(profilePayload.profiles) ? profilePayload.profiles : [];
+  const profilesById = new Map(profileRows.map(value => {
+    const item = record(value);
+    return [String(item.id ?? ""), {
+      validFrom: item.validFrom ? String(item.validFrom) : null,
+      validTo: item.validTo ? String(item.validTo) : null,
+      profileMode: String(item.profileMode ?? "UNDATED_LEGACY"),
+    }] as const;
+  }));
+
   const scenarioResult = { data: (Array.isArray(configurationPayload.scenarios)
     ? configurationPayload.scenarios : []).map(value => {
       const item = record(value);
@@ -767,11 +1264,29 @@ export async function loadSolverConfiguration(
         available: Boolean(item.available),
       };
     }) };
+  const roleColoursPayload = record(await rpc(client, "optimizer_role_colours_uat_v1", { p_month: monthStart }));
+  const roleColours = new Map((Array.isArray(roleColoursPayload.roles) ? roleColoursPayload.roles : []).map(value => {
+    const item = record(value);
+    return [String(item.id ?? ""), { color: item.color ? String(item.color) : null, logicalId: item.logicalId ? String(item.logicalId) : null }] as const;
+  }));
   const roleResult = { data: (Array.isArray(configurationPayload.roles)
     ? configurationPayload.roles : []).map(value => {
       const item = record(value);
-      return { id: String(item.id ?? ""), code: String(item.code ?? ""), name: String(item.name ?? "") };
+      const id = String(item.id ?? "");
+      return { id, code: String(item.code ?? ""), name: String(item.name ?? ""),
+        color: roleColours.get(id)?.color ?? null, logicalId: roleColours.get(id)?.logicalId ?? null };
     }) };
+  const categoryPayload = record(await rpc(client, "optimizer_role_categories_uat_v1", { p_month: monthStart }));
+  const roleCategories: SolverRoleCategory[] = (Array.isArray(categoryPayload.categories) ? categoryPayload.categories : []).map(value => {
+    const item = record(value);
+    return {
+      id: String(item.id ?? ""), code: String(item.code ?? ""), name: String(item.name ?? ""),
+      color: item.color ? String(item.color) : null, sortOrder: Number(item.sortOrder ?? 0),
+      anchorRoleId: String(item.anchorRoleId ?? ""),
+      roleIds: Array.isArray(item.roleIds) ? item.roleIds.map(String) : [],
+      roleNames: Array.isArray(item.roleNames) ? item.roleNames.map(String) : [],
+    };
+  }).filter(category => category.id && category.anchorRoleId && category.roleIds.length);
   const locationResult = { data: (Array.isArray(configurationPayload.locations)
     ? configurationPayload.locations : []).map(value => {
       const item = record(value);
@@ -825,14 +1340,23 @@ export async function loadSolverConfiguration(
       )).length,
     );
   }
-  const scenarios: SolverScenario[] = scenarioRows.filter(item => item.available).map(item => ({
+  const scenarios: SolverScenario[] = scenarioRows.filter(item => {
+    const profile = profilesById.get(item.id);
+    return item.available && (item.is_default || profile?.profileMode === "PERIOD");
+  }).map(item => {
+    const profile = profilesById.get(item.id);
+    return ({
     id: item.id,
     code: item.code,
     name: item.name,
     description: item.description ?? undefined,
     strategyCount: strategyCounts.get(item.id) ?? 0,
     isDefault: Boolean(item.is_default),
-  }));
+    validFrom: profile?.validFrom ?? null,
+    validTo: profile?.validTo ?? null,
+    profileMode: item.is_default ? "BASELINE" : "PERIOD",
+  });
+  });
   if (!scenarios.length) throw new Error("SOLVER_SCENARIOS_MISSING");
   if (scenarios.filter(scenario => scenario.isDefault).length !== 1) {
     throw new Error("SOLVER_DEFAULT_SCENARIO_INVALID");
@@ -849,7 +1373,9 @@ export async function loadSolverConfiguration(
     enabled,
     solverVersion,
     matrixVersionId: activeMatrixId,
+    matrixEffectiveFrom: String(matrixVersion.effectiveFrom??"")||null,
     scenarios,
+    roleCategories,
     roles,
     locations,
     currency,
@@ -875,6 +1401,7 @@ export async function requestSolverRun(
     p_scope_role_id: input.scopeRoleId ?? null,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
+    p_frontend_version: process.env.NEXT_PUBLIC_APP_BUILD_ID || "local",
   }));
   const run = normalizeRun(payload);
   if (!run.id) throw new Error("RUN_ID_MISSING");
@@ -930,14 +1457,16 @@ export async function publishCompanyVariant(
     name: string;
     idempotencyKey: string;
     warningReason?: string | null;
+    roleReplacementReason?: string | null;
   },
 ): Promise<SolverPublication> {
-  const payload = record(await rpc(client, "optimizer_publish_company_variant_alpha16", {
+  const payload = record(await rpc(client, "optimizer_publish_company_variant_resolved_uat_v2", {
     p_run_id: input.runId,
     p_variant_id: input.variantId,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
     p_warning_reason: input.warningReason?.trim()||null,
+    p_role_replacement_reason: input.roleReplacementReason?.trim()||null,
   }));
   if(payload.published===false){
     throw new Error(`${String(payload.code??"PUBLICATION_FAILED")}: ${String(payload.message??"Publikacja nie powiodła się.")}`);
@@ -949,6 +1478,41 @@ export async function publishCompanyVariant(
     status: String(valueOf(payload, "status", "status", "PUBLISHED")),
     sourceType: String(valueOf(payload, "sourceType", "source_type", "COMPANY")),
     reused: Boolean(valueOf(payload, "reused", "reused", false)),
+    changed: numberOf(payload, "changed", "changed"),
+    notified: numberOf(payload, "notified", "notified"),
+  };
+}
+
+export async function getPublicationChangePreview(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverPublicationChangePreview> {
+  const payload=record(await rpc(client,"optimizer_publication_change_preview_uat_v1",{
+    p_variant_id:variantId,
+  }));
+  const people=Array.isArray(payload.people)?payload.people.map(value=>{
+    const person=record(value);
+    const changeType=String(person.changeType??"CHANGED");
+    if(!["ADDED","REMOVED","CHANGED"].includes(changeType))throw new Error("PUBLICATION_CHANGE_TYPE_INVALID");
+    return {
+      employeeId:String(person.employeeId??""),
+      employeeNo:String(person.employeeNo??""),
+      name:String(person.name??"Pracownik"),
+      changeType:changeType as SolverPublicationChangePreview["people"][number]["changeType"],
+      beforeAssignmentCount:numberOf(person,"beforeAssignmentCount","before_assignment_count"),
+      afterAssignmentCount:numberOf(person,"afterAssignmentCount","after_assignment_count"),
+      willNotify:Boolean(person.willNotify),
+    };
+  }):[];
+  const baselineType=String(payload.baselineType??"COMPANY");
+  if(!["ROLE","ROLE_PUBLICATIONS","COMPANY"].includes(baselineType))throw new Error("PUBLICATION_BASELINE_TYPE_INVALID");
+  return {
+    variantId:String(payload.variantId??variantId),
+    baselineType:baselineType as SolverPublicationChangePreview["baselineType"],
+    baselineFound:Boolean(payload.baselineFound),
+    changedCount:numberOf(payload,"changedCount","changed_count"),
+    notificationCount:numberOf(payload,"notificationCount","notification_count"),
+    people,
   };
 }
 
@@ -1047,6 +1611,69 @@ export async function getCandidateDiagnostics(
   };
 }
 
+export async function getVariantIssueDiagnostics(
+  client: SupabaseClient,
+  variantId: string,
+  issueId: string,
+): Promise<SolverVariantIssueDiagnostics> {
+  const payload = record(await rpc(client, "optimizer_variant_issue_diagnostics_uat_v2", {
+    p_variant_id: variantId,
+    p_issue_id: Number(issueId),
+  }));
+  const shift = record(payload.shift), summary = record(payload.summary);
+  const decisionContext = payload.decisionContext ? record(payload.decisionContext) : null;
+  const reasons = Array.isArray(summary.reasons) ? summary.reasons.map(value => {
+    const reason = record(value);
+    return { code: String(reason.code ?? "UNKNOWN"), count: numberOf(reason, "count", "count") };
+  }) : [];
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates.map(value => {
+    const candidate=record(value);
+    return {
+      employeeId:String(candidate.employeeId??""),
+      employeeNo:String(candidate.employeeNo??""),
+      employeeName:String(candidate.employeeName??""),
+      roleMatch:Boolean(candidate.roleMatch),
+      locationMatch:Boolean(candidate.locationMatch),
+      dutyMatch:Boolean(candidate.dutyMatch),
+      hasDeclaredWindow:Boolean(candidate.hasDeclaredWindow),
+      coversShift:Boolean(candidate.coversShift),
+      reasons:Array.isArray(candidate.reasons)?candidate.reasons.map(String):[],
+      blockingDetails:Array.isArray(candidate.blockingDetails)?candidate.blockingDetails.map(value=>{
+        const detail=record(value);
+        return {
+          code:String(detail.code??"UNKNOWN"),label:String(detail.label??"Szczegół blokady"),
+          startsAt:detail.startsAt?String(detail.startsAt):null,endsAt:detail.endsAt?String(detail.endsAt):null,
+          shiftName:detail.shiftName?String(detail.shiftName):null,locationName:detail.locationName?String(detail.locationName):null,
+          note:detail.note?String(detail.note):null,createdAt:detail.createdAt?String(detail.createdAt):null,
+        };
+      }):[],
+    };
+  }):[];
+  return {
+    variantId: String(payload.variantId ?? variantId),
+    issueId: String(payload.issueId ?? issueId),
+    publishedScheduleId: payload.publishedScheduleId ? String(payload.publishedScheduleId) : null,
+    shift: {
+      date: String(shift.date ?? ""),
+      startsAt: String(shift.startsAt ?? ""),
+      endsAt: String(shift.endsAt ?? ""),
+      shiftPeriod: String(shift.shiftPeriod ?? "MIDDLE"),
+    },
+    summary: {
+      considered: numberOf(summary, "considered", "considered"),
+      eligible: numberOf(summary, "eligible", "eligible"),
+      blocked: numberOf(summary, "blocked", "blocked"),
+      reasons,
+    },
+    decisionContext: decisionContext ? {
+      code: String(decisionContext.code ?? ""),
+      standbyTiers: numberOf(decisionContext, "standbyTiers", "standby_tiers"),
+      message: String(decisionContext.message ?? ""),
+    } : null,
+    candidates,
+  };
+}
+
 export async function emergencyAssignV2(
   client: SupabaseClient,
   input: {
@@ -1069,7 +1696,10 @@ export async function getOperationalSolverWorkspace(
   month: string,
 ): Promise<SolverWorkspace | null> {
   const payload = record(await rpc(client, "optimizer_operational_workspace_alpha16", { p_month: month }));
-  if (!payload.workspace) return null;
+  // Older operational wrappers returned `workspace: null` when the month had
+  // no publication. The UI still needs the canonical EMPTY ORTOOLS workspace
+  // so a manager can open the generator and create the first schedule.
+  if (!payload.workspace) return getActiveSolverWorkspace(client, month);
   const workspace = normalizeWorkspace(payload.workspace);
   const overrides = Array.isArray(payload.overrides) ? payload.overrides.map(record) : [];
   if (!overrides.length) return workspace;
@@ -1149,6 +1779,44 @@ export async function getSolverRunsCatalog(
       variants: Array.isArray(source.variants) ? source.variants.map(normalizeVariant) : [],
     };
   }) : [];
+}
+
+export async function getLatestRecoverableSolverRunId(
+  client: SupabaseClient,
+  input: {
+    month: string;
+    scenarioId: string;
+    scopeType: SolverScope;
+    scopeRoleId?: string | null;
+    engine: Exclude<SolverEngine, "ALPHA15">;
+    solverVersion: string;
+  },
+): Promise<string | null> {
+  const catalog = await getSolverRunsCatalog(
+    client,
+    input.month,
+    input.scopeType,
+    input.scopeRoleId,
+  );
+  const candidates = solverRunRecoveryCandidates(catalog, {
+    scenarioId: input.scenarioId,
+    scopeType: input.scopeType,
+    scopeRoleId: input.scopeRoleId,
+  });
+
+  for (const candidate of candidates) {
+    try {
+      const status = await getSolverStatus(client, candidate.id);
+      if (
+        status.run.requestEngine === input.engine
+        && status.run.solverVersion === input.solverVersion
+      ) return candidate.id;
+    } catch (error) {
+      if (String(error instanceof Error ? error.message : error).toUpperCase().includes("RUN_NOT_FOUND")) continue;
+      throw error;
+    }
+  }
+  return null;
 }
 
 export function isActiveOrtoolsWorkspace(workspace: SolverWorkspace | null): workspace is SolverWorkspace {
@@ -1323,17 +1991,34 @@ function normalizeEmployeeAssignment(value: unknown): SolverEmployeePublishedAss
   };
 }
 
-export async function getEmployeePublishedAssignments(
+export async function getEmployeePublishedSchedule(
   client: SupabaseClient,
   month: string,
-): Promise<SolverEmployeePublishedAssignment[]> {
-  const value = await rpc(client, "optimizer_employee_published_schedule_v2", { p_month: month });
-  if (value === null || value === undefined) return [];
+): Promise<SolverEmployeePublishedSchedule> {
+  const value = await rpc(client, "optimizer_employee_schedule_uat_v3", { p_month: month });
+  if (value === null || value === undefined) return { assignments: [], standby: [] };
   const payload = record(value);
   if (payload.engine !== "ORTOOLS_V2") throw new Error("EMPLOYEE_PUBLISHED_SCHEDULE_ENGINE_INVALID");
-  if (Array.isArray(payload.assignments)) return payload.assignments.map(normalizeEmployeeAssignment);
+  const standby = Array.isArray(payload.standby) ? payload.standby.map((item) => {
+    const source = record(item);
+    const tier = Number(source.tier);
+    if (tier !== 1 && tier !== 2) throw new Error("EMPLOYEE_STANDBY_TIER_INVALID");
+    return {
+      id: String(source.id ?? ""),
+      date: String(source.date ?? ""),
+      tier,
+      status: String(source.status ?? "PLANNED") as SolverEmployeeStandby["status"],
+      roleId: String(source.roleId ?? ""),
+      roleName: String(source.roleName ?? ""),
+      activatedShiftId: source.activatedShiftId ? String(source.activatedShiftId) : undefined,
+    } satisfies SolverEmployeeStandby;
+  }) : [];
+  if (Array.isArray(payload.assignments)) return {
+    assignments: payload.assignments.map(normalizeEmployeeAssignment),
+    standby,
+  };
   if (!Array.isArray(payload.shifts)) throw new Error("EMPLOYEE_PUBLISHED_SCHEDULE_INVALID");
-  return payload.shifts.flatMap(shiftValue => {
+  const assignments = payload.shifts.flatMap(shiftValue => {
     const shift = record(shiftValue);
     const location = normalizeNamedEntity(shift.location);
     const locationSource = record(shift.location);
@@ -1359,7 +2044,390 @@ export async function getEmployeePublishedAssignments(
       } satisfies SolverEmployeePublishedAssignment;
     });
   });
+  return { assignments, standby };
 }
+
+export async function getEmployeePublishedAssignments(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverEmployeePublishedAssignment[]> {
+  return (await getEmployeePublishedSchedule(client, month)).assignments;
+}
+
+export async function getPublicationAuthorityStatus(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverPublicationAuthorityStatus> {
+  return record(await rpc(client, "schedule_publication_status_uat_v2", {
+    p_month: month,
+  })) as SolverPublicationAuthorityStatus;
+}
+
+export async function resolvePublicationAuthority(
+  client: SupabaseClient,
+  month: string,
+  keepSource: "COMPANY" | "ROLES",
+  reason: string,
+): Promise<SolverPublicationAuthorityStatus> {
+  return record(await rpc(client, "schedule_publication_resolve_with_standby_uat_v2", {
+    p_month: month,
+    p_keep_source: keepSource,
+    p_reason: reason,
+  })) as SolverPublicationAuthorityStatus;
+}
+
+export async function getVariantWorkspace(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkspace> {
+  return normalizeWorkspace(await rpc(client, "optimizer_variant_workspace_uat_v2", {
+    p_variant_id: variantId,
+  }));
+}
+
+function normalizeLeaderVariant(value: unknown): SolverLeaderVariant | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = record(value);
+  const id = String(source.id ?? source.variantId ?? "");
+  const sourceVariantId = String(source.sourceVariantId ?? source.source_variant_id ?? "");
+  if (!id) return null;
+  return {
+    id,
+    sourceVariantId,
+    name: String(source.name ?? "Wersja lidera"),
+    status: String(source.status ?? "SELECTED"),
+    revision: Number(source.revision ?? 0),
+    assignmentCount: numberOf(source, "assignmentCount", "assignment_count"),
+    unfilledCount: numberOf(source, "unfilledCount", "unfilled_count"),
+    lastEditedAt: source.lastEditedAt ? String(source.lastEditedAt) : null,
+  };
+}
+
+export async function getLeaderVariantForRun(
+  client: SupabaseClient,
+  runId: string,
+): Promise<SolverLeaderVariant | null> {
+  const payload = record(await rpc(client, "optimizer_leader_variant_for_run_uat_v1", {
+    p_run_id: runId,
+  }));
+  return normalizeLeaderVariant(payload.variant);
+}
+
+export async function createLeaderVariant(
+  client: SupabaseClient,
+  input: { runId: string; sourceVariantId: string; name: string },
+): Promise<SolverLeaderVariant> {
+  const payload = record(await rpc(client, "optimizer_create_leader_variant_uat_v1", {
+    p_run_id: input.runId,
+    p_source_variant_id: input.sourceVariantId,
+    p_name: input.name,
+  }));
+  const normalized = normalizeLeaderVariant({
+    ...payload,
+    status: "SELECTED",
+    assignmentCount: 0,
+    unfilledCount: 0,
+  });
+  if (!normalized) throw new Error("LEADER_VARIANT_CREATE_FAILED");
+  return normalized;
+}
+
+export async function getLeaderVariantWorkspace(
+  client: SupabaseClient,
+  variantId: string,
+): Promise<SolverWorkspace> {
+  return normalizeWorkspace(await rpc(client, "optimizer_leader_variant_workspace_uat_v1", {
+    p_variant_id: variantId,
+  }));
+}
+
+export async function getLeaderAssignmentContext(
+  client: SupabaseClient,
+  input: { variantId: string; assignmentId?: string | null; issueId?: string | null },
+): Promise<SolverLeaderAssignmentContext> {
+  const payload = record(await rpc(client, "optimizer_leader_assignment_context_uat_v4", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+  }));
+  const role = record(payload.role), shift = record(payload.shift), duty = payload.duty ? record(payload.duty) : null;
+  return {
+    variantId: String(payload.variantId ?? input.variantId),
+    assignmentId: payload.assignmentId ? String(payload.assignmentId) : null,
+    issueId: payload.issueId ? String(payload.issueId) : null,
+    slotKey: String(payload.slotKey ?? ""),
+    currentEmployeeId: payload.currentEmployeeId ? String(payload.currentEmployeeId) : null,
+    role: { id: String(role.id ?? ""), name: String(role.name ?? "Rola") },
+    duty: duty ? { id: String(duty.id ?? ""), name: String(duty.name ?? "Obowiązek") } : null,
+    shift: {
+      id: String(shift.id ?? ""), date: String(shift.date ?? ""),
+      startsAt: String(shift.startsAt ?? ""), endsAt: String(shift.endsAt ?? ""),
+      locationId: String(shift.locationId ?? ""), locationName: String(shift.locationName ?? "Lokal"),
+      shiftName: String(shift.shiftName ?? "Zmiana"),
+    },
+    candidates: Array.isArray(payload.candidates) ? payload.candidates.map(value => {
+      const candidate = record(value);
+      return {
+        employeeId: String(candidate.employeeId ?? ""),
+        employeeNo: String(candidate.employeeNo ?? ""),
+        employeeName: String(candidate.employeeName ?? ""),
+        current: Boolean(candidate.current),
+        roleName: candidate.roleName ? String(candidate.roleName) : undefined,
+        locationName: candidate.locationName ? String(candidate.locationName) : undefined,
+        dutyName: candidate.dutyName ? String(candidate.dutyName) : null,
+        dutyMatch: Boolean(candidate.dutyMatch),
+        dutyCoverageMode: String(candidate.dutyCoverageMode??"NOT_COVERED") as "DIRECT"|"TRANSFER"|"NOT_COVERED",
+        dutyTransferAssignmentId: candidate.dutyTransferAssignmentId?String(candidate.dutyTransferAssignmentId):null,
+        dutyTransferEmployeeId: candidate.dutyTransferEmployeeId?String(candidate.dutyTransferEmployeeId):null,
+        dutyTransferEmployeeName: candidate.dutyTransferEmployeeName?String(candidate.dutyTransferEmployeeName):null,
+        availabilityStatus: String(candidate.availabilityStatus??"UNKNOWN"),
+        suggestionEligible: Boolean(candidate.suggestionEligible),
+        overtimePolicy: String(candidate.overtimePolicy??"NEVER") as "NEVER"|"APPROVAL_REQUIRED"|"ALLOWED",
+        nominalMonthlyMinutes: numberOf(candidate,"nominalMonthlyMinutes","nominal_monthly_minutes"),
+        currentMonthlyMinutes: numberOf(candidate,"currentMonthlyMinutes","current_monthly_minutes"),
+        projectedMonthlyMinutes: numberOf(candidate,"projectedMonthlyMinutes","projected_monthly_minutes"),
+        overtimeBeforeMinutes: numberOf(candidate,"overtimeBeforeMinutes","overtime_before_minutes"),
+        overtimeAfterMinutes: numberOf(candidate,"overtimeAfterMinutes","overtime_after_minutes"),
+        addedOvertimeMinutes: numberOf(candidate,"addedOvertimeMinutes","added_overtime_minutes"),
+        currentTotalCostMinor: numberOf(candidate,"currentTotalCostMinor","current_total_cost_minor"),
+        projectedTotalCostMinor: numberOf(candidate,"projectedTotalCostMinor","projected_total_cost_minor"),
+        addedCostMinor: numberOf(candidate,"addedCostMinor","added_cost_minor"),
+        currency: String(candidate.currency??"PLN"),
+        overtimeApprovalRequired: Boolean(candidate.overtimeApprovalRequired),
+        overtimeBlocked: Boolean(candidate.overtimeBlocked),
+      };
+    }) : [],
+  };
+}
+
+export async function getEmployeeAvailabilityMonth(
+  client:SupabaseClient,variantId:string,employeeIds:string[],
+):Promise<SolverEmployeeDayAvailability[]>{
+  const value=await rpc(client,"optimizer_employee_availability_month_uat_v1",{
+    p_variant_id:variantId,p_employee_ids:employeeIds,
+  });
+  if(!Array.isArray(value))return [];
+  return value.map(item=>{const row=record(item);return{
+    employeeId:String(row.employeeId??""),date:String(row.date??""),
+    scheduled:Boolean(row.scheduled),status:String(row.status??"UNKNOWN"),label:String(row.label??"Wymaga sprawdzenia"),
+  };});
+}
+
+export async function saveLeaderAssignment(
+  client: SupabaseClient,
+  input: {
+    variantId: string; assignmentId?: string | null; issueId?: string | null;
+    employeeId: string; reason: string; allowLimitOverride?: boolean;
+    dutyTransferAssignmentId?: string|null;
+    approveOvertime?: boolean;
+  },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_save_uat_v4", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+    p_employee_id: input.employeeId,
+    p_reason: input.reason,
+    p_allow_limit_override: input.allowLimitOverride ?? false,
+    p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
+    p_approve_overtime: input.approveOvertime ?? false,
+  }));
+}
+
+export async function createManualLeaderStudio(
+  client: SupabaseClient,
+  input: {
+    month: string; scenarioId: string; scopeType: SolverScope;
+    scopeRoleId?: string | null; name: string; solverVersion: string;
+  },
+): Promise<{runId:string;leader:SolverLeaderVariant}> {
+  const payload=record(await rpc(client,"optimizer_create_manual_leader_studio_uat_v1",{
+    p_month:input.month,p_scenario_id:input.scenarioId,p_scope_type:input.scopeType,
+    p_scope_role_id:input.scopeRoleId??null,p_name:input.name,p_solver_version:input.solverVersion,
+  }));
+  const runId=String(payload.runId??"");
+  const variantId=String(payload.variantId??"");
+  if(!runId||!variantId)throw new Error("MANUAL_STUDIO_CREATE_FAILED");
+  return {runId,leader:{
+    id:variantId,sourceVariantId:"",name:String(payload.name??input.name),status:"SELECTED",
+    revision:numberOf(payload,"revision","revision"),
+    assignmentCount:numberOf(payload,"assignmentCount","assignment_count"),
+    unfilledCount:numberOf(payload,"unfilledCount","unfilled_count"),lastEditedAt:null,
+  }};
+}
+
+export async function requestLeaderRefill(client:SupabaseClient,input:{variantId:string;reason:string;idempotencyKey:string}){
+  const payload=record(await rpc(client,"optimizer_leader_refill_request_uat_v1",{
+    p_variant_id:input.variantId,p_reason:input.reason,p_idempotency_key:input.idempotencyKey,
+  }));
+  const runId=String(payload.runId??"");
+  if(!runId)throw new Error("RUN_ID_MISSING");
+  return {runId,leaderRevision:numberOf(payload,"leaderRevision","leader_revision")};
+}
+
+export async function applyLeaderRefill(client:SupabaseClient,input:{leaderVariantId:string;sourceVariantId:string;reason:string}){
+  return record(await rpc(client,"optimizer_leader_refill_apply_uat_v1",{
+    p_leader_variant_id:input.leaderVariantId,p_source_variant_id:input.sourceVariantId,p_reason:input.reason,
+  }));
+}
+
+export type SolverLeaderOptimizationMode="COST"|"FAIRNESS"|"PROPOSE_ONLY";
+
+export async function requestLeaderReoptimization(client:SupabaseClient,input:{
+  variantId:string;mode:SolverLeaderOptimizationMode;reason:string;idempotencyKey:string;
+}){
+  const payload=record(await rpc(client,"optimizer_leader_reoptimization_request_uat_v1",{
+    p_variant_id:input.variantId,p_mode:input.mode,p_reason:input.reason,
+    p_idempotency_key:input.idempotencyKey,
+  }));
+  const runId=String(payload.runId??"");
+  if(!runId)throw new Error("RUN_ID_MISSING");
+  return {
+    runId,mode:String(payload.mode??input.mode) as SolverLeaderOptimizationMode,
+    leaderRevision:numberOf(payload,"leaderRevision","leader_revision"),
+    lockedAssignments:numberOf(payload,"lockedAssignments","locked_assignments"),
+  };
+}
+
+export async function applyLeaderReoptimization(client:SupabaseClient,input:{
+  leaderVariantId:string;sourceVariantId:string;reason:string;
+}){
+  return record(await rpc(client,"optimizer_leader_reoptimization_apply_uat_v1",{
+    p_leader_variant_id:input.leaderVariantId,p_source_variant_id:input.sourceVariantId,
+    p_reason:input.reason,
+  }));
+}
+
+export async function validateLeaderAssignment(
+  client: SupabaseClient,
+  input: {
+    variantId: string; assignmentId?: string | null; issueId?: string | null;
+    employeeId: string; allowLimitOverride?: boolean;
+    dutyTransferAssignmentId?: string|null;
+    approveOvertime?: boolean;
+  },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_validate_uat_v2", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId ?? null,
+    p_issue_id: input.issueId ? Number(input.issueId) : null,
+    p_employee_id: input.employeeId,
+    p_allow_limit_override: input.allowLimitOverride ?? false,
+    p_duty_transfer_assignment_id: input.dutyTransferAssignmentId ?? null,
+    p_approve_overtime: input.approveOvertime ?? false,
+  }));
+}
+
+export async function removeLeaderAssignment(
+  client: SupabaseClient,
+  input: { variantId: string; assignmentId: string; reason: string },
+) {
+  return record(await rpc(client, "optimizer_leader_assignment_remove_uat_v1", {
+    p_variant_id: input.variantId,
+    p_assignment_id: input.assignmentId,
+    p_reason: input.reason,
+  }));
+}
+
+export type SolverLeaderHistoryStatus={
+  canUndo:boolean;canRedo:boolean;
+  entries:Array<{seq:number;revision:number;label:string;createdAt:string;current:boolean;isCheckpoint:boolean;checkpointName:string|null}>;
+};
+
+export type SolverLeaderWorkflowStatus="DRAFT"|"REVIEW"|"LEADER_APPROVED"|"READY_TO_MERGE"|"PUBLISHED";
+
+export type SolverLeaderDraftValidation={
+  variantId:string;
+  revision:number;
+  workloadRevision:number;
+  valid:boolean;
+  hardViolations:number;
+  unfilledCount:number;
+  assignmentCount:number;
+  zeroHoursCount:number;
+  belowTargetCount:number;
+  overtimeMinutes:number;
+  preferenceViolations:number;
+};
+
+export async function validateLeaderDraft(client:SupabaseClient,variantId:string):Promise<SolverLeaderDraftValidation>{
+  const [rawValidation,workload]=await Promise.all([
+    rpc(client,"optimizer_leader_draft_validate_uat_v1",{p_variant_id:variantId}),
+    getVariantWorkloadDistribution(client,variantId),
+  ]);
+  const payload=record(rawValidation);
+  const validation=record(payload.validation);
+  const revision=requiredRevisionOf(payload,"LEADER_DRAFT_VALIDATION_REVISION_INVALID");
+  const workloadRevision=workload.revision;
+  if(workloadRevision!==revision){
+    throw new Error(`LEADER_DRAFT_VALIDATION_REVISION_MISMATCH:${revision}:${workloadRevision}`);
+  }
+  const workloadRows=workload.employees;
+  return {
+    variantId:String(payload.variantId??variantId),
+    revision,
+    workloadRevision,
+    valid:Boolean(payload.valid),
+    hardViolations:numberOf(validation,"hardViolations","hard_violations"),
+    unfilledCount:numberOf(validation,"unfilledCount","unfilled_count"),
+    assignmentCount:numberOf(validation,"assignmentCount","assignment_count"),
+    zeroHoursCount:workloadRows.filter(row=>
+      row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes===0).length,
+    belowTargetCount:workloadRows.filter(row=>
+      row.nominalMonthlyMinutes>0&&row.totalMonthlyMinutes<row.nominalMonthlyMinutes).length,
+    overtimeMinutes:workloadRows.reduce((total,row)=>total+row.overtimeMinutes,0),
+    preferenceViolations:workloadRows.reduce((total,row)=>total+row.preferenceViolations,0),
+  };
+}
+
+export async function getLeaderWorkflowStatus(client:SupabaseClient,variantId:string):Promise<SolverLeaderWorkflowStatus>{
+  const value=record(await rpc(client,"optimizer_leader_workflow_status_uat_v1",{p_variant_id:variantId}));
+  return String(value.status??"DRAFT") as SolverLeaderWorkflowStatus;
+}
+
+export async function transitionLeaderWorkflow(client:SupabaseClient,input:{variantId:string;targetStatus:SolverLeaderWorkflowStatus;reason:string}){
+  return record(await rpc(client,"optimizer_leader_workflow_transition_uat_v1",{
+    p_variant_id:input.variantId,p_target_status:input.targetStatus,p_reason:input.reason,
+  }));
+}
+
+export async function getLeaderHistoryStatus(
+  client:SupabaseClient,variantId:string,
+):Promise<SolverLeaderHistoryStatus>{
+  const payload=record(await rpc(client,"optimizer_leader_history_status_uat_v1",{p_variant_id:variantId}));
+  return {canUndo:Boolean(payload.canUndo),canRedo:Boolean(payload.canRedo),entries:Array.isArray(payload.entries)
+    ?payload.entries.map(value=>{const row=record(value);return{seq:numberOf(row,"seq","seq"),revision:numberOf(row,"revision","revision"),label:String(row.label??"Zmiana w Studio"),createdAt:String(row.createdAt??""),current:Boolean(row.current),isCheckpoint:Boolean(row.isCheckpoint),checkpointName:row.checkpointName?String(row.checkpointName):null};}):[]};
+}
+
+export async function moveLeaderHistory(
+  client:SupabaseClient,variantId:string,direction:"UNDO"|"REDO",
+){return record(await rpc(client,"optimizer_leader_history_move_uat_v1",{p_variant_id:variantId,p_direction:direction}));}
+
+export async function createLeaderCheckpoint(
+  client:SupabaseClient,variantId:string,name:string,
+){return record(await rpc(client,"optimizer_leader_checkpoint_create_uat_v1",{p_variant_id:variantId,p_name:name}));}
+
+export async function restoreLeaderCheckpoint(
+  client:SupabaseClient,input:{variantId:string;historySeq:number;reason:string},
+){return record(await rpc(client,"optimizer_leader_checkpoint_restore_uat_v1",{
+  p_variant_id:input.variantId,p_history_seq:input.historySeq,p_reason:input.reason,
+}));}
+
+export async function dragLeaderAssignment(
+  client:SupabaseClient,input:{variantId:string;sourceAssignmentId:string;
+    targetAssignmentId?:string|null;targetIssueId?:string|null;reason:string},
+){return record(await rpc(client,"optimizer_leader_assignment_drag_uat_v1",{
+  p_variant_id:input.variantId,p_source_assignment_id:input.sourceAssignmentId,
+  p_target_assignment_id:input.targetAssignmentId??null,
+  p_target_issue_id:input.targetIssueId?Number(input.targetIssueId):null,p_reason:input.reason,
+}));}
+
+export async function setLeaderAssignmentLock(
+  client:SupabaseClient,input:{variantId:string;assignmentId:string;locked:boolean;reason:string},
+){return record(await rpc(client,"optimizer_leader_assignment_lock_uat_v1",{
+  p_variant_id:input.variantId,p_assignment_id:input.assignmentId,
+  p_locked:input.locked,p_reason:input.reason,
+}));}
 
 export async function getRoleCompositeCandidates(
   client: SupabaseClient,
@@ -1372,6 +2440,109 @@ export async function getRoleCompositeCandidates(
   }));
 }
 
+export async function bulkLeaderAssignments(client:SupabaseClient,input:{variantId:string;assignmentIds:string[];operation:"LOCK"|"UNLOCK"|"REMOVE";reason:string}){
+  return record(await rpc(client,"optimizer_leader_assignments_bulk_uat_v1",{
+    p_variant_id:input.variantId,p_assignment_ids:input.assignmentIds,
+    p_operation:input.operation,p_reason:input.reason,
+  }));
+}
+
+export type SolverLeaderDragPreview={
+  valid:boolean;
+  errorCode?:string;
+  operation?:"MOVE"|"SWAP";
+};
+
+export async function previewLeaderAssignmentDrag(
+  client:SupabaseClient,
+  input:{variantId:string;sourceAssignmentId:string;targetAssignmentId?:string;targetIssueId?:string},
+):Promise<SolverLeaderDragPreview>{
+  const value=record(await rpc(client,"optimizer_leader_assignment_drag_preview_uat_v1",{
+    p_variant_id:input.variantId,p_source_assignment_id:input.sourceAssignmentId,
+    p_target_assignment_id:input.targetAssignmentId??null,p_target_issue_id:input.targetIssueId??null,
+  }));
+  return {valid:Boolean(value.valid),errorCode:value.errorCode?String(value.errorCode):undefined,
+    operation:value.operation?String(value.operation) as "MOVE"|"SWAP":undefined};
+}
+
+export async function getRoleCompositePreflight(
+  client: SupabaseClient,
+  month: string,
+  scenarioId: string,
+  variantIds: string[],
+): Promise<SolverRoleCompositePreflight> {
+  const payload = record(await rpc(client, "optimizer_role_composite_preflight_uat_v2", {
+    p_month: month,
+    p_scenario_id: scenarioId,
+    p_variant_ids: variantIds,
+  }));
+  const gaps = Array.isArray(payload.gaps) ? payload.gaps.map(value => {
+    const row = record(value);
+    return {
+      issueId: String(valueOf(row, "issueId", "issue_id", "")),
+      variantId: String(valueOf(row, "variantId", "variant_id", "")),
+      date: String(valueOf(row, "date", "date", "")),
+      startsAt: String(valueOf(row, "startsAt", "starts_at", "")),
+      endsAt: String(valueOf(row, "endsAt", "ends_at", "")),
+      location: String(valueOf(row, "location", "location", "Lokal")),
+      role: String(valueOf(row, "role", "role", "Rola")),
+      duty: valueOf<string | undefined>(row, "duty", "duty", undefined),
+      requiredCount: numberOf(row, "requiredCount", "required_count"),
+      assignedCount: numberOf(row, "assignedCount", "assigned_count"),
+      missingCount: numberOf(row, "missingCount", "missing_count"),
+      critical: Boolean(valueOf(row, "critical", "critical", false)),
+      message: String(valueOf(row, "message", "message", "Brak obsady")),
+    };
+  }) : [];
+  return {
+    month: String(valueOf(payload, "month", "month", month)),
+    scenarioId: String(valueOf(payload, "scenarioId", "scenario_id", scenarioId)),
+    totalGaps: numberOf(payload, "totalGaps", "total_gaps"),
+    criticalGaps: numberOf(payload, "criticalGaps", "critical_gaps"),
+    gaps,
+  };
+}
+
+export async function getRolePublicationOverview(
+  client: SupabaseClient,
+  month: string,
+): Promise<SolverRolePublicationOverview> {
+  const payload = record(await rpc(client, "optimizer_role_publication_overview_uat_v2", {
+    p_month: month,
+  }));
+  const totals = record(payload.totals);
+  const roles = Array.isArray(payload.roles) ? payload.roles.map(value => {
+    const row = record(value), role = record(row.role), scenario = record(row.scenario);
+    return {
+      publicationId: String(row.publicationId ?? ""),
+      name: String(row.name ?? ""),
+      publishedAt: String(row.publishedAt ?? ""),
+      role: { id: String(role.id ?? ""), name: String(role.name ?? "") },
+      scenario: { id: String(scenario.id ?? ""), name: String(scenario.name ?? "") },
+      variantId: String(row.variantId ?? ""),
+      assignmentCount: numberOf(row, "assignmentCount", "assignment_count"),
+      unfilledCount: numberOf(row, "unfilledCount", "unfilled_count"),
+      overtimeMinutes: numberOf(row, "overtimeMinutes", "overtime_minutes"),
+      totalCostMinor: numberOf(row, "totalCostMinor", "total_cost_minor"),
+      currency: String(row.currency ?? "PLN"),
+      teamSize: numberOf(row, "teamSize", "team_size"),
+      scheduledMinutes: numberOf(row, "scheduledMinutes", "scheduled_minutes"),
+    };
+  }) : [];
+  return {
+    month: String(payload.month ?? month),
+    totals: {
+      publishedRoles: numberOf(totals, "publishedRoles", "published_roles"),
+      assignmentCount: numberOf(totals, "assignmentCount", "assignment_count"),
+      unfilledCount: numberOf(totals, "unfilledCount", "unfilled_count"),
+      overtimeMinutes: numberOf(totals, "overtimeMinutes", "overtime_minutes"),
+      totalCostMinor: numberOf(totals, "totalCostMinor", "total_cost_minor"),
+      scheduledMinutes: numberOf(totals, "scheduledMinutes", "scheduled_minutes"),
+    },
+    roles,
+  };
+}
+
 export async function publishRoleComposite(
   client: SupabaseClient,
   input: {
@@ -1380,14 +2551,16 @@ export async function publishRoleComposite(
     variantIds: string[];
     name: string;
     idempotencyKey: string;
+    warningReason?: string;
   },
 ): Promise<SolverPublication> {
-  const payload = record(await rpc(client, "optimizer_publish_role_composite_v2", {
+  const payload = record(await rpc(client, "optimizer_publish_role_composite_uat_v3", {
     p_month: input.month,
     p_scenario_id: input.scenarioId,
     p_variant_ids: input.variantIds,
     p_name: input.name,
     p_idempotency_key: input.idempotencyKey,
+    p_warning_reason: input.warningReason?.trim() || null,
   }));
   const scheduleId = String(valueOf(payload, "scheduleId", "schedule_id", ""));
   if (!scheduleId) throw new Error("SCHEDULE_ID_MISSING");
@@ -1396,6 +2569,32 @@ export async function publishRoleComposite(
     status: String(valueOf(payload, "status", "status", "PUBLISHED")),
     sourceType: String(valueOf(payload, "sourceType", "source_type", "ROLE_COMPOSITE")),
     reused: Boolean(valueOf(payload, "reused", "reused", false)),
+  };
+}
+
+export async function publishRoleVariant(
+  client: SupabaseClient,
+  input: {
+    runId: string;
+    variantId: string;
+    name: string;
+    idempotencyKey: string;
+  },
+): Promise<{ roleScheduleId: string; status: string; reused: boolean; changed: number; notified: number }> {
+  const payload = record(await rpc(client, "optimizer_publish_role_variant_uat_v2", {
+    p_run_id: input.runId,
+    p_variant_id: input.variantId,
+    p_name: input.name,
+    p_idempotency_key: input.idempotencyKey,
+  }));
+  const roleScheduleId = String(valueOf(payload, "roleScheduleId", "role_schedule_id", ""));
+  if (!roleScheduleId) throw new Error("ROLE_SCHEDULE_ID_MISSING");
+  return {
+    roleScheduleId,
+    status: String(valueOf(payload, "status", "status", "PUBLISHED")),
+    reused: Boolean(valueOf(payload, "reused", "reused", false)),
+    changed: numberOf(payload, "changed", "changed"),
+    notified: numberOf(payload, "notified", "notified"),
   };
 }
 
@@ -1580,17 +2779,29 @@ const STATUS_LABELS: Record<string, string> = {
   CANCEL_REQUESTED: "Zatrzymywanie",
   CANCELLED: "Generowanie zatrzymane",
   FAILED: "Generowanie nie powiodło się",
-  STALE_INPUT: "Matrix zmienił się w trakcie obliczeń",
+  STALE_INPUT: "Konfiguracja firmy zmieniła się w trakcie obliczeń",
 };
 
 const PHASE_LABELS: Record<string, string> = {
   QUEUED: "Przygotowanie danych",
-  SNAPSHOT: "Zapisywanie konfiguracji Matrixa",
+  RETRY_QUEUED: "Oczekiwanie na automatyczne ponowienie",
+  CLAIMED: "Worker odebrał zadanie",
+  STARTING: "Uruchamianie workera",
+  LOADING: "Wczytywanie konfiguracji firmy",
+  SNAPSHOT: "Zapisywanie konfiguracji użytej do obliczeń",
   MODEL: "Budowanie modelu grafiku",
   SOLVING: "Szukanie najlepszego rozwiązania",
   VALIDATING: "Sprawdzanie wyniku",
+  SAVING: "Zapisywanie policzonych wariantów",
+  SAVING_VARIANTS: "Zapisywanie policzonych wariantów",
+  FINALIZING: "Końcowa kontrola i zamknięcie przebiegu",
+  DATABASE_VALIDATION: "Końcowa kontrola spójności w bazie",
   MATERIALIZING: "Zapisywanie wariantów",
   READY: "Gotowe do porównania",
+  FAILED: "Błąd generowania",
+  STALE_INPUT: "Dane zmieniły się podczas generowania",
+  CANCEL_REQUESTED: "Bezpieczne zatrzymywanie",
+  CANCELLED: "Generowanie zatrzymane",
 };
 
 export function solverStatusLabel(status: string) {
@@ -1603,38 +2814,85 @@ export function solverPhaseLabel(phase: string) {
 
 export function solverErrorMessage(message: string) {
   const normalized = message.toUpperCase();
+  if (normalized.includes("FAIRNESS_QUALITY_GATE_FAILED")) return "Ten starszy przebieg został zatrzymany przez wycofaną, blokującą bramkę jakości fairness. Uruchom nowe generowanie: obecna wersja zawsze pokaże najlepszy legalny grafik, a niespełnienie celu 70% / 30 p.p. oznaczy nieblokującym ostrzeżeniem.";
+  if (normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_MISMATCH")) return "Szkic zmienił się podczas kontroli całego grafiku. Wynik nie został uznany za aktualny — uruchom „Sprawdź cały grafik” ponownie dla bieżącej rewizji.";
+  if (normalized.includes("WORKLOAD_VARIANT_MISMATCH") || normalized.includes("WORKLOAD_VARIANT_ID_INVALID")) return "Serwer zwrócił analizę godzin dla innego lub nieoznaczonego wariantu. Dane nie zostały pokazane. Odśwież Studio lidera i ponów pełną analizę bieżącego szkicu.";
+  if (normalized.includes("WORKLOAD_REVISION_INVALID") || normalized.includes("WORKLOAD_EMPLOYEES_INVALID") || normalized.includes("LEADER_DRAFT_VALIDATION_REVISION_INVALID")) return "Serwer zwrócił niepełną analizę godzin bez prawidłowej rewizji lub listy pracowników. Dane nie zostały uznane za aktualne. Odśwież Studio lidera i uruchom „Sprawdź cały grafik” ponownie.";
+  if (normalized.includes("ROLE_BACKUP_PENALTY_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że użycie roli dodatkowej było konieczne do uniknięcia braku obsady. Ponów generowanie albo zwiększ czas obliczeń.";
+  if (normalized.includes("PRIMARY_ROLE_GUARD_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że brak zmiany w aktywnej roli podstawowej lub standardowej był nieunikniony. Ponów generowanie albo zwiększ czas obliczeń.";
+  if (normalized.includes("ZERO_HOUR_GUARD_UNPROVEN")) return "Generator nie pokazał wyniku, ponieważ w dostępnym czasie nie udowodnił, że pozostawienie pracownika z 0 h w miesiącu było nieuniknione. Ponów generowanie albo zwiększ czas obliczeń.";
+  if (normalized.includes("CONSTRAINT REFERENCES MISSING EMPLOYEE")) return "Generator wykrył niespójność danych wejściowych kategorii: ograniczenie pracownika znalazło się poza listą osób tego grafiku. Ten przebieg nie zmienił żadnych danych. Odśwież aplikację po wdrożeniu poprawki i uruchom nowe generowanie.";
+  if (normalized.includes("OVERTIME_PAY_RULE_MISSING")) return "Co najmniej jedna osoba ma zgodę „TAK” lub „TYLKO PO ZATWIERDZENIU”, ale nie ustawiono reguły dodatku po indywidualnym nominale. Przejdź do Ustawienia → Reguły płacowe, dodaj regułę miesięczną z progiem „Indywidualny nominał pracownika” i dopiero potem uruchom grafik.";
+  if (normalized.includes("STRATEGY_RESULT_DOMINATED")) return "Generator odrzucił wariant, ponieważ inny wynik był od niego lepszy we wszystkich celach tej strategii. Żaden mylący wariant nie został udostępniony. Uruchom generowanie ponownie; jeśli problem wróci, przekaż kod STRATEGY_RESULT_DOMINATED administratorowi UAT.";
+  if (normalized.includes("UNFILLED_NOT_PROVEN")) return "W konfiguracji jest włączony tryb audytowy, a generator nie zdążył formalnie udowodnić minimalnej liczby braków. Przejdź do Ustawienia → Zaawansowane ustawienia silnika, wyłącz wymaganie matematycznego dowodu optimum dla zwykłego planowania, opublikuj konfigurację i uruchom nowe generowanie.";
+  if (normalized.includes("OPTIMIZATION_INCOMPLETE")
+    || (normalized.includes("ENDED INCOMPLETE") && normalized.includes("STATUS=FEASIBLE"))) {
+    return "Silnik znalazł poprawny grafik, ale nie zdążył matematycznie potwierdzić, że nie istnieje lepszy układ. Konfiguracja użyta przez ten przebieg miała włączony tryb audytowy, dlatego wynik nie został zapisany. Do zwykłego planowania wyłącz „Tryb audytowy: wymagaj matematycznego dowodu optimum”, opublikuj konfigurację firmy i uruchom nowe generowanie.";
+  }
+  if (normalized.includes("RUN_VARIANTS_INCOMPLETE")) return "Końcowa kontrola wykryła, że nie zapisano wyniku dla każdej strategii. Przebieg nie zostanie opublikowany; szczegółowa przyczyna pozostaje w historii próby.";
+  if (normalized.includes("RUN_REQUIRES_OPTIMAL_VARIANTS")) return "Konfiguracja wymaga matematycznego dowodu optimum, a co najmniej jeden wariant jest poprawny, lecz silnik nie potwierdził optimum w dostępnym czasie. Zwiększ limit czasu albo świadomie dopuść najlepsze znalezione rozwiązanie i uruchom ponownie.";
+  if (normalized.includes("ROLE_PUBLICATION_CONFLICTS_WITH_EXISTING_STANDBY")) return "Nie można opublikować grafiku zespołu, ponieważ co najmniej jedna osoba jest już aktywowana jako rezerwa w tym samym dniu. Sprawdź aktywne zastępstwa w Operacje → Alerty, zakończ konflikt i ponów publikację.";
+  if (normalized.includes("LEASE_LOST")) return "Worker utracił dzierżawę tego zadania. System nie zapisze wyniku z nieaktualnej próby; sprawdź, czy zadanie zostało automatycznie ponowione.";
   if (normalized.includes("SOLVER_CONFIGURATION_MISSING") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_MISSING")) return "Nie ustawiono aktywnego silnika grafiku.";
-  if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji silnika. Odśwież stronę i spróbuj ponownie.";
   if (normalized.includes("SOLVER_ENGINE_INVALID") || normalized.includes("SOLVER_ENGINE_CONFIGURATION_INVALID")) return "Konfiguracja silnika zawiera nieobsługiwaną wartość.";
   if (normalized.includes("SOLVER_VERSION_CONFIGURATION_REQUIRED")) return "Konfiguracja nowego silnika nie wskazuje wersji obrazu workera. Generator pozostaje bezpiecznie zablokowany.";
   if (normalized.includes("RUN_REQUEST_ENGINE_MISMATCH") || normalized.includes("SHADOW_RUN_NOT_PUBLISHABLE")) return "Ten przebieg powstał w innym trybie silnika i nie może zostać użyty produkcyjnie. Uruchom nowe generowanie w bieżącym trybie.";
   if (normalized.includes("RUN_SOLVER_VERSION_MISMATCH") || normalized.includes("RUN_REFERENCE_MISMATCH")) return "Zapisany przebieg pochodzi z innej wersji generatora. Uruchom nowe generowanie na aktualnej wersji.";
   if (normalized.includes("SOLVER_DISABLED")) return "Generator grafiku jest obecnie wyłączony.";
   if (normalized.includes("ORTOOLS_REQUEST_DISABLED") || normalized.includes("ORTOOLS_SELECTION_DISABLED") || normalized.includes("ORTOOLS_PUBLICATION_DISABLED")) return "Nowy silnik nie jest aktywny dla tej operacji. Alpha 15 i tryb cienia pozostają bezpiecznie odseparowane.";
-  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Wersja Matrixa właściwa dla wybranego miesiąca nie została poprawnie opublikowana.";
-  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej wersji Matrixa właściwej dla wybranego miesiąca.";
-  if (normalized.includes("SOLVER_TIMEZONE_MISSING") || normalized.includes("SOLVER_TIMEZONE_INVALID")) return "W aktywnym Matrixie brakuje prawidłowej strefy czasowej.";
-  if (normalized.includes("INVALID_SOLVER_CURRENCY")) return "W aktywnym Matrixie brakuje prawidłowej waluty rozliczeniowej.";
-  if (normalized.includes("SOLVER_MATRIX_SETTINGS_INVALID")) return "Aktywny Matrix nie ma kompletnych reguł bezpieczeństwa generatora.";
-  if (normalized.includes("SOLVER_DEFAULT_SCENARIO_INVALID")) return "Aktywny Matrix musi mieć dokładnie jeden scenariusz domyślny.";
-  if (normalized.includes("SOLVER_SCENARIOS_MISSING")) return "Aktywny Matrix nie zawiera scenariuszy generowania.";
-  if (normalized.includes("SOLVER_STRATEGIES_MISSING")) return "Aktywny Matrix nie zawiera strategii wariantów.";
+  if (normalized.includes("SOLVER_MATRIX_V2_UNPUBLISHED")) return "Konfiguracja firmy dla wybranego miesiąca nie została opublikowana. Przejdź do Ustawienia → Kontrola gotowości, usuń wskazane blokady i opublikuj wersję roboczą.";
+  if (normalized.includes("SOLVER_MATRIX_V2_MISSING") || normalized.includes("MATRIX_V2_FOR_MONTH_NOT_FOUND")) return "Brakuje opublikowanej konfiguracji firmy dla wybranego miesiąca. Przejdź do Ustawienia, wybierz ten miesiąc i dokończ publikację konfiguracji.";
+  if (normalized.includes("SOLVER_CONFIGURATION_UNAVAILABLE")) return "Nie udało się odczytać konfiguracji dla wybranego miesiąca. Przejdź do Ustawienia → Kontrola gotowości i sprawdź wskazane blokady; jeśli konfiguracja jest opublikowana, odśwież dane.";
+  if (normalized.includes("SOLVER_TIMEZONE_MISSING") || normalized.includes("SOLVER_TIMEZONE_INVALID")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej strefy czasowej.";
+  if (normalized.includes("INVALID_SOLVER_CURRENCY")) return "W opublikowanej konfiguracji firmy brakuje prawidłowej waluty rozliczeniowej.";
+  if (normalized.includes("SOLVER_MATRIX_SETTINGS_INVALID")) return "Opublikowana konfiguracja firmy nie ma kompletnych reguł bezpieczeństwa generatora.";
+  if (normalized.includes("SOLVER_DEFAULT_SCENARIO_INVALID")) return "Konfiguracja firmy musi mieć dokładnie jeden domyślny profil zapotrzebowania.";
+  if (normalized.includes("SOLVER_SCENARIOS_MISSING")) return "Konfiguracja firmy nie zawiera profili zapotrzebowania.";
+  if (normalized.includes("SOLVER_STRATEGIES_MISSING")) return "Konfiguracja firmy nie zawiera wariantów biznesowych.";
   if (normalized.includes("SOLVER_SCENARIO_STRATEGIES_MISSING")) return "Każdy aktywny scenariusz musi mieć co najmniej jedną aktywną strategię.";
-  if (normalized.includes("SOLVER_ROLES_MISSING")) return "Aktywny Matrix nie zawiera ról pracowników.";
-  if (normalized.includes("SOLVER_LOCATIONS_MISSING")) return "Aktywny Matrix nie zawiera lokali.";
+  if (normalized.includes("SOLVER_ROLES_MISSING")) return "Opublikowana konfiguracja firmy nie zawiera ról pracowników.";
+  if (normalized.includes("SOLVER_LOCATIONS_MISSING")) return "Opublikowana konfiguracja firmy nie zawiera lokali.";
   if (normalized.includes("VARIANT_STRATEGY_MISSING") || normalized.includes("VARIANT_STRATEGY_INVALID") || normalized.includes("ROLE_COMPOSITE_STRATEGY")) return "Odpowiedź generatora nie zawiera prawidłowej strategii wariantu. Odśwież dane przed kontynuacją.";
   if (normalized.includes("COMPANY_PUBLICATION_FORBIDDEN")) return "Tylko właściciel lub administrator może opublikować grafik całej firmy.";
   if (normalized.includes("WARNING_REASON_REQUIRED")) return "Publikacja z brakami obsady wymaga podania powodu decyzji.";
+  if (normalized.includes("ROLE_COMPOSITE_CRITICAL_GAPS")) return "Scalony grafik zawiera dzień, w którym dla wymaganej roli nie obsadzono nikogo. Otwórz kontrolę braków, wybierz działanie i dopiero potem świadomie potwierdź publikację.";
   if (normalized.includes("PLAN_NOT_READY")) return "Grafik nie jest gotowy do publikacji. Rozwiń listę blokad i przejdź do wskazanych alertów.";
   if (normalized.includes("PUBLICATION_INPUT_CHANGED")) return "Dane firmy zmieniły się od czasu generowania. Uruchom nowy grafik przed publikacją.";
   if (normalized.includes("SELECTED_COMPANY_VARIANT_REQUIRED")) return "Przed publikacją wybierz poprawny wariant grafiku całej firmy.";
   if (normalized.includes("COMPANY_RUN_NOT_READY")) return "Ten grafik nie jest jeszcze gotowy do publikacji.";
   if (normalized.includes("EMERGENCY_ASSIGNMENT_HARD_BLOCK")) return "Tego pracownika nie można dopisać: naruszyłoby to twardą regułę. Rozwiń diagnostykę kandydata.";
+  if (normalized.includes("LEADER_VARIANT_NOT_EDITABLE") || normalized.includes("LEADER_VARIANT_NOT_FOUND")) return "Wersja lidera nie jest już edytowalna. Utwórz świeżą kopię z jednego z trzech wygenerowanych wariantów.";
+  if (normalized.includes("LEADER_REFILL_DRAFT_CHANGED") || normalized.includes("LEADER_OPTIMIZATION_DRAFT_CHANGED")) return "Szkic zmienił się podczas pracy generatora. Żaden wynik nie został zastosowany. Uruchom pomoc ponownie dla bieżącej rewizji Studia.";
+  if (normalized.includes("LEADER_REFILL_NO_VALID_VARIANT") || normalized.includes("LEADER_OPTIMIZATION_NO_VALID_VARIANT")) return "Generator nie zwrócił wariantu, który przeszedł twarde reguły. Szkic pozostał bez zmian; otwórz wynik zadania i sprawdź jego wyjaśnienia.";
+  if (normalized.includes("LEADER_OPTIMIZATION_LOCK_NOT_PRESERVED")) return "Wynik nie zachował co najmniej jednej przypiętej decyzji lidera, dlatego nie został zastosowany. Szkic pozostał bez zmian.";
+  if (normalized.includes("LEADER_OPTIMIZATION_SHIFT_MAPPING_MISSING") || normalized.includes("LEADER_OPTIMIZATION_ASSIGNMENT_COPY_INCOMPLETE")) return "Wynik generatora nie odpowiada dokładnie zmianom tego szkicu, dlatego nie został zastosowany. Szkic pozostał bez zmian; uruchom nowe przeliczenie z bieżącej wersji Studia.";
+  if (normalized.includes("LEADER_OPTIMIZATION_MODE_INVALID")) return "Wybrano nieobsługiwany tryb pomocy generatora. Wróć do Studia i wybierz koszt, sprawiedliwość albo samą propozycję.";
+  if (normalized.includes("LEADER_REFILL_SOURCE_INVALID") || normalized.includes("LEADER_REFILL_SOURCE_MISMATCH") || normalized.includes("LEADER_OPTIMIZATION_SOURCE_INVALID") || normalized.includes("LEADER_OPTIMIZATION_SOURCE_MISMATCH")) return "Wynik generatora nie należy do tego szkicu albo nie przeszedł kontroli. Niczego nie zapisano; uruchom pomoc ponownie z bieżącego Studia.";
+  if (normalized.includes("LEADER_VARIANT_FORBIDDEN")) return "Nie masz uprawnień do przygotowania wersji lidera dla tego zespołu.";
+  if (normalized.includes("LEADER_WORKFLOW_TRANSITION_INVALID")) return "Ten krok akceptacji nie jest dostępny z bieżącego etapu. Odśwież Studio i wybierz następną widoczną akcję.";
+  if (normalized.includes("LEADER_READY_TO_MERGE_FORBIDDEN")) return "Tylko właściciel lub administrator może oznaczyć grafik jako gotowy do scalenia. Lider może wcześniej zatwierdzić swoją wersję.";
+  if (normalized.includes("LEADER_VARIANT_NOT_READY_TO_PUBLISH")) return "Wersja lidera nie jest jeszcze gotowa do publikacji. W Studio wybierz „Sprawdź cały grafik”, przejdź przez zatwierdzenie lidera i oznacz wersję jako gotową do scalenia.";
+  if (normalized.includes("EDIT_REASON_REQUIRED")) return "Krótko opisz powód ręcznej zmiany. Zapiszemy go w historii wersji lidera.";
+  if (normalized.includes("LOCKED_ASSIGNMENT_CANNOT_BE_REMOVED")) return "Tego przydziału nie można usunąć, ponieważ pochodzi z twardo zablokowanej decyzji.";
+  if (normalized.includes("ASSIGNMENT_NOT_FOUND") || normalized.includes("UNFILLED_ISSUE_NOT_FOUND")) return "Wybrane miejsce zmieniło się. Odśwież wersję lidera i spróbuj ponownie.";
+  if (normalized.includes("VARIANT_HARD_BLOCK_INVALID")) return "Nie można zapisać tej osoby: w godzinach zmiany ma twardą niedostępność, urlop albo L4. Wersja lidera nie została zmieniona — wybierz inną osobę lub popraw dostępność z zachowaniem historii publikacji.";
+  if (normalized.includes("VARIANT_AVAILABILITY_INVALID")) return "Nie można zapisać tej osoby: podane godziny nie mieszczą się w jej dostępności. Wersja lidera nie została zmieniona — wybierz inną osobę albo sprawdź kalendarz dostępności.";
+  if (normalized.includes("VARIANT_OVERLAP_OR_REST_INVALID")) return "Nie można zapisać tej osoby: powstałoby nakładanie zmian albo zbyt krótki odpoczynek między nimi. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_MULTIPLE_PRIMARY_SHIFTS_PER_DAY_INVALID")) return "Nie można zapisać tej osoby: osiągnęła dzienny limit zmian ustawiony w konfiguracji firmy. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_CONSECUTIVE_SHIFT_SEQUENCE_INVALID")) return "Nie można zapisać tej osoby: powstałaby niedozwolona sekwencja ostatniej zmiany dnia i pierwszej zmiany następnego dnia. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("LEADER_LIMIT_OVERRIDE_REQUIRED")) return "Ta zmiana przekroczy tygodniowy lub miesięczny limit pracownika. Lider może zapisać ją wyłącznie jako świadomy wyjątek z podanym powodem.";
+  if (normalized.includes("VARIANT_WORK_LIMIT_INVALID") || normalized.includes("VARIANT_CONSECUTIVE_DAYS_INVALID")) return "Nie można zapisać tej osoby: przekroczyłaby limit pracy zapisany w konfiguracji firmy lub pracownika. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_EMPLOYEE_ELIGIBILITY_INVALID")) return "Nie można zapisać tej osoby: nie spełnia wymagań roli, lokalu, obowiązku, umowy albo aktywnej stawki dla tej zmiany. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_HARD_BUDGET_INVALID")) return "Nie można zapisać korekty: przekroczyłaby twardy budżet grafiku. Wersja lidera nie została zmieniona.";
+  if (normalized.includes("VARIANT_MATERIALIZATION_HASH_MISMATCH") || normalized.includes("VARIANT_HAS_HARD_VIOLATIONS")) return "Ręczna zmiana nie przeszła kontroli całego grafiku i nie została zapisana.";
+  if (normalized.includes("STANDBY_REVALIDATION_FAILED")) return "Nie można aktywować tej osoby z rezerwy, ponieważ od publikacji zmieniła się jej dostępność albo aktywacja naruszyłaby twardą regułę. Odśwież rezerwę i wybierz inną osobę.";
+  if (normalized.includes("STANDBY_TIER_1_MUST_BE_USED_OR_DECLINED_FIRST")) return "Najpierw użyj albo odrzuć pierwszą osobę rezerwową. Druga rezerwa jest uruchamiana dopiero w kolejnym kroku.";
   if (normalized.includes("SOFT_OVERRIDE_REASON_REQUIRED")) return "Awaryjne naruszenie miękkiej reguły wymaga potwierdzenia i podania powodu.";
   if (normalized.includes("SLOT_ALREADY_FILLED")) return "To brakujące miejsce zostało już obsadzone. Odśwież grafik operacyjny.";
   if (normalized.includes("CANDIDATE_NOT_FOUND")) return "Wybrany pracownik nie jest już kandydatem do tej zmiany. Odśwież listę.";
   if (normalized.includes("INVALID_PLAN_NAME")) return "Podaj nazwę publikowanego grafiku.";
   if (normalized.includes("PUBLICATION_FAILED")) return "Publikacja nie została zapisana. Odśwież diagnostykę gotowości i spróbuj ponownie.";
+  if (normalized.includes("SELECTED_VALID_ROLE_VARIANT_REQUIRED")) return "Wersja lidera nie została zatwierdzona jako wariant do publikacji. System spróbuje zatwierdzić ją automatycznie przy ponownej publikacji.";
   if (normalized.includes("SCHEDULE_ID_MISSING")) return "Publikacja nie zwróciła identyfikatora grafiku. Odśwież widok przed ponowną próbą.";
   if (normalized.includes("SCHEDULE_ID_INVALID")) return "Publikacja zwróciła nieprawidłowy identyfikator grafiku. Odśwież widok przed ponowną próbą.";
   if (normalized.includes("SELECTED_VARIANT_NOT_FOUND")) return "Nie znaleziono wybranego wariantu. Wybierz wariant ponownie.";
@@ -1650,8 +2908,14 @@ export function solverErrorMessage(message: string) {
   if (normalized.includes("RUN_NOT_FOUND")) return "Nie znaleziono tego przebiegu lub nie masz do niego dostępu.";
   if (normalized.includes("RUN_ID_MISSING")) return "Generator nie zwrócił identyfikatora przebiegu.";
   if (normalized.includes("RUN_ID_INVALID")) return "Generator zwrócił nieprawidłowy identyfikator przebiegu.";
-  if (normalized.includes("SCENARIO")) return "Wybrany scenariusz nie jest już aktywny. Odśwież Matrix i wybierz ponownie.";
-  if (normalized.includes("STALE")) return "Matrix zmienił się w trakcie obliczeń. Uruchom nowy wariant na aktualnej wersji.";
-  if (normalized.includes("CONFLICT") || normalized.includes("LEASE")) return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
-  return "Nie udało się połączyć z generatorem. Spróbujemy ponownie przy następnym odświeżeniu.";
+  if (normalized.includes("SCENARIO")) return "Wybrany profil zapotrzebowania nie jest już aktywny. Odśwież konfigurację firmy i wybierz ponownie.";
+  if (normalized.includes("STALE")) return "Konfiguracja firmy zmieniła się w trakcie obliczeń. Uruchom nowy wariant na aktualnych danych.";
+  if (normalized.includes("RUN_ALREADY_CLAIMED")
+    || normalized.includes("RUN_CLAIM_CONFLICT")
+    || normalized.includes("DISPATCH_CONFLICT")
+    || normalized.includes("HTTP 409")) {
+    return "Inny worker kontynuuje ten przebieg. Postęp zostanie odświeżony automatycznie.";
+  }
+  const technicalCode = normalized.match(/(?:RPC_[A-Z0-9_]+|PGRST\d+|[A-Z][A-Z0-9_]{5,})/)?.[0] ?? "NIEZNANY_BŁĄD_RPC";
+  return `Operacja nie została zapisana. Kod techniczny: ${technicalCode}. Odśwież dane i spróbuj ponownie; jeśli błąd wróci, przekaż ten kod administratorowi UAT.`;
 }

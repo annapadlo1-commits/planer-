@@ -1,19 +1,34 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   ALLOWED_ACTIONS,
   createGatewayHandler,
+  resolveSupabaseSecretKey,
 } from "./contract.ts";
 
 const TOKEN = "solver-gateway-test-token".padEnd(64, "x");
+const GATEWAY_VERSION = `solver-gateway-test-deployment@${"c".repeat(40)}`;
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
+const STRATEGY_ID = "44444444-4444-4444-8444-444444444444";
+const SUPABASE_SECRET_KEY = `sb_secret_${"test".repeat(8)}`;
+const gatewaySource = await readFile(
+  new URL("./index.ts", import.meta.url),
+  "utf8",
+);
 
 const claimArgs = {
   p_worker_id: "free-host-worker-1:42",
   p_worker_version: "ORTOOLS_V2_2026_08_02",
+  p_worker_build_manifest: {
+    contractVersion: "SOLVER_CONTRACT_V2",
+    sourceSha: "a".repeat(40),
+    imageDigest: `sha256:${"b".repeat(64)}`,
+    buildTimestamp: "2026-09-03T10:15:30Z",
+  },
   p_task_attempt: 1,
   p_lease_seconds: 90,
 };
@@ -32,6 +47,7 @@ function gatewayRequest(action, args, token = TOKEN) {
 function handlerWith(calls = []) {
   return createGatewayHandler({
     solverGatewayToken: TOKEN,
+    gatewayVersion: GATEWAY_VERSION,
     invokeRpc: async (action, args) => {
       calls.push({ action, args });
       return {
@@ -43,12 +59,52 @@ function handlerWith(calls = []) {
   });
 }
 
+function normalizedVariant() {
+  return {
+    schemaVersion: 2,
+    strategyId: STRATEGY_ID,
+    strategyCode: "COST",
+    label: "Minimalny koszt",
+    sortOrder: 1,
+    assignments: [],
+    unfilledSlotIds: [],
+    metrics: { UNFILLED: 0, TOTAL_COST: 0 },
+    stageObjectives: [{
+      tier: 1,
+      name: "TIER_1",
+      value: 0,
+      status: "OPTIMAL",
+      bestBound: 0,
+      timeBudgetSeconds: 180.0,
+      elapsedSeconds: 12.5,
+      usedFallback: false,
+      tolerance: 0,
+      frozenUpperBound: 0,
+      costIncumbentGuard: 0,
+      terms: [{
+        metric: "TOTAL_COST",
+        direction: "MIN",
+        weight: 100,
+        tolerance: 0,
+        parameters: {},
+        normalizationCoefficient: 1_000_000,
+        metricUpperBound: 10_000,
+      }],
+    }],
+    optimal: true,
+    solutionHash: "a".repeat(64),
+    equivalentToStrategyId: null,
+  };
+}
+
 test("exposes only provider-neutral worker actions", () => {
   assert.deepEqual(ALLOWED_ACTIONS, [
     "solver_claim_next_v2",
+    "solver_claim_next_v3",
     "solver_load_snapshot_v2",
     "solver_heartbeat_v2",
     "solver_save_variant_v2",
+    "solver_save_variants_v2",
     "solver_finalize_v2",
     "solver_interrupt_v2",
     "solver_fail_attempt_v2",
@@ -58,11 +114,11 @@ test("exposes only provider-neutral worker actions", () => {
 test("forwards a valid pull claim with exact arguments", async () => {
   const calls = [];
   const response = await handlerWith(calls)(
-    gatewayRequest("solver_claim_next_v2", claimArgs),
+    gatewayRequest("solver_claim_next_v3", claimArgs),
   );
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [
-    { action: "solver_claim_next_v2", args: claimArgs },
+    { action: "solver_claim_next_v3", args: claimArgs },
   ]);
 });
 
@@ -72,7 +128,7 @@ test("rejects removed dispatcher actions and unknown arguments", async () => {
   assert.equal(removed.status, 400);
   assert.deepEqual(await removed.json(), { error: "ACTION_NOT_ALLOWED" });
 
-  const unknown = await handler(gatewayRequest("solver_claim_next_v2", {
+  const unknown = await handler(gatewayRequest("solver_claim_next_v3", {
     ...claimArgs,
     p_run_id: RUN_ID,
   }));
@@ -90,7 +146,7 @@ test("rejects invalid pull claim boundaries", async () => {
     { ...claimArgs, p_lease_seconds: 29 },
     { ...claimArgs, p_lease_seconds: 901 },
   ]) {
-    const response = await handler(gatewayRequest("solver_claim_next_v2", args));
+    const response = await handler(gatewayRequest("solver_claim_next_v3", args));
     assert.equal(response.status, 400);
   }
 });
@@ -99,7 +155,7 @@ test("requires the dedicated worker token", async () => {
   const handler = handlerWith();
   for (const token of ["", "wrong-token".padEnd(64, "x")]) {
     const response = await handler(
-      gatewayRequest("solver_claim_next_v2", claimArgs, token),
+      gatewayRequest("solver_claim_next_v3", claimArgs, token),
     );
     assert.equal(response.status, 401);
   }
@@ -115,6 +171,543 @@ test("rejects malformed lease arguments before invoking RPC", async () => {
   }));
   assert.equal(response.status, 400);
   assert.equal(calls.length, 0);
+});
+
+test("forwards only a validated upstream PostgreSQL error code", async () => {
+  const base = {
+    solverGatewayToken: TOKEN,
+    gatewayVersion: GATEWAY_VERSION,
+    invokeRpc: async () => ({
+      status: 400,
+      errorCode: "RUN_VARIANTS_INCOMPLETE",
+    }),
+  };
+  const response = await createGatewayHandler(base)(gatewayRequest(
+    "solver_finalize_v2",
+    {p_run_id:RUN_ID,p_attempt_id:ATTEMPT_ID,p_lease_token:LEASE_TOKEN},
+  ));
+  assert.equal(response.status,400);
+  assert.deepEqual(await response.json(),{error:"RUN_VARIANTS_INCOMPLETE"});
+
+  const unsafe = await createGatewayHandler({
+    ...base,
+    invokeRpc: async () => ({status:400,errorCode:"SQL failed: private detail"}),
+  })(gatewayRequest("solver_finalize_v2",{
+    p_run_id:RUN_ID,p_attempt_id:ATTEMPT_ID,p_lease_token:LEASE_TOKEN,
+  }));
+  assert.deepEqual(await unsafe.json(),{error:"UPSTREAM_RPC_FAILED"});
+});
+
+test("accepts PostgreSQL UUIDs used by stable matrix identifiers", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const stableStrategyId = "2c6ca898-8d99-e28f-59f1-ac829a5fbee6";
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_progress: {
+      schemaVersion: 2,
+      phase: "SOLVING",
+      progress: 10,
+      strategyId: stableStrategyId,
+      strategyProgress: 1,
+      strategyCount: 3,
+      completedStrategies: 0,
+    },
+  };
+
+  const response = await handler(gatewayRequest("solver_heartbeat_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{ action: "solver_heartbeat_v2", args }]);
+});
+
+test("accepts normalized objective metadata emitted by the worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: normalizedVariant(),
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("forwards one exact canonical variant batch to PostgreSQL", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variants = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variants: variants,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variants_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variants_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects incomplete, duplicate and foreign strategy batches", async () => {
+  const handler = handlerWith();
+  const canonical = ["BALANCED", "MIN_COST", "PREFERENCES"].map(
+    (strategyCode, index) => ({
+      ...normalizedVariant(),
+      strategyId: [
+        "44444444-4444-4444-8444-444444444444",
+        "55555555-5555-4555-8555-555555555555",
+        "66666666-6666-4666-8666-666666666666",
+      ][index],
+      strategyCode,
+      sortOrder: index,
+    }),
+  );
+  for (const variants of [
+    canonical.slice(0, 2),
+    [canonical[0], canonical[1], canonical[0]],
+    [canonical[0], canonical[1], { ...canonical[2], strategyCode: "OTHER" }],
+  ]) {
+    const response = await handler(gatewayRequest("solver_save_variants_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variants: variants,
+    }));
+    assert.equal(response.status, 400);
+  }
+});
+
+test("uses only the named Supabase secret key and fails closed", () => {
+  assert.equal(
+    resolveSupabaseSecretKey(JSON.stringify({ default: SUPABASE_SECRET_KEY })),
+    SUPABASE_SECRET_KEY,
+  );
+  for (const raw of [
+    undefined,
+    "",
+    "not-json",
+    "{}",
+    JSON.stringify({ default: "legacy.jwt.key" }),
+    JSON.stringify({ default: "sb_publishable_not_a_secret_key" }),
+  ]) {
+    assert.throws(
+      () => resolveSupabaseSecretKey(raw),
+      /Invalid Supabase secret key configuration/,
+    );
+  }
+});
+
+test("gateway has no legacy credential fallback or bearer secret header", () => {
+  assert.match(gatewaySource, /Deno\.env\.get\("SUPABASE_SECRET_KEYS"\)/u);
+  assert.doesNotMatch(gatewaySource, /SUPABASE_SERVICE_ROLE_KEY/u);
+  assert.doesNotMatch(gatewaySource, /Authorization:\s*`Bearer/u);
+  assert.match(gatewaySource, /apikey:\s*supabaseSecretKey/u);
+});
+
+test("accepts the primary-role-before-backup diagnostic emitted by category runs", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives[0].roleBackupPenalty = 200;
+  variant.metrics.ROLE_BACKUP_PENALTY = 200;
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects invalid stage time budgets before invoking PostgreSQL", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  for (const timeBudgetSeconds of [Number.NaN, -1, 86_401, "180"]) {
+    const variant = normalizedVariant();
+    variant.stageObjectives[0].timeBudgetSeconds = timeBudgetSeconds;
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("accepts verified fairness diagnostics emitted by the worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives[0].fairnessIncumbentGuard = {
+    LOAD_UTILIZATION_SPREAD_BPS: 850,
+    NOMINAL_DEVIATION_MINUTES: 56_520,
+  };
+  variant.stageObjectives[0].verifiedZeroIncumbent = true;
+  variant.stageObjectives[0].certifiedCoverageSeed = true;
+  Object.assign(variant.stageObjectives[0], {
+    fairCoverageSeedMinimumEstimatedAchievableUtilizationBps: 411,
+    fairCoverageSeedEstimatedAchievableUtilizationSpreadBps: 261,
+    fairCoverageSeedStatus: "OPTIMAL",
+    fairCoverageSeedTimeBudgetSeconds: 90,
+    fairCoverageSpreadStatus: "FEASIBLE",
+    fairCoverageSpreadTimeBudgetSeconds: 54,
+  });
+  variant.stageObjectives[0].terms[0].configuredTier = 4;
+  variant.metrics.MIN_ACHIEVABLE_TARGET_UTILIZATION_BPS = 411;
+  variant.metrics.ACHIEVABLE_TARGET_UTILIZATION_SPREAD_BPS = 261;
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("accepts a ready variant whose fairness quality target was not met", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  Object.assign(variant.metrics, {
+    LOAD_UTILIZATION_TARGET_COUNT: 19,
+    FAIRNESS_TARGET_MET: 0,
+    FAIRNESS_TARGET_MINIMUM_BPS: 700,
+    FAIRNESS_TARGET_MAXIMUM_SPREAD_BPS: 300,
+    FAIRNESS_TARGET_ACTUAL_MINIMUM_BPS: 660,
+    FAIRNESS_TARGET_ACTUAL_SPREAD_BPS: 240,
+    FAIRNESS_TARGET_FAILURE_MINIMUM: 1,
+    FAIRNESS_TARGET_FAILURE_SPREAD: 0,
+    FAIRNESS_TARGET_ATTEMPT_COUNT: 3,
+    FAIRNESS_TARGET_FALLBACK_USED: 1,
+    FAIRNESS_TARGET_PROVEN_UNATTAINABLE: 0,
+  });
+  variant.stageObjectives.push({
+    tier: 0,
+    name: "FAIRNESS_QUALITY_TARGET",
+    value: 240,
+    status: "TARGET_NOT_MET_BEST_FOUND",
+    tolerance: 300,
+    frozenUpperBound: 300,
+    timeBudgetSeconds: 0,
+    elapsedSeconds: 0,
+    usedFallback: true,
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("accepts versioned cost categories emitted by the current worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.assignments = [{
+    slotId: "slot-2026-09-01-host-1",
+    employeeId: "55555555-5555-4555-8555-555555555555",
+    costUnits: 19_200,
+    costComponents: [{
+      ruleId: "BASE",
+      calculationType: "BASE_HOURLY",
+      costUnits: 19_200,
+      costCategory: "WAGE",
+    }],
+  }];
+  variant.metrics.TOTAL_COST = 19_200;
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects malformed worker cost categories", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.assignments = [{
+    slotId: "slot-2026-09-01-host-1",
+    employeeId: "55555555-5555-4555-8555-555555555555",
+    costUnits: 19_200,
+    costComponents: [{
+      ruleId: "BASE",
+      calculationType: "BASE_HOURLY",
+      costUnits: 19_200,
+      costCategory: "wage with spaces",
+    }],
+  }];
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "INVALID_COST_CATEGORY" });
+  assert.equal(calls.length, 0);
+});
+
+test("requires complete stage elapsed and fallback proof", async () => {
+  for (const key of ["timeBudgetSeconds", "elapsedSeconds", "usedFallback"]) {
+    const calls = [];
+    const handler = handlerWith(calls);
+    const variant = normalizedVariant();
+    delete variant.stageObjectives[0][key];
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("rejects invalid stage elapsed and fallback values", async () => {
+  for (const [key, invalid] of [
+    ["elapsedSeconds", -1],
+    ["elapsedSeconds", 86_401],
+    ["elapsedSeconds", "12.5"],
+    ["usedFallback", "false"],
+  ]) {
+    const calls = [];
+    const handler = handlerWith(calls);
+    const variant = normalizedVariant();
+    variant.stageObjectives[0][key] = invalid;
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("accepts overtime gate diagnostics emitted by the worker", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  Object.assign(variant.stageObjectives[0], {
+    overtimeMinimum: 0,
+    overtimeStatus: "OPTIMAL",
+    overtimeFrozenUpperBound: 0,
+    overtimeTimeBudgetSeconds: 12.5,
+    overtimeElapsedSeconds: 3.25,
+    overtimeVerifiedZeroIncumbent: true,
+    overtimeUsedFallback: false,
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("accepts a diversity proof that preserves frozen objectives", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives.push({
+    tier: 2,
+    name: "DIVERSIFY",
+    value: 0,
+    status: "OPTIMAL",
+    tolerance: 0,
+    frozenUpperBound: 0,
+    timeBudgetSeconds: 5,
+    elapsedSeconds: 0.5,
+    usedFallback: false,
+    businessObjectiveBoundsPreserved: true,
+    excludedEquivalentStrategies: [{
+      strategyId: STRATEGY_ID,
+      minimumAssignmentChanges: 3,
+    }],
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("accepts the month-scoped symmetric-remainder rotation proof", async () => {
+  const calls = [];
+  const handler = handlerWith(calls);
+  const variant = normalizedVariant();
+  variant.stageObjectives.push({
+    tier: 2,
+    name: "ROTATION_TIE_BREAK",
+    value: 14_400,
+    status: "OPTIMAL",
+    bestBound: 14_400,
+    tolerance: 0,
+    frozenUpperBound: 14_400,
+    timeBudgetSeconds: 0,
+    elapsedSeconds: 0,
+    usedFallback: false,
+    rotationKeyVersion: "MONTH_EMPLOYEE_SHA256_V1",
+    rotationMonth: "2026-08",
+    rotationOrderHash: "b".repeat(64),
+    scoreDefinition:
+      "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)",
+    scope: "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS",
+    applied: true,
+    interchangeableGroupCount: 1,
+    rotatedEmployeeCount: 20,
+    changedAssignmentCount: 2,
+    excludedIdentityBoundEmployeeCount: 0,
+    businessMetricVectorPreserved: true,
+    businessMetricVectorHash: "c".repeat(64),
+    solutionHashBefore: "d".repeat(64),
+    solutionHashAfter: "e".repeat(64),
+  });
+  const args = {
+    p_run_id: RUN_ID,
+    p_attempt_id: ATTEMPT_ID,
+    p_lease_token: LEASE_TOKEN,
+    p_variant: variant,
+  };
+
+  const response = await handler(gatewayRequest("solver_save_variant_v2", args));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    action: "solver_save_variant_v2",
+    args: { ...args, p_gateway_version: GATEWAY_VERSION },
+  }]);
+});
+
+test("rejects incomplete or contradictory rotation proofs", async () => {
+  for (const mutate of [
+    (stage) => { stage.rotationMonth = "2026-13"; },
+    (stage) => { stage.businessMetricVectorPreserved = false; },
+    (stage) => { stage.changedAssignmentCount = 0; },
+    (stage) => { stage.unexpected = true; },
+  ]) {
+    const calls = [];
+    const handler = handlerWith(calls);
+    const variant = normalizedVariant();
+    const stage = {
+      tier: 2,
+      name: "ROTATION_TIE_BREAK",
+      value: 14_400,
+      status: "OPTIMAL",
+      bestBound: 14_400,
+      tolerance: 0,
+      frozenUpperBound: 14_400,
+      timeBudgetSeconds: 0,
+      elapsedSeconds: 0,
+      usedFallback: false,
+      rotationKeyVersion: "MONTH_EMPLOYEE_SHA256_V1",
+      rotationMonth: "2026-08",
+      rotationOrderHash: "b".repeat(64),
+      scoreDefinition:
+        "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)",
+      scope: "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS",
+      applied: true,
+      interchangeableGroupCount: 1,
+      rotatedEmployeeCount: 20,
+      changedAssignmentCount: 2,
+      excludedIdentityBoundEmployeeCount: 0,
+      businessMetricVectorPreserved: true,
+      businessMetricVectorHash: "c".repeat(64),
+      solutionHashBefore: "d".repeat(64),
+      solutionHashAfter: "e".repeat(64),
+    };
+    mutate(stage);
+    variant.stageObjectives.push(stage);
+    const response = await handler(gatewayRequest("solver_save_variant_v2", {
+      p_run_id: RUN_ID,
+      p_attempt_id: ATTEMPT_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_variant: variant,
+    }));
+    assert.equal(response.status, 400);
+    assert.equal(calls.length, 0);
+  }
 });
 
 test("rejects non-JSON requests and unsupported methods", async () => {
@@ -143,7 +736,11 @@ test("fails closed for invalid configured credentials", () => {
     "header.payload.signature",
   ]) {
     assert.throws(
-      () => createGatewayHandler({ solverGatewayToken: token, invokeRpc }),
+      () => createGatewayHandler({
+        solverGatewayToken: token,
+        gatewayVersion: GATEWAY_VERSION,
+        invokeRpc,
+      }),
       /Invalid gateway token configuration/,
     );
   }

@@ -2,9 +2,11 @@ export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export const WORKER_ACTIONS = [
   "solver_claim_next_v2",
+  "solver_claim_next_v3",
   "solver_load_snapshot_v2",
   "solver_heartbeat_v2",
   "solver_save_variant_v2",
+  "solver_save_variants_v2",
   "solver_finalize_v2",
   "solver_interrupt_v2",
   "solver_fail_attempt_v2",
@@ -16,10 +18,31 @@ export type WorkerAction = (typeof WORKER_ACTIONS)[number];
 export type AllowedAction = WorkerAction;
 export type JsonObject = Record<string, unknown>;
 
+export function resolveSupabaseSecretKey(raw: string | undefined): string {
+  let keys: unknown;
+  try {
+    keys = JSON.parse(raw ?? "");
+  } catch {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  if (!isObject(keys)) {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  const key = keys.default;
+  if (
+    typeof key !== "string" ||
+    !/^sb_secret_[A-Za-z0-9_-]{20,240}$/u.test(key)
+  ) {
+    throw new Error("Invalid Supabase secret key configuration");
+  }
+  return key;
+}
+
 export type RpcResult = {
   status: number;
   body?: BodyInit | null;
   contentType?: string | null;
+  errorCode?: string | null;
 };
 
 export type RpcInvoker = (
@@ -29,6 +52,7 @@ export type RpcInvoker = (
 
 type GatewayOptions = {
   solverGatewayToken: string;
+  gatewayVersion: string;
   invokeRpc: RpcInvoker;
 };
 
@@ -49,8 +73,12 @@ class GatewayError extends Error {
   }
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// PostgreSQL's uuid type accepts the full 128-bit UUID text representation.
+// Matrix v2 also deliberately stores deterministic md5-derived identifiers,
+// whose version and variant bits are not rewritten to the RFC 4122 ranges.
+// Match the database boundary here instead of rejecting those persisted IDs.
+const POSTGRES_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const CODE_PATTERN = /^[A-Z][A-Z0-9_:-]{0,99}$/;
 const METRIC_PATTERN = /^[A-Z][A-Z0-9_]{0,79}$/;
@@ -110,7 +138,7 @@ function assertUuid(
   nullable = false,
 ): asserts value is string | null {
   if (nullable && value === null) return;
-  if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
+  if (typeof value !== "string" || !POSTGRES_UUID_PATTERN.test(value)) {
     fail(400, `INVALID_${name}`);
   }
 }
@@ -273,10 +301,15 @@ function validateHeartbeat(args: JsonObject): void {
 
 function validateCostComponent(value: unknown): void {
   assertObject(value, "COST_COMPONENT");
-  assertExactKeys(value, ["ruleId", "calculationType", "costUnits"]);
+  assertExactKeys(
+    value,
+    ["ruleId", "calculationType", "costUnits"],
+    ["costCategory"],
+  );
   if (
     value.ruleId !== "BASE" &&
-    (typeof value.ruleId !== "string" || !UUID_PATTERN.test(value.ruleId))
+    (typeof value.ruleId !== "string" ||
+      !POSTGRES_UUID_PATTERN.test(value.ruleId))
   ) {
     fail(400, "INVALID_COST_RULE_ID");
   }
@@ -287,6 +320,14 @@ function validateCostComponent(value: unknown): void {
     fail(400, "INVALID_CALCULATION_TYPE");
   }
   assertInteger(value.costUnits, "COST_UNITS", 0, Number.MAX_SAFE_INTEGER);
+  if (Object.hasOwn(value, "costCategory")) {
+    if (
+      typeof value.costCategory !== "string" ||
+      !CODE_PATTERN.test(value.costCategory)
+    ) {
+      fail(400, "INVALID_COST_CATEGORY");
+    }
+  }
 }
 
 function validateAssignment(value: unknown): void {
@@ -315,13 +356,11 @@ function validateMetrics(value: unknown): void {
 
 function validateObjectiveTerm(value: unknown): void {
   assertObject(value, "OBJECTIVE_TERM");
-  assertExactKeys(value, [
-    "metric",
-    "direction",
-    "weight",
-    "tolerance",
-    "parameters",
-  ]);
+  assertExactKeys(
+    value,
+    ["metric", "direction", "weight", "tolerance", "parameters"],
+    ["normalizationCoefficient", "metricUpperBound", "configuredTier"],
+  );
   if (typeof value.metric !== "string" || !METRIC_PATTERN.test(value.metric)) {
     fail(400, "INVALID_OBJECTIVE_METRIC");
   }
@@ -345,14 +384,236 @@ function validateObjectiveTerm(value: unknown): void {
       Number.MAX_SAFE_INTEGER,
     );
   }
+  if (Object.hasOwn(value, "normalizationCoefficient")) {
+    assertInteger(
+      value.normalizationCoefficient,
+      "OBJECTIVE_NORMALIZATION_COEFFICIENT",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "metricUpperBound")) {
+    assertInteger(
+      value.metricUpperBound,
+      "OBJECTIVE_METRIC_UPPER_BOUND",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "configuredTier")) {
+    assertInteger(value.configuredTier, "OBJECTIVE_CONFIGURED_TIER", 0, 100_000);
+  }
 }
 
 function validateStageObjective(value: unknown): void {
   assertObject(value, "STAGE_OBJECTIVE");
+  if (value.name === "ROTATION_TIE_BREAK") {
+    assertExactKeys(value, [
+      "tier",
+      "name",
+      "value",
+      "status",
+      "bestBound",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
+      "rotationKeyVersion",
+      "rotationMonth",
+      "rotationOrderHash",
+      "scoreDefinition",
+      "scope",
+      "applied",
+      "interchangeableGroupCount",
+      "rotatedEmployeeCount",
+      "changedAssignmentCount",
+      "excludedIdentityBoundEmployeeCount",
+      "businessMetricVectorPreserved",
+      "businessMetricVectorHash",
+      "solutionHashBefore",
+      "solutionHashAfter",
+    ]);
+    assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
+    assertInteger(
+      value.value,
+      "OBJECTIVE_VALUE",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertFiniteNumber(value.bestBound, "BEST_BOUND");
+    assertInteger(
+      value.frozenUpperBound,
+      "OBJECTIVE_BOUND",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    if (
+      value.status !== "OPTIMAL" ||
+      value.bestBound !== value.value ||
+      value.tolerance !== 0 ||
+      value.frozenUpperBound !== value.value ||
+      value.timeBudgetSeconds !== 0 ||
+      value.elapsedSeconds !== 0 ||
+      value.usedFallback !== false
+    ) {
+      fail(400, "INVALID_ROTATION_PROOF");
+    }
+    if (value.rotationKeyVersion !== "MONTH_EMPLOYEE_SHA256_V1") {
+      fail(400, "INVALID_ROTATION_KEY_VERSION");
+    }
+    if (
+      typeof value.rotationMonth !== "string" ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/u.test(value.rotationMonth)
+    ) {
+      fail(400, "INVALID_ROTATION_MONTH");
+    }
+    for (const hashField of [
+      "rotationOrderHash",
+      "businessMetricVectorHash",
+      "solutionHashBefore",
+      "solutionHashAfter",
+    ] as const) {
+      if (
+        typeof value[hashField] !== "string" ||
+        !HASH_PATTERN.test(value[hashField])
+      ) {
+        fail(400, `INVALID_${hashField.replace(/([A-Z])/gu, "_$1").toUpperCase()}`);
+      }
+    }
+    if (
+      value.scoreDefinition !==
+        "SUM(WITHIN_GROUP_MONTH_RANK_X_INTERNAL_ASSIGNED_MINUTES)" ||
+      value.scope !== "PROVEN_INTERCHANGEABLE_EMPLOYEE_BUNDLE_PERMUTATIONS"
+    ) {
+      fail(400, "INVALID_ROTATION_SCOPE");
+    }
+    assertBoolean(value.applied, "ROTATION_APPLIED");
+    for (const countField of [
+      "interchangeableGroupCount",
+      "rotatedEmployeeCount",
+      "changedAssignmentCount",
+      "excludedIdentityBoundEmployeeCount",
+    ] as const) {
+      assertInteger(value[countField], countField.toUpperCase(), 0, 100_000);
+    }
+    assertBoolean(
+      value.businessMetricVectorPreserved,
+      "BUSINESS_METRIC_VECTOR_PRESERVED",
+    );
+    if (value.businessMetricVectorPreserved !== true) {
+      fail(400, "INVALID_ROTATION_BUSINESS_GUARD");
+    }
+    if (
+      value.applied !== (value.interchangeableGroupCount > 0) ||
+      (value.applied && value.rotatedEmployeeCount < 2) ||
+      (!value.applied &&
+        (value.rotatedEmployeeCount !== 0 || value.changedAssignmentCount !== 0)) ||
+      ((value.changedAssignmentCount === 0) !==
+        (value.solutionHashBefore === value.solutionHashAfter))
+    ) {
+      fail(400, "INVALID_ROTATION_COUNTS");
+    }
+    return;
+  }
+  if (value.name === "DIVERSIFY") {
+    assertExactKeys(value, [
+      "tier",
+      "name",
+      "value",
+      "status",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
+      "businessObjectiveBoundsPreserved",
+      "excludedEquivalentStrategies",
+    ]);
+    assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
+    assertInteger(
+      value.value,
+      "OBJECTIVE_VALUE",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertString(value.status, "OBJECTIVE_STATUS", 1, 40);
+    assertInteger(value.tolerance, "OBJECTIVE_TOLERANCE", 0, Number.MAX_SAFE_INTEGER);
+    assertInteger(
+      value.frozenUpperBound,
+      "OBJECTIVE_BOUND",
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER,
+    );
+    assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
+    assertFiniteNumber(value.elapsedSeconds, "ELAPSED_SECONDS");
+    if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
+      fail(400, "INVALID_TIME_BUDGET_SECONDS");
+    }
+    if (value.elapsedSeconds < 0 || value.elapsedSeconds > 86_400) {
+      fail(400, "INVALID_ELAPSED_SECONDS");
+    }
+    assertBoolean(value.usedFallback, "USED_FALLBACK");
+    assertBoolean(
+      value.businessObjectiveBoundsPreserved,
+      "BUSINESS_OBJECTIVE_BOUNDS_PRESERVED",
+    );
+    assertArray(
+      value.excludedEquivalentStrategies,
+      "EXCLUDED_EQUIVALENT_STRATEGIES",
+      100,
+    );
+    for (const exclusion of value.excludedEquivalentStrategies) {
+      assertObject(exclusion, "DIVERSITY_EXCLUSION");
+      assertExactKeys(exclusion, ["strategyId", "minimumAssignmentChanges"]);
+      assertUuid(exclusion.strategyId, "DIVERSITY_STRATEGY_ID");
+      assertInteger(
+        exclusion.minimumAssignmentChanges,
+        "MINIMUM_ASSIGNMENT_CHANGES",
+        1,
+        100_000,
+      );
+    }
+    return;
+  }
   assertExactKeys(
     value,
-    ["tier", "name", "value", "status", "tolerance", "frozenUpperBound"],
-    ["bestBound", "terms"],
+    [
+      "tier",
+      "name",
+      "value",
+      "status",
+      "tolerance",
+      "frozenUpperBound",
+      "timeBudgetSeconds",
+      "elapsedSeconds",
+      "usedFallback",
+    ],
+    [
+      "bestBound",
+      "terms",
+      "fairnessIncumbentGuard",
+      "certifiedCoverageSeed",
+      "fairCoverageSeedMinimumAchievableUtilizationBps",
+      "fairCoverageSeedAchievableUtilizationSpreadBps",
+      "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps",
+      "fairCoverageSeedEstimatedAchievableUtilizationSpreadBps",
+      "fairCoverageSeedStatus",
+      "fairCoverageSeedTimeBudgetSeconds",
+      "fairCoverageSpreadStatus",
+      "fairCoverageSpreadTimeBudgetSeconds",
+      "costIncumbentGuard",
+      "verifiedZeroIncumbent",
+      "certificate",
+      "roleBackupPenalty",
+      "overtimeMinimum",
+      "overtimeStatus",
+      "overtimeFrozenUpperBound",
+      "overtimeTimeBudgetSeconds",
+      "overtimeElapsedSeconds",
+      "overtimeVerifiedZeroIncumbent",
+      "overtimeUsedFallback",
+    ],
   );
   assertInteger(value.tier, "OBJECTIVE_TIER", 0, 100_000);
   assertString(value.name, "OBJECTIVE_NAME", 1, 100);
@@ -378,9 +639,155 @@ function validateStageObjective(value: unknown): void {
   if (Object.hasOwn(value, "bestBound")) {
     assertFiniteNumber(value.bestBound, "BEST_BOUND");
   }
+  assertFiniteNumber(value.timeBudgetSeconds, "TIME_BUDGET_SECONDS");
+  assertFiniteNumber(value.elapsedSeconds, "ELAPSED_SECONDS");
+  if (value.timeBudgetSeconds < 0 || value.timeBudgetSeconds > 86_400) {
+    fail(400, "INVALID_TIME_BUDGET_SECONDS");
+  }
+  if (value.elapsedSeconds < 0 || value.elapsedSeconds > 86_400) {
+    fail(400, "INVALID_ELAPSED_SECONDS");
+  }
+  assertBoolean(value.usedFallback, "USED_FALLBACK");
+  if (Object.hasOwn(value, "roleBackupPenalty")) {
+    assertInteger(
+      value.roleBackupPenalty,
+      "ROLE_BACKUP_PENALTY",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "overtimeMinimum")) {
+    assertInteger(
+      value.overtimeMinimum,
+      "OVERTIME_MINIMUM",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "overtimeStatus")) {
+    assertString(value.overtimeStatus, "OVERTIME_STATUS", 1, 40);
+  }
+  if (Object.hasOwn(value, "overtimeFrozenUpperBound")) {
+    assertInteger(
+      value.overtimeFrozenUpperBound,
+      "OVERTIME_FROZEN_UPPER_BOUND",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "overtimeTimeBudgetSeconds")) {
+    assertFiniteNumber(
+      value.overtimeTimeBudgetSeconds,
+      "OVERTIME_TIME_BUDGET_SECONDS",
+    );
+    if (
+      value.overtimeTimeBudgetSeconds < 0 ||
+      value.overtimeTimeBudgetSeconds > 86_400
+    ) {
+      fail(400, "INVALID_OVERTIME_TIME_BUDGET_SECONDS");
+    }
+  }
+  if (Object.hasOwn(value, "overtimeElapsedSeconds")) {
+    assertFiniteNumber(value.overtimeElapsedSeconds, "OVERTIME_ELAPSED_SECONDS");
+    if (
+      value.overtimeElapsedSeconds < 0 ||
+      value.overtimeElapsedSeconds > 86_400
+    ) {
+      fail(400, "INVALID_OVERTIME_ELAPSED_SECONDS");
+    }
+  }
+  if (Object.hasOwn(value, "overtimeVerifiedZeroIncumbent")) {
+    assertBoolean(
+      value.overtimeVerifiedZeroIncumbent,
+      "OVERTIME_VERIFIED_ZERO_INCUMBENT",
+    );
+  }
+  if (Object.hasOwn(value, "overtimeUsedFallback")) {
+    assertBoolean(value.overtimeUsedFallback, "OVERTIME_USED_FALLBACK");
+  }
   if (Object.hasOwn(value, "terms")) {
     assertArray(value.terms, "OBJECTIVE_TERMS", 100);
     value.terms.forEach(validateObjectiveTerm);
+  }
+  if (Object.hasOwn(value, "fairnessIncumbentGuard")) {
+    validateMetrics(value.fairnessIncumbentGuard);
+  }
+  if (Object.hasOwn(value, "certifiedCoverageSeed")) {
+    assertBoolean(value.certifiedCoverageSeed, "CERTIFIED_COVERAGE_SEED");
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedMinimumAchievableUtilizationBps")) {
+    assertInteger(
+      value.fairCoverageSeedMinimumAchievableUtilizationBps,
+      "FAIR_COVERAGE_SEED_MINIMUM_ACHIEVABLE_UTILIZATION_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedAchievableUtilizationSpreadBps")) {
+    assertInteger(
+      value.fairCoverageSeedAchievableUtilizationSpreadBps,
+      "FAIR_COVERAGE_SEED_ACHIEVABLE_UTILIZATION_SPREAD_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (
+    Object.hasOwn(
+      value,
+      "fairCoverageSeedMinimumEstimatedAchievableUtilizationBps",
+    )
+  ) {
+    assertInteger(
+      value.fairCoverageSeedMinimumEstimatedAchievableUtilizationBps,
+      "FAIR_COVERAGE_SEED_MINIMUM_ESTIMATED_ACHIEVABLE_UTILIZATION_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (
+    Object.hasOwn(
+      value,
+      "fairCoverageSeedEstimatedAchievableUtilizationSpreadBps",
+    )
+  ) {
+    assertInteger(
+      value.fairCoverageSeedEstimatedAchievableUtilizationSpreadBps,
+      "FAIR_COVERAGE_SEED_ESTIMATED_ACHIEVABLE_UTILIZATION_SPREAD_BPS",
+      0,
+      1_000,
+    );
+  }
+  if (Object.hasOwn(value, "fairCoverageSeedStatus")) {
+    assertString(value.fairCoverageSeedStatus, "FAIR_COVERAGE_SEED_STATUS", 1, 40);
+  }
+  if (Object.hasOwn(value, "fairCoverageSpreadStatus")) {
+    assertString(value.fairCoverageSpreadStatus, "FAIR_COVERAGE_SPREAD_STATUS", 1, 40);
+  }
+  for (const [key, name] of [
+    ["fairCoverageSeedTimeBudgetSeconds", "FAIR_COVERAGE_SEED_TIME_BUDGET_SECONDS"],
+    ["fairCoverageSpreadTimeBudgetSeconds", "FAIR_COVERAGE_SPREAD_TIME_BUDGET_SECONDS"],
+  ] as const) {
+    if (Object.hasOwn(value, key)) {
+      assertFiniteNumber(value[key], name);
+      if (value[key] < 0 || value[key] > 86_400) {
+        fail(400, `INVALID_${name}`);
+      }
+    }
+  }
+  if (Object.hasOwn(value, "costIncumbentGuard")) {
+    assertInteger(
+      value.costIncumbentGuard,
+      "COST_INCUMBENT_GUARD",
+      0,
+      Number.MAX_SAFE_INTEGER,
+    );
+  }
+  if (Object.hasOwn(value, "verifiedZeroIncumbent")) {
+    assertBoolean(value.verifiedZeroIncumbent, "VERIFIED_ZERO_INCUMBENT");
+  }
+  if (Object.hasOwn(value, "certificate")) {
+    assertObject(value.certificate, "COVERAGE_CERTIFICATE");
+    assertJsonTree(value.certificate);
   }
 }
 
@@ -433,6 +840,70 @@ function validateSaveVariant(args: JsonObject): void {
   validateVariant(args.p_variant);
 }
 
+function validateClaimV3(args: JsonObject): void {
+  assertExactKeys(args, [
+    "p_worker_id",
+    "p_worker_version",
+    "p_worker_build_manifest",
+    "p_task_attempt",
+    "p_lease_seconds",
+  ]);
+  validateClaim({
+    p_worker_id: args.p_worker_id,
+    p_worker_version: args.p_worker_version,
+    p_task_attempt: args.p_task_attempt,
+    p_lease_seconds: args.p_lease_seconds,
+  });
+  assertObject(args.p_worker_build_manifest, "WORKER_BUILD_MANIFEST");
+  const manifest = args.p_worker_build_manifest;
+  assertExactKeys(manifest, [
+    "contractVersion",
+    "sourceSha",
+    "imageDigest",
+    "buildTimestamp",
+  ]);
+  if (
+    typeof manifest.contractVersion !== "string" ||
+    !/^[A-Z][A-Z0-9_]{2,99}$/u.test(manifest.contractVersion)
+  ) fail(400, "INVALID_SOLVER_CONTRACT_VERSION");
+  if (
+    typeof manifest.sourceSha !== "string" ||
+    !/^[0-9a-f]{40}$/u.test(manifest.sourceSha)
+  ) fail(400, "INVALID_SOLVER_SOURCE_SHA");
+  if (
+    typeof manifest.imageDigest !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/u.test(manifest.imageDigest)
+  ) fail(400, "INVALID_SOLVER_IMAGE_DIGEST");
+  if (
+    typeof manifest.buildTimestamp !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(manifest.buildTimestamp) ||
+    Number.isNaN(Date.parse(manifest.buildTimestamp))
+  ) fail(400, "INVALID_SOLVER_BUILD_TIMESTAMP");
+}
+
+function validateSaveVariants(args: JsonObject): void {
+  assertExactKeys(args, [
+    "p_run_id",
+    "p_attempt_id",
+    "p_lease_token",
+    "p_variants",
+  ]);
+  assertLeaseArgs(args);
+  assertArray(args.p_variants, "VARIANTS", 3);
+  if (args.p_variants.length !== 3) fail(400, "INVALID_VARIANT_BATCH");
+  args.p_variants.forEach(validateVariant);
+  const strategyCodes = args.p_variants.map((variant) =>
+    String((variant as JsonObject).strategyCode).toUpperCase()
+  );
+  const canonicalCodes = ["BALANCED", "MIN_COST", "PREFERENCES"];
+  if (
+    new Set(strategyCodes).size !== canonicalCodes.length ||
+    [...strategyCodes].sort().join(",") !== canonicalCodes.sort().join(",")
+  ) {
+    fail(400, "INVALID_STRATEGY_SET");
+  }
+}
+
 function validateFinalize(args: JsonObject): void {
   validateLoadSnapshot(args);
 }
@@ -472,6 +943,7 @@ function validateFailure(args: JsonObject): void {
 
 const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
   solver_claim_next_v2: { maxBodyBytes: 16 * 1024, validate: validateClaim },
+  solver_claim_next_v3: { maxBodyBytes: 16 * 1024, validate: validateClaimV3 },
   solver_load_snapshot_v2: {
     maxBodyBytes: 4 * 1024,
     validate: validateLoadSnapshot,
@@ -483,6 +955,10 @@ const RPC_SPECS: Record<AllowedAction, RpcSpec> = {
   solver_save_variant_v2: {
     maxBodyBytes: MAX_BODY_BYTES,
     validate: validateSaveVariant,
+  },
+  solver_save_variants_v2: {
+    maxBodyBytes: MAX_BODY_BYTES,
+    validate: validateSaveVariants,
   },
   solver_finalize_v2: { maxBodyBytes: 4 * 1024, validate: validateFinalize },
   solver_interrupt_v2: { maxBodyBytes: 8 * 1024, validate: validateInterrupt },
@@ -511,6 +987,16 @@ function validateConfiguredToken(token: string): void {
     /[\p{White_Space}\p{Cc}\p{Cf}]/u.test(token)
   ) {
     throw new Error("Invalid gateway token configuration");
+  }
+}
+
+function validateGatewayVersion(version: string): void {
+  if (
+    version.length < 1 ||
+    version.length > 500 ||
+    /[\p{Cc}\p{Cf}\p{White_Space}]/u.test(version)
+  ) {
+    throw new Error("Invalid gateway version configuration");
   }
 }
 
@@ -588,6 +1074,7 @@ function parseEnvelope(body: Uint8Array): JsonObject {
 
 export function createGatewayHandler(options: GatewayOptions) {
   validateConfiguredToken(options.solverGatewayToken);
+  validateGatewayVersion(options.gatewayVersion);
 
   return async (request: Request): Promise<Response> => {
     try {
@@ -627,7 +1114,13 @@ export function createGatewayHandler(options: GatewayOptions) {
 
       let result: RpcResult;
       try {
-        result = await options.invokeRpc(envelope.action, envelope.args);
+        const rpcArgs = (
+          envelope.action === "solver_save_variant_v2" ||
+          envelope.action === "solver_save_variants_v2"
+        )
+          ? { ...envelope.args, p_gateway_version: options.gatewayVersion }
+          : envelope.args;
+        result = await options.invokeRpc(envelope.action, rpcArgs);
       } catch {
         return jsonResponse(502, "UPSTREAM_UNAVAILABLE");
       }
@@ -635,7 +1128,11 @@ export function createGatewayHandler(options: GatewayOptions) {
         return jsonResponse(502, "INVALID_UPSTREAM_RESPONSE");
       }
       if (result.status >= 300) {
-        return jsonResponse(result.status, "UPSTREAM_RPC_FAILED");
+        const safeCode = typeof result.errorCode === "string"
+          && CODE_PATTERN.test(result.errorCode)
+          ? result.errorCode
+          : "UPSTREAM_RPC_FAILED";
+        return jsonResponse(result.status, safeCode);
       }
       if (
         result.body != null &&

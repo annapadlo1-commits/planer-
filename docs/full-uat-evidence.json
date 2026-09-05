@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "deployedCommit": "90d00b152f42894adcf4739ec3c21f33fd10e232",
+  "canonicalUatUrl": "https://planer-git-codex-uat-consolidated-fixes-planner10.vercel.app/",
+  "environment": {
+    "supabaseProjectRef": "nhthrtpkfpmufmrmdyjg",
+    "productionTouched": false
+  },
+  "browser": {
+    "consoleErrors": null,
+    "unhandledPageErrors": null
+  },
+  "stages": [
+    { "id": "onboarding_import_excel", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "OWNER", "evidence": [] },
+    { "id": "google_sheets_export_import", "status": "BLOCKED", "startedAt": null, "finishedAt": null, "actorRole": "OWNER", "evidence": [], "blocker": "Wymaga działającego kanonicznego OAuth Google na UAT." },
+    { "id": "team_and_access", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "OWNER", "evidence": [] },
+    { "id": "published_configuration", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "OWNER", "evidence": [] },
+    { "id": "generator_all_strategies", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "MANAGER", "evidence": [] },
+    { "id": "leader_studio_manual_and_generated", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "MANAGER", "evidence": [] },
+    { "id": "publication_and_employee_portal", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "OWNER_AND_EMPLOYEE", "evidence": [] },
+    { "id": "analytics_and_staffing_risk", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "MANAGER", "evidence": [] },
+    { "id": "state_filters_scroll_and_console", "status": "PENDING", "startedAt": null, "finishedAt": null, "actorRole": "OWNER_AND_EMPLOYEE", "evidence": [] }
+  ],
+  "ownerUat": {
+    "status": "PENDING",
+    "confirmedAt": null,
+    "evidence": []
+  }
+}

@@ -199,6 +199,8 @@ class Strategy:
     label: str
     sort_order: int
     objective_terms: tuple[ObjectiveTerm, ...]
+    strategy_semantics_version: str | None = None
+    mandatory_product_guards: tuple[str, ...] = ()
     time_limit_seconds: int | None = None
     random_seed: int | None = None
 
@@ -213,6 +215,23 @@ class Strategy:
         )
         limit_raw = _pick(raw, "timeLimitSeconds", "time_limit_seconds", default=None)
         seed_raw = _pick(raw, "randomSeed", "random_seed", default=None)
+        semantics_raw = _pick(
+            raw,
+            "strategySemanticsVersion",
+            "strategy_semantics_version",
+            default=None,
+        )
+        guards_raw = _pick(
+            raw,
+            "mandatoryProductGuards",
+            "mandatory_product_guards",
+            default=[],
+        )
+        if not isinstance(guards_raw, Sequence) or isinstance(
+            guards_raw, (str, bytes, bytearray)
+        ):
+            raise SnapshotError("mandatoryProductGuards must be an array")
+        guards = tuple(str(item).upper() for item in guards_raw)
         return cls(
             id=str(_pick(raw, "id")),
             code=str(_pick(raw, "code", default=f"STRATEGY_{index + 1}")),
@@ -221,6 +240,10 @@ class Strategy:
                 _pick(raw, "sortOrder", "sort_order", default=index), "sortOrder", 0
             ),
             objective_terms=terms,
+            strategy_semantics_version=(
+                None if semantics_raw is None else str(semantics_raw)
+            ),
+            mandatory_product_guards=guards,
             time_limit_seconds=(
                 None
                 if limit_raw is None
@@ -241,6 +264,11 @@ class ShiftTemplate:
     weekdays: tuple[int, ...]
     ends_next_day: bool = False
     shift_period: str = "MIDDLE"
+    # Business order of shifts within a location/day.  This is deliberately
+    # unrelated to how many shifts one employee may work: a Matrix may contain
+    # any number of templates, while an employee may still work only one
+    # primary shift per calendar day.
+    sequence_order: int | None = None
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> ShiftTemplate:
@@ -255,6 +283,10 @@ class ShiftTemplate:
         ).upper()
         if shift_period not in {"MORNING", "MIDDLE", "EVENING"}:
             raise SnapshotError("shiftPeriod must be MORNING, MIDDLE or EVENING")
+        sequence_order_raw = _pick(
+            raw, "sequenceOrder", "sequence_order", "sortOrder", "sort_order",
+            default=None,
+        )
         return cls(
             id=str(_pick(raw, "id")),
             location_id=str(_pick(raw, "locationId", "location_id")),
@@ -265,6 +297,11 @@ class ShiftTemplate:
                 _pick(raw, "endsNextDay", "ends_next_day", default=False)
             ),
             shift_period=shift_period,
+            sequence_order=(
+                None
+                if sequence_order_raw is None
+                else _integer(sequence_order_raw, "sequenceOrder", 0)
+            ),
         )
 
 
@@ -309,6 +346,8 @@ class EmployeeRoleGrant:
     role_id: str
     valid_from: date | None = None
     valid_to: date | None = None
+    assignment_mode: str = "STANDARD"
+    backup_priority: int = 100
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> EmployeeRoleGrant:
@@ -320,10 +359,21 @@ class EmployeeRoleGrant:
         )
         if valid_from and valid_to and valid_to < valid_from:
             raise SnapshotError("Role grant validTo cannot precede validFrom")
+        assignment_mode = str(
+            _pick(raw, "assignmentMode", "assignment_mode", default="STANDARD")
+        ).upper()
+        if assignment_mode not in {"STANDARD", "BACKUP"}:
+            raise SnapshotError("Role grant assignmentMode must be STANDARD or BACKUP")
         return cls(
             role_id=str(_pick(raw, "roleId", "role_id")),
             valid_from=valid_from,
             valid_to=valid_to,
+            assignment_mode=assignment_mode,
+            backup_priority=_integer(
+                _pick(raw, "backupPriority", "backup_priority", default=100),
+                "backupPriority",
+                1,
+            ),
         )
 
     def active_on(self, day: date) -> bool:
@@ -448,6 +498,7 @@ class Employee:
     base_hourly_rate_minor: int
     pay_rate_periods: tuple[PayRatePeriod, ...] | None
     contract_code: str = ""
+    overtime_policy: str = "NEVER"
     employment_start: date | None = None
     employment_end: date | None = None
     nominal_monthly_minutes: int | None = None
@@ -464,6 +515,7 @@ class Employee:
     blocked_shift_template_ids: tuple[str, ...] = ()
     preferred_location_ids: tuple[str, ...] = ()
     soft_day_off_dates: tuple[date, ...] = ()
+    missing_availability_means_available: bool | None = None
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Employee:
@@ -524,6 +576,20 @@ class Employee:
         ):
             if previous.valid_to is None or previous.valid_to >= current.valid_from:
                 raise SnapshotError("Employee pay rate periods cannot overlap")
+        contract_code = str(
+            _pick(raw, "contractCode", "contract_code", default="")
+        ).upper()
+        overtime_policy = str(
+            _pick(raw, "overtimePolicy", "overtime_policy", default="")
+        ).upper()
+        if not overtime_policy:
+            overtime_policy = (
+                "ALLOWED"
+                if any(grant.overtime_allowed for grant in location_grants or ())
+                else "NEVER"
+            )
+        if overtime_policy not in {"NEVER", "APPROVAL_REQUIRED", "ALLOWED"}:
+            raise SnapshotError("Employee overtimePolicy is invalid")
         return cls(
             id=str(_pick(raw, "id")),
             role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
@@ -543,7 +609,8 @@ class Employee:
                 0,
             ),
             pay_rate_periods=pay_rate_periods,
-            contract_code=str(_pick(raw, "contractCode", "contract_code", default="")),
+            contract_code=contract_code,
+            overtime_policy=overtime_policy,
             employment_start=_optional_date(
                 _pick(raw, "employmentStart", "employment_start", default=None),
                 "employmentStart",
@@ -612,6 +679,12 @@ class Employee:
                     raw, "softDayOffDates", "soft_day_off_dates", default=[]
                 )
             ),
+            missing_availability_means_available=_pick(
+                raw,
+                "missingAvailabilityMeansAvailable",
+                "missing_availability_means_available",
+                default=None,
+            ),
         )
 
     def role_allowed_on(self, role_id: str, day: date) -> bool:
@@ -620,6 +693,27 @@ class Employee:
         return any(
             grant.role_id == role_id and grant.active_on(day)
             for grant in self.role_grants
+        )
+
+    def role_assignment_penalty(self, role_id: str, day: date) -> int:
+        """Return zero for normal role grants and a stable penalty for backup use.
+
+        Coverage always wins, but among equally complete schedules the engine
+        must use a dedicated HOST/RUNNER before a waiter carrying that duty as
+        an emergency capability. Multiple grants are resolved by the least
+        restrictive active grant.
+        """
+        if self.role_grants is None:
+            return 0
+        grants = [
+            grant for grant in self.role_grants
+            if grant.role_id == role_id and grant.active_on(day)
+        ]
+        if not grants:
+            return 0
+        return min(
+            0 if grant.assignment_mode == "STANDARD" else grant.backup_priority
+            for grant in grants
         )
 
     def location_allowed_on(self, location_id: str, day: date) -> bool:
@@ -674,6 +768,71 @@ class AvailabilityWindow:
             employee_id=str(_pick(raw, "employeeId", "employee_id")),
             start=start,
             end=end,
+        )
+
+
+@dataclass(frozen=True)
+class WorkPattern:
+    id: str
+    employee_id: str
+    weekday: int
+    local_start: time
+    local_end: time
+    role_id: str | None = None
+    location_id: str | None = None
+    enforcement: str = "HARD"
+    valid_from: date | None = None
+    valid_to: date | None = None
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> WorkPattern:
+        weekday = _integer(_pick(raw, "weekday"), "workPattern weekday")
+        if weekday not in range(1, 8):
+            raise SnapshotError("workPattern weekday must be between 1 and 7")
+        enforcement = str(_pick(raw, "enforcement", default="HARD")).upper()
+        if enforcement not in {"HARD", "PREFERENCE"}:
+            raise SnapshotError("workPattern enforcement must be HARD or PREFERENCE")
+        try:
+            local_start = time.fromisoformat(
+                str(_pick(raw, "localStart", "local_start"))
+            )
+            local_end = time.fromisoformat(str(_pick(raw, "localEnd", "local_end")))
+        except (TypeError, ValueError) as exc:
+            raise SnapshotError("workPattern times must use HH:MM[:SS]") from exc
+        valid_from = _optional_date(
+            _pick(raw, "validFrom", "valid_from", default=None),
+            "workPattern validFrom",
+        )
+        valid_to = _optional_date(
+            _pick(raw, "validTo", "valid_to", default=None),
+            "workPattern validTo",
+        )
+        if valid_from and valid_to and valid_to < valid_from:
+            raise SnapshotError("workPattern validTo cannot precede validFrom")
+        return cls(
+            id=str(_pick(raw, "id")),
+            employee_id=str(_pick(raw, "employeeId", "employee_id")),
+            weekday=weekday,
+            local_start=local_start,
+            local_end=local_end,
+            role_id=(
+                str(value)
+                if (value := _pick(raw, "roleId", "role_id", default=None))
+                else None
+            ),
+            location_id=(
+                str(value)
+                if (value := _pick(raw, "locationId", "location_id", default=None))
+                else None
+            ),
+            enforcement=enforcement,
+            valid_from=valid_from,
+            valid_to=valid_to,
+        )
+
+    def active_on(self, day: date) -> bool:
+        return (self.valid_from is None or day >= self.valid_from) and (
+            self.valid_to is None or day <= self.valid_to
         )
 
 
@@ -857,6 +1016,7 @@ class PayRule:
     stacking_mode: str
     priority: int
     active: bool
+    cost_category: str = "WAGE"
     effective_from: date | None = None
     effective_to: date | None = None
 
@@ -910,6 +1070,11 @@ class PayRule:
                 )
             )
         stacking_group = _pick(raw, "stackingGroup", "stacking_group", default=None)
+        cost_category = str(
+            _pick(raw, "costCategory", "cost_category", default="WAGE")
+        ).upper()
+        if cost_category not in {"WAGE", "EMPLOYER_ONCOST"}:
+            raise SnapshotError("Pay rule costCategory must be WAGE or EMPLOYER_ONCOST")
         return cls(
             id=rule_id,
             calculation_type=calculation_type,
@@ -925,6 +1090,7 @@ class PayRule:
                 _pick(raw, "priority", default=index), "pay rule priority", 0
             ),
             active=bool(_pick(raw, "active", default=True)),
+            cost_category=cost_category,
             effective_from=_optional_date(
                 _pick(raw, "effectiveFrom", "effective_from", default=None),
                 "effectiveFrom",
@@ -941,9 +1107,14 @@ class Budget:
     id: str
     amount_minor: int
     hard: bool = True
+    metric_type: str = "COST"
+    enforcement: str = "HARD"
+    limit_minutes: int | None = None
     location_id: str | None = None
     role_id: str | None = None
+    role_ids: tuple[str, ...] = ()
     duty_id: str | None = None
+    cost_basis: str = "WAGES"
 
     @classmethod
     def from_dict(
@@ -955,12 +1126,22 @@ class Budget:
     ) -> Budget | None:
         if raw is None:
             return None
+        metric_type = str(_pick(raw, "metricType", "metric_type", default="COST")).upper()
+        if metric_type not in {"COST", "HOURS", "LABOR_PERCENT"}:
+            raise SnapshotError("A budget metricType is invalid")
+        enforcement = str(_pick(raw, "enforcement", default="")).upper()
+        if not enforcement:
+            enforcement = "HARD" if bool(_pick(raw, "hard", default=True)) else "MONITORING"
+        if enforcement not in {"HARD", "TARGET", "MONITORING"}:
+            raise SnapshotError("A budget enforcement is invalid")
         amount = _pick(raw, "amountMinor", "amount_minor", default=None)
-        hard = bool(_pick(raw, "hard", default=True))
-        if amount is None:
-            if allow_disabled and not hard:
+        limit_minutes = _pick(raw, "limitMinutes", "limit_minutes", default=None)
+        if metric_type in {"COST", "LABOR_PERCENT"} and amount is None:
+            if allow_disabled and enforcement == "MONITORING":
                 return None
             raise SnapshotError("A budget requires amountMinor")
+        if metric_type == "HOURS" and limit_minutes is None:
+            raise SnapshotError("An hours budget requires limitMinutes")
         budget_id = _pick(raw, "id", default=default_id)
         if budget_id in (None, ""):
             raise SnapshotError("A scoped budget requires id")
@@ -969,19 +1150,28 @@ class Budget:
             value = _pick(raw, camel, snake, default=None)
             return None if value in (None, "") else str(value)
 
+        cost_basis = str(_pick(raw, "costBasis", "cost_basis", default="WAGES")).upper()
+        if cost_basis not in {"WAGES", "FULL_EMPLOYER_COST"}:
+            raise SnapshotError("A budget costBasis is invalid")
         return cls(
             id=str(budget_id),
-            amount_minor=_integer(amount, "budget amountMinor", 0),
-            hard=hard,
+            amount_minor=_integer(amount or 0, "budget amountMinor", 0),
+            hard=enforcement == "HARD",
+            metric_type=metric_type,
+            enforcement=enforcement,
+            limit_minutes=None if limit_minutes is None else _integer(limit_minutes, "budget limitMinutes", 0),
             location_id=optional_id("locationId", "location_id"),
             role_id=optional_id("roleId", "role_id"),
+            role_ids=_strings(_pick(raw, "roleIds", "role_ids", default=[])),
             duty_id=optional_id("dutyId", "duty_id"),
+            cost_basis=cost_basis,
         )
 
     def matches(self, slot: Any) -> bool:
         return (
             (self.location_id is None or slot.location_id == self.location_id)
             and (self.role_id is None or slot.role_id == self.role_id)
+            and (not self.role_ids or slot.role_id in self.role_ids)
             and (self.duty_id is None or self.duty_id in slot.duty_ids)
         )
 
@@ -991,23 +1181,119 @@ class Budget:
             scope["locationId"] = self.location_id
         if self.role_id is not None:
             scope["roleId"] = self.role_id
+        if self.role_ids:
+            scope["roleIds"] = ",".join(self.role_ids)
         if self.duty_id is not None:
             scope["dutyId"] = self.duty_id
         return scope
 
 
 @dataclass(frozen=True)
+class FairnessQualityTarget:
+    minimum_estimated_achievable_target_utilization_bps: int
+    maximum_estimated_achievable_target_utilization_spread_bps: int
+    max_attempts: int
+
+    def __post_init__(self) -> None:
+        if self.minimum_estimated_achievable_target_utilization_bps > 1_000:
+            raise SnapshotError(
+                "fairnessQualityTarget minimum utilization must be between 0 and 1000"
+            )
+        if self.maximum_estimated_achievable_target_utilization_spread_bps > 1_000:
+            raise SnapshotError(
+                "fairnessQualityTarget maximum spread must be between 0 and 1000"
+            )
+        if self.max_attempts > 3:
+            raise SnapshotError(
+                "fairnessQualityTarget maxAttempts must be between 1 and 3"
+            )
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> FairnessQualityTarget:
+        supported = {
+            "minimumEstimatedAchievableTargetUtilizationBps",
+            "minimum_estimated_achievable_target_utilization_bps",
+            "maximumEstimatedAchievableTargetUtilizationSpreadBps",
+            "maximum_estimated_achievable_target_utilization_spread_bps",
+            "maxAttempts",
+            "max_attempts",
+        }
+        unsupported = set(raw) - supported
+        if unsupported:
+            raise SnapshotError(
+                f"Unsupported fairnessQualityTarget fields: {sorted(unsupported)}"
+            )
+        return cls(
+            minimum_estimated_achievable_target_utilization_bps=_integer(
+                _pick(
+                    raw,
+                    "minimumEstimatedAchievableTargetUtilizationBps",
+                    "minimum_estimated_achievable_target_utilization_bps",
+                ),
+                "fairnessQualityTarget minimumEstimatedAchievableTargetUtilizationBps",
+                0,
+            ),
+            maximum_estimated_achievable_target_utilization_spread_bps=_integer(
+                _pick(
+                    raw,
+                    "maximumEstimatedAchievableTargetUtilizationSpreadBps",
+                    "maximum_estimated_achievable_target_utilization_spread_bps",
+                ),
+                "fairnessQualityTarget maximumEstimatedAchievableTargetUtilizationSpreadBps",
+                0,
+            ),
+            max_attempts=_integer(
+                _pick(raw, "maxAttempts", "max_attempts"),
+                "fairnessQualityTarget maxAttempts",
+                1,
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class Settings:
     timezone: str
+    strategy_semantics_version: str | None = None
     missing_availability_means_available: bool = True
     default_minimum_rest_minutes: int = 660
     require_optimal: bool = True
     random_seed: int = 1
+    standby_tiers_per_role_day: int = 0
+    fairness_quality_target: FairnessQualityTarget | None = None
+
+    def __post_init__(self) -> None:
+        if self.standby_tiers_per_role_day > 2:
+            raise SnapshotError("standbyTiersPerRoleDay must be between 0 and 2")
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> Settings:
+        fairness_quality_target_raw = _pick(
+            raw,
+            "fairnessQualityTarget",
+            "fairness_quality_target",
+            "fairnessQualityGate",
+            "fairness_quality_gate",
+            default=None,
+        )
+        if fairness_quality_target_raw is not None and not isinstance(
+            fairness_quality_target_raw, Mapping
+        ):
+            raise SnapshotError("fairnessQualityTarget must be an object")
         return cls(
             timezone=str(_pick(raw, "timezone")),
+            strategy_semantics_version=(
+                None
+                if (
+                    semantics_version := _pick(
+                        raw,
+                        "strategySemanticsVersion",
+                        "strategy_semantics_version",
+                        default=None,
+                    )
+                )
+                is None
+                else str(semantics_version)
+            ),
             missing_availability_means_available=bool(
                 _pick(
                     raw,
@@ -1032,6 +1318,21 @@ class Settings:
             random_seed=_integer(
                 _pick(raw, "randomSeed", "random_seed", default=1), "randomSeed", 0
             ),
+            standby_tiers_per_role_day=_integer(
+                _pick(
+                    raw,
+                    "standbyTiersPerRoleDay",
+                    "standby_tiers_per_role_day",
+                    default=0,
+                ),
+                "standbyTiersPerRoleDay",
+                0,
+            ),
+            fairness_quality_target=(
+                None
+                if fairness_quality_target_raw is None
+                else FairnessQualityTarget.from_dict(fairness_quality_target_raw)
+            ),
         )
 
 
@@ -1053,6 +1354,7 @@ class Snapshot:
     demand: tuple[Demand, ...]
     employees: tuple[Employee, ...]
     availability_windows: tuple[AvailabilityWindow, ...]
+    work_patterns: tuple[WorkPattern, ...]
     hard_blocks: tuple[HardBlock, ...]
     pay_rules: tuple[PayRule, ...]
     budgets: tuple[Budget, ...]
@@ -1168,6 +1470,13 @@ class Snapshot:
                         raw, "availabilityWindows", "availability_windows", default=[]
                     ),
                     "availabilityWindows",
+                )
+            ),
+            work_patterns=tuple(
+                WorkPattern.from_dict(item)
+                for item in _items(
+                    _pick(raw, "workPatterns", "work_patterns", default=[]),
+                    "workPatterns",
                 )
             ),
             hard_blocks=tuple(

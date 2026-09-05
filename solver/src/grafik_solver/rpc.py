@@ -12,9 +12,11 @@ from typing import Any
 ALLOWED_GATEWAY_ACTIONS = frozenset(
     {
         "solver_claim_next_v2",
+        "solver_claim_next_v3",
         "solver_load_snapshot_v2",
         "solver_heartbeat_v2",
         "solver_save_variant_v2",
+        "solver_save_variants_v2",
         "solver_finalize_v2",
         "solver_interrupt_v2",
         "solver_fail_attempt_v2",
@@ -22,6 +24,7 @@ ALLOWED_GATEWAY_ACTIONS = frozenset(
 )
 MAX_GATEWAY_REQUEST_BYTES = 8 * 1024 * 1024
 MAX_GATEWAY_RESPONSE_BYTES = 64 * 1024 * 1024
+_RESPONSE_RETRY_SAFE_ACTIONS = frozenset({"solver_heartbeat_v2"})
 
 
 class RpcError(RuntimeError):
@@ -38,7 +41,9 @@ def _pick(raw: Mapping[str, Any], *names: str, default: Any = None) -> Any:
     return default
 
 
-def _row(value: Any) -> Mapping[str, Any] | None:
+def _row(
+    value: Any, *, unexpected_shape_retryable: bool = False
+) -> Mapping[str, Any] | None:
     if value is None:
         return None
     if isinstance(value, list):
@@ -47,7 +52,10 @@ def _row(value: Any) -> Mapping[str, Any] | None:
         value = value[0]
     if isinstance(value, Mapping):
         return value
-    raise RpcError("RPC returned an unexpected response shape", retryable=False)
+    raise RpcError(
+        "RPC returned an unexpected response shape",
+        retryable=unexpected_shape_retryable,
+    )
 
 
 @dataclass(frozen=True)
@@ -120,6 +128,7 @@ class SolverGatewayClient:
             )
         last_error: RpcError | None = None
         for attempt in range(self.maximum_attempts):
+            response_status: int | None = None
             request = urllib.request.Request(
                 url=self.gateway_url,
                 data=body,
@@ -130,6 +139,7 @@ class SolverGatewayClient:
                 with self._opener.open(
                     request, timeout=self.timeout_seconds
                 ) as response:
+                    response_status = getattr(response, "status", None)
                     raw = response.read(MAX_GATEWAY_RESPONSE_BYTES + 1)
                     if len(raw) > MAX_GATEWAY_RESPONSE_BYTES:
                         raise RpcError(
@@ -139,8 +149,27 @@ class SolverGatewayClient:
                     return None if not raw else json.loads(raw.decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 retryable = exc.code == 429 or 500 <= exc.code < 600
+                detail = ""
+                try:
+                    error_body = exc.read(4097)
+                    if len(error_body) <= 4096:
+                        parsed_error = json.loads(error_body.decode("utf-8"))
+                        candidate = (
+                            parsed_error.get("error")
+                            if isinstance(parsed_error, Mapping)
+                            else None
+                        )
+                        if (
+                            isinstance(candidate, str)
+                            and candidate
+                            and len(candidate) <= 100
+                            and candidate.replace("_", "").replace(":", "").replace("-", "").isalnum()
+                        ):
+                            detail = f": {candidate}"
+                except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+                    detail = ""
                 last_error = RpcError(
-                    f"Gateway action {name} returned HTTP {exc.code}",
+                    f"Gateway action {name} returned HTTP {exc.code}{detail}",
                     retryable=retryable,
                     status=exc.code,
                 )
@@ -153,9 +182,14 @@ class SolverGatewayClient:
                     retryable=True,
                 )
             except json.JSONDecodeError as exc:
-                raise RpcError(
-                    f"Gateway action {name} returned invalid JSON", retryable=False
-                ) from exc
+                retryable = name in _RESPONSE_RETRY_SAFE_ACTIONS
+                last_error = RpcError(
+                    f"Gateway action {name} returned invalid JSON",
+                    retryable=retryable,
+                    status=response_status,
+                )
+                if not retryable:
+                    raise last_error from exc
             if attempt + 1 < self.maximum_attempts:
                 delay = min(0.25 * (2**attempt), 2.0) + random.uniform(0.0, 0.1)
                 time.sleep(delay)
@@ -167,21 +201,31 @@ class SolverGatewayClient:
         *,
         worker_id: str,
         worker_version: str,
+        contract_version: str,
+        source_sha: str,
+        image_digest: str,
+        build_timestamp: str,
         task_attempt: int,
         lease_seconds: int,
     ) -> Claim | None:
         raw = _row(
             self.call(
-                "solver_claim_next_v2",
+                "solver_claim_next_v3",
                 {
                     "p_worker_id": worker_id,
                     "p_worker_version": worker_version,
+                    "p_worker_build_manifest": {
+                        "contractVersion": contract_version,
+                        "sourceSha": source_sha,
+                        "imageDigest": image_digest,
+                        "buildTimestamp": build_timestamp,
+                    },
                     "p_task_attempt": task_attempt,
                     "p_lease_seconds": lease_seconds,
                 },
             )
         )
-        return self._claim_from(raw, "solver_claim_next_v2")
+        return self._claim_from(raw, "solver_claim_next_v3")
 
     @staticmethod
     def _claim_from(raw: Mapping[str, Any] | None, action: str) -> Claim | None:
@@ -229,7 +273,11 @@ class SolverGatewayClient:
                     "p_lease_token": claim.lease_token,
                     "p_progress": dict(progress),
                 },
-            )
+            ),
+            # A heartbeat is idempotent. If the gateway accepted the request but
+            # returned a malformed success body, retrying cannot duplicate work
+            # and is safer than interrupting a run whose lease may be renewed.
+            unexpected_shape_retryable=True,
         )
         return Heartbeat(
             cancel_requested=bool(
@@ -248,6 +296,19 @@ class SolverGatewayClient:
                 "p_attempt_id": claim.attempt_id,
                 "p_lease_token": claim.lease_token,
                 "p_variant": dict(variant),
+            },
+        )
+
+    def save_variants(
+        self, claim: Claim, variants: tuple[Mapping[str, Any], ...]
+    ) -> Any:
+        return self.call(
+            "solver_save_variants_v2",
+            {
+                "p_run_id": claim.run_id,
+                "p_attempt_id": claim.attempt_id,
+                "p_lease_token": claim.lease_token,
+                "p_variants": [dict(variant) for variant in variants],
             },
         )
 

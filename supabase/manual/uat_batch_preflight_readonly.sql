@@ -1,0 +1,16 @@
+select
+  current_database() as database_name,
+  current_user as database_user,
+  current_setting('app.settings.project_ref', true) as project_ref,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260816001553') as overtime_budget_migration_recorded,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260816004500') as leader_overtime_migration_recorded,
+  exists(select 1 from supabase_migrations.schema_migrations where version='20260816010000') as standby_groups_migration_recorded,
+  to_regprocedure('public.matrix_v2_admin_save_alpha16(text,uuid,jsonb)') is not null as has_matrix_save,
+  to_regprocedure('public.optimizer_leader_assignment_save_uat_v2(uuid,uuid,bigint,uuid,text,boolean,uuid)') is not null as has_leader_save_v2,
+  to_regprocedure('public.optimizer_leader_assignment_save_uat_v3(uuid,uuid,bigint,uuid,text,boolean,uuid,boolean)') is not null as has_leader_overtime_save_v3,
+  to_regprocedure('public.monthly_budgets_get_uat_v1(date)') is not null as has_monthly_budgets,
+  to_regclass('public.monthly_budget_revisions_v2') is not null as has_budget_revisions,
+  to_regprocedure('solver_private.generate_standby_for_variant_uat_v2(uuid,date,uuid,uuid,uuid,uuid)') is not null as has_standby_generator,
+  to_regprocedure('public.manager_standby_month_uat_v3(date,uuid)') is not null as has_standby_groups_v3,
+  to_regprocedure('public.standby_activate_uat_v3(uuid,uuid,text)') is not null as has_standby_activation_v3,
+  to_regclass('public.published_standby_assignments_v2') is not null as has_standby_table;

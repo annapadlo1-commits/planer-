@@ -7,6 +7,9 @@ do $$
 declare
   v_public_rpc text;
   v_private_rpc text;
+  v_candidates text;
+  v_candidates_fallback text;
+  v_candidates_delegate text;
 begin
   if to_regclass('public.published_schedules_v2') is null
     or to_regclass('public.published_schedule_variants_v2') is null
@@ -166,11 +169,26 @@ begin
       'public.optimizer_select_variant_v2(uuid,uuid)'::regprocedure
     ),' ','')
   )=0 then raise exception 'SHADOW_VARIANT_SELECTION_NOT_BLOCKED'; end if;
+  v_candidates:=replace(pg_get_functiondef(
+    'public.optimizer_role_composite_candidates_v2(date,uuid)'::regprocedure
+  ),' ','');
+  v_candidates_fallback:=replace(pg_get_functiondef(
+    'public.optimizer_role_composite_candidates_before_publication_fallback(date,uuid)'::regprocedure
+  ),' ','');
+  v_candidates_delegate:=replace(pg_get_functiondef(
+    'public.optimizer_role_composite_candidates_before_categories_uat_v1(date,uuid)'::regprocedure
+  ),' ','');
   if position(
-    'request_engine=''ORTOOLS_V2''' in replace(pg_get_functiondef(
-      'public.optimizer_role_composite_candidates_v2(date,uuid)'::regprocedure
-    ),' ','')
-  )=0 then raise exception 'SHADOW_ROLE_CANDIDATE_NOT_BLOCKED'; end if;
+      'optimizer_role_composite_candidates_before_publication_fallback_uat_v1'
+      in v_candidates
+    )=0
+    or position(
+      'optimizer_role_composite_candidates_before_categories_uat_v1'
+      in v_candidates_fallback
+    )=0
+    or position('request_engine=''ORTOOLS_V2''' in v_candidates_delegate)=0 then
+    raise exception 'SHADOW_ROLE_CANDIDATE_NOT_BLOCKED';
+  end if;
   if position(
     'ORTOOLS_PUBLICATION_DISABLED' in pg_get_functiondef(
       'public.optimizer_publish_company_variant_v2(uuid,uuid,text,text)'::regprocedure

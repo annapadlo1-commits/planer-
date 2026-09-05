@@ -12,6 +12,8 @@ declare
   v_company text;
   v_composite text;
   v_candidates text;
+  v_candidates_fallback text;
+  v_candidates_delegate text;
   v_employee text;
 begin
   if to_regprocedure(
@@ -172,6 +174,12 @@ begin
   v_candidates:=replace(pg_get_functiondef(
     'public.optimizer_role_composite_candidates_v2(date,uuid)'::regprocedure
   ),' ','');
+  v_candidates_fallback:=replace(pg_get_functiondef(
+    'public.optimizer_role_composite_candidates_before_publication_fallback(date,uuid)'::regprocedure
+  ),' ','');
+  v_candidates_delegate:=replace(pg_get_functiondef(
+    'public.optimizer_role_composite_candidates_before_categories_uat_v1(date,uuid)'::regprocedure
+  ),' ','');
   if position('active_ortools_solver_version_v2()' in v_select)=0
     or position('run.solver_version' in v_select)=0
     or position('v_active_solver_version' in v_select)=0 then
@@ -187,9 +195,11 @@ begin
     or position('v_active_solver_version' in v_composite)=0 then
     raise exception 'ROLE_COMPOSITE_PUBLICATION_VERSION_FENCE_MISSING';
   end if;
-  if position('active_ortools_solver_version_v2()' in v_candidates)=0
-    or position('run.solver_version' in v_candidates)=0
-    or position('v_active_solver_version' in v_candidates)=0 then
+  if position('optimizer_role_composite_candidates_before_publication_fallback_uat_v1' in v_candidates)=0
+    or position('optimizer_role_composite_candidates_before_categories_uat_v1' in v_candidates_fallback)=0
+    or position('active_ortools_solver_version_v2()' in v_candidates_delegate)=0
+    or position('run.solver_version' in v_candidates_delegate)=0
+    or position('v_active_solver_version' in v_candidates_delegate)=0 then
     raise exception 'ROLE_CANDIDATE_EXACT_VERSION_FILTER_MISSING';
   end if;
 

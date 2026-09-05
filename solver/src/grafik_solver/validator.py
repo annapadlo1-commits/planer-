@@ -14,7 +14,12 @@ from .pay_rules import (
     quote_selected_assignments,
     validate_pay_rules,
 )
-from .slots import Slot, generate_slots
+from .slots import (
+    Slot,
+    consecutive_shift_sequence,
+    generate_slots,
+    shift_sequence_boundaries,
+)
 
 
 class VariantValidationError(ValueError):
@@ -148,6 +153,8 @@ def validate_variant(
     for external in snapshot.external_assignments:
         external_by_employee[external.employee_id].append(external)
 
+    sequence_boundaries = shift_sequence_boundaries(snapshot)
+
     for employee_id, employee in employees.items():
         employee_slots = sorted(
             selected_by_employee.get(employee_id, []), key=lambda slot: slot.start
@@ -164,6 +171,10 @@ def validate_variant(
                 ):
                     errors.append(
                         f"OVERLAP_OR_REST:{employee_id}:{first.id}:{second.id}"
+                    )
+                if consecutive_shift_sequence(sequence_boundaries, first, second):
+                    errors.append(
+                        f"CONSECUTIVE_SHIFT_SEQUENCE:{employee_id}:{first.id}:{second.id}"
                     )
 
         daily_count: dict[date, int] = defaultdict(int)
@@ -190,6 +201,16 @@ def validate_variant(
             for day, minutes in daily_minutes.items()
             if snapshot.period_start <= day <= snapshot.period_end
         )
+        if (
+            employee.nominal_monthly_minutes is not None
+            and employee.overtime_policy != "ALLOWED"
+            and total_minutes > employee.nominal_monthly_minutes
+        ):
+            errors.append(
+                "OVERTIME_POLICY_LIMIT:"
+                f"{employee_id}:{employee.overtime_policy}:{total_minutes}:"
+                f"{employee.nominal_monthly_minutes}"
+            )
         if (
             employee.maximum_monthly_minutes is not None
             and total_minutes > employee.maximum_monthly_minutes
@@ -252,12 +273,21 @@ def validate_variant(
     )
     budget_results: list[BudgetValidationResult] = []
     for budget in snapshot.budgets:
-        spent = sum(
-            complete_quotes[(employee.id, slot.id)].cost_units
-            for _assignment, employee, slot in selected
-            if budget.matches(slot)
-        )
-        limit = budget.amount_minor * COST_SCALE
+        if budget.metric_type == "HOURS":
+            spent = sum(slot.duration_minutes for _assignment, _employee, slot in selected if budget.matches(slot))
+            limit = int(budget.limit_minutes or 0)
+        else:
+            spent = sum(
+                sum(
+                    component.cost_units
+                    for component in complete_quotes[(employee.id, slot.id)].components
+                    if budget.cost_basis == "FULL_EMPLOYER_COST"
+                    or component.cost_category != "EMPLOYER_ONCOST"
+                )
+                for _assignment, employee, slot in selected
+                if budget.matches(slot)
+            )
+            limit = budget.amount_minor * COST_SCALE
         exceeded = spent > limit
         scope = budget.scope()
         budget_results.append(

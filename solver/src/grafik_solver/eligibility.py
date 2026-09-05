@@ -12,6 +12,7 @@ from .models import (
     ExternalAssignment,
     HardBlock,
     Snapshot,
+    WorkPattern,
 )
 from .slots import Slot
 
@@ -53,11 +54,14 @@ class EligibilityIndex:
         self.timezone = ZoneInfo(snapshot.settings.timezone)
         self.windows: dict[str, list[AvailabilityWindow]] = defaultdict(list)
         self.blocks: dict[str, list[HardBlock]] = defaultdict(list)
+        self.patterns: dict[str, list[WorkPattern]] = defaultdict(list)
         self.external: dict[str, list[ExternalAssignment]] = defaultdict(list)
         for window in snapshot.availability_windows:
             self.windows[window.employee_id].append(window)
         for block in snapshot.hard_blocks:
             self.blocks[block.employee_id].append(block)
+        for pattern in snapshot.work_patterns:
+            self.patterns[pattern.employee_id].append(pattern)
         for assignment in snapshot.external_assignments:
             self.external[assignment.employee_id].append(assignment)
         for collection in (self.windows, self.external):
@@ -106,6 +110,17 @@ class EligibilityIndex:
         if employee.no_weekends and slot.date.isoweekday() in {6, 7}:
             reasons.append("WEEKEND")
 
+        active_hard_patterns = tuple(
+            pattern
+            for pattern in self.patterns.get(employee.id, ())
+            if pattern.enforcement == "HARD" and pattern.active_on(slot.date)
+        )
+        if active_hard_patterns and not any(
+            self.pattern_matches_slot(pattern, slot)
+            for pattern in active_hard_patterns
+        ):
+            reasons.append("PERMANENT_WORK_PATTERN")
+
         start_minute = local_start.hour * 60 + local_start.minute
         end_minute = local_end.hour * 60 + local_end.minute
         if local_end.date() > local_start.date():
@@ -129,7 +144,11 @@ class EligibilityIndex:
                 for window in windows
             ):
                 reasons.append("AVAILABILITY_WINDOW")
-        elif not self.snapshot.settings.missing_availability_means_available:
+        elif not (
+            employee.missing_availability_means_available
+            if employee.missing_availability_means_available is not None
+            else self.snapshot.settings.missing_availability_means_available
+        ):
             reasons.append("MISSING_AVAILABILITY")
 
         for block in self.blocks.get(employee.id, ()):
@@ -160,6 +179,41 @@ class EligibilityIndex:
                 reasons.append("EXTERNAL_ASSIGNMENT_CONFLICT_OR_REST")
                 break
         return Eligibility(allowed=not reasons, reasons=tuple(sorted(set(reasons))))
+
+    def pattern_matches_slot(self, pattern: WorkPattern, slot: Slot) -> bool:
+        if slot.date.isoweekday() != pattern.weekday:
+            return False
+        if pattern.role_id is not None and pattern.role_id != slot.role_id:
+            return False
+        if pattern.location_id is not None and pattern.location_id != slot.location_id:
+            return False
+        slot_timezone = slot.start.tzinfo or self.timezone
+        local_start = slot.start.astimezone(slot_timezone)
+        local_end = slot.end.astimezone(slot_timezone)
+        slot_start_minute = local_start.hour * 60 + local_start.minute
+        slot_end_minute = local_end.hour * 60 + local_end.minute
+        if local_end.date() > local_start.date():
+            slot_end_minute += 24 * 60
+        pattern_start_minute = pattern.local_start.hour * 60 + pattern.local_start.minute
+        pattern_end_minute = pattern.local_end.hour * 60 + pattern.local_end.minute
+        if pattern_end_minute <= pattern_start_minute:
+            pattern_end_minute += 24 * 60
+        return (
+            pattern_start_minute <= slot_start_minute
+            and slot_end_minute <= pattern_end_minute
+        )
+
+    def violates_preferred_work_pattern(
+        self, employee_id: str, slot: Slot
+    ) -> bool:
+        patterns = tuple(
+            pattern
+            for pattern in self.patterns.get(employee_id, ())
+            if pattern.enforcement == "PREFERENCE" and pattern.active_on(slot.date)
+        )
+        return bool(patterns) and not any(
+            self.pattern_matches_slot(pattern, slot) for pattern in patterns
+        )
 
     def eligible_pairs(
         self, employees: Iterable[Employee], slots: Iterable[Slot]

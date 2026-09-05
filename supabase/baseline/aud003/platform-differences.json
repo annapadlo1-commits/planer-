@@ -1,0 +1,114 @@
+{
+  "projectRef": "nhthrtpkfpmufmrmdyjg",
+  "review": "Only the exact inspected source/local pair is allowed; modified grants, definitions, schema or roles fail closed.",
+  "entries": [
+    {
+      "section": "schemas",
+      "key": "supabase_migrations",
+      "kind": "MISSING_LOCAL",
+      "sourceSha256": "249f49df66599c381d76f1147e4c0a7e23db31820c5794c6952ced2aba1ffc74",
+      "localSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "explanation": "Remote historical ledger is evidence, not replayed into an empty local database. The separately hashed active execution ledger is applied only after baseline comparison."
+    },
+    {
+      "section": "schemas",
+      "key": "_realtime",
+      "kind": "LOCAL_ONLY",
+      "sourceSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "localSha256": "fc019549d20a6876f60832f9bebe303d852d2088b74644bf0f913b98773b738d",
+      "explanation": "Exact pre-existing managed local platform schema and ACL from official pinned image; not an application schema and not installed by the baseline."
+    },
+    {
+      "section": "schemas",
+      "key": "supabase_functions",
+      "kind": "LOCAL_ONLY",
+      "sourceSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "localSha256": "cc9202e6b8bcb164663fb630181bacfd8836ca4d224ca72e53534b9fe445e80b",
+      "explanation": "Exact pre-existing managed local platform schema and ACL from official pinned image; not an application schema and not installed by the baseline."
+    },
+    {
+      "section": "columns",
+      "key": "public|optimization_runs_v2|version_stamp",
+      "kind": "DIFFERENT",
+      "fields": [
+        "ordinal"
+      ],
+      "sourceSha256": "edef75aecefc6cf56a00432342f0ba5621c238321d6b78ca5ad11a35fb2be809",
+      "localSha256": "5838f692a29a7e8f3675b052b287a640b54bc04cfb4d8203d45afa90ec72927a",
+      "explanation": "Only physical attnum changes from 40 to 33 after dropped-column gaps disappear. All 33 visible column names remain in the same order, and types/defaults/nullability are identical."
+    },
+    {
+      "section": "defaultAcls",
+      "key": "supabase_functions|supabase_admin|f",
+      "kind": "LOCAL_ONLY",
+      "sourceSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "localSha256": "ec408fb57d8bb21c70a080b26dc38fc74db8fbe78a19706c5dffaac7d0d7f3bc",
+      "explanation": "Exact pre-existing supabase_functions default privileges of the official local platform. Application/public/auth/storage default ACLs are compared without exceptions."
+    },
+    {
+      "section": "defaultAcls",
+      "key": "supabase_functions|supabase_admin|r",
+      "kind": "LOCAL_ONLY",
+      "sourceSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "localSha256": "d9d3e8ba49fa0d05e34536c7a6708f0ffd0e8dfe9556e679eab76e95fd6dd94f",
+      "explanation": "Exact pre-existing supabase_functions default privileges of the official local platform. Application/public/auth/storage default ACLs are compared without exceptions."
+    },
+    {
+      "section": "defaultAcls",
+      "key": "supabase_functions|supabase_admin|S",
+      "kind": "LOCAL_ONLY",
+      "sourceSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "localSha256": "9efd661411222a9a36b99f5b535a7e85c9565d31442fa7c6c7510ae8209650cb",
+      "explanation": "Exact pre-existing supabase_functions default privileges of the official local platform. Application/public/auth/storage default ACLs are compared without exceptions."
+    },
+    {
+      "section": "extensions",
+      "key": "pg_stat_statements",
+      "kind": "DIFFERENT",
+      "fields": [
+        "owner"
+      ],
+      "sourceSha256": "00abfd1b6ec0efcf1d55ab51315800e55ecaa69cfd4bb06114e7c245e11fcd53",
+      "localSha256": "d24fd0fd16eef777b51623c24d4de1d0c1751591f561189b14c75169fd22e459",
+      "explanation": "Exact pre-installed extension owned by local supabase_admin versus UAT postgres. Version/schema/relocatability are identical; no app object owner is exempted."
+    },
+    {
+      "section": "extensions",
+      "key": "pgcrypto",
+      "kind": "DIFFERENT",
+      "fields": [
+        "owner"
+      ],
+      "sourceSha256": "6fc388587a8846e7ec418e3094f0b16dbea316150ad03a3b51a939cc8959ed63",
+      "localSha256": "7a3442e612f920a8ba9a042fdec33482fcfa71ca12bbe848c5a5d2576dc0f28c",
+      "explanation": "Exact pre-installed extension owned by local supabase_admin versus UAT postgres. Version/schema/relocatability are identical; no app object owner is exempted."
+    },
+    {
+      "section": "extensions",
+      "key": "uuid-ossp",
+      "kind": "DIFFERENT",
+      "fields": [
+        "owner"
+      ],
+      "sourceSha256": "5fffac3fc01b937139a5c6523332da038303bd8048684cf18e9cf66a320d8680",
+      "localSha256": "01c72c3bd3306d354d9851f528a79b6e8063d6e1928ba4ee8160982940ce5902",
+      "explanation": "Exact pre-installed extension owned by local supabase_admin versus UAT postgres. Version/schema/relocatability are identical; no app object owner is exempted."
+    },
+    {
+      "section": "storageObjectsTable",
+      "key": "singleton",
+      "kind": "DIFFERENT",
+      "sourceSha256": "3d81d6146236094e9526c855458767c42218f9843c0466e5207295f8765b5597",
+      "localSha256": "9bc5109de3bb66ef5d238b44138b60a966d82008cc985d942567d3208fa93d23",
+      "explanation": "Exact ACL ordering and redundant explicit owner grant options differ; PostgreSQL ownership supplies implicit grant options. All non-owner privileges/grant options, owner, RLS and FORCE RLS agree."
+    },
+    {
+      "section": "cronMetadata",
+      "key": "singleton",
+      "kind": "DIFFERENT",
+      "sourceSha256": "58b383517e5da08354418ce19b43f076aec6256c2c7bca99a21b887390144e95",
+      "localSha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "explanation": "One UAT recovery cron is intentionally NOT scheduled locally: external/background integrations are outside authorization. Only its metadata and command hash are retained; runtime/job replay is NOT VERIFIED."
+    }
+  ]
+}

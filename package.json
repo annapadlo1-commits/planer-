@@ -6,17 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:matrix-import": "node --experimental-strip-types --test tests/matrix-workbook-import.test.mjs",
+    "test:uat006": "node --experimental-strip-types --test tests/uat006-workflows.test.mjs tests/unified-matrix-workflow.test.mjs tests/product-journey.test.mjs tests/workforce-profile.test.mjs tests/workforce-finance-import.test.mjs tests/solver-variant-presentation.test.mjs tests/b4-regression-contracts.test.mjs tests/b4-leader-variant-contracts.test.mjs",
+    "test:full-uat-evidence": "node scripts/validate-full-uat-evidence.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.7.0",
+    "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "^2.57.4",
+    "exceljs": "file:vendor/exceljs-4.4.0-szafunek.1.tgz",
     "lucide-react": "^0.544.0",
-    "next": "16.2.12",
+    "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.2.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "file:vendor/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

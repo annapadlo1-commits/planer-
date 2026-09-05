@@ -1,5 +1,7 @@
 # Alpha 16 — zakres i kryteria odbioru
 
+> **Historyczny zakres Alpha 16.** Zachowano go jako dowód wcześniejszych kryteriów. Aktualne decyzje i statusy należy sprawdzać w nadrzędnych `DECISIONS.md`, `PROJECT_STATUS.md` i rejestrze Excel.
+
 ## Pakiet P0
 
 | # | Obszar | Zrealizowany kontrakt | Kryterium testu użytkowego |

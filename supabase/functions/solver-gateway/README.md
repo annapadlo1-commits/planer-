@@ -26,7 +26,9 @@ actions, unknown arguments, malformed values, excessive JSON complexity and
 oversized bodies are rejected before any privileged RPC is called.
 
 Required Edge Function secret: `SOLVER_GATEWAY_TOKEN`. `SUPABASE_URL` and
-`SUPABASE_SERVICE_ROLE_KEY` remain available only inside the function runtime.
+the named `SUPABASE_SECRET_KEYS['default']` key remain available only inside
+the function runtime. Missing or malformed secret-key configuration fails closed
+without falling back to the legacy service-role credential.
 
 ```bash
 node --test --experimental-strip-types contract.test.mjs

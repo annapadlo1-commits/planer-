@@ -1,0 +1,92 @@
+{
+  "baselineId": "uat-solver-20260824-86522fe",
+  "capturedAt": "2026-08-24T16:24:25.016Z",
+  "immutable": true,
+  "gitBranch": "codex/uat-consolidated-fixes",
+  "repoHead": "86522fe6d701a14a5a2ec90d999f385739a4f212",
+  "frontend": {
+    "commit": "86522fe6d701a14a5a2ec90d999f385739a4f212",
+    "vercelDeploymentId": "4ZcwNUNCnx9fRAyJastc1AVNt1dV"
+  },
+  "solver": {
+    "commit": "86522fe6d701a14a5a2ec90d999f385739a4f212",
+    "northflankProject": "planer-ortools",
+    "service": "solver-gateway",
+    "serviceType": "Combined",
+    "deploymentId": "solver-gateway-6d9fc6f87",
+    "podId": "solver-gateway-6d9fc6f87-f25rg",
+    "buildId": "difficult-price-5668",
+    "imageRepository": "UNKNOWN",
+    "imageTag": "UNKNOWN",
+    "imageDigest": "UNKNOWN",
+    "deploymentStartedAt": "2026-08-22T22:36:26+02:00",
+    "status": "Running",
+    "replicas": { "ready": 1, "desired": 1 },
+    "restartCount": 0,
+    "healthChecks": "NONE",
+    "resourcePlan": "nf-compute-100-1",
+    "vCpu": 1,
+    "memoryMb": 1024,
+    "storageMb": 1024
+  },
+  "gateway": {
+    "version": "13",
+    "deploymentId": "ff2347cc-e6b8-4418-b31c-a0e493650a39",
+    "deployedAt": "2026-08-22T18:09:07.878Z",
+    "bundleSha256": "4d06df3550e00da51b3bbe94312fc5e828f4c1afe12ecf1a1f7eb447975fa697"
+  },
+  "database": {
+    "migrationVersion": "20260822203000_b4f168_database_stamp",
+    "snapshotSchemaVersion": 2,
+    "solverVersion": "ORTOOLS_V2_2026_08_02",
+    "pgmqVersion": "1.5.1"
+  },
+  "strategy": {
+    "selectionRule": "latest updated active row per strategy code",
+    "matrixVersionId": "2b1fae7c-d1a0-417d-91b1-ab0f1fc6cc15",
+    "canonicalization": "JSONB row minus created_at and updated_at, ordered by code",
+    "configHashSha256": "8a5b8979d0e26ec4c0dbcaaf267a6362b69d92a1b0cc2f854447a73fe71ab885",
+    "strategies": {
+      "BALANCED": "612690f7666120da37556cb818707952bf9cc835ad0442069361448176037603",
+      "MIN_COST": "3519624a0bc156d7099c82a12ce205c2aa07ada8f922ad6948a689b7a090026b",
+      "PREFERENCES": "97b05bc7c32f89550aea24cdde530bfa60c01670437bfc7d0cb1718f1bd3591f"
+    }
+  },
+  "historicalServiceCohort": {
+    "runCount": 112,
+    "period": "2026-08-13/2026-08-20",
+    "queueSeconds": { "p50": 9.62, "p75": 445.51, "p90": 803.22, "p95": 1033.92, "p99": 1320.50, "max": 1488.22 },
+    "runtimeSeconds": { "p50": 239.52, "p95": 536.19, "max": 870.74 },
+    "totalGenerationSeconds": { "p50": 458.47, "p95": 1283.76, "max": 1509.79 },
+    "reliability": {
+      "CONTRACT_FAILURE": 10,
+      "TIMEOUT_OR_QUALITY_GATE": 8,
+      "INVALID_INPUT": 3,
+      "EXPECTED_REJECTION": 1,
+      "SOLVER_FAILURE": 1,
+      "INFRA_FAILURE": 0
+    }
+  },
+  "security": {
+    "solverPrivateRls": "DISABLED",
+    "protection": "SCHEMA_ISOLATION_AND_GRANTS",
+    "anonDirectAccess": "DENIED",
+    "authenticatedDirectAccess": "DENIED",
+    "managerOwnerDatabaseRole": "authenticated",
+    "managerOwnerDirectAccess": "DENIED",
+    "gatewayServiceAccess": "CONTROLLED_PATH_ALLOWED",
+    "openP0": 0,
+    "openP1": 0,
+    "hardeningItem": "P2_REVIEW_HISTORICAL_HELPER_EXECUTE_GRANTS"
+  },
+  "contractParity": {
+    "status": "PARTIAL_PASS_FULL_CHAIN_NOT_YET_EXECUTABLE",
+    "chain": "solver output -> gateway v13 -> solver_save_variant_v2 -> active DB schema",
+    "gatewaySyntheticFixture": {
+      "command": "node --test supabase/functions/solver-gateway/contract.test.mjs",
+      "passed": 23,
+      "failed": 0
+    },
+    "reason": "The existing synthetic fixture proves the current gateway allowlist and worker payload shapes, but no standalone rollback fixture yet proves the complete gateway -> active UAT RPC -> DB -> frontend chain."
+  }
+}

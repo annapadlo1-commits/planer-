@@ -1,5 +1,7 @@
 # GRAFIK PRO 3.0 — Alpha 14 / Optimization Engine V2
 
+> **Dokument historyczny — nie wykonywać jako bieżącej instrukcji wdrożenia.** Aktualne środowiska, migracje i bramki są zapisane w nadrzędnych `AGENTS.md`, `PROJECT_STATUS.md` oraz rejestrze Excel.
+
 Paczka jest nakładką na aktualne repozytorium i nie spłaszcza struktury.
 
 ## Kolejność wdrożenia

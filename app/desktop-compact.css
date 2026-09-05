@@ -1,0 +1,44 @@
+/* Desktop density is intentionally implemented through component dimensions,
+   never CSS zoom/transform. This keeps pointer coordinates, drag-and-drop,
+   focus outlines and text rendering native. Mobile remains a separate phase. */
+@media (min-width:1101px) and (pointer:fine){
+  body{font-size:12px}
+
+  .sidebar,.product-shell .product-sidebar{width:220px;padding:18px 12px 14px}
+  .workspace,.product-shell .workspace{width:calc(100% - 220px);margin-left:220px}
+  .brand,.product-shell .product-sidebar .brand{gap:9px;margin-bottom:4px;padding:0 5px 16px}
+  .brand-mark,.product-shell .product-sidebar .brand>span{width:36px;height:36px;border-radius:10px}
+  .product-shell .product-sidebar nav{gap:4px}
+  .product-shell .product-sidebar nav button{min-height:46px;grid-template-columns:28px 1fr;column-gap:8px;padding:6px 9px}
+  .product-shell .product-sidebar nav button span{font-size:10px}
+  .product-shell .product-sidebar nav button small{font-size:8px}
+
+  .topbar,.product-shell .topbar{height:72px;padding:12px 20px;gap:12px}
+  .topbar h1{font-size:22px}
+  .topbar-actions{gap:6px}
+  .content,.product-shell .content{padding:16px 20px 28px}
+
+  .date-selector,.location-selector button,.secondary-button{height:36px;padding-inline:10px;border-radius:9px}
+  .month-selector>button{width:32px;height:36px}
+  .primary-button{height:38px;padding-inline:14px}
+  .icon-button{width:36px;height:36px}
+  input,select,textarea{font-size:12px}
+
+  .product-section-tabs{gap:4px;margin-bottom:12px;padding:4px}
+  .product-section-tabs button{height:32px;padding-inline:10px;font-size:10px}
+  .configuration-journey{gap:12px;margin-bottom:14px;padding:16px;border-radius:16px}
+  .configuration-journey-head h2{font-size:21px}
+
+  .leader-studio-shell>header{padding:10px 14px}
+  .leader-studio{gap:10px;padding:10px}
+  .leader-studio>.solver-global-filters,
+  .leader-studio>.leader-studio-candidate-panel,
+  .leader-studio>.leader-studio-impact{padding:10px}
+  .solver-workspace-tabs button{min-height:50px;padding:8px 10px}
+  .solver-weekly-workspace{gap:9px}
+  .solver-roster-week>header{padding:7px 10px}
+  .solver-roster-cell{gap:4px;min-height:54px;padding:4px}
+  .solver-roster-row>header,.solver-roster-person{padding:7px}
+  .solver-roster-assignment,.solver-role-assignment,.studio-role-vacancy{padding:5px}
+  .leader-change-preview,.leader-overtime-quote,.solver-staffing-risk{padding:10px}
+}
