@@ -5,7 +5,7 @@ import test from "node:test";
 const budgets = new Map([
   ["components/MatrixV2Editor.tsx", 2_794],
   ["components/ActiveModules.tsx", 1_262],
-  ["components/SolverV2Workspace.tsx", 959],
+  ["components/SolverV2Workspace.tsx", 800],
   ["app/page.tsx", 746],
   ["app/brand-streetart.css", 3_579],
 ]);
@@ -41,4 +41,17 @@ test("Matrix editor formatting and strategy traversal stay outside the React mon
   assert.doesNotMatch(editor, /function scenarioHasActiveStrategy/u);
   assert.match(utilities, /export function scenarioHasActiveStrategy/u);
   assert.match(utilities, /depth > 32 \|\| visited\.has\(current\.id\)/u);
+});
+
+test("Solver workspace presentation helpers stay outside the React monolith", async () => {
+  const workspace = await source("components/SolverV2Workspace.tsx");
+  const presentation = await source("lib/solver-v2-workspace-presentation.ts");
+  assert.match(workspace, /from "@\/lib\/solver-v2-workspace-presentation"/u);
+  assert.match(workspace, /export \{ stablePaletteIndex \} from "@\/lib\/solver-v2-workspace-presentation"/u);
+  assert.doesNotMatch(workspace, /function stablePaletteIndex/u);
+  assert.doesNotMatch(workspace, /function monthWeeks/u);
+  assert.doesNotMatch(workspace, /const hardReasonLabels/u);
+  assert.match(presentation, /export function stablePaletteIndex/u);
+  assert.match(presentation, /export function monthWeeks/u);
+  assert.match(presentation, /export function workloadReason/u);
 });

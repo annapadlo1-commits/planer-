@@ -3,8 +3,10 @@ do $$
 declare
   v_claim text;
   v_recovery text;
-  v_interrupt text;
-  v_fail text;
+  v_interrupt_wrapper text;
+  v_interrupt_delegate text;
+  v_fail_wrapper text;
+  v_fail_delegate text;
 begin
   if to_regprocedure(
     'public.solver_claim_next_v2(text,text,integer,integer)'
@@ -39,10 +41,16 @@ begin
   )) into v_recovery;
   select pg_get_functiondef(to_regprocedure(
     'public.solver_interrupt_v2(uuid,uuid,uuid,text)'
-  )) into v_interrupt;
+  )) into v_interrupt_wrapper;
+  select pg_get_functiondef(to_regprocedure(
+    'public.solver_interrupt_before_nfjob_uat_v1(uuid,uuid,uuid,text)'
+  )) into v_interrupt_delegate;
   select pg_get_functiondef(to_regprocedure(
     'public.solver_fail_attempt_v2(uuid,uuid,uuid,text,text,boolean)'
-  )) into v_fail;
+  )) into v_fail_wrapper;
+  select pg_get_functiondef(to_regprocedure(
+    'public.solver_fail_attempt_before_nfjob_uat_v1(uuid,uuid,uuid,text,text,boolean)'
+  )) into v_fail_delegate;
 
   if v_claim not like '%pgmq.read%'
     or v_claim not like '%pgmq.set_vt%'
@@ -66,10 +74,12 @@ begin
     or v_recovery not like '%reset_retry_outputs_v2%'
     or v_recovery not like '%pgmq.send%'
   then raise exception 'automatic recovery state machine is incomplete'; end if;
-  if v_interrupt not like '%reset_retry_outputs_v2%'
-    or v_interrupt not like '%worker_execution_name=null%'
-    or v_fail not like '%reset_retry_outputs_v2%'
-    or v_fail not like '%worker_execution_name=null%'
+  if v_interrupt_wrapper not like '%solver_interrupt_before_nfjob_uat_v1%'
+    or v_interrupt_delegate not like '%reset_retry_outputs_v2%'
+    or v_interrupt_delegate not like '%worker_execution_name=null%'
+    or v_fail_wrapper not like '%solver_fail_attempt_before_nfjob_uat_v1%'
+    or v_fail_delegate not like '%reset_retry_outputs_v2%'
+    or v_fail_delegate not like '%worker_execution_name=null%'
   then raise exception 'retry cleanup is incomplete'; end if;
 
   if (

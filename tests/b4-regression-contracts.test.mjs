@@ -545,6 +545,7 @@ test("UAT-052 availability uses the company timezone and swap actions stay in fl
 
 test("swap discovery starts on the first employee and validates availability plus duty hand-off", async () => {
   const workspace=await readFile(new URL("../components/SolverV2Workspace.tsx",import.meta.url),"utf8");
+  const presentation=await readFile(new URL("../lib/solver-v2-workspace-presentation.ts",import.meta.url),"utf8");
   const client=await readFile(new URL("../lib/solver-v2.ts",import.meta.url),"utf8");
   const migration=await readFile(new URL("../supabase/archive/aud003/migrations/20260807152000_b4_swap_suggestions_and_duty_transfer.sql",import.meta.url),"utf8");
   assert.match(workspace,/Możliwa zamiana/);
@@ -552,7 +553,7 @@ test("swap discovery starts on the first employee and validates availability plu
   assert.match(workspace,/swap-suggestion-hint/);
   assert.match(workspace,/suggestionEligible/);
   assert.match(workspace,/dutyCoverageMode===\"TRANSFER\"/);
-  assert.match(workspace,/DAILY_LIMIT:\"Osiągnięty dzienny limit zmian\"/);
+  assert.match(presentation,/DAILY_LIMIT:\"Osiągnięty dzienny limit zmian\"/);
   assert.match(client,/optimizer_leader_assignment_context_uat_v4/);
   assert.match(client,/p_duty_transfer_assignment_id/);
   assert.match(migration,/optimizer_employee_availability_month_uat_v1/);

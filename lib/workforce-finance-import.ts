@@ -13,6 +13,9 @@ export type WorkforceFinanceRateRow = {
 export type WorkforceFinanceWorkbookPayload = {
   payRates: WorkforceFinanceRateRow[];
   _sourceLayout: "GRAFIK_PRO_FINANCE_V1";
+  _workbook: {
+    companyBoundaryId: string;
+  };
 };
 
 function cell(row: Record<string, unknown>, ...names: string[]) {
@@ -61,7 +64,7 @@ function normalizeDate(value: string, parseDateCode?: ExcelDateCodeParser) {
 export function normalizeWorkforceFinanceRows(
   rows: Record<string, unknown>[],
   parseDateCode?: ExcelDateCodeParser,
-): WorkforceFinanceWorkbookPayload {
+): Omit<WorkforceFinanceWorkbookPayload, "_workbook"> {
   const payRates = rows.map((row, index) => ({
     sourceRow: index + 2,
     rateId: cell(row, "ID stawki", "rateId", "Pay rate ID"),
@@ -87,5 +90,17 @@ export async function readWorkforceFinanceWorkbook(file: File): Promise<Workforc
     ? XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: "", raw: false, dateNF: "yyyy-mm-dd" })
     : [];
 
-  return normalizeWorkforceFinanceRows(rows, value => XLSX.SSF.parse_date_code(value));
+  const metaSheet = workbook.Sheets._META;
+  const metaRows = metaSheet
+    ? XLSX.utils.sheet_to_json<Record<string, unknown>>(metaSheet, { defval: "", raw: false })
+    : [];
+  const meta = new Map(metaRows.map(row => [
+    String(row.Klucz ?? row.key ?? "").trim(),
+    String(row.Wartość ?? row.Wartosc ?? row.value ?? "").trim(),
+  ]));
+
+  return {
+    ...normalizeWorkforceFinanceRows(rows, value => XLSX.SSF.parse_date_code(value)),
+    _workbook: { companyBoundaryId: meta.get("companyBoundaryId") ?? "" },
+  };
 }

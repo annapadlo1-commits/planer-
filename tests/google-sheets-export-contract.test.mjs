@@ -39,7 +39,14 @@ test("configuration and access exports retain both Google Sheets and Excel actio
 test("Google authorization happens before workbook generation", () => {
   assert.match(integration, /export async function authorizeGoogleDriveFile/);
   assert.match(editor, /const token=await authorizeGoogleDriveFile\(\);\s+const artifact=await buildAccessWorkbook/);
-  assert.match(editor, /const token=toGoogle&&!googleServerReady\?await authorizeGoogleDriveFile\(\):null;[\s\S]{0,250}await build/);
+  const exportFlow = editor.slice(
+    editor.indexOf("async function exportTemplate"),
+    editor.indexOf("async function inspect", editor.indexOf("async function exportTemplate")),
+  );
+  const authorization = exportFlow.indexOf("const token=toGoogle&&!googleServerReady?await authorizeGoogleDriveFile():null;");
+  const companyBoundary = exportFlow.indexOf('supabase.rpc("matrix_v2_company_boundary_uat_v1")');
+  const workbook = exportFlow.indexOf("?await buildWorkforceFinanceTemplate");
+  assert.ok(authorization >= 0 && authorization < companyBoundary && companyBoundary < workbook);
 });
 
 test("Google Sheets opens in a reserved new tab and leaves the application tab in place", () => {

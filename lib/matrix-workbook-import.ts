@@ -30,6 +30,7 @@ export type MatrixWorkbookPayload = {
     mode: "EMPTY_TEMPLATE" | "CURRENT_CONFIG_EXPORT" | "LEGACY";
     contractVersion: string;
     sourceMatrixVersionId: string;
+    companyBoundaryId: string;
   };
   _sourceLayout: "APPS_SCRIPT_BASE" | "GRAFIK_PRO_TEMPLATE";
 };
@@ -208,6 +209,7 @@ export async function readMatrixWorkbook(file:File):Promise<MatrixWorkbookPayloa
     mode:(rawWorkbookMode==="EMPTY_TEMPLATE"||rawWorkbookMode==="CURRENT_CONFIG_EXPORT"?rawWorkbookMode:"LEGACY") as "EMPTY_TEMPLATE"|"CURRENT_CONFIG_EXPORT"|"LEGACY",
     contractVersion:meta.get("contractVersion")??"1",
     sourceMatrixVersionId:meta.get("sourceMatrixVersionId")??"",
+    companyBoundaryId:meta.get("companyBoundaryId")??"",
   };
   const splitName=(value:string)=>{const parts=value.trim().split(/\s+/);return {firstName:parts.shift()??"",lastName:parts.join(" ")};};
   const normalizeContract=(value:string)=>{

@@ -6,6 +6,7 @@ import test from "node:test";
 const root = path.resolve(import.meta.dirname, "..");
 const editor = fs.readFileSync(path.join(root, "components", "MatrixV2Editor.tsx"), "utf8");
 const importer = fs.readFileSync(path.join(root, "lib", "matrix-workbook-import.ts"), "utf8");
+const financeExporter = fs.readFileSync(path.join(root, "lib", "workforce-finance-export.ts"), "utf8");
 const migration = fs.readFileSync(
   path.join(root, "supabase", "archive", "aud003", "migrations", "20260810200000_uat_quick_start_import_identity_reconnect.sql"),
   "utf8",
@@ -91,9 +92,9 @@ test("quick workbook documents automatic identifiers and physically excludes adv
 });
 
 test("finance workbook does not duplicate the employee contract type", () => {
-  const financeBuilder=editor.slice(editor.indexOf("async function buildWorkforceFinanceTemplate"),editor.indexOf("async function buildAccessTemplate"));
-  assert.match(financeBuilder,/const headers=\["ID stawki","Numer pracownika","Imię i nazwisko","Zatrudniony od","Zatrudniony do","Obowiązuje od","Obowiązuje do","Stawka godzinowa","Waluta","Aktywna"\]/);
-  assert.doesNotMatch(financeBuilder,/const headers=.*Rodzaj umowy/);
+  assert.match(financeExporter,/const headers = \["ID stawki", "Numer pracownika", "Imię i nazwisko", "Zatrudniony od", "Zatrudniony do", "Obowiązuje od", "Obowiązuje do", "Stawka godzinowa", "Waluta", "Aktywna"\]/);
+  assert.doesNotMatch(financeExporter,/const headers=.*Rodzaj umowy/);
+  assert.doesNotMatch(editor,/const headers=.*Rodzaj umowy/);
 });
 
 test("UAT import reconnects preserved global identities and gates public RPCs", () => {

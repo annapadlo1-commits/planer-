@@ -20,6 +20,7 @@ export type MatrixV2StandbyGroup = {
 };
 
 export type MatrixV2Settings = {
+  companyBoundaryId?: string;
   currency: string;
   timezone: string;
   minimumRestMinutes: number;
@@ -430,6 +431,8 @@ export function matrixV2ErrorMessage(message: string) {
   if(value.includes("WORKBOOK_SOURCE_MATRIX_STALE"))return "Plik został wyeksportowany z innej wersji roboczej niż obecna. Wyeksportuj obecną konfigurację ponownie, nanieś zmiany i jeszcze raz użyj podglądu.";
   if(value.includes("WORKBOOK_SOURCE_MATRIX_INVALID"))return "Ukryty identyfikator źródłowej konfiguracji jest nieprawidłowy albo został zmieniony. Pobierz plik ponownie z aplikacji; żadne dane nie zostały zapisane.";
   if(value.includes("WORKBOOK_SCOPE_IDENTIFIER_FORBIDDEN"))return "Plik zawiera niedozwolony identyfikator zakresu firmy. Import nie ufa takim wartościom z Excela i został zatrzymany bez zapisu.";
+  if(value.includes("WORKBOOK_COMPANY_BOUNDARY_REQUIRED")||value.includes("WORKBOOK_COMPANY_BOUNDARY_INVALID"))return "Nie można potwierdzić, że plik należy do firmy obsługiwanej przez ten projekt UAT. Żadne dane nie zostały zapisane. Wróć do Ustawień → Konfiguracja firmy, pobierz nowy pusty szablon albo świeży eksport i przenieś do niego dane.";
+  if(value.includes("SECOND_COMPANY_FORBIDDEN"))return "Ten projekt UAT obsługuje dokładnie jedną firmę. Plik albo wywołanie dotyczy innej firmy, dlatego operacja została zatrzymana bez zapisu. Wróć do Ustawień → Konfiguracja firmy i użyj pustego szablonu lub świeżego eksportu z tego środowiska.";
   if(value.includes("MATRIX_V2_SINGLE_DRAFT_REQUIRED"))return "Import wymaga dokładnie jednej bieżącej wersji roboczej konfiguracji firmy. Otwórz historię wersji i uporządkuj wersje robocze przed ponowną próbą.";
   const dictionaryValueError=message.match(/FULL_IMPORT_DICTIONARY_VALUE_REQUIRED\|([^|]+)\|([^|]+)\|([^|]+)/i);
   if(dictionaryValueError){

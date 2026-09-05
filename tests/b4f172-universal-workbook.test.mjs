@@ -115,13 +115,13 @@ test("B4F-174: normalized reserve-group relation supports several roles without 
 
 test("B4F-172: current export keeps a stable hidden code when the visible name changes",async()=>{
   const parsed=await readMatrixWorkbook(workbookFile({
-    _META:[{Klucz:"workbookMode",Wartość:"CURRENT_CONFIG_EXPORT"},{Klucz:"contractVersion",Wartość:"2"},{Klucz:"sourceMatrixVersionId",Wartość:"11111111-1111-4111-8111-111111111111"}],
+    _META:[{Klucz:"workbookMode",Wartość:"CURRENT_CONFIG_EXPORT"},{Klucz:"contractVersion",Wartość:"2"},{Klucz:"sourceMatrixVersionId",Wartość:"11111111-1111-4111-8111-111111111111"},{Klucz:"companyBoundaryId",Wartość:"a0080000-0000-4000-8000-000000000001"}],
     "Kategorie grafików":[{Kod:"SALA",Nazwa:"Sala",Aktywna:"TAK"}],
     Role:[{Kod:"KELNER_STABILNY",Nazwa:"Starszy kelner","Kategoria grafiku":"SALA",Aktywna:"TAK"}],
   }));
   assert.equal(parsed.roles[0].code,"KELNER_STABILNY");
   assert.equal(parsed.roles[0].name,"Starszy kelner");
-  assert.deepEqual(parsed._workbook,{mode:"CURRENT_CONFIG_EXPORT",contractVersion:"2",sourceMatrixVersionId:"11111111-1111-4111-8111-111111111111"});
+  assert.deepEqual(parsed._workbook,{mode:"CURRENT_CONFIG_EXPORT",contractVersion:"2",sourceMatrixVersionId:"11111111-1111-4111-8111-111111111111",companyBoundaryId:"a0080000-0000-4000-8000-000000000001"});
 });
 
 test("B4F-172: v2 cross-sheet graph returns column, value and repair path",async()=>{

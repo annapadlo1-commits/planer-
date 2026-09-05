@@ -315,7 +315,8 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind,options?:{m
   if(kind==="QUICK"&&options?.mode){
     let meta=workbook.getWorksheet("_META");if(!meta)meta=workbook.addWorksheet("_META");
     const existing=new Map<string,unknown>();meta.eachRow((row,index)=>{if(index>1)existing.set(String(row.getCell(1).value??""),row.getCell(2).value);});
-    meta.spliceRows(1,Math.max(1,meta.rowCount),["Klucz","Wartość"],["workbookMode",options.mode],["contractVersion","2"],...[...existing].filter(([key])=>key==="sourceMatrixVersionId").map(([key,value])=>[key,value]));
+    meta.spliceRows(1,Math.max(1,meta.rowCount),["Klucz","Wartość"],["workbookMode",options.mode],["contractVersion","2"],
+      ...[...existing].filter(([key])=>key==="sourceMatrixVersionId"||key==="companyBoundaryId").map(([key,value])=>[key,value]));
   }
   const instruction=workbook.getWorksheet("Instrukcja");if(instruction)formatInstruction(instruction,kind);
   addDataDictionary(workbook,kind);
@@ -367,7 +368,12 @@ async function polish(input:ArrayBuffer|Uint8Array,kind:WorkbookKind,options?:{m
     const meta=workbook.getWorksheet("_META");if(meta)meta.state="veryHidden";
     lists.state="veryHidden";
     await protectQuickWorkbook(workbook);
-  }else lists.state="hidden";
+  }else{
+    if(kind==="FINANCE"){
+      const meta=workbook.getWorksheet("_META");if(meta)meta.state="veryHidden";
+    }
+    lists.state="hidden";
+  }
   return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 

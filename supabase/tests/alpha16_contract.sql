@@ -35,8 +35,14 @@ begin
       'authenticated','public.matrix_v2_employee_save_alpha16(uuid,jsonb)','execute')
     or has_function_privilege(
       'service_role','public.matrix_v2_employee_save_alpha16(uuid,jsonb)','execute')
-    or not has_function_privilege(
+    or has_function_privilege(
       'authenticated','public.matrix_v2_import_preview_alpha16(jsonb)','execute')
+    or has_function_privilege(
+      'service_role','public.matrix_v2_import_preview_alpha16(jsonb)','execute')
+    or has_function_privilege(
+      'authenticated','public.matrix_v2_import_apply_alpha16(jsonb)','execute')
+    or has_function_privilege(
+      'service_role','public.matrix_v2_import_apply_alpha16(jsonb)','execute')
     or not has_function_privilege(
       'authenticated','public.optimizer_candidate_diagnostics_alpha16(uuid,bigint)','execute')
     or not has_function_privilege(

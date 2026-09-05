@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "92bc2c8bcbba780d251f5a37a7e56767ecdb6386",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "5c09e1d7066537be176dd3c5b2f8db1f025ab3385d22cab6afad383c8b8ff100",
+  "aggregateSha256": "f688d3bb4af00a58351e894ee5c26ba194d2fd10517ba9c215de46a92cea0073",
   "entries": [
     {
       "version": "20260903090000",
@@ -76,6 +76,22 @@
       "canonicalBytes": 876,
       "canonicalSha256": "3e12693ca3207c63ffb686f92740fe79fa46c7c6c71c1bec837a707a0cc09e02",
       "gitBlobSha1": "fe5b21ec78564b2f1ece10245249f0a8add86368"
+    },
+    {
+      "version": "20260905120000",
+      "name": "aud008_single_company_boundary",
+      "file": "20260905120000_aud008_single_company_boundary.sql",
+      "canonicalBytes": 21144,
+      "canonicalSha256": "b86202cfd9fcb49ccdac222792880f81e0777bcfe63f3100e7f99ab9a911b01f",
+      "gitBlobSha1": "c856f72ab4780597ab2da585867e5fc086ac6aa1"
+    },
+    {
+      "version": "20260905130000",
+      "name": "aud014_evidence_backed_fk_indexes",
+      "file": "20260905130000_aud014_evidence_backed_fk_indexes.sql",
+      "canonicalBytes": 2280,
+      "canonicalSha256": "83d59f0ad9c03ef86c10655bad53f25c9e0cc71137fd99846927eb55c86d6d3e",
+      "gitBlobSha1": "b95d6a42d8e14d3e39e45e19d3c42c4438b4b2d1"
     }
   ]
 }
