@@ -74,3 +74,23 @@ export function initialBusinessMonth(companyMonth: unknown, fromUrl?: unknown, f
   }
   return [fromUrl, fromSession].find(isBusinessMonth) ?? companyMonth;
 }
+
+export function monthDate(month: string) {
+  return `${month}-01`;
+}
+
+export function monthLabel(month: string, _timeZone?: string) {
+  return new Intl.DateTimeFormat("pl-PL", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${month}-01T12:00:00Z`));
+}
+
+export function daysInMonth(month: string) {
+  const [year, number] = month.split("-").map(Number);
+  return new Date(year, number, 0).getDate();
+}
+
+export function adjacentMonth(month: string, offset: number) {
+  const [year, number] = month.split("-").map(Number);
+  const date = new Date(year, number - 1 + offset, 1, 12);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}

@@ -53,15 +53,34 @@ export function classifySessionFailure(error: AuthErrorLike | null | undefined):
   return "NETWORK";
 }
 
-export type AuthEventAction = "CLEAR" | "REFRESH_USER" | "VERIFY" | "IGNORE";
+export type AuthEventAction = "CLEAR" | "VERIFY" | "IGNORE";
 
 export function authEventAction(event: AuthChangeEvent): AuthEventAction {
   if (event === "SIGNED_OUT") return "CLEAR";
-  if (event === "TOKEN_REFRESHED") return "REFRESH_USER";
-  if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "PASSWORD_RECOVERY") return "VERIFY";
+  if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "PASSWORD_RECOVERY" || event === "TOKEN_REFRESHED") return "VERIFY";
   // INITIAL_SESSION is deliberately ignored. AppAuthProvider performs a fresh
   // getUser() check instead of trusting the user embedded in local storage.
   return "IGNORE";
+}
+
+export type AuthVerificationGate = { revision: number };
+export type AuthVerificationTicket = Readonly<{ revision: number }>;
+
+export function createAuthVerificationGate(): AuthVerificationGate {
+  return { revision: 0 };
+}
+
+export function beginAuthVerification(gate: AuthVerificationGate): AuthVerificationTicket {
+  gate.revision += 1;
+  return { revision: gate.revision };
+}
+
+export function invalidateAuthVerification(gate: AuthVerificationGate) {
+  gate.revision += 1;
+}
+
+export function isAuthVerificationCurrent(gate: AuthVerificationGate, ticket: AuthVerificationTicket) {
+  return gate.revision === ticket.revision;
 }
 
 type BrowserStorage = Pick<Storage, "clear" | "getItem" | "key" | "length" | "removeItem">;

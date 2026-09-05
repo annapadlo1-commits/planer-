@@ -45,8 +45,9 @@ import {
 import {matrixV2ErrorMessage,matrixV2Settings,type MatrixV2EmployeeDirectory,type MatrixV2Workspace} from "@/lib/matrix-v2";
 import { employeeMatchesWorkforceQuery } from "@/lib/workforce-profile";
 import { userSafeErrorMessage } from "@/lib/user-safe-error";
-import { initialBusinessMonth } from "@/lib/company-time";
+import { adjacentMonth, daysInMonth, initialBusinessMonth, monthDate, monthLabel } from "@/lib/company-time";
 import { useProductPersona } from "@/lib/product-persona";
+import { canManageWholeSolverCategory, shouldRestoreCategoryGenerator, workspaceAccessPolicy } from "@/lib/workspace-access-policy";
 import {
   beginMonthWorkspaceLoad,
   canStartMonthWorkspaceLoad,
@@ -60,7 +61,7 @@ import {
 } from "@/lib/month-workspace-state";
 import {
   employeeNavigation,
-  canManageSchedule, configurationDeepLinkFromSearch,
+  configurationDeepLinkFromSearch,
   managementNavigationForRoles,
   pathForSection,
   sectionFromPath,
@@ -79,20 +80,6 @@ const EMPTY_WORKSPACE:Workspace={
   plan:null,assignments:[],shifts:[],issues:[],events:[],
   budget:{amount:0,warning_percent:90,hard_limit:false},
 };
-function monthDate(month:string){return `${month}-01`;}
-function monthLabel(month:string,_timeZone?:string){
-  return new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric",timeZone:"UTC"})
-    .format(new Date(`${month}-01T12:00:00Z`));
-}
-function daysInMonth(month:string){
-  const [year,number]=month.split("-").map(Number);
-  return new Date(year,number,0).getDate();
-}
-function adjacentMonth(month:string,offset:number){
-  const [year,number]=month.split("-").map(Number);
-  const date=new Date(year,number-1+offset,1,12);
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
-}
 const LEGACY_ROLES = ["KELNER","BARMAN","PIZZABAR","PREP","POMOC"];
 const LEGACY_ROLE_LABELS: Record<string,string> = {
   KELNER:"Kelner",BARMAN:"Barman",PIZZABAR:"Pizzabar",PREP:"Prep",POMOC:"Pomoc"
@@ -139,7 +126,6 @@ export default function GrafikPro() {
   const primarySection=productNavigation.some(item=>item.key===requestedPrimarySection)
     ?requestedPrimarySection
     :(productNavigation[0]?.key??(employeeShell?"today":"start"));
-  const scheduleWriteAllowed=canManageSchedule(access?.roles);
   const supabase=useMemo(()=>createSupabaseBrowserClient(),[]);
   const [loadedData,setData]=useState<Workspace>(EMPTY_WORKSPACE);
   const [loadedComplete,setComplete]=useState<ActiveWorkspace|null>(null);
@@ -264,9 +250,11 @@ export default function GrafikPro() {
   const activeRoleLabels=useMemo(()=>Object.fromEntries(roleOptions.flatMap(item=>[
     [item.value,item.label],[item.code,item.label],[item.label,item.label],
   ])),[roleOptions]);
-  const canReadCompanyWorkspace=Boolean(access?.roles?.some(item=>
-    ["OWNER","ADMIN","HR_FINANCE","VERIFIER","ROLE_MANAGER","LOCATION_MANAGER"].includes(item.app_role)
-  ));
+  const accessPolicy=useMemo(()=>workspaceAccessPolicy(access?.roles),[access?.roles]);
+  const {canManageCompanySchedule,canReadCompanyWorkspace,canReadFullEmployeeDirectory,canReadManagementOperations}=accessPolicy;
+  const canManageSolverCategory=useCallback((category:SolverRoleCategory)=>
+    canManageWholeSolverCategory(accessPolicy,solverConfiguration?.roles??[],category),
+  [accessPolicy,solverConfiguration?.roles]);
 
   useEffect(()=>{
     const canonicalOrigin=configuredCanonicalAppOrigin();
@@ -324,15 +312,19 @@ export default function GrafikPro() {
     const standbyRequest=currentSolverConfiguration?.engine==="ORTOOLS_V2"&&canReadCompanyWorkspace
       ? getManagerStandbyMonth(supabase,requestedMonth).then(rows=>({rows,error:null as Error|null})).catch(cause=>({rows:[],error:cause instanceof Error?cause:new Error(String(cause))}))
       : Promise.resolve({rows:[],error:null as Error|null});
-    const swapBoardRequest=currentSolverConfiguration?.engine==="ORTOOLS_V2"&&canReadCompanyWorkspace
+    const swapBoardRequest=currentSolverConfiguration?.engine==="ORTOOLS_V2"&&canReadManagementOperations
       ? supabase.rpc("shift_swap_board_uat_v2",{p_month:requestedMonth})
       : Promise.resolve({data:null,error:null});
     const [result,completeResult,matrixV2Result,employeeDirectoryResult,calendarResult,activeWorkspaceResult,standbyResult,swapBoardResult]=await Promise.all([
       legacyPlanRequest,
       supabase.rpc("complete_workspace",{p_month:requestedMonth}),
       supabase.rpc("matrix_v2_workspace",{p_month:requestedMonth}),
-      supabase.rpc("matrix_v2_employee_directory_alpha16",{p_month:requestedMonth}),
-      supabase.rpc("workforce_calendar_context_uat_v4",{p_month:requestedMonth}),
+      canReadFullEmployeeDirectory
+        ? supabase.rpc("matrix_v2_employee_directory_alpha16",{p_month:requestedMonth})
+        : Promise.resolve({data:null,error:null}),
+      canReadCompanyWorkspace
+        ? supabase.rpc("workforce_calendar_context_uat_v4",{p_month:requestedMonth})
+        : Promise.resolve({data:null,error:null}),
       activeWorkspaceRequest,
       standbyRequest,
       swapBoardRequest,
@@ -354,7 +346,7 @@ export default function GrafikPro() {
     setManagerStandby(standbyResult.rows);
     setSwapAnnouncements(((swapBoardResult.data as ShiftSwapBoardContext|null)?.requests??[]).filter(request=>["OPEN","EMPLOYEE_ACCEPTED"].includes(request.status)));
     if(standbyResult.error&&canReadCompanyWorkspace)errors.push(userSafeErrorMessage(standbyResult.error,{context:"standby-read",summary:"Nie udało się pobrać rezerwy bezpieczeństwa.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
-    if(swapBoardResult.error&&canReadCompanyWorkspace)errors.push(userSafeErrorMessage(swapBoardResult.error,{context:"swap-board-read",summary:"Nie udało się pobrać ogłoszeń zamiany.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
+    if(swapBoardResult.error&&canReadManagementOperations)errors.push(userSafeErrorMessage(swapBoardResult.error,{context:"swap-board-read",summary:"Nie udało się pobrać ogłoszeń zamiany.",nextStep:"Odśwież dane miesiąca i spróbuj ponownie."}));
     setSolverConfiguration(currentSolverConfiguration);
     setPlanForm(current=>{
       if(currentSolverConfiguration.scenarios.some(scenario=>scenario.code===current.scenario))return current;
@@ -411,7 +403,7 @@ export default function GrafikPro() {
     setLoadedMonth(requestedMonth);
     setError(errors.join(" • "));
     setLoading(false);
-  },[supabase,user,selectedMonthDate,canReadCompanyWorkspace,clearMonthWorkspace]);
+  },[supabase,user,selectedMonthDate,canReadCompanyWorkspace,canReadFullEmployeeDirectory,canReadManagementOperations,clearMonthWorkspace]);
   const reloadCurrentMonth=useCallback(async()=>{
     const requestedMonth=selectedMonthDate;
     await load();
@@ -461,16 +453,19 @@ export default function GrafikPro() {
     }
   },[solverConfiguration?.engine]);
   useEffect(()=>{
-    if(!solverConfiguration||employeeShell)return;
-    try{
-      const raw=window.sessionStorage.getItem(planPanelStorageKey);
-      if(!raw)return;
-      const saved=JSON.parse(raw) as {month?:string;categoryId?:string};
-      if(saved.month!==selectedMonth||!saved.categoryId)return;
+    const openCategory=planScope.type==="CATEGORY"?planScope.category:null;if(modal!=="plan"||!openCategory||canManageSolverCategory(openCategory))return;
+    window.sessionStorage.removeItem(planPanelStorageKey);setModal(null);setSelectedShift(null);setPlanScope({type:"COMPANY",category:null});
+  },[canManageSolverCategory,modal,planScope]);
+  useEffect(()=>{
+    if(!solverConfiguration||employeeShell)return;try{
+      const raw=window.sessionStorage.getItem(planPanelStorageKey);if(!raw)return;
+      const saved=JSON.parse(raw) as {month?:string;categoryId?:string};if(saved.month!==selectedMonth||!saved.categoryId)return;
       const savedCategory=solverConfiguration.roleCategories.find(item=>item.id===saved.categoryId);
-      if(savedCategory){setPlanScope({type:"CATEGORY",category:savedCategory});setModal("plan");}
+      if(!savedCategory||!canManageSolverCategory(savedCategory)){window.sessionStorage.removeItem(planPanelStorageKey);return;}
+      setPlanScope(current=>{const currentId=current.type==="CATEGORY"?current.category.id:null;return shouldRestoreCategoryGenerator(modal==="plan",currentId,savedCategory.id)?{type:"CATEGORY",category:savedCategory}:current;});
+      setModal(current=>current==="plan"?current:"plan");
     }catch{window.sessionStorage.removeItem(planPanelStorageKey);}
-  },[employeeShell,selectedMonth,solverConfiguration]);
+  },[canManageSolverCategory,employeeShell,selectedMonth,solverConfiguration]);
   useEffect(()=>{
     if(role!=="ALL"&&!roleOptions.some(option=>option.value===role))setRole("ALL");
   },[role,roleOptions]);
@@ -479,6 +474,7 @@ export default function GrafikPro() {
   },[location,locationOptions]);
 
   const openCompanyGenerator=()=>{
+    if(!canManageCompanySchedule){setError("Grafik całej firmy może utworzyć właściciel lub administrator. Przejdź do Grafiki ról, aby pracować wyłącznie w swoim zakresie.");setActive("zespoly");return;}
     if(!solverConfiguration){setError(`Generator jest zablokowany: ${solverConfigurationError||"brak poprawnej konfiguracji"}`);return;}
     if(solverConfiguration.engine!=="ALPHA15"&&!solverConfiguration.solverVersion?.trim()){setError("Generator jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
     setPlanScope({type:"COMPANY",category:null});setActive("generator");
@@ -488,6 +484,10 @@ export default function GrafikPro() {
     if(!solverConfiguration.solverVersion?.trim()){setError("Generator kategorii jest zablokowany: konfiguracja nie wskazuje wymaganej wersji solvera.");return;}
     const dynamicCategory=solverConfiguration.roleCategories.find(item=>item.id===requestedCategory.id||item.code===requestedCategory.code);
     if(!dynamicCategory){setError("Ta kategoria nie jest dostępna w opublikowanej konfiguracji firmy. Odśwież dane i spróbuj ponownie.");return;}
+    if(!canManageSolverCategory(dynamicCategory)){
+      setError("Nie masz uprawnień do wszystkich ról tej kategorii. Poproś właściciela o nadanie dokładnego zakresu albo wybierz kategorię w całości objętą Twoimi uprawnieniami.");
+      return;
+    }
     setPlanScope({type:"CATEGORY",category:dynamicCategory});
     setPlanForm(current=>({...current,name:`Grafik ${dynamicCategory.name} • ${selectedMonth}`}));
     window.sessionStorage.setItem(planPanelStorageKey,JSON.stringify({month:selectedMonth,categoryId:dynamicCategory.id}));
@@ -560,7 +560,7 @@ export default function GrafikPro() {
             <button type="button" aria-label="Następny miesiąc" title="Następny miesiąc" onClick={()=>setSelectedMonth(month=>adjacentMonth(month,1))}><ChevronRight size={17}/></button>
           </div>
           {!employeeShell&&primarySection==="schedule"&&<button className="secondary-button" disabled={!workspaceCurrent||!matrixV2} onClick={()=>setMonthlyBudgetOpen(true)}><CircleDollarSign size={17}/> Budżet miesiąca</button>}
-          {!employeeShell&&scheduleWriteAllowed&&<button className="primary-button" disabled={!workspaceCurrent||!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
+          {!employeeShell&&canManageCompanySchedule&&<button className="primary-button" disabled={!workspaceCurrent||!solverConfiguration} onClick={openCompanyGenerator}><WandSparkles size={17}/> Nowy wariant</button>}
         </div>
       </header>
       {error&&<div className="context-feedback-stack" role="region" aria-live="assertive">
@@ -591,7 +591,7 @@ export default function GrafikPro() {
             <button className="kpi-card" onClick={()=>setActive("budzet")}><span className="kpi-icon teal"><CircleDollarSign/></span><span><small>Koszt / budżet</small><strong>{data.plan&&budget?`${Math.round(cost/budget*100)}%`:"—"}</strong><em>{formatMoney(cost,activeCurrency)}</em></span></button>
             {isOrtools?<button className="kpi-card" onClick={()=>openSetupStep("strategies","variants")}><span className="kpi-icon orange"><Boxes/></span><span><small>Warianty biznesowe</small><strong>{solverConfiguration?.scenarios.length||0}</strong><em>w aktywnej konfiguracji</em></span></button>:<button className="kpi-card" onClick={()=>setActive("kalendarz")}><span className="kpi-icon orange"><CalendarDays/></span><span><small>Wydarzenia</small><strong>{data.events.length}</strong><em>{data.events.filter(e=>e.status==="NEEDS_VERIFICATION").length} do weryfikacji</em></span></button>}
           </section>
-          {!data.plan?<section className="empty-engine"><WandSparkles size={36}/><h2>{matrixV2?"Dokończ konfigurację albo utwórz pierwszy plan":"Baza jest gotowa do pierwszego rzeczywistego planu"}</h2><p>Generator sprawdzi role, lokalizacje, kompetencje, limity i {isOrtools?"warianty biznesowe":"eventy"}. Jeśli czegoś brakuje, prowadzona konfiguracja wskaże dokładne miejsce naprawy.</p><button className="primary-button" onClick={openCompanyGenerator}>Generuj plan</button></section>:
+          {!data.plan?<section className="empty-engine"><WandSparkles size={36}/><h2>{matrixV2?"Dokończ konfigurację albo utwórz pierwszy plan":"Baza jest gotowa do pierwszego rzeczywistego planu"}</h2><p>Generator sprawdzi role, lokalizacje, kompetencje, limity i {isOrtools?"warianty biznesowe":"eventy"}. Jeśli czegoś brakuje, prowadzona konfiguracja wskaże dokładne miejsce naprawy.</p><button className="primary-button" onClick={canManageCompanySchedule?openCompanyGenerator:()=>setActive("zespoly")}>{canManageCompanySchedule?"Generuj plan":"Otwórz grafiki kategorii"}</button></section>:
           <section className="live-overview">
             <div className="section-head"><div><p className="eyebrow">AKTYWNY WARIANT</p><h2>{data.plan.name} • v{data.plan.version}</h2></div><span className={`status-pill ${data.plan.status.toLowerCase()}`}>{planStatusLabels[data.plan.status]||data.plan.status}</span></div>
             <div className="overview-grid"><div><small>Scenariusz</small><strong>{isOrtools?data.plan.scenario_code:scenarioLabels[data.plan.scenario_code]||data.plan.scenario_code}</strong></div><div><small>Optymalizacja</small><strong>{isOrtools?data.plan.optimization_mode:modeLabels[data.plan.optimization_mode]||data.plan.optimization_mode}</strong></div><div><small>Zmiany</small><strong>{data.shifts.length}</strong></div><div><small>Roboczogodziny</small><strong>{Math.round(totalMinutes/60)}</strong></div></div>

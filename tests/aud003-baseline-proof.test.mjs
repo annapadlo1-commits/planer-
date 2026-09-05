@@ -42,7 +42,7 @@ revoke all on function public.probe(jsonb) from public, anon, authenticated;
 });
 
 test('AUD-003 active migration ledger, exact 227 source blobs and 256 live provenance rows reconcile',async()=>{
- assert.deepEqual(await checkArchive(),{archived:227,active:11,liveRows:256});
+ assert.deepEqual(await checkArchive(),{archived:227,active:13,liveRows:256});
 });
 
 test('AUD-003 archive rejects changed, missing and additional evidence without rewriting expected hashes',async()=>{

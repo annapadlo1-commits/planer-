@@ -396,14 +396,13 @@ test("category cards hide engine jargon and optional operational tools stay coll
   assert.match(modules,/technical-details/);
 });
 
-test("token refresh does not reload the whole application context", async () => {
+test("token refresh re-verifies the live access scope before showing protected context", async () => {
   const provider=await readFile(new URL("../components/AppAuthProvider.tsx",import.meta.url),"utf8");
   const authSession=await readFile(new URL("../lib/auth-session.ts",import.meta.url),"utf8");
-  const refreshBranch=provider.slice(provider.indexOf('action === "REFRESH_USER"'),provider.indexOf('action === "VERIFY"'));
   assert.match(provider,/const action = authEventAction\(event\)/);
-  assert.match(authSession,/event === "TOKEN_REFRESHED"\) return "REFRESH_USER"/);
-  assert.match(refreshBranch,/setUser\(session\?\.user \|\| null\)/);
-  assert.doesNotMatch(refreshBranch,/loadLiveData|recoverSession/);
+  assert.match(authSession,/event === "TOKEN_REFRESHED"\) return "VERIFY"/);
+  assert.match(provider,/setLoading\(true\);[\s\S]{0,120}clearProtectedContext\(\)/);
+  assert.match(provider,/isAuthVerificationCurrent/);
 });
 
 test("employee and company calendars open a filterable day workspace", async () => {

@@ -39,10 +39,27 @@ test("employee swap board supports active, targeted, mine and history views", ()
 test("management navigation follows application roles and scoped managers can read their workspace", () => {
   const journey = read("lib/product-journey.ts");
   const page = read("app/page.tsx");
+  const accessPolicy = read("lib/workspace-access-policy.ts");
   assert.match(journey, /managementNavigationForRoles/);
   assert.match(journey, /ROLE_MANAGER: \["start", "team", "schedule", "operations", "analytics", "profile"\]/);
-  assert.match(page, /"ROLE_MANAGER","LOCATION_MANAGER"/);
-  assert.match(page, /scheduleWriteAllowed/);
+  const companyRead = accessPolicy.slice(
+    accessPolicy.indexOf("canReadCompanyWorkspace:"),
+    accessPolicy.indexOf("canReadFullEmployeeDirectory:"),
+  );
+  assert.doesNotMatch(companyRead, /ROLE_MANAGER|LOCATION_MANAGER/);
+  assert.match(accessPolicy, /canReadManagementOperations[\s\S]*"ROLE_MANAGER", "LOCATION_MANAGER"/);
+  assert.match(page, /Grafik całej firmy może utworzyć właściciel lub administrator/);
+  assert.match(page, /Otwórz grafiki kategorii/);
+  assert.match(page, /canManageCompanySchedule/);
+  assert.match(accessPolicy, /canReadFullEmployeeDirectory/);
+  assert.match(page, /canReadFullEmployeeDirectory[\s\S]*matrix_v2_employee_directory_alpha16/);
+  assert.match(page, /canReadCompanyWorkspace[\s\S]*workforce_calendar_context_uat_v4/);
+  assert.match(accessPolicy, /item\.app_role === "ROLE_MANAGER" && item\.role_logical_id/);
+  assert.match(accessPolicy, /category\.roleIds\.every/);
+  assert.match(page, /Nie masz uprawnień do wszystkich ról tej kategorii/);
+  const standbyRead = page.slice(page.indexOf("const standbyRequest"),page.indexOf("const swapBoardRequest"));
+  assert.match(standbyRead, /canReadCompanyWorkspace/);
+  assert.doesNotMatch(standbyRead, /canReadManagementOperations/);
 });
 
 test("the application shell has a safe navigation label before access roles load", () => {

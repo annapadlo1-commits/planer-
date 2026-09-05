@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "92bc2c8bcbba780d251f5a37a7e56767ecdb6386",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "f688d3bb4af00a58351e894ee5c26ba194d2fd10517ba9c215de46a92cea0073",
+  "aggregateSha256": "16627daae6f64a7f0a5e9922e15bf573367884553ce42c9e361213c3c6777172",
   "entries": [
     {
       "version": "20260903090000",
@@ -92,6 +92,22 @@
       "canonicalBytes": 2280,
       "canonicalSha256": "83d59f0ad9c03ef86c10655bad53f25c9e0cc71137fd99846927eb55c86d6d3e",
       "gitBlobSha1": "b95d6a42d8e14d3e39e45e19d3c42c4438b4b2d1"
+    },
+    {
+      "version": "20260905140000",
+      "name": "aud_rvw_scoped_authorization",
+      "file": "20260905140000_aud_rvw_scoped_authorization.sql",
+      "canonicalBytes": 20326,
+      "canonicalSha256": "9d7d898875186d5446c2247513382a17bdf4c7a5a4f4c390a68c960dac646605",
+      "gitBlobSha1": "911652d6bd72b72827d50f9fb831c1f24b25bad7"
+    },
+    {
+      "version": "20260905150000",
+      "name": "aud008_recursive_company_boundary",
+      "file": "20260905150000_aud008_recursive_company_boundary.sql",
+      "canonicalBytes": 8429,
+      "canonicalSha256": "cc69c1e6640c61616d313af969fddf918a4b126af76136c473cec273acf74fd6",
+      "gitBlobSha1": "69e9214da45ad71165edebd15ad6f22e4bf75fcb"
     }
   ]
 }

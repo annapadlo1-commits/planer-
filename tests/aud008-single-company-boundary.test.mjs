@@ -6,6 +6,10 @@ const migration = await readFile(
   new URL("../supabase/migrations/20260905120000_aud008_single_company_boundary.sql", import.meta.url),
   "utf8",
 );
+const recursiveMigration = await readFile(
+  new URL("../supabase/migrations/20260905150000_aud008_recursive_company_boundary.sql", import.meta.url),
+  "utf8",
+);
 const editor = await readFile(new URL("../components/MatrixV2Editor.tsx", import.meta.url), "utf8");
 const parser = await readFile(new URL("../lib/matrix-workbook-import.ts", import.meta.url), "utf8");
 const financeParser = await readFile(new URL("../lib/workforce-finance-import.ts", import.meta.url), "utf8");
@@ -69,6 +73,20 @@ test("AUD-008: wszystkie trzy tryby importu sprawdzają obowiązkową granicę p
   assert.doesNotMatch(migration, /p_configuration->>'companyBoundaryId'/u);
 });
 
+test("AUD-008: metadane obcej firmy są odrzucane rekurencyjnie w imporcie i ustawieniach", () => {
+  assert.match(recursiveMigration, /matrix_v2_reject_foreign_company_metadata_uat_v1/u);
+  assert.match(recursiveMigration, /jsonb_array_elements\(p_value\)/u);
+  assert.match(recursiveMigration, /jsonb_each\(p_value\)/u);
+  assert.match(recursiveMigration, /lower\(replace\(v_key,'_',''\)\)/u);
+  assert.match(recursiveMigration, /'organizationid','tenantid'/u);
+  assert.match(recursiveMigration, /v_normalized_key='companyboundaryid'/u);
+  assert.match(recursiveMigration, /p_path=array\['_workbook'\]::text\[\]/u);
+  assert.match(recursiveMigration, /matrix_v2_recursive_company_boundary_uat_v1/u);
+  assert.match(recursiveMigration, /before insert or update of settings/u);
+  assert.match(recursiveMigration, /do \$existing_payload_guard\$/u);
+  assert.match(recursiveMigration, /SINGLE_COMPANY_BOUNDARY_MISSING/u);
+});
+
 test("AUD-008: eksport przenosi granicę, parser zachowuje ją, a błąd jest bezpieczny dla użytkownika", () => {
   assert.match(editor, /matrix_v2_company_boundary_uat_v1/u);
   assert.match(editor, /\["companyBoundaryId",companyBoundaryId\]/u);
@@ -105,6 +123,10 @@ test("AUD-008: historyczne surowe RPC importu nie są osiągalne przez API", () 
     "matrix_v2_team_import_preview_uat_v1_core_20260824",
     "matrix_v2_team_import_apply_uat_v1_core_20260824",
   ]) assert.match(migration, new RegExp(`revoke all on function public\\.${signature}`));
+  for (const signature of [
+    "matrix_v2_import_preview_before_mx_k10",
+    "matrix_v2_import_apply_before_mx_k10",
+  ]) assert.match(recursiveMigration, new RegExp(`revoke all on function public\\.${signature}`));
 });
 
 test("AUD-008: migracja wymaga dokładnego i aktywnego kontraktu izolowanego UAT", () => {

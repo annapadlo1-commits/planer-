@@ -5,11 +5,16 @@ import { Database, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react"
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   authEventAction,
+  beginAuthVerification,
   browserIsOffline,
   classifySessionFailure,
   clearProtectedBrowserState,
+  createAuthVerificationGate,
+  invalidateAuthVerification,
+  isAuthVerificationCurrent,
   SESSION_CHECK_FAILED_MESSAGE,
   SESSION_EXPIRED_MESSAGE,
+  type AuthVerificationTicket,
 } from "@/lib/auth-session";
 import { parseCompanyTimeContext } from "@/lib/company-time";
 import {
@@ -30,7 +35,13 @@ type LiveSummary = {
 
 type AppAccess = {
   provisioning_available?: boolean;
-  roles?: { app_role: string; scope_role?: string | null; scope_location?: string | null }[];
+  roles?: {
+    app_role: string;
+    scope_role?: string | null;
+    scope_location?: string | null;
+    role_logical_id?: string | null;
+    location_logical_id?: string | null;
+  }[];
   employee?: {
     employee_no: string;
     first_name: string;
@@ -97,48 +108,50 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   // exposes a global navigator without navigator.onLine; reading it during SSR
   // incorrectly rendered the offline screen and caused a hydration mismatch.
   const [offline, setOffline] = useState(false);
-  const recoveryRef = useRef<Promise<void> | null>(null);
+  const verificationGateRef = useRef(createAuthVerificationGate());
   const manualSignOutRef = useRef(false);
 
-  const clearAuthenticatedState = useCallback((notice = "") => {
-    setUser(null);
-    setAccess(null);
+  const clearWorkspaceContext = useCallback(() => {
     setSummary(null);
     setError("");
     setCompanyTimezone("");
     setCurrentCompanyMonth("");
     setWorkspaceIssue(null);
-    setAuthNotice(notice);
   }, []);
 
-  const loadLiveData = useCallback(async (activeUser?: User | null) => {
+  const clearProtectedContext = useCallback(() => {
+    setAccess(null);
+    clearWorkspaceContext();
+  }, [clearWorkspaceContext]);
+
+  const clearAuthenticatedState = useCallback((notice = "") => {
+    invalidateAuthVerification(verificationGateRef.current);
+    setUser(null);
+    clearProtectedContext();
+    setAuthNotice(notice);
+  }, [clearProtectedContext]);
+
+  const loadLiveData = useCallback(async (activeUser: User | null | undefined, ticket: AuthVerificationTicket) => {
     if (!supabase || !activeUser) return false;
-    setError("");
-    setWorkspaceIssue(null);
     try {
       const accessResult = await supabase.rpc("current_user_access_v2");
+      if (!isAuthVerificationCurrent(verificationGateRef.current, ticket)) return false;
       if (accessResult.error) {
-        setAccess(null);
-        setSummary(null);
         setError("Nie udało się pobrać aktualnego zakresu dostępu. Twoja sesja pozostaje zalogowana; spróbuj ponownie.");
         return false;
       }
 
       const nextAccess=(accessResult.data || null) as AppAccess | null;
-      setAccess(nextAccess);
 
       if(!nextAccess?.roles?.length){
-        setSummary(null);
-        setCompanyTimezone("");
-        setCurrentCompanyMonth("");
+        setAccess(nextAccess);
         return true;
       }
 
       const companyTimeResult=await supabase.rpc("current_company_time_context_v1");
+      if (!isAuthVerificationCurrent(verificationGateRef.current, ticket)) return false;
       if(companyTimeResult.error){
-        setSummary(null);
-        setCompanyTimezone("");
-        setCurrentCompanyMonth("");
+        setAccess(nextAccess);
         setWorkspaceIssue("TIMEZONE_CONFIGURATION_FAILED");
         return false;
       }
@@ -146,20 +159,19 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       try{
         companyTime=parseCompanyTimeContext(companyTimeResult.data);
       }catch{
-        setSummary(null);
-        setCompanyTimezone("");
-        setCurrentCompanyMonth("");
+        setAccess(nextAccess);
         setWorkspaceIssue("TIMEZONE_CONFIGURATION_FAILED");
         return false;
       }
-      setCompanyTimezone(companyTime.timezone);
-      setCurrentCompanyMonth(companyTime.currentMonth);
 
       const matrixResult=await supabase.rpc("matrix_v2_workspace",{
         p_month:`${companyTime.currentMonth}-01`,
       });
+      if (!isAuthVerificationCurrent(verificationGateRef.current, ticket)) return false;
       if(matrixResult.error){
-        setSummary(null);
+        setAccess(nextAccess);
+        setCompanyTimezone(companyTime.timezone);
+        setCurrentCompanyMonth(companyTime.currentMonth);
         setWorkspaceIssue(isMissingCompanyConfiguration(matrixResult.error)
           ? "MISSING_CONFIGURATION"
           : "WORKSPACE_LOAD_FAILED");
@@ -167,6 +179,9 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const matrix=(matrixResult.data??{}) as {employees?:unknown[];locations?:unknown[];shiftTemplates?:unknown[]};
+      setAccess(nextAccess);
+      setCompanyTimezone(companyTime.timezone);
+      setCurrentCompanyMonth(companyTime.currentMonth);
       setSummary({
         employees: matrix.employees?.length || 0,
         locations: matrix.locations?.length || 0,
@@ -175,11 +190,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       });
       return true;
     } catch (cause) {
-      setAccess(null);
-      setSummary(null);
-      setCompanyTimezone("");
-      setCurrentCompanyMonth("");
-      setWorkspaceIssue(null);
+      if (!isAuthVerificationCurrent(verificationGateRef.current, ticket)) return false;
       setError("Nie udało się potwierdzić aktualnego zakresu dostępu. Spróbuj ponownie.");
       return false;
     }
@@ -187,40 +198,42 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
   const recoverFirstRunConfiguration=useCallback(async()=>{
     if(!supabase||!user)return;
+    const ticket=beginAuthVerification(verificationGateRef.current);
     setLoading(true);
+    clearWorkspaceContext();
     const result=await supabase.rpc("matrix_v2_ensure_first_run_uat_v1");
+    if(!isAuthVerificationCurrent(verificationGateRef.current,ticket))return;
     if(result.error){
       setLoading(false);
       setWorkspaceIssue("WORKSPACE_LOAD_FAILED");
       return;
     }
-    await loadLiveData(user);
-    setLoading(false);
-  },[loadLiveData,supabase,user]);
+    await loadLiveData(user,ticket);
+    if(isAuthVerificationCurrent(verificationGateRef.current,ticket))setLoading(false);
+  },[clearWorkspaceContext,loadLiveData,supabase,user]);
 
   const provisionCurrentAccess=useCallback(async()=>{
     if(!supabase||!user)return;
+    const ticket=beginAuthVerification(verificationGateRef.current);
     setLoading(true);
-    setError("");
+    clearWorkspaceContext();
     const result=await supabase.rpc("application_access_provision_current_user_v1");
+    if(!isAuthVerificationCurrent(verificationGateRef.current,ticket))return;
     if(result.error){
       setLoading(false);
       setError("Nie udało się aktywować nadanego dostępu. Poproś właściciela o sprawdzenie adresu e-mail w Administracji i spróbuj ponownie.");
       return;
     }
-    await loadLiveData(user);
-    setLoading(false);
-  },[loadLiveData,supabase,user]);
+    await loadLiveData(user,ticket);
+    if(isAuthVerificationCurrent(verificationGateRef.current,ticket))setLoading(false);
+  },[clearWorkspaceContext,loadLiveData,supabase,user]);
 
-  const recoverSession = useCallback(async (showLoading = true) => {
+  const recoverSession = useCallback(async () => {
     if (!supabase) return;
-    if (recoveryRef.current) {
-      await recoveryRef.current;
-      return;
-    }
-
+    const ticket=beginAuthVerification(verificationGateRef.current);
+    setLoading(true);
+    clearProtectedContext();
     const recovery = (async () => {
-      if (showLoading) setLoading(true);
       setSessionCheckError("");
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         setOffline(true);
@@ -230,6 +243,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const { data, error: userError } = await supabase.auth.getUser();
+        if(!isAuthVerificationCurrent(verificationGateRef.current,ticket))return;
         if (userError || !data.user) {
           const failure = classifySessionFailure(userError);
           if (failure === "NETWORK") {
@@ -244,41 +258,37 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
         setUser(data.user);
         setAuthNotice("");
-        await loadLiveData(data.user);
-        setLoading(false);
+        await loadLiveData(data.user,ticket);
+        if(isAuthVerificationCurrent(verificationGateRef.current,ticket))setLoading(false);
       } catch {
+        if(!isAuthVerificationCurrent(verificationGateRef.current,ticket))return;
         setSessionCheckError(SESSION_CHECK_FAILED_MESSAGE);
         setLoading(false);
       }
     })();
-
-    recoveryRef.current = recovery;
-    try {
-      await recovery;
-    } finally {
-      if (recoveryRef.current === recovery) recoveryRef.current = null;
-    }
-  }, [clearAuthenticatedState, loadLiveData, supabase]);
+    await recovery;
+  }, [clearAuthenticatedState, clearProtectedContext, loadLiveData, supabase]);
 
   async function refresh() {
-    await recoverSession(true);
+    await recoverSession();
   }
 
   useEffect(() => {
     if (!supabase) return;
     let disposed = false;
     const scheduleVerification = () => {
+      invalidateAuthVerification(verificationGateRef.current);
+      setLoading(true);
+      clearProtectedContext();
       window.setTimeout(() => {
-        if (!disposed) void recoverSession(false);
+        if (!disposed) void recoverSession();
       }, 0);
     };
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       const action = authEventAction(event);
       if (action === "CLEAR") {
         clearAuthenticatedState(manualSignOutRef.current ? "" : SESSION_EXPIRED_MESSAGE);
         setLoading(false);
-      } else if (action === "REFRESH_USER") {
-        setUser(session?.user || null);
       } else if (action === "VERIFY") {
         scheduleVerification();
       }
@@ -290,14 +300,14 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     const handleOffline = () => setOffline(true);
     const handleOnline = () => {
       setOffline(false);
-      void recoverSession(true);
+      void recoverSession();
     };
 
     if (browserIsOffline(window)) {
       setOffline(true);
       setLoading(false);
     } else {
-      void recoverSession(true);
+      void recoverSession();
     }
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("pageshow", handlePageShow);
@@ -311,7 +321,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
-  }, [clearAuthenticatedState, recoverSession, supabase]);
+  }, [clearAuthenticatedState, clearProtectedContext, recoverSession, supabase]);
 
   async function signOut() {
     if (!supabase) return;
@@ -448,6 +458,11 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
         </section>
       </main>
     );
+  }
+
+  if (!error && user && access?.roles?.length
+    && (!summary || !companyTimezone || !currentCompanyMonth)) {
+    return <div className="auth-loading"><Loader2 className="spin" size={28} /><strong>Łączenie z SZAFUNEK…</strong><span>Potwierdzamy dane firmy i właściwy miesiąc.</span></div>;
   }
 
   if (error || !access) {

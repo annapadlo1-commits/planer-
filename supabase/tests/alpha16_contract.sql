@@ -93,12 +93,15 @@ begin
 
   v_definition:=pg_get_functiondef(
     'public.optimizer_emergency_assign_alpha16(uuid,bigint,uuid,boolean,text,boolean)'::regprocedure
+  )||E'\n'||pg_get_functiondef(
+    'public.optimizer_emergency_assign_before_aud_rvw_exact_issue_uat_v1(uuid,bigint,uuid,boolean,text,boolean)'::regprocedure
   );
   if position('EMERGENCY_ASSIGNMENT_HARD_BLOCK' in v_definition)=0
     or position('SOFT_OVERRIDE_REASON_REQUIRED' in v_definition)=0
     or position('operational_assignment_override_v2' in v_definition)=0
     or position('public.notifications' in v_definition)=0
-    or position('public.audit_log' in v_definition)=0 then
+    or position('public.audit_log' in v_definition)=0
+    or position('aud_rvw_can_manage_schedule_issue_uat_v1' in v_definition)=0 then
     raise exception 'ALPHA16_EMERGENCY_ASSIGNMENT_GUARDS_INCOMPLETE';
   end if;
 
@@ -116,13 +119,16 @@ begin
   end if;
   v_definition:=v_definition||E'\n'||pg_get_functiondef(
     'public.optimizer_candidate_diagnostics_before_primary_rules_alpha16(uuid,bigint)'::regprocedure
+  )||E'\n'||pg_get_functiondef(
+    'public.optimizer_diag_before_aud_rvw_exact_issue_uat_v1(uuid,bigint)'::regprocedure
   );
   if position('DECLARED_UNAVAILABLE' in v_definition)=0
     or position('OUTSIDE_AVAILABILITY_WINDOW' in v_definition)=0
     or position('REST_AFTER_PREVIOUS_SHIFT' in v_definition)=0
     or position('MONTHLY_LIMIT' in v_definition)=0
     or position('MAX_CONSECUTIVE_DAYS' in v_definition)=0
-    or position('MANAGER_SHIFT_BLOCK' in v_definition)=0 then
+    or position('MANAGER_SHIFT_BLOCK' in v_definition)=0
+    or position('aud_rvw_can_manage_schedule_issue_uat_v1' in v_definition)=0 then
     raise exception 'ALPHA16_CANDIDATE_DIAGNOSTICS_INCOMPLETE';
   end if;
 
@@ -157,6 +163,75 @@ insert into auth.users(
 insert into public.user_permissions(auth_user_id,app_role)
 values('a1600000-0000-4000-8000-000000000001','OWNER');
 
+select set_config(
+  'request.jwt.claim.sub','a1600000-0000-4000-8000-000000000001',true
+);
+select set_config('request.jwt.claim.role','authenticated',true);
+
+do $$
+declare
+  v_matrix uuid;
+begin
+  perform public.matrix_v2_ensure_first_run_uat_v1();
+  select id into strict v_matrix
+  from public.matrix_versions
+  where status='DRAFT' and schema_version>=2;
+  insert into public.matrix_role_categories_v2(
+    id,matrix_version_id,logical_id,code,name,sort_order,active
+  ) values(
+    'a1600000-0000-4000-8000-000000000020',v_matrix,
+    'a1600000-0000-4000-8000-000000000120','A16_CAT',
+    'Kategoria Alpha 16',1,true
+  );
+  insert into public.matrix_roles_v2(
+    id,matrix_version_id,logical_id,code,name,sort_order,active,category_id
+  ) values(
+    'a1600000-0000-4000-8000-000000000030',v_matrix,
+    'a1600000-0000-4000-8000-000000000130','A16_ROLE',
+    'Rola Alpha 16',1,true,'a1600000-0000-4000-8000-000000000020'
+  );
+  insert into public.matrix_locations_v2(
+    id,matrix_version_id,logical_id,code,name,timezone,sort_order,active
+  ) values(
+    'a1600000-0000-4000-8000-000000000040',v_matrix,
+    'a1600000-0000-4000-8000-000000000140','A16_LOC',
+    'Lokal Alpha 16','Europe/Warsaw',1,true
+  );
+  insert into public.matrix_duties_v2(
+    id,matrix_version_id,logical_id,code,name,description,color,sort_order,active
+  ) values(
+    'a1600000-0000-4000-8000-000000000050',v_matrix,
+    'a1600000-0000-4000-8000-000000000150','A16_DUTY_BASE',
+    'Obowiązek Alpha 16','Fixture kontraktu','#64748B',1,true
+  );
+  insert into public.solver_feature_flags(flag_key,engine,enabled,config)
+  values(
+    'DEFAULT_ENGINE','ORTOOLS_V2',true,
+    '{"solverVersion":"aud003-local-contract"}'::jsonb
+  ) on conflict(flag_key) do nothing;
+  insert into public.employees(
+    id,employee_no,first_name,last_name,email,monthly_nominal_minutes,
+    max_weekly_minutes,max_monthly_minutes,active
+  ) values(
+    'a1600000-0000-4000-8000-000000000010','GP-A160000',
+    'Alpha','Szesnaście','alpha16-self-service@example.invalid',
+    9600,2400,12000,true
+  );
+end;
+$$;
+
+reset role;
+set local session_replication_role=replica;
+update public.matrix_versions
+set status='ACTIVE',
+  settings=coalesce(settings,'{}'::jsonb)||jsonb_build_object(
+    'companyBoundaryId','a0080000-0000-4000-8000-000000000001'
+  ),
+  content_hash=coalesce(nullif(content_hash,''),repeat('a',64)),
+  workforce_hash=coalesce(nullif(workforce_hash,''),repeat('b',64))
+where status='DRAFT' and schema_version>=2;
+set local session_replication_role=origin;
+
 do $$
 declare
   v_employee uuid;
@@ -165,14 +240,14 @@ declare
 begin
   select employee.id into v_employee
   from public.employees employee
-  where employee.active and employee.archived_at is null
-    and employee.auth_user_id is null
-  order by employee.id limit 1;
+  where employee.id='a1600000-0000-4000-8000-000000000010'
+    and employee.active and employee.archived_at is null
+    and employee.auth_user_id is null;
   select matrix.id,date_trunc('month',matrix.effective_from)::date
   into v_matrix,v_month
   from public.matrix_versions matrix
-  where matrix.status in ('ACTIVE','ARCHIVED') and matrix.schema_version>=2
-  order by case matrix.status when 'ACTIVE' then 0 else 1 end,
+  where matrix.status in ('ACTIVE','ARCHIVED','DRAFT') and matrix.schema_version>=2
+  order by case matrix.status when 'ACTIVE' then 0 when 'DRAFT' then 1 else 2 end,
     matrix.effective_from desc,matrix.version desc limit 1;
   if v_employee is null or v_matrix is null then
     raise exception 'ALPHA16_SELF_SERVICE_FIXTURE_MISSING';
@@ -192,6 +267,21 @@ begin
   perform set_config('alpha16.contract_month',v_month::text,true);
 end;
 $$;
+
+create or replace function pg_temp.alpha16_import_preview(p_payload jsonb)
+returns jsonb
+language sql security definer set search_path=''
+as $function$
+  select public.matrix_v2_import_preview_alpha16(p_payload)
+$function$;
+create or replace function pg_temp.alpha16_import_apply(p_payload jsonb)
+returns jsonb
+language sql security definer set search_path=''
+as $function$
+  select public.matrix_v2_import_apply_alpha16(p_payload)
+$function$;
+grant execute on function pg_temp.alpha16_import_preview(jsonb),
+  pg_temp.alpha16_import_apply(jsonb) to authenticated;
 
 select set_config(
   'request.jwt.claim.sub','a1600000-0000-4000-8000-000000000001',true
@@ -360,7 +450,7 @@ begin
     raise exception 'ALPHA16_COMPETENCY_ROLE_DUTY_NOT_CANONICAL';
   end if;
 
-  v_preview:=public.matrix_v2_import_preview_alpha16('{}'::jsonb);
+  v_preview:=pg_temp.alpha16_import_preview('{}'::jsonb);
   if (v_preview->>'valid')::boolean
     or not exists(select 1 from jsonb_array_elements(v_preview->'errors') error_row
       where error_row.value->>'code'='EMPTY_IMPORT') then
@@ -379,7 +469,7 @@ begin
       'shiftObligation',true,'shiftPeriod','MIDDLE','active',true
     ))
   );
-  v_preview:=public.matrix_v2_import_preview_alpha16(v_payload);
+  v_preview:=pg_temp.alpha16_import_preview(v_payload);
   if (v_preview->>'valid')::boolean
     or not exists(select 1 from jsonb_array_elements(v_preview->'errors') error_row
       where error_row.value->>'code'='LEGACY_PERIOD_DEMAND_REJECTED') then
@@ -398,7 +488,7 @@ begin
     )),
     'shifts','[]'::jsonb,'staffingRules','[]'::jsonb,'roleDuties','[]'::jsonb
   );
-  v_preview:=public.matrix_v2_import_preview_alpha16(v_payload);
+  v_preview:=pg_temp.alpha16_import_preview(v_payload);
   if (v_preview->>'valid')::boolean
     or not exists(select 1 from jsonb_array_elements(v_preview->'errors') error_row
       where error_row.value->>'code'='EMPLOYEE_NUMBER_NOT_FOUND') then
@@ -415,11 +505,11 @@ begin
     )),
     'employees','[]'::jsonb,'staffingRules','[]'::jsonb,'roleDuties','[]'::jsonb
   );
-  v_preview:=public.matrix_v2_import_preview_alpha16(v_payload);
+  v_preview:=pg_temp.alpha16_import_preview(v_payload);
   if not (v_preview->>'valid')::boolean then
     raise exception 'ALPHA16_VALID_IMPORT_REJECTED: %',v_preview;
   end if;
-  v_result:=public.matrix_v2_import_apply_alpha16(v_payload);
+  v_result:=pg_temp.alpha16_import_apply(v_payload);
   if coalesce((v_result->>'appliedRows')::integer,0)<>1
     or not exists(select 1 from public.matrix_shift_templates_v2 shift_row
       where shift_row.matrix_version_id=v_draft

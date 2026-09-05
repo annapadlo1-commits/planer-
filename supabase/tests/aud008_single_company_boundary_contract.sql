@@ -59,23 +59,72 @@ set search_path=''
 as $function$
   select jsonb_build_object(
     'versions',(select count(*) from public.matrix_versions),
+    'versionsDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_versions row),
     'imports',(select count(*) from public.matrix_import_runs),
+    'importsDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_import_runs row),
     'categories',(select count(*) from public.matrix_role_categories_v2),
+    'categoriesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_role_categories_v2 row),
     'roles',(select count(*) from public.matrix_roles_v2),
+    'rolesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_roles_v2 row),
     'duties',(select count(*) from public.matrix_duties_v2),
+    'dutiesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_duties_v2 row),
     'roleDuties',(select count(*) from public.matrix_role_duties_v2),
+    'roleDutiesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_role_duties_v2 row),
     'locations',(select count(*) from public.matrix_locations_v2),
+    'locationsDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_locations_v2 row),
     'shifts',(select count(*) from public.matrix_shift_templates_v2),
+    'shiftsDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_shift_templates_v2 row),
     'profiles',(select count(*) from public.matrix_employee_profiles_v2),
+    'profilesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_employee_profiles_v2 row),
+    'employees',(select count(*) from public.employees),
+    'employeesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.employees row),
+    'employeeHr',(select count(*) from public.employee_hr_profiles),
+    'employeeHrDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.employee_hr_profiles row),
+    'employeePayRates',(select count(*) from public.employee_pay_rates_v2),
+    'employeePayRatesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.employee_pay_rates_v2 row),
     'employeeRoles',(select count(*) from public.matrix_employee_roles_v2),
+    'employeeRolesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_employee_roles_v2 row),
     'employeeDuties',(select count(*) from public.matrix_employee_duties_v2),
+    'employeeDutiesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_employee_duties_v2 row),
     'employeeLocations',(select count(*) from public.matrix_employee_locations_v2),
+    'employeeLocationsDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_employee_locations_v2 row),
     'payRules',(select count(*) from public.matrix_pay_rules_v2),
-    'auditLog',(select count(*) from public.audit_log)
+    'payRulesDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.matrix_pay_rules_v2 row),
+    'auditLog',(select count(*) from public.audit_log),
+    'auditLogDigest',(select md5(coalesce(jsonb_agg(to_jsonb(row) order by to_jsonb(row)::text)::text,'[]')) from public.audit_log row)
   )
 $function$;
 
 grant execute on function pg_temp.aud008_business_state() to authenticated;
+
+create or replace function pg_temp.aud008_team_fixture_applied(p_employee_no text)
+returns boolean
+language sql
+stable
+security definer
+set search_path=''
+as $function$
+  select exists(
+    select 1
+    from public.matrix_employee_profiles_v2 profile
+    join public.matrix_versions version on version.id=profile.matrix_version_id
+    join public.matrix_employee_roles_v2 employee_role
+      on employee_role.matrix_version_id=profile.matrix_version_id
+     and employee_role.employee_id=profile.employee_id
+     and employee_role.is_primary and employee_role.active
+    join public.matrix_roles_v2 role_row on role_row.id=employee_role.role_id
+    join public.matrix_employee_locations_v2 employee_location
+      on employee_location.matrix_version_id=profile.matrix_version_id
+     and employee_location.employee_id=profile.employee_id
+     and employee_location.active
+    join public.matrix_locations_v2 location_row on location_row.id=employee_location.location_id
+    where profile.employee_no=p_employee_no and profile.active
+      and version.status='DRAFT' and role_row.code='KELNER'
+      and location_row.code='KRUCZA'
+  )
+$function$;
+
+grant execute on function pg_temp.aud008_team_fixture_applied(text) to authenticated;
 
 create or replace function pg_temp.aud008_claim_without_boundary()
 returns void
@@ -118,7 +167,10 @@ do $$
 declare
   v_result jsonb;
   v_configuration jsonb;
+  v_finance jsonb;
   v_matrix uuid;
+  v_rate uuid;
+  v_employee_no text;
   v_versions bigint;
   v_state_before jsonb;
   v_state_after jsonb;
@@ -146,11 +198,23 @@ begin
       'contractVersion','2',
       'companyBoundaryId','a0080000-0000-4000-8000-000000000001'
     ),
-    'roleCategories','[]'::jsonb,
-    'roles','[]'::jsonb,
-    'locations','[]'::jsonb,
+    'roleCategories',jsonb_build_array(jsonb_build_object(
+      'code','SALA','name','Sala','sortOrder','1','active',true,'sourceRow',2
+    )),
+    'roles',jsonb_build_array(jsonb_build_object(
+      'code','KELNER','name','Kelner','categoryCode','SALA',
+      'sortOrder','1','active',true,'sourceRow',2
+    )),
+    'locations',jsonb_build_array(jsonb_build_object(
+      'code','KRUCZA','name','Krucza','sortOrder','1','active',true,'sourceRow',2
+    )),
     'duties','[]'::jsonb,
-    'employees','[]'::jsonb,
+    'employees',jsonb_build_array(jsonb_build_object(
+      'employeeNo','','firstName','Audyt','lastName','Import',
+      'email','aud008-team-positive@example.invalid','primaryRoleCode','KELNER',
+      'locationCodes',jsonb_build_array('KRUCZA'),'contractType','ZLECENIE',
+      'active',true,'sourceRow',2
+    )),
     'employeeRoles','[]'::jsonb,
     'employeeLocationsDetailed','[]'::jsonb,
     'employeeCapabilities','[]'::jsonb,
@@ -158,12 +222,112 @@ begin
     'staffingRules','[]'::jsonb
   );
   v_result:=public.matrix_v2_team_import_preview_uat_v1(v_configuration,'UPDATE');
-  if v_result->>'companyBoundaryId'<>
+  if coalesce((v_result->>'valid')::boolean,false) is not true
+    or v_result->>'companyBoundaryId'<>
       'a0080000-0000-4000-8000-000000000001'
     or v_result#>>'{workbookIdentity,contractVersion}'<>'2' then
-    raise exception 'AUD008_FIRST_COMPANY_TEAM_PREVIEW_REJECTED';
+    raise exception 'AUD008_FIRST_COMPANY_TEAM_PREVIEW_REJECTED:%',v_result;
+  end if;
+  v_result:=public.matrix_v2_team_import_apply_uat_v1(v_configuration,'UPDATE');
+  if coalesce((v_result->>'atomic')::boolean,false) is not true
+    or v_result->>'scope'<>'TEAM_AND_STRUCTURE'
+    or coalesce((v_result->>'financeDeferred')::boolean,false) is not true
+    or v_result->>'validationOrder'<>'STRUCTURE_THEN_RELATIONS'
+    or v_result->>'companyBoundaryId'<>
+      'a0080000-0000-4000-8000-000000000001'
+    or v_result#>>'{workbookIdentity,contractVersion}'<>'2' then
+    raise exception 'AUD008_FIRST_COMPANY_TEAM_APPLY_REJECTED:%',v_result;
+  end if;
+  select employee_no into strict v_employee_no
+  from public.employees
+  where email='aud008-team-positive@example.invalid';
+  if v_employee_no is null
+    or not pg_temp.aud008_team_fixture_applied(v_employee_no) then
+    raise exception 'AUD008_FIRST_COMPANY_TEAM_APPLY_INCOMPLETE';
+  end if;
+  v_finance:=jsonb_build_object(
+    '_workbook',jsonb_build_object(
+      'mode','EMPTY_TEMPLATE','contractVersion','2',
+      'companyBoundaryId','a0080000-0000-4000-8000-000000000001'
+    ),
+    'payRates',jsonb_build_array(jsonb_build_object(
+      'sourceRow',2,'rateId','','employeeNo',v_employee_no,
+      'validFrom','2026-09-01','validTo','','baseRate','30.00',
+      'currency','PLN','contractType','ZLECENIE','active','true'
+    ))
+  );
+  v_result:=public.matrix_v2_finance_import_apply_uat_v1(v_finance);
+  if coalesce((v_result->>'appliedRows')::integer,0)<>1
+    or coalesce((v_result#>>'{summary,rows}')::integer,0)<>1
+    or coalesce((v_result#>>'{summary,employees}')::integer,0)<>1
+    or coalesce((v_result#>>'{summary,create}')::integer,0)<>1 then
+    raise exception 'AUD008_FIRST_COMPANY_FINANCE_APPLY_REJECTED:%',v_result;
+  end if;
+  select id into strict v_rate
+  from public.employee_pay_rates_v2
+  where employee_id=(
+    select id from public.employees
+    where email='aud008-team-positive@example.invalid'
+  ) and valid_from='2026-09-01' and active;
+  v_finance:=jsonb_set(
+    v_finance,'{payRates,0,rateId}',to_jsonb(v_rate::text),true
+  );
+  v_state_before:=pg_temp.aud008_business_state();
+  v_result:=public.matrix_v2_full_import_preview_uat_v1(
+    jsonb_build_object('configuration',v_configuration,'finance',v_finance),
+    'UPDATE'
+  );
+  v_state_after:=pg_temp.aud008_business_state();
+  if v_state_after is distinct from v_state_before then
+    raise exception 'AUD008_FIRST_COMPANY_FULL_PREVIEW_MUTATED_STATE:%:%',
+      v_state_before,v_state_after;
+  end if;
+  if coalesce((v_result->>'valid')::boolean,false) is not true
+    or coalesce((v_result#>>'{configuration,valid}')::boolean,false) is not true
+    or coalesce((v_result#>>'{finance,valid}')::boolean,false) is not true
+    or jsonb_array_length(coalesce(v_result->'errors','[]'::jsonb))<>0
+    or coalesce((v_result#>>'{summary,financeRows}')::integer,0)<>1
+    or coalesce((v_result#>>'{finance,summary,unchanged}')::integer,0)<>1 then
+    raise exception 'AUD008_FIRST_COMPANY_FULL_PREVIEW_REJECTED:%',v_result;
+  end if;
+  v_result:=public.matrix_v2_full_import_apply_uat_v1(
+    jsonb_build_object('configuration',v_configuration,'finance',v_finance),
+    'UPDATE'
+  );
+  if coalesce((v_result->>'atomic')::boolean,false) is not true
+    or v_result->>'scope'<>'FULL_COMPANY'
+    or coalesce((v_result#>>'{finance,appliedRows}')::integer,-1)<>0
+    or coalesce((v_result#>>'{finance,summary,unchanged}')::integer,0)<>1
+    or not exists(
+    select 1 from public.employee_pay_rates_v2
+    where id=v_rate and base_rate_minor=3000 and currency='PLN'
+      and contract_type='ZLECENIE' and active
+  ) then
+    raise exception 'AUD008_FIRST_COMPANY_FULL_APPLY_REJECTED:%',v_result;
   end if;
 
+  v_state_before:=pg_temp.aud008_business_state();
+  begin
+    perform public.matrix_v2_full_import_apply_uat_v1(
+      jsonb_build_object(
+        'configuration',jsonb_set(
+          v_configuration,'{employees,0,lastName}',to_jsonb('Do wycofania'::text),true
+        ),
+        'finance',jsonb_set(
+          v_finance,'{payRates,0,currency}',to_jsonb('EUR'::text),true
+        )
+      ),
+      'UPDATE'
+    );
+    raise exception 'AUD008_FULL_APPLY_LATE_FINANCE_ERROR_NOT_RAISED';
+  exception when others then
+    if sqlerrm not like '%FINANCE_IMPORT_HAS_ERRORS%' then raise; end if;
+  end;
+  v_state_after:=pg_temp.aud008_business_state();
+  if v_state_after is distinct from v_state_before then
+    raise exception 'AUD008_FULL_APPLY_LATE_ERROR_LEFT_PARTIAL_DATA:%:%',
+      v_state_before,v_state_after;
+  end if;
   begin
     perform public.matrix_v2_claim_single_company_uat_v1(
       'a0080000-0000-4000-8000-000000000002'
@@ -194,7 +358,11 @@ begin
     '{"organization_id":"foreign","_workbook":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb,
     '{"tenant_id":"foreign","_workbook":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb,
     '{"_workbook":{"organization_id":"foreign","companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb,
-    '{"_workbook":{"tenant_id":"foreign","companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb
+    '{"_workbook":{"tenant_id":"foreign","companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb,
+    '{"_workbook":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"},"employees":[{"metadata":{"organizationId":"foreign"}}]}'::jsonb,
+    '{"_workbook":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"},"roles":[{"settings":{"tenant_id":"foreign"}}]}'::jsonb,
+    '{"_workbook":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"},"finance":{"nested":{"companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}}'::jsonb,
+    '{"_workbook":{"CompanyBoundaryId":"a0080000-0000-4000-8000-000000000001","companyBoundaryId":"a0080000-0000-4000-8000-000000000001"}}'::jsonb
   ] loop
     begin
       perform public.matrix_v2_team_import_preview_uat_v1(v_result,'UPDATE');
@@ -380,32 +548,43 @@ do $$
 declare
   v_boundary uuid;
   v_result jsonb;
+  v_payload jsonb;
 begin
   v_boundary:=public.matrix_v2_company_boundary_uat_v1();
   if v_boundary<>'a0080000-0000-4000-8000-000000000001'::uuid then
     raise exception 'AUD008_HR_FINANCE_BOUNDARY_LOOKUP_FAILED';
   end if;
-  v_result:=public.matrix_v2_finance_import_preview_uat_v1(
-    jsonb_build_object(
-      '_workbook',jsonb_build_object(
-        'companyBoundaryId','a0080000-0000-4000-8000-000000000001'
-      ),
-      'payRates',jsonb_build_array(jsonb_build_object(
-        'sourceRow',2,
-        'rateId','',
-        'employeeNo','GP-A008',
-        'validFrom','2026-09-01',
-        'validTo','',
-        'baseRate','30.00',
-        'currency','PLN',
-        'contractType','UMOWA_O_PRACE',
-        'active','true'
-      ))
-    )
+  v_payload:=jsonb_build_object(
+    '_workbook',jsonb_build_object(
+      'companyBoundaryId','a0080000-0000-4000-8000-000000000001'
+    ),
+    'payRates',jsonb_build_array(jsonb_build_object(
+      'sourceRow',2,
+      'rateId','',
+      'employeeNo','GP-A008',
+      'validFrom','2026-09-01',
+      'validTo','',
+      'baseRate','30.00',
+      'currency','PLN',
+      'contractType','UMOWA_O_PRACE',
+      'active','true'
+    ))
   );
+  v_result:=public.matrix_v2_finance_import_preview_uat_v1(v_payload);
   if coalesce((v_result->>'valid')::boolean,false) is not true
     or coalesce((v_result#>>'{summary,rows}')::integer,0)<>1 then
     raise exception 'AUD008_HR_FINANCE_FIRST_COMPANY_PREVIEW_FAILED:%',v_result;
+  end if;
+  v_result:=public.matrix_v2_finance_import_apply_uat_v1(v_payload);
+  if coalesce((v_result->>'appliedRows')::integer,0)<>1
+    or not exists(
+      select 1 from public.employee_pay_rates_v2 rate
+      join public.employees employee on employee.id=rate.employee_id
+      where employee.employee_no='GP-A008' and rate.base_rate_minor=3000
+        and rate.currency='PLN' and rate.contract_type='UMOWA_O_PRACE'
+        and rate.active
+    ) then
+    raise exception 'AUD008_HR_FINANCE_FIRST_COMPANY_APPLY_FAILED:%',v_result;
   end if;
   begin
     perform public.matrix_v2_finance_import_preview_uat_v1(
@@ -541,6 +720,19 @@ begin
   exception when others then
     if sqlerrm not like '%SECOND_COMPANY_FORBIDDEN%' then raise; end if;
   end;
+  v_version:=v_version+1;
+  begin
+    insert into public.matrix_versions(
+      version,name,status,effective_from,settings,schema_version,base_version_id
+    ) values(
+      v_version,'AUD008 zagnieżdżona obca firma','ARCHIVED',current_date,
+      '{"ui":{"metadata":{"organizationId":"a008-foreign-company"}}}'::jsonb,
+      2,v_root
+    );
+    raise exception 'AUD008_DIRECT_NESTED_FOREIGN_COMPANY_ALLOWED';
+  exception when others then
+    if sqlerrm not like '%SECOND_COMPANY_FORBIDDEN%' then raise; end if;
+  end;
 end $$;
 
 reset role;
@@ -568,7 +760,9 @@ declare
     'matrix_v2_import_apply_uat_v5(jsonb,text)',
     'matrix_v2_team_import_preview_uat_v1_core_20260814(jsonb,text)',
     'matrix_v2_team_import_preview_uat_v1_core_20260824(jsonb,text)',
-    'matrix_v2_team_import_apply_uat_v1_core_20260824(jsonb,text)'
+    'matrix_v2_team_import_apply_uat_v1_core_20260824(jsonb,text)',
+    'matrix_v2_import_preview_before_mx_k10(jsonb)',
+    'matrix_v2_import_apply_before_mx_k10(jsonb)'
   ];
   v_signature text;
 begin

@@ -3,9 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   authEventAction,
+  beginAuthVerification,
   browserIsOffline,
   classifySessionFailure,
   clearProtectedBrowserState,
+  createAuthVerificationGate,
+  invalidateAuthVerification,
+  isAuthVerificationCurrent,
   SESSION_CHECK_FAILED_MESSAGE,
   SESSION_EXPIRED_MESSAGE,
 } from "../lib/auth-session.ts";
@@ -31,13 +35,24 @@ test("session failures distinguish missing, revoked and network states", () => {
   assert.match(SESSION_CHECK_FAILED_MESSAGE, /Sprawdź połączenie/);
 });
 
-test("auth event state machine verifies identity without reloading access on token refresh", () => {
+test("auth event state machine re-verifies identity and access on token refresh", () => {
   assert.equal(authEventAction("INITIAL_SESSION"), "IGNORE");
   assert.equal(authEventAction("SIGNED_IN"), "VERIFY");
   assert.equal(authEventAction("USER_UPDATED"), "VERIFY");
   assert.equal(authEventAction("PASSWORD_RECOVERY"), "VERIFY");
-  assert.equal(authEventAction("TOKEN_REFRESHED"), "REFRESH_USER");
+  assert.equal(authEventAction("TOKEN_REFRESHED"), "VERIFY");
   assert.equal(authEventAction("SIGNED_OUT"), "CLEAR");
+});
+
+test("auth verification generation rejects stale identity and permission results", () => {
+  const gate = createAuthVerificationGate();
+  const ownerRequest = beginAuthVerification(gate);
+  assert.equal(isAuthVerificationCurrent(gate, ownerRequest), true);
+  const scopedRoleRequest = beginAuthVerification(gate);
+  assert.equal(isAuthVerificationCurrent(gate, ownerRequest), false);
+  assert.equal(isAuthVerificationCurrent(gate, scopedRoleRequest), true);
+  invalidateAuthVerification(gate);
+  assert.equal(isAuthVerificationCurrent(gate, scopedRoleRequest), false);
 });
 
 test("SSR never mistakes the Node navigator shim for an offline browser", () => {
@@ -89,6 +104,15 @@ test("AppAuthProvider uses verified startup, resume checks, offline shield and l
   assert.match(provider, /supabase\.auth\.getUser\(\)/);
   assert.doesNotMatch(provider, /supabase\.auth\.getSession\(\)/);
   assert.match(provider, /authEventAction\(event\)/);
+  assert.match(provider, /clearProtectedContext\(\)/);
+  assert.match(provider, /isAuthVerificationCurrent/);
+  const scheduleOffset = provider.indexOf("const scheduleVerification = () =>");
+  const deferredOffset = provider.indexOf("window.setTimeout", scheduleOffset);
+  assert.ok(scheduleOffset >= 0 && deferredOffset > scheduleOffset);
+  assert.ok(provider.indexOf("invalidateAuthVerification(verificationGateRef.current)", scheduleOffset) < deferredOffset);
+  assert.ok(provider.indexOf("setLoading(true)", scheduleOffset) < deferredOffset);
+  assert.ok(provider.indexOf("clearProtectedContext()", scheduleOffset) < deferredOffset);
+  assert.match(provider, /clearWorkspaceContext\(\)[\s\S]*matrix_v2_ensure_first_run_uat_v1/u);
   assert.match(provider, /visibilitychange/);
   assert.match(provider, /pageshow/);
   assert.match(provider, /window\.addEventListener\("offline"/);
@@ -101,6 +125,15 @@ test("AppAuthProvider uses verified startup, resume checks, offline shield and l
   assert.match(provider, /window\.location\.replace\("\/"\)/);
   assert.match(provider, /Dane firmowe są bezpiecznie ukryte/);
   assert.match(provider, /Nie pokazujemy panelu bez aktualnych uprawnień/);
+  assert.match(provider, /!summary \|\| !companyTimezone \|\| !currentCompanyMonth/);
+  assert.match(provider, /Potwierdzamy dane firmy i właściwy miesiąc/);
+  assert.match(provider, /role_logical_id\?: string \| null/);
+  assert.match(provider, /location_logical_id\?: string \| null/);
+  const contextGuard = provider.indexOf("!summary || !companyTimezone || !currentCompanyMonth");
+  assert.ok(contextGuard > provider.indexOf('workspaceIssue === "TIMEZONE_CONFIGURATION_FAILED"'));
+  assert.ok(contextGuard > provider.indexOf('workspaceIssue === "WORKSPACE_LOAD_FAILED"'));
+  assert.ok(contextGuard > provider.indexOf("if (sessionCheckError)"));
+  assert.ok(contextGuard < provider.indexOf("<AuthContext.Provider value={value}>", contextGuard));
 });
 
 test("service worker never stores auth, API, navigation or Supabase responses", async () => {
