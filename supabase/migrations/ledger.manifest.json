@@ -3,7 +3,7 @@
   "projectRef": "nhthrtpkfpmufmrmdyjg",
   "canonicalBaseSha": "92bc2c8bcbba780d251f5a37a7e56767ecdb6386",
   "canonicalization": "UTF-8 with CRLF normalized to LF",
-  "aggregateSha256": "16627daae6f64a7f0a5e9922e15bf573367884553ce42c9e361213c3c6777172",
+  "aggregateSha256": "ea556b838300855a52ac5c480bb47dd1c6d22125b6a0df22f9120a6d53614041",
   "entries": [
     {
       "version": "20260903090000",
@@ -105,9 +105,9 @@
       "version": "20260905150000",
       "name": "aud008_recursive_company_boundary",
       "file": "20260905150000_aud008_recursive_company_boundary.sql",
-      "canonicalBytes": 8429,
-      "canonicalSha256": "cc69c1e6640c61616d313af969fddf918a4b126af76136c473cec273acf74fd6",
-      "gitBlobSha1": "69e9214da45ad71165edebd15ad6f22e4bf75fcb"
+      "canonicalBytes": 8581,
+      "canonicalSha256": "deb4d16680fd1e720e33c7e50c5e5a229655b92dd1e87d82e80a1eb7ed6e80a0",
+      "gitBlobSha1": "27266458d3c2306d392127dc4cf004be56127331"
     }
   ]
 }

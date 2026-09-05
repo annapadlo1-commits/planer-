@@ -74,6 +74,8 @@ test("AUD-008: wszystkie trzy tryby importu sprawdzają obowiązkową granicę p
 });
 
 test("AUD-008: metadane obcej firmy są odrzucane rekurencyjnie w imporcie i ustawieniach", () => {
+  assert.match(recursiveMigration, /set local lock_timeout = '10s'/u);
+  assert.match(recursiveMigration, /set local statement_timeout = '5min'/u);
   assert.match(recursiveMigration, /matrix_v2_reject_foreign_company_metadata_uat_v1/u);
   assert.match(recursiveMigration, /jsonb_array_elements\(p_value\)/u);
   assert.match(recursiveMigration, /jsonb_each\(p_value\)/u);

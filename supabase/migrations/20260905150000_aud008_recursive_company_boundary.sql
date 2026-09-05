@@ -2,6 +2,10 @@
 -- The current UAT remains a one-project/one-company system. B4F-175 is separate.
 begin;
 
+-- Do not wait indefinitely for Matrix writers during the controlled UAT change.
+set local lock_timeout = '10s';
+set local statement_timeout = '5min';
+
 do $guard$
 begin
   if not exists (
