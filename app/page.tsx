@@ -1,5 +1,4 @@
 "use client";
-
 import {
   AlertTriangle, ArrowLeftRight, BarChart3, Bell, CalendarDays, Check, ChevronLeft, ChevronRight,
   CircleDollarSign, CircleUserRound, Clock3, Download, Edit3, Filter, Gauge, LogOut, MapPin,
@@ -61,7 +60,7 @@ import {
 } from "@/lib/month-workspace-state";
 import {
   employeeNavigation,
-  canManageSchedule,
+  canManageSchedule, configurationDeepLinkFromSearch,
   managementNavigationForRoles,
   pathForSection,
   sectionFromPath,
@@ -180,6 +179,7 @@ export default function GrafikPro() {
       window.sessionStorage.getItem(MONTH_STORAGE_KEY),
     );
   });
+  useEffect(()=>{if(pathname!==pathForSection("settings"))return;const deepLink=configurationDeepLinkFromSearch(window.location.search);if(!deepLink)return;setConfigurationTab(deepLink.section);setConfigurationStep(deepLink.step);setMatrixFocusEmployeeId(deepLink.employeeId);if(deepLink.createEmployee)setMatrixCreateEmployeeRequest(current=>current||1);},[pathname]);
   const monthStorageReadyRef=useRef(false);
   const selectedMonthDate=monthDate(selectedMonth);
   const monthWorkspaceGateRef=useRef(createMonthWorkspaceGate(selectedMonthDate));

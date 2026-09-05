@@ -44,6 +44,13 @@ export type SetupFocus = {
   targetId?: string;
 };
 
+export type ConfigurationDeepLink = {
+  section: SetupSection;
+  step: SetupStepKey;
+  employeeId: string | null;
+  createEmployee: boolean;
+};
+
 export type ConfigurationBlockerAction = {
   section: SetupSection;
   step: SetupStepKey;
@@ -162,6 +169,17 @@ export function sectionFromPath(pathname: string, employee: boolean): ProductSec
 
 export function pathForSection(section: ProductSection) {
   return section === "start" ? "/" : `/${section}`;
+}
+
+export function configurationDeepLinkFromSearch(search: string): ConfigurationDeepLink | null {
+  const employee = new URLSearchParams(search).get("employee")?.trim();
+  if (!employee) return null;
+  return {
+    section: "workforce",
+    step: "employees",
+    employeeId: employee === "new" ? null : employee,
+    createEmployee: employee === "new",
+  };
 }
 
 function rateCoversMonth(rate: MatrixV2Workspace["employeePayRates"][number], month: string) {
